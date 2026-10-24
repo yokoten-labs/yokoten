@@ -49,7 +49,7 @@ npx yokoten doctor       # 走到了第几关，下一步做什么
 
 agent 试着推发版 tag。yokoten 拦住它，说清原因，并告诉人该怎么做。然后 `doctor` 只说出下一步这一件事：
 
-<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="823" alt="终端里，agent 执行 git push --tags origin。yokoten 的钩子把它拦下，说明发生了什么、为什么，以及主人按发版指南的步骤发版。接着 yokoten doctor 显示现在是第 1 关，一共 5 关，下一步是加测试。">
+<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="1036" alt="终端里，agent 执行 git push --tags origin。yokoten 的钩子把它拦下，说明发生了什么、为什么，以及 agent 要停下来告诉主人，由主人按 How to release 的步骤发版。接着 yokoten doctor 显示现在是第 1 关，一共 5 关，下一步是加测试。">
 
 ## 带一支 agent 团队
 
