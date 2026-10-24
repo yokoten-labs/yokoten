@@ -16,7 +16,7 @@ import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
 import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
 import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
-import { agentHooks, allowedMarkCount, commandWording, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
+import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { selfTest } from './self-test.ts';
@@ -458,6 +458,9 @@ function doctorRun(
     lines.push(`  note    time-zone: ${stepText(zones)}`);
     notes.push(zones);
   }
+  // Open changes that collide (#909): read from the kept map, no git call for each change.
+  const conflicts = conflictNote(root, env, Date.now(), unsaved?.commonDir ?? null);
+  if (conflicts) lines.push(`  note    conflicts: ${conflicts}`);
   const noCi = noCiNote(config.notNow, where.stage, server);
   if (noCi) {
     lines.push(`  note    no-ci: ${stepText(noCi)}`);
