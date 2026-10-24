@@ -51,7 +51,22 @@ v0.1.1 の新機能：一つのリポジトリで複数の AI セッションが
 
 ## 対応しているもの
 
-- **エージェント**：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、OpenCode はエンドツーエンドで検証済みです。Gemini CLI はコードにありますが、エンドツーエンドではまだ実行していません。Codex CLI、Copilot CLI、Muse Code、Grok CLI は、フォルダーを信頼したあとにだけ番人を動かします。一度 `npx yokoten trust` を実行してください。[エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）を見てください。
+どの AI モデルでも動きます。番人は agent が実行するコマンドを検査します。モデルではありません。
+
+- **エージェント**：番人は下のどのエージェントとも一緒に働きます。各行の証拠（日付、実行の方法、先に知るべきこと）は [エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）にあります。
+
+| エージェント | 端から端まで確認済み | 最初に `npx yokoten trust` が必要 | 試したモデル |
+|---|---|---|---|
+| Claude Code | yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | yes | yes | `deepseek-flash` |
+| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | yes | yes | the default model |
+| Gemini CLI | not yet | no | — |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash` |
+
 - **言語**：どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
 
 ## ほかのインストール方法
