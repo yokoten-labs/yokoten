@@ -1243,10 +1243,13 @@ const PIPE_SHELL_FIX = 'save it first (`curl -fsSL <url> -o <file>`), read it, t
 const DOWNLOAD_PROGRAMS = new Set(['curl', 'wget', 'wget2', 'aria2c', 'fetch']);
 // Where a download reads from. A download command with no URL is not one here.
 const DOWNLOAD_URL = /(?:https?|ftp):\/\/[^\s'"|;)]+/;
-// A URL without the `user:password@` part or a query value: a refusal names the download
-// but never a secret in it (core rule 11). A signed URL keeps its key, not its signature.
+// A URL without the `user:password@` part, a query value or a fragment: a refusal names
+// the download but never a secret in it (core rule 11). A signed URL keeps its key, not its signature.
 const withoutCredentials = (url: string) =>
-  url.replace(/\/\/[^/@]*@/, '//').replace(/([?&][^=&\s]+)=[^&\s]*/g, '$1=…');
+  url
+    .replace(/\/\/[^/@]*@/, '//')
+    .replace(/([?&][^=&\s]+)=[^&\s]*/g, '$1=…')
+    .replace(/#[^\s'"]*/, '#…');
 
 /** A pipeline that feeds a download into a shell, `eval`, or a program word that is not plain text runs code nobody read (#560, #574, #734, #745). */
 export function checkPipeToShell(command: string): Finding | null {
