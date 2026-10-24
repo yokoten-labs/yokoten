@@ -3,13 +3,13 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir, ROOT } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { launcherDir, setUpLauncher } from '../../../src/setup/install.ts';
-import { sealManaged } from '../../../src/setup/files.ts';
+import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
 import { doctor, launcherCheck, privacyNotes, releaseChannel } from '../../../src/setup/doctor/index.ts';
 
 // #522: install fills the git name, so the marks are in place. One run gives one answer.
@@ -43,18 +43,18 @@ test('install then doctor: the private-marks lines agree, in full doctor and a s
 test('doctor: names a newer kit copy that waits behind an edit (#477)', async () => {
   const sandbox = makeSandbox();
   assert.equal((await sandbox.call(['install'])).status, 0);
-  const skill = join(sandbox.home, '.claude', 'skills', 'dispatch', 'SKILL.md');
+  const skill = join(sandbox.home, '.claude', 'skills', 'yokoten', 'SKILL.md');
   const installed = readFileSync(skill, 'utf8');
   // An edit on the copy install wrote: the kit has nothing newer, so doctor stays quiet.
   writeFileSync(skill, `${installed}\nAsk the owner before a release.\n`);
   assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /edited-kit/);
   // An edit on an older kit copy: the newer copy waits, and doctor names how to compare.
-  const older = sealManaged(installed.replace('Hand one task', 'Hand one job'));
+  const older = sealManaged(installed.replace('hand a task to a worker', 'hand a task to a helper'));
   writeFileSync(skill, `${older}\nAsk the owner before a release.\n`);
   const out = (await sandbox.call(['doctor'])).stdout;
-  assert.match(out, /^ +note +edited-kit: a newer kit copy is waiting for the skill dispatch \(~\/\.claude\/skills\/dispatch\/SKILL\.md\) you edited/m);
-  assert.match(out, /diff ~\/\.claude\/skills\/dispatch\/SKILL\.md .*kit\/user\/skills\/dispatch\/SKILL\.md/);
-  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a newer kit copy is waiting for the skill dispatch/);
+  assert.match(out, /^ +note +edited-kit: a newer kit copy is waiting for the skill yokoten \(~\/\.claude\/skills\/yokoten\/SKILL\.md\) you edited/m);
+  assert.match(out, /diff ~\/\.claude\/skills\/yokoten\/SKILL\.md .*kit\/user\/entry\/SKILL\.md/);
+  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a newer kit copy is waiting for the skill yokoten/);
 });
 
 test('doctor: the plugin, when on, stands in for install', async () => {
@@ -75,6 +75,40 @@ test('doctor: the plugin, when on, stands in for install', async () => {
   assert.doesNotMatch(out, /plugin-and-install/, 'no install pieces, no note');
   writeFileSync(join(sandbox.home, '.claude', 'settings.json'), 'not json');
   assert.match(await machine(), /MISSING session-doctor/, 'a broken settings file enables nothing');
+});
+
+// #904: the plugin stands in for install's guard while it is on, and install then writes
+// none. Turn the plugin off, and the machine has no guard at all: doctor says so as a
+// failure with one fix, and install again writes install's own guard. The owner decided
+// both on 2026-10-24.
+test('doctor: a guard that left with the plugin fails, and install brings it back (#904)', async () => {
+  const sandbox = makeSandbox();
+  const file = join(sandbox.home, '.claude', 'settings.json');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true } }));
+  const hasGuard = (): boolean => {
+    const hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
+    return Array.isArray(hooks?.PreToolUse) && hooks.PreToolUse.length > 0;
+  };
+  const guardLine = async (): Promise<string | undefined> => (await sandbox.call(['doctor'])).stdout.split('\n').find((line) => line.includes('user-guard'));
+  // The plugin is on: install writes no guard of its own, and the plugin's guard counts.
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.ok(!hasGuard(), 'install wrote no guard beside the plugin');
+  assert.match(String(await guardLine()), /^ {2}ok {6}user-guard$/);
+  // The plugin goes away: no guard is left, and that is a failure with one fix.
+  writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': false } }));
+  const failed = await sandbox.call(['doctor']);
+  assert.match(failed.stdout, /^ {2}MISSING user-guard: no guard for Claude Code; run `(npx )?yokoten install`$/m);
+  assert.equal(failed.status, 1, 'a machine with no guard fails doctor');
+  const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { ok: boolean; findings: { id: string; what: string }[] };
+  assert.ok(!json.ok);
+  assert.ok(json.findings.some((found) => found.id === 'user-guard' && found.what === 'no guard for Claude Code'), 'the guard fails the run, as a finding');
+  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /no guard for Claude Code/, 'a session hears it too');
+  // Install again writes install's own guard, and doctor passes.
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.ok(hasGuard(), 'install wrote its own guard');
+  assert.match(String(await guardLine()), /^ {2}ok {6}user-guard$/);
+  assert.ok(!(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { findings: { id: string }[] }).findings.some((found) => found.id === 'user-guard'));
 });
 
 test('doctor: names the release channel this machine runs (#632)', async () => {
@@ -106,8 +140,12 @@ test('doctor: the plugin and install both on is a note that says to uninstall (#
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), enabledPlugins: { 'yokoten@yokoten': true } }));
   const out = (await sandbox.call(['doctor'])).stdout;
   assert.match(out, /^ {2}note {4}plugin-and-install: the yokoten plugin is on, and `yokoten install` put these here too: the SessionStart doctor and the command guard in ~\/\.claude\/settings\.json; the skills in ~\/\.claude\/skills and ~\/\.agents\/skills; the agents in ~\/\.claude\/agents; ~\/\.local\/share\/yokoten; remove the home copy with `yokoten uninstall`/m);
-  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the yokoten plugin is on, and `yokoten install` put these here too: .*Remove the home copy with `yokoten uninstall`/m);
+  // A session start takes the copies back instead of naming them (#935).
+  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.match(session, /^yokoten: cleaned \d+ files an older install left; the plugin brings them now$/m);
+  assert.doesNotMatch(session, /plugin is on, and/);
   // An older runtime from install, with the plugin on: remove it, never install again.
+  mkdirSync(join(sandbox.home, '.local/share/yokoten'), { recursive: true });
   writeFileSync(join(sandbox.home, '.local/share/yokoten/VERSION'), '0.0.1\n');
   assert.match((await sandbox.call(['doctor'])).stdout, /MISSING runtime: the installed runtime is 0\.0\.1, this yokoten is \S+; remove it with `yokoten uninstall`; the plugin brings its own/);
   // After uninstall the note is gone, and the plugin stands in for everything.
@@ -129,7 +167,106 @@ test('doctor: a skills-only copy alone is a note that names the duplicate (#540)
   writeFileSync(copy, skill);
   const out = (await sandbox.call(['doctor'])).stdout;
   assert.match(out, /^ {2}note {4}plugin-and-install: the yokoten plugin is on, and a skills-only copy is here too: the skills in ~\/\.agents\/skills; remove the home copy with `yokoten uninstall`; the plugin brings its own/m);
-  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a skills-only copy is here too/);
+  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.match(session, /^yokoten: cleaned 1 file an older install left; the plugin brings them now$/m);
+  assert.ok(!existsSync(copy), 'the session takes the skills-only copy back');
+});
+
+test('doctor --session: with the plugin on, takes back what an older install left (#935)', async () => {
+  const sandbox = makeSandbox();
+  const claude = join(sandbox.home, '.claude');
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  // v0.1.0's install put every skill and agent in the global folders.
+  const skills = readdirSync(join(ROOT, 'kit/user/skills'));
+  for (const name of skills) {
+    const text = readFileSync(join(ROOT, 'kit/user/skills', name, 'SKILL.md'), 'utf8');
+    writeManaged(join(claude, 'skills', name, 'SKILL.md'), text);
+    writeManaged(join(sandbox.home, '.agents', 'skills', name, 'SKILL.md'), text);
+  }
+  for (const file of readdirSync(join(ROOT, 'kit/user/agents'))) {
+    writeManaged(join(claude, 'agents', file), readFileSync(join(ROOT, 'kit/user/agents', file), 'utf8'));
+  }
+  // The user's edit to a skill stays, and so does their own hook.
+  const edited = join(claude, 'skills', 'dispatch', 'SKILL.md');
+  writeFileSync(edited, `${readFileSync(edited, 'utf8')}\nAsk the owner first.\n`);
+  const settingsFile = join(claude, 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] });
+  writeFileSync(settingsFile, JSON.stringify(settings));
+
+  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.match(session, /^yokoten: cleaned \d+ files an older install left; the plugin brings them now$/m);
+  assert.match(session, /^yokoten: kept your edit to skill dispatch: an older install left it$/m);
+  assert.match(readFileSync(edited, 'utf8'), /Ask the owner first/, 'the edited copy stays');
+  for (const name of skills.filter((name) => name !== 'dispatch')) {
+    assert.ok(!existsSync(join(claude, 'skills', name)), `~/.claude/skills/${name} is gone`);
+    assert.ok(!existsSync(join(sandbox.home, '.agents', 'skills', name)), `~/.agents/skills/${name} is gone`);
+  }
+  assert.ok(!existsSync(join(claude, 'agents', 'worker.md')), 'the agents are gone');
+  assert.ok(!existsSync(join(sandbox.home, '.local/share/yokoten')), 'the runtime is gone');
+  assert.ok(!existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher is gone');
+  const after = readFileSync(settingsFile, 'utf8');
+  assert.doesNotMatch(after, /share\/yokoten/, 'no hook points at the removed runtime');
+  assert.match(after, /my-own-hook/, "the user's own hook stays");
+  // It runs once: the next start finds nothing and says nothing.
+  const again = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.doesNotMatch(again, /cleaned|older install/, 'a second start is quiet');
+});
+
+// #935: the runtime install kept because it was the running copy goes at the next start,
+// since the plugin runs there. Another tool's hook still needs it, so it stays then.
+test('doctor --session: another agent tool keeps the runtime and the launcher (#935)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  writeFileSync(settingsFile, JSON.stringify({ ...JSON.parse(readFileSync(settingsFile, 'utf8')), enabledPlugins: { 'yokoten@yokoten': true } }));
+  mkdirSync(join(sandbox.home, '.codex'), { recursive: true });
+  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.match(session, /^yokoten: cleaned \d+ files an older install left; the plugin brings them now$/m);
+  assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays for Codex');
+  assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays with the runtime');
+  assert.ok(!existsSync(join(sandbox.home, '.claude/skills/yokoten')), 'the skills still go');
+});
+
+test("doctor --session: a user's own hook that runs the runtime keeps it (#935)", async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  for (const command of ['node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check', '"$HOME/.local/bin/yokoten" check', 'yokoten check', '$(yokoten check)', 'echo hi;yokoten check']) {
+    settings.hooks.Stop = [{ hooks: [{ type: 'command', command }] }];
+    writeFileSync(settingsFile, JSON.stringify(settings));
+    await sandbox.call(['doctor', '--session']);
+    assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), `the runtime stays while ${command} runs it`);
+    assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), `the launcher stays for ${command}`);
+  }
+});
+
+test("doctor --session: a hook that only looks like yokoten's lets the runtime go (#935)", async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'my-yokoten check; node ~/.local/share/yokoten-old/run.mjs' }] }];
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  await sandbox.call(['doctor', '--session']);
+  assert.ok(!existsSync(join(sandbox.home, '.local/share/yokoten')), 'nothing runs the runtime, so it goes');
+});
+
+test('doctor --session: without the plugin, an install stays as it is (#935)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const before = readFileSync(settingsFile, 'utf8');
+  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  assert.doesNotMatch(session, /cleaned|older install/);
+  assert.ok(existsSync(join(sandbox.home, '.claude/skills/yokoten/SKILL.md')), 'the entry skill stays');
+  assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays');
+  assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays');
+  assert.equal(readFileSync(settingsFile, 'utf8'), before, 'the hooks stay');
 });
 
 test('doctor: a home install and a project copy each get their own fix (#540)', async () => {

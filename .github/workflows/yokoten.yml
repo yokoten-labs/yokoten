@@ -109,8 +109,10 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
       # The time and the slowest tests go in the job summary. It fails far above the slowest run
       # seen: 180 s a shard, or 90 s on Node 24 on Linux, the fastest setup (#475). The one
-      # whole-suite macOS job gets 300 s: its slowest run seen took 191 s (record 0016).
-      - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 300' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
+      # whole-suite macOS job gets 400 s: it took 191 s once, then 419 to 510 s on 2026-10-24,
+      # all tests passing, so the suite fails only past 600 s with the room for a busy runner.
+      # The slow tests behind that growth are #943's second half (record 0016).
+      - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 400' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
   # Types are checked here and nowhere else: Node runs the .ts files without them.
   # Skipped on a docs-only pull request.
   typecheck:
