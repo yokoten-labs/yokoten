@@ -3,20 +3,9 @@
 
 # yokoten · 横展
 
-### AI が考える。yokoten は、考えることから実行までの一歩を守るプログラムです。
+### AI コーディングツールのための安全な番人。
 
-yokoten はプログラムです。AI ではありません。
-言葉でルールを曲げさせることはできません。
-同じコマンドは、毎回同じ答えになります。1 回のチェックは 100 ミリ秒未満で、費用はかかりません。
-どのルールにもテストがあります。
-
-すでに使っている AI のコーディングツールの中で動きます。
-ツールは、コマンドや編集の前に yokoten へ尋ねます。
-一度インストールすれば、ほかに覚えることはありません。
-ターミナルでも、デスクトップアプリでも、エディタでも動きます。Orca のように、多くのエージェントを動かすツールの下でも動きます。
-それらのツールの代わりにはなりません。
-
-いまの yokoten は、AI エージェントでも、チャットツールでも、チームのページでもありません。
+AI エージェントは一瞬で大きなミスをします。yokoten はその前に止めます。
 
 **[yokoten.app](https://yokoten.app/?from=github)** &nbsp;·&nbsp; [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) | [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) | [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) | 日本語
 
@@ -27,17 +16,24 @@ yokoten はプログラムです。AI ではありません。
 
 </div>
 
-## 何をするか
+- 🛡 **危険な操作を止めます**：force push、作業の削除、秘密の漏えい、あなた抜きのリリース。
+- 🔌 **いま使っているツールの中で動きます**：Claude Code、Codex、Copilot CLI、Muse Code など。
+- ⚙️ **最初から有効です。** 設定も、新しく覚えることもありません。
 
-yokoten は五つを守ります。あなたの作業、秘密、公開、実行するコード、そしてこの保護そのものです。
+## はじめる
 
-五つの保護は、どのプロジェクトでも最初から有効で、設定はいりません。番人は force push、hard reset、`.git` の削除、新しいタグ、パッケージの公開、リポジトリの公開、だれも読んでいないダウンロードをプログラムに実行させることを止めます。秘密、個人のメールアドレス、IP アドレスを加えるコミットも止めます。`yokoten init` をしていないプロジェクトでも同じです。コミットチェックの省略も止めます。
+[Node](https://nodejs.org/) 22.23.4 以降が必要です。プロジェクトで次を実行します。
 
-番人は目に見えません。何も入力しなくても働きます。
-人が打つコマンドはわずかです。例えば `yokoten install` と `yokoten doctor` です。
+```sh
+cd your-project
+npx yokoten
+```
 
-yokoten が止めたとき、コードを書かない人でも、その答えで動けます。
-止めたこと、理由、どうすればよいかを伝え、ガイドへのリンクを示します。
+これだけです。いつでももう一度実行できます。足りないものだけを入れます。
+
+## 見えるもの
+
+エージェントが危ないことをしようとすると、yokoten が止めて、代わりに何をすべきかを伝えます。
 
 ```
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
@@ -46,91 +42,81 @@ Do instead: If the owner asked for this, they start a new session with `YOKOTEN_
 More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
-## インストール
+<details>
+<summary><b>何を止めるか</b></summary>
 
-必要なのは [Node](https://nodejs.org/) 22.23.4 以降だけです（Node 24 は 24.22.1 以降、Node 26 は 26.12.1 以降）。他には何も要りません。
+yokoten は五つを守ります。あなたの作業、秘密、リリース、実行するコード、そして番人そのものです。五つの保護は、どのプロジェクトでも設定なしで最初から有効です。
 
-```sh
-cd your-project
-npx yokoten             # 一度だけ: yokoten を入れ、ルールを加え、次の一手を表示
-```
+- **作業**：force push、hard reset、`.git` の削除など、作業を失う操作。
+- **秘密**：鍵、個人のメールアドレス、IP アドレスを加えるコミット。
+- **リリース**：新しいタグ、パッケージの公開、リポジトリの公開。リリースの時期を決めるのはあなただけです。
+- **実行するコード**：だれも読んでいないダウンロードをプログラムに実行させること。
+- **番人そのもの**：コミットチェックの省略や、コミットチェックを切ること。
 
-これで始められます。どのプロジェクトでも `npx yokoten` をもう一度実行すると、足りないものだけを行います。一つずつ進めたい場合はこうです。
+</details>
 
-```sh
-npx yokoten install     # PC ごとに一度
-npx yokoten init        # プロジェクトごとに一度
-npx yokoten doctor      # 今いる関所と、次の一手
-```
+<details>
+<summary><b>しくみ</b></summary>
 
-Claude Code ではプラグインも使えます。`/plugin marketplace add yokoten-labs/yokoten` を実行し、続いて `/plugin install yokoten@yokoten` を実行します。プラグインと `npx` は、どちらか片方だけにしてください。[どのバージョンを入れるか](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)を選べます。Stable（既定）、Beta、Dev です。CI だけで使うときは、[GitHub Action として使えます](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)。コミットのチェックは、時刻が UTC であることを求めます。シェルの設定ファイルに `export TZ=UTC` を一度書いておいてください。
+yokoten は AI ではなくプログラムです。同じコマンドには毎回同じ答えを返します。約 100 ミリ秒で、費用はかかりません。AI ツールはコマンドや編集の前に yokoten に確認します。yokoten はコミットごとにも確認し、CI でも動くので、エージェントがいなくても悪い変更を止めます。
 
-`npx skills add yokoten-labs/yokoten` は、スキルだけをコピーします。`npx yokoten install` も実行してください。でないと、コマンドの番人も、セッションの doctor も入りません。
+ターミナル、デスクトップアプリ、エディタで動きます。Orca のように多くのエージェントを動かすツールの下でも使えます。それらのツールを置き換えるものではありません。
 
-## 見えるもの
+</details>
 
-エージェントが force push を試すと、yokoten が止めます。理由と直し方も示します。そのあと `doctor` が、次の一手を一つ挙げます。
-
-<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="ターミナル。エージェントが git push --force origin main を実行すると、yokoten のフックがそれを止め、何が起きたか、なぜ危険か、直し方（--force-with-lease を使う）を示します。続いて yokoten doctor が 5 段階中の第 1 段階にいることを示し、次の一手としてテストの追加を挙げます。">
-
-## 一つのリポジトリで複数の AI セッション
-
-v0.1.1 の新機能です。複数の AI セッションが同時に働くと、変更がぶつかることがあります。
+<details>
+<summary><b>一つのリポジトリで複数の AI セッション</b>（v0.1.1 の新機能）</summary>
 
 - `yokoten conflicts` は、同じファイルに触れる開いた pull request と、先にマージするものを示します。
 - ファイルを移動または削除する変更を先に入れます。同じファイルを移動する別のコミットは待ちます。
-- 別の開いた変更が移動中のファイルを編集しようとすると、番人が止め、待つべき変更の名前を示します。
+- 別の開いた変更が移動中のファイルを編集しようとすると、番人が止めます。
 
-## この次
+</details>
 
-チーム用のコマンドは v0.1.2 を予定しています（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
-コマンドラインから、エージェント、タスク、マシンを追加、一覧、変更、削除できるようになります。
-チームのページはプレビューです。
-0.1 のリリースには入っていません。
+<details>
+<summary><b>対応しているもの</b></summary>
 
-yokoten はプルリクエストの前に動き、[PR レビューボット](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#review-bots-you-will-see-on-pull-requests) と並んで働きます。
+**エージェント。** Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、OpenCode はエンドツーエンドで検証済みです。Gemini CLI はコードにありますが、エンドツーエンドではまだ実行していません。それぞれの確かめ方は [エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）にあります。
 
-## 対応しているもの
+**言語。** どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
 
-**エージェント。** yokoten は九つの AI コーディングエージェントを同じルールで守ります。Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI、OpenCode です。そのうち八つはエンドツーエンドで検証済みです。Gemini CLI はコードにありますが、エンドツーエンドではまだ実行していません。
-[エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)に、それぞれの試し方が書いてあります。
+</details>
 
-**言語。** プロジェクトの言語は問いません。番人、個人情報と秘密情報のチェック、CI、issue とプルリクエストのチェックは、どの言語でも同じように動きます。`doctor` は、JavaScript と TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、そして `make test` があるプロジェクトについて、テストのコマンドを見つけます。Go、Python、Rust、.NET、Ruby、PHP では、`init` がテストを走らせる CI のジョブを書きます。
+<details>
+<summary><b>ほかのインストール方法</b></summary>
 
-## なぜ作ったのか
+一つずつ進める場合：
 
-良いチームでは、どの変更にも理由があり、テストがあり、レビューを通っています。こうした習慣は、何年もかけて身につきます。たいていは、何かを壊してからです。yokoten があれば、初心者でも初日から実践できます。一度に一つの関所です。最悪のミスの前に、番人が AI エージェントを止めます。
+```sh
+npx yokoten install     # コンピュータごとに一度
+npx yokoten init        # プロジェクトごとに一度
+npx yokoten doctor      # いまどこにいて、次に何をするか
+```
 
-学んだ教訓は、一つのプロジェクトに閉じ込めません。*横展*（横展開、よこてんかい）はトヨタの工場で生まれた言葉で、あるラインで見つけた対策をすべてのラインに広げることを指します。一つのプロジェクトが教訓を得たら、yokoten はそのチェックを他のすべてのプロジェクトに届けます。
+- **Claude Code プラグイン**：`/plugin marketplace add yokoten-labs/yokoten` のあと `/plugin install yokoten@yokoten`。プラグインか `npx` のどちらか一つを使います。
+- **バージョン**：Stable（既定）、Beta、Dev。[どのバージョンを入れるか](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英語）を見てください。
+- **CI だけで使う**：[GitHub Action として使う](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英語）。
+- **Node**：22.23.4 以降。Node 24 なら 24.22.1 以降、Node 26 なら 26.12.1 以降。
+- **UTC**：コミットチェックは UTC のコミット時刻を求めます。シェルの設定ファイルに `export TZ=UTC` を一度だけ加えます。
+- `npx skills add yokoten-labs/yokoten` はスキルだけをコピーします。`npx yokoten install` も実行しないと、何も守られません。
+
+</details>
 
 ## これからの道
 
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/road-dark.svg">
-  <img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/road-light.svg" width="100%" alt="一本の道が山を登り、現在、ハッカソン、その次という三つの駅を通り過ぎます。頂上近くで、他のプロジェクトからの道が合流します。頂上には夢を記した旗が立っています。誰でも、良いチームのやり方でソフトウェアを作れます。">
-</picture>
-</p>
-
-夢は、誰でも良いチームのやり方でソフトウェアを作れることです。
-
-| | 段階 | いまどこか |
+| | いま | 次 |
 |---|---|---|
-| 1 | **番人**：危険な操作の前に、エージェントを止めます | ✅ 完了 |
-| 2 | **道案内**：`doctor` が初心者を五つの関所で案内します。エージェントが、古いプロジェクトへの入れ方を下書きします | 🚧 いま |
-| 3 | **チームのコマンド**：コマンドラインからエージェント、タスク、マシンを追加、一覧、変更、削除します | 🚧 v0.1.2 を予定しています（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。チームのページはプレビューで、0.1 のリリースには入りません |
-| 4 | **開発サイクル全体**：短い仕様から、開発、テスト、レビュー、リリース、保守まで | あとで |
-| 5 | **横展**：一つのプロジェクトの教訓がチェックになり、そのチェックがすべてのプロジェクトに広がります | 目標 |
+| ✅ | **v0.1.1**：五つの保護をすべての人に；一つのリポジトリで複数の AI セッション | |
+| 🚧 | | **v0.1.2**：コマンドラインでエージェントのチームを動かす（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)） |
+| 🌱 | | **その先**：一つのプロジェクトが学んだことを、すべてのプロジェクトのチェックにする |
 
-今日の作業は、[issue](https://github.com/yokoten-labs/yokoten/issues) と [マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) にあります。
+*横展*（yokoten）はトヨタの工場の言葉です。一つのラインで見つけた直しを、すべてのラインに広げます。[マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) も見てください。
 
 ## もっと知る
 
-- **[ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md)**：12 のルール、すべてのコマンド、仕組み、そしてできないことです。
-- **[標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)**：各 agent が書き、yokoten が読む形。バージョン 1。
-- **[決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)**：なぜこう作ったのか。
-- **[変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)**、**[コントリビュート](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)**、**[セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)**、**[サーバーの設定](https://github.com/yokoten-labs/yokoten/blob/main/docs/server.md)**。
+- **[ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md)**：すべてのルールとコマンド、そして yokoten にできないこと。
+- **[標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)**、**[決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)**、**[変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)**、**[貢献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)**、**[セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)**（英語）。
 
 ---
 
-<p align="center"><sub>MIT · <a href="https://coolwhite.us/">coolwhite</a> と AI エージェントのチームが作りました。工場の現場から学んだ教訓とともに。</sub></p>
+<p align="center"><sub>MIT · <a href="https://coolwhite.us/">coolwhite</a> と AI エージェントのチームが作っています。</sub></p>
