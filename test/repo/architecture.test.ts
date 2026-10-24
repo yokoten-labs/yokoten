@@ -934,6 +934,28 @@ test('docs: README images and links use full URLs, so the npm page can show them
   assert.deepEqual(found, [], found.join('\n'));
 });
 
+/** The lines of `text` outside code fences that hold an HTML tag. A comment is not a tag. */
+function htmlTagLines(text: string): number[] {
+  const lines: number[] = [];
+  let isFenced = false;
+  for (const [index, line] of text.split('\n').entries()) {
+    if (line.startsWith('```')) isFenced = !isFenced;
+    else if (!isFenced && /<\/?[A-Za-z][^>]*>/.test(line.replace(/`[^`]*`/g, ''))) lines.push(index + 1);
+  }
+  return lines;
+}
+
+test('docs: the READMEs are plain Markdown, so npm and GitHub show the same page (#832)', () => {
+  // npm, GitHub and agents render HTML differently, and npm showed a broken banner for
+  // v0.1.0. Plain Markdown reads the same everywhere; the website carries the design.
+  assert.deepEqual(htmlTagLines('# a\n<div align="center">\n`<b>` is code\n```\n<b>\n```\n<!-- note -->'), [2]);
+  const found: string[] = [];
+  for (const file of ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md']) {
+    for (const line of htmlTagLines(readFileSync(join(ROOT, file), 'utf8'))) found.push(`${file}:${line}`);
+  }
+  assert.deepEqual(found, [], `use Markdown, not HTML, at: ${found.join(', ')}`);
+});
+
 // The guide's Commands table is typed by hand; COMMANDS in src/run/cli.ts is what the
 // parser and --help read (#219). Each command needs a row, and each option must show in
 // one of its rows or in the paragraph right after the table. A command with no row, like

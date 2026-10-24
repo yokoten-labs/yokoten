@@ -1,3 +1,3 @@
 Changed
 
-The README is short now, in all four languages. The top says what yokoten is in one line, then three points and one command to start. What it stops, how it works, collisions between AI sessions, the agents it works with, and other ways to install are folded under headings you open. "On the road" is a short table: v0.1.1 now, v0.1.2 next. The sample refusal is the guard's real output (#832).
+The README is short and plain Markdown now, in all four languages, so npm, GitHub and agents show the same page. The top says what yokoten is in one line, then three points and one command to start. Below are what it stops, how it works, the agents it works with, and other ways to install. The sample refusal is the guard's real output. A test keeps HTML out of the READMEs (#832).
