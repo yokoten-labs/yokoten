@@ -1150,4 +1150,19 @@ test('doctor: a CODEOWNERS line that matches no file is a finding (#667)', () =>
   assert.match(found?.what ?? '', /protects nothing; point it at the new path/);
 });
 
+test('doctor: a shell that is not UTC gets the line for that shell, once, at the end (#932)', async () => {
+  const sandbox = makeSandbox();
+  const extra = { TZ: 'America/New_York', SHELL: '/usr/bin/fish' };
+  const full = (await sandbox.call(['doctor'], { extra })).stdout.trimEnd().split('\n');
+  const last = full.at(-1) ?? '';
+  assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
+  assert.match(last, /`set -gx TZ UTC`/);
+  assert.match(last, /~\/\.config\/fish\/config\.fish/);
+  assert.equal(full.filter((line) => line.includes('time zone is not UTC')).length, 1, 'said once');
+  // A session never needs it: init already sets TZ=UTC for agent sessions.
+  assert.doesNotMatch((await sandbox.call(['doctor', '--session'], { extra })).stdout, /time zone is not UTC/);
+  // A shell already in UTC hears nothing.
+  assert.doesNotMatch((await sandbox.call(['doctor'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
+});
+
 // #500: after a fresh install, every line that names a command uses one way to run yokoten.
