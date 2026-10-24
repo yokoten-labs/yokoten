@@ -22,6 +22,12 @@ test('release: tag pushes, release commands and publishing are the owner\'s', ()
     'git push origin v1.2.0',
     'git push origin refs/tags/v1',
     'git push origin HEAD:refs/tags/x',
+    // git reads a destination that does not start with `refs/` as the remote ref the name
+    // is unambiguous for, so `:v1` deletes a tag and `feature:v1` updates one (#865).
+    'git push origin :v1',
+    'git push origin feature:v1',
+    'git push origin feature:v1.2.0',
+    'git push origin feature:refs/tags/v1',
     'git -c push.followTags=true push',
     'git -C ../other push --tags',
     "bash -c 'git push --tags'",
@@ -33,6 +39,10 @@ test('release: tag pushes, release commands and publishing are the owner\'s', ()
     'pnpm publish --access public',
     'yarn npm publish',
   ]) blocked(command);
+  // A destination that names a branch stays a branch push.
+  allowed('git push origin feature:main');
+  allowed('git push origin :feature');
+  allowed('git push origin main');
 });
 
 test('release: making a tag is creating a release, so the owner does it (#812)', () => {
@@ -164,6 +174,18 @@ test('redteam #829: a tag made by git update-ref is refused, and so is pushing i
   assert.equal((await askHook(sandbox, 'git push origin feature-v2')).status, 0, 'a branch push still passes');
 });
 
+test('redteam #865: the tag name handed back by update-ref is quoted (#847)', () => {
+  // The line must be safe to paste: an unquoted name would run as a shell command.
+  for (const [ref, quoted] of [
+    ['refs/tags/rel-1', 'rel-1'],
+    ['refs/tags/v1$(id)', "'v1$(id)'"],
+    ["'refs/tags/v1 with space'", "'v1 with space'"],
+  ] as const) {
+    const fix = checkCommand(`git update-ref ${ref} HEAD`, { cwd: process.cwd(), env: {} })?.fix ?? '';
+    assert.ok(fix.includes(`run \`git tag ${quoted}\` themselves`), `${ref}: ${fix}`);
+  }
+});
+
 test('redteam #829: another code host publishes a release', async () => {
   await refusesAll(['glab release create v1', 'tea release create --tag v1']);
 });
@@ -180,6 +202,22 @@ test('redteam #865: a query string does not hide a publishing call to the host A
   for (const command of ['gh api repos/o/r/releases?per_page=5', 'gh api repos/o/r/releases']) {
     assert.equal((await askHook(sandbox, command)).status, 0, `the hook refused a read: ${command}`);
   }
+});
+
+test('redteam #865: a percent-encoded route does not hide a publishing call', async () => {
+  // GitHub reads `%2F` as a slash and `%72` as `r`, so these are the same routes as the
+  // plain spellings above (#865).
+  await refusesAll([
+    'gh api -X POST repos%2Fo%2Fr%2Freleases -f tag_name=v1',
+    'gh api -X POST user%2Frepos -f name=x -f private=false',
+    'gh api -X POST repos/o/r/%72eleases -f tag_name=v1',
+    'gh api -X POST repos/o/r/./releases -f tag_name=v1',
+    'gh api -X POST repos/o/x/../r/releases -f tag_name=v1',
+    'gh api -X POST //repos//o//r//releases -f tag_name=v1',
+  ]);
+  // A read stays a read when it is encoded.
+  const sandbox = makeSandbox();
+  assert.equal((await askHook(sandbox, 'gh api repos%2Fo%2Fr%2Freleases?per_page=5')).status, 0, 'the hook refused a read');
 });
 
 test('redteam #865: the host API routes that create a repo or change one are refused', async () => {

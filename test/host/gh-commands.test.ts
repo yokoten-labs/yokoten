@@ -111,9 +111,15 @@ test('publishing routes: a query string is part of the endpoint, not a body fiel
     'gh api -X POST repos/o/r/releases?draft=false',
     'gh api -X PATCH repos/o/r?x=1 -f visibility=public',
     'gh api -X DELETE repos/o/r/git/refs/tags/rel-1?x=1',
+    // GitHub reads one `%` escape, as does git's route for removing a run, so an encoded
+    // route is the same route (#865).
+    'gh api -X POST repos%2Fo%2Fr%2Freleases -f tag_name=v1',
+    'gh api -X POST user%2Frepos -f name=x -f private=false',
+    'gh api -X POST repos/o/r/%72eleases -f tag_name=v1',
+    'gh api -X POST repos/%6F/r/releases -f tag_name=v1',
   ]) assert.equal(publishes(command), true, command);
   // A read with a query string is still a read, and a field is still a field.
-  for (const command of ['gh api repos/o/r/releases?per_page=5', 'gh api -X GET repos/o/r/releases?per_page=5', 'gh api -X POST repos/o/r/issues -f labels=bug']) {
+  for (const command of ['gh api repos/o/r/releases?per_page=5', 'gh api -X GET repos/o/r/releases?per_page=5', 'gh api -X POST repos/o/r/issues -f labels=bug', 'gh api repos%2Fo%2Fr%2Freleases?per_page=5']) {
     assert.equal(publishes(command), false, command);
   }
 });

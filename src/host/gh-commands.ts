@@ -372,12 +372,11 @@ function apiEndpoint(args: string[], method: string | undefined): string {
 export function isPublishingApiCall(args: string[]): boolean {
   const method = apiMethod(args);
   const writes = /^(POST|PUT|PATCH|DELETE)$/i.test(method ?? '') || args.some(isApiBody);
-  // The route is the path: `repos/o/r/releases?draft=false` publishes like `repos/o/r/releases`.
-  const endpoint = apiEndpoint(args, method).replace(/[?#].*$/s, '');
-  // The GraphQL endpoint is written `graphql`, `/graphql` or as a full URL. A leading
-  // slash or a host must not hide a mutation from the check (#865).
-  const route = endpoint.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]+/i, '').replace(/^\/+/, '');
-  if (route.toLowerCase() === 'graphql') {
+  // The route is the path GitHub reads, so `repos/o/r/releases?draft=false` publishes like
+  // `repos/o/r/releases`, and one `%` escape is read: `repos%2Fo%2Fr%2Freleases` is the
+  // same route (#865). A leading slash or a host must not hide a mutation from the check.
+  const endpoint = plainEndpoint(apiEndpoint(args, method));
+  if (endpoint.toLowerCase() === 'graphql') {
     const query = graphqlQuery(args);
     if (query === null || /\bmutation\b/i.test(query)) return true;
   } else if (writes && isPublishingRoute(endpoint, method, args)) {

@@ -251,13 +251,28 @@ function pushDryRun(options: string[]): boolean {
   return isDryRun;
 }
 
-/** Whether a ref name is a tag: a tag ref, a `v1` name, or a local tag (#829). */
+/**
+ * Whether one side of a refspec names a tag on its own: a tag ref, a `v1` name, or a local
+ * tag. A name under another `refs/` folder is not a tag, and is not read from disk (#865).
+ */
+function isTagName(ref: string, directory: string | null, env: Env): boolean {
+  if (ref === '') return false;
+  if (ref.startsWith('refs/')) return ref.startsWith('refs/tags/');
+  if (/^v\d/.test(ref)) return true;
+  return directory !== null && readGit(directory, ['rev-parse', '--verify', '--quiet', `refs/tags/${ref}`], env) !== null;
+}
+
+/**
+ * Whether a refspec names a tag: a tag ref, a `v1` name, or a local tag (#829). Both sides
+ * count: git reads a destination that does not start with `refs/` as the remote ref the name
+ * is unambiguous for, so `git push origin :v1` deletes a tag and `git push origin feature:v1`
+ * updates one (#865).
+ */
 function isTagRef(refspec: string, directory: string | null, env: Env): boolean {
   const [source, destination] = refspec.replace(/^\+/, '').split(':');
-  if (destination !== undefined && destination.startsWith('refs/tags/')) return true;
-  if (source === undefined || source === '') return false;
-  if (source.startsWith('refs/tags/') || /^v\d/.test(source)) return true;
-  return directory !== null && readGit(directory, ['rev-parse', '--verify', '--quiet', `refs/tags/${source}`], env) !== null;
+  if (destination !== undefined && isTagName(destination, directory, env)) return true;
+  if (source === undefined) return false;
+  return isTagName(source, directory, env);
 }
 
 /**
@@ -378,7 +393,7 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
     // is already refused as `move-default-branch`, since it can write any ref (#847).
     const tag = tagToUpdate(updateArgs);
     if (tag !== null && !env.YOKOTEN_RELEASE_APPROVAL) {
-      return finding('release', `creating the tag ${tag}`, `if the owner asked for this, they run \`git tag ${tag}\` themselves; do not look for another way`);
+      return finding('release', `creating the tag ${tag}`, `if the owner asked for this, they run \`git tag ${quoteShellWord(tag)}\` themselves; do not look for another way`);
     }
   }
   const skip = args.includes('--no-verify') ? '--no-verify' : sub === 'commit' ? args.find((a) => /^-[a-z]*n[a-z]*$/i.test(a)) : undefined;
