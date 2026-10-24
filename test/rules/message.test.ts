@@ -395,7 +395,7 @@ test('refusal: title, why, do instead and more, the same for every rule (#707)',
   const text = formatRefusal(refused);
   assert.equal(
     text,
-    `yokoten stopped this: git push --tags pushes tags [release]\nWhy: Only the owner decides when to release.\nDo instead: Ask the owner to start a new session.\nMore: ${DOCS_URL}#the-core-rules`,
+    `yokoten stopped this: git push --tags pushes tags [release]\nWhy: Only the owner decides when to release.\nDo instead: Ask the owner to start a new session.\nMore: ${DOCS_URL}#how-to-release`,
   );
   for (const id of Object.keys(RULES) as (keyof typeof RULES)[]) {
     const link = (RULES[id] as Rule).docs ?? DOCS_URL;
@@ -410,7 +410,7 @@ test('refusal: title, why, do instead and more, the same for every rule (#707)',
   assert.equal(parsed?.title, 'yokoten stopped this: git push --tags pushes tags [release]');
   assert.equal(parsed?.why, 'Only the owner decides when to release.');
   assert.equal(parsed?.fix, 'Ask the owner to start a new session.');
-  assert.equal(parsed?.docs, `${DOCS_URL}#the-core-rules`);
+  assert.equal(parsed?.docs, `${DOCS_URL}#how-to-release`);
   assert.equal(parseRefusal('yokoten: an older form'), null);
 });
 

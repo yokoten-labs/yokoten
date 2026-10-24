@@ -51,9 +51,9 @@ Claude Code ではプラグインも使えます。`/plugin marketplace add yoko
 
 ## 見えるもの
 
-エージェントが force push を試すと、yokoten が止めます。理由と直し方も示します。そのあと `doctor` が、次の一手を一つ挙げます。
+エージェントがリリースのタグを push しようとすると、yokoten が止めます。理由と、人がどうすればよいかも示します。そのあと `doctor` が、次の一手を一つ挙げます。
 
-<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="ターミナル。エージェントが git push --force origin main を実行すると、yokoten のフックがそれを止め、何が起きたか、なぜ危険か、直し方（--force-with-lease を使う）を示します。続いて yokoten doctor が 5 段階中の第 1 段階にいることを示し、次の一手としてテストの追加を挙げます。">
+<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="1036" alt="ターミナル。エージェントが git push --tags origin を実行すると、yokoten のフックがそれを止め、何が起きたか、なぜか、そしてエージェントが止まって主人に伝え、主人が How to release の手順でリリースすることを示します。続いて yokoten doctor が 5 段階中の第 1 段階にいることを示し、次の一手としてテストの追加を挙げます。">
 
 ## エージェントのチームを動かす
 

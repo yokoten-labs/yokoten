@@ -11,7 +11,6 @@
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { releaseFix } from '../../../rules/guards/index.ts';
 import { homeIn } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
@@ -163,8 +162,6 @@ export function removeUserHooks(env: Env): 'removed' | 'not there' | null {
 /** The names this runtime's agent gets on top of the shared ones (#613). Antigravity signs in through its app, so it needs no login name. */
 export const AGENT_ENV: RuntimeEnv = { login: [], config: [] };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'antigravity',
@@ -175,7 +172,6 @@ export const ADAPTER: AgentAdapter = {
   capabilities: { canRewrite: false, hasStopHook: false, needsTrust: false, failsOpen: false, passesRole: true },
   readToolCall,
   formatDenial,
-  releaseFix: releaseFix(approve('agy')),
   agentEnv: AGENT_ENV,
   call: (command) => ({ workspacePaths: ['/repo'], toolCall: { name: 'run_command', args: { CommandLine: command, Cwd: '/repo' } } }),
 };

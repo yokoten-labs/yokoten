@@ -21,7 +21,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { releaseFix } from '../../../rules/guards/index.ts';
 import { docsLink } from '../../../rules/message.ts';
 import { homeIn, homeOf } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
@@ -152,8 +151,6 @@ export function initLines(files: string[], platform: string = process.platform):
 /** The names this runtime's agent gets on top of the shared ones (#613). DeepSeek Harness takes a DeepSeek API key. */
 export const AGENT_ENV: RuntimeEnv = { login: ['DEEPSEEK_API_KEY'], config: ['DSH_HOME'] };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'deepseek-harness',
@@ -163,7 +160,6 @@ export const ADAPTER: AgentAdapter = {
   blocking: 'exit 2, the reason on stderr',
   capabilities: { canRewrite: false, hasStopHook: false, needsTrust: false, failsOpen: true, passesRole: true },
   readToolCall,
-  releaseFix: releaseFix(approve('dsh tui --patch .dsh/yokoten.patch.yml')),
   agentEnv: AGENT_ENV,
   call: (command) => ({ cwd: '/repo', tool_name: 'Bash', tool_input: { command } }),
 };

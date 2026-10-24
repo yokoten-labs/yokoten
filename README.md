@@ -67,10 +67,10 @@ too, or you get no command guard and no session doctor.
 
 ## What you see
 
-An agent tries a force push. yokoten stops it, says why, and gives the fix. Then
-`doctor` names the one next step:
+An agent tries to push a release tag. yokoten stops it, says why, and tells the person what
+to do. Then `doctor` names the one next step:
 
-<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="A terminal. An agent runs git push --force origin main. The yokoten hook blocks it and says what happened, why, and the fix: use --force-with-lease. Then yokoten doctor shows stage 1 of 5 and names the next step: add tests.">
+<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="1036" alt="A terminal. An agent runs git push --tags origin. The yokoten hook blocks it and says what happened, why, and that the agent stops and tells the owner, who releases with the steps in How to release. Then yokoten doctor shows stage 1 of 5 and names the next step: add tests.">
 
 ## Run a team of agents
 
