@@ -112,3 +112,36 @@ test('check --staged: a split (delete plus adds) waits too (#910)', async () => 
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /PR #20 moves src\/a\.ts too/);
 });
+
+test('check --staged: a change in place to a file another change moves waits, from any tool (#911)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('src/a.ts', 'export const a = 1;\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  sandbox.git('checkout', '-qb', 'feat/edit');
+  // A shell redirect never names the file to the guard; the commit still carries it.
+  sandbox.write('src/a.ts', 'export const a = 2;\n');
+  sandbox.git('add', '.');
+  const mover = change('pr:12', { branch: 'feat/move', moves: ['src/a.ts'] });
+  writeMap(sandbox, [mover]);
+  const json = await sandbox.call(['check', '--staged', '--json']);
+  assert.equal(json.status, 1, json.stderr);
+  assert.equal(JSON.parse(json.stdout).findings[0].id, 'file-lease');
+  // A draft moves nothing yet, and a map dated ahead of this clock is no map.
+  writeMap(sandbox, [{ ...mover, draft: true }]);
+  assert.equal((await sandbox.call(['check', '--staged'])).status, 0, 'a draft holds no lease');
+  writeMap(sandbox, [mover], { builtAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() });
+  assert.equal((await sandbox.call(['check', '--staged'])).status, 0, 'a map from the future allows');
+});
+
+test('check --staged: a detached HEAD (a rebase) is not stopped by the move window (#910)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('src/a.ts', 'export const a = 1;\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  sandbox.git('checkout', '-q', '--detach');
+  sandbox.git('mv', 'src/a.ts', 'src/b.ts');
+  writeMap(sandbox, [change('pr:12', { branch: 'feat/move', moves: ['src/a.ts'] })]);
+  const result = await sandbox.call(['check', '--staged']);
+  assert.equal(result.status, 0, result.stderr);
+});

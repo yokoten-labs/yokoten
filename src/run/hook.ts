@@ -1219,7 +1219,8 @@ function leaseMapAt(folder: string, now: number): LeaseMap | null {
     leaseMapCache = { file, mtimeMs: stats.mtimeMs, size: stats.size, ...readLeaseMap(file) };
   }
   const { map, builtAt } = leaseMapCache;
-  if (map === null || !Number.isFinite(builtAt) || now - builtAt > LEASE_MAX_AGE_MS) return null;
+  // A map dated ahead of this clock is no map either, as `conflicts` and doctor read it.
+  if (map === null || !Number.isFinite(builtAt) || now - builtAt > LEASE_MAX_AGE_MS || builtAt - now > 60_000) return null;
   return map;
 }
 
@@ -1258,6 +1259,9 @@ function leaseBranch(folder: string): string {
 function leaseFinding(path: string, folder: string, now: number, branches: Map<string, string>): Finding | null {
   let branch = branches.get(folder);
   if (branch === undefined) branches.set(folder, (branch = leaseBranch(folder)));
+  // A detached HEAD is a rebase or a bisect: no branch to compare, so the lease lets it pass,
+  // as a missing map does. The commit check still reads what it changes.
+  if (branch === '') return null;
   const lease = leaseFor(path, branch, leaseMapAt(folder, now));
   if (lease === null) return null;
   const what = `${lease.label} is moving ${path}. An edit here now will conflict when it merges`;

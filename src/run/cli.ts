@@ -611,7 +611,7 @@ export const COMMANDS: Command[] = [
     ],
     options: [
       { name: '--json', text: 'the whole map as data on stdout, for an agent or a script' },
-      { name: '--rebuild', value: 'id', text: 'offer to rebuild one change in a fresh worktree instead of merging it' },
+      { name: '--rebuild', value: 'id', text: 'print a prompt that rebuilds one change on the current main instead of merging it' },
     ],
     example: 'yokoten conflicts',
   },
