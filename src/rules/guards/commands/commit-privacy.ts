@@ -79,6 +79,9 @@ function parsePatchAdditions(patch: string): AddedBlock[] {
 }
 
 function readCommitChange(words: string[], folder: string | null, env: Env): CommitChange | null {
+  // Only a commit pays for this read: a command with no `commit` word is never one, so the
+  // word loop below is skipped and a long command keeps its budget for the other rules.
+  if (!words.includes('commit')) return null;
   const program = findPrograms(words).find(isGit);
   if (program === undefined) return null;
   const { sub, args, dir } = gitParts(withoutShellRedirects(words, words.indexOf(program) + 1), folder);
