@@ -381,6 +381,15 @@ function isNamesFromFile(name: string): boolean {
   return '--pathspec-from-file'.startsWith(name) && !'--pathspec-file-nul'.startsWith(name);
 }
 
+/**
+ * True when a long option takes the next word as its value. Git accepts a unique prefix,
+ * so `--mess x` is `--message x`: read as a path, `x` would hide the staged change (#824).
+ * A prefix of two of these is ambiguous, and git refuses it, so skipping a word is safe.
+ */
+function takesValue(name: string): boolean {
+  return [...COMMIT_VALUES].some((option) => name.length > 2 && option.startsWith(name));
+}
+
 /** What a `git commit` asks for: the paths it names, and whether -a, -i or a pathspec file is set. */
 export type CommitOptions = { named: string[]; isAll: boolean; isInclude: boolean; namesFromFile: boolean };
 
@@ -406,7 +415,7 @@ export function parseCommitOptions(args: string[]): CommitOptions {
       if (isNamesFromFile(name)) {
         namesFromFile = true;
         if (word === name) index++;
-      } else if (COMMIT_VALUES.has(word)) index++;
+      } else if (!word.includes('=') && takesValue(word)) index++;
     } else if (word.startsWith('-') && word !== '-') {
       for (const [at, letter] of [...word].entries()) {
         if (at === 0) continue;

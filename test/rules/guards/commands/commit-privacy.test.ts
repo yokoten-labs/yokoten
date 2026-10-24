@@ -81,6 +81,12 @@ test('commit: a change the guard cannot read is refused, not let through (#824)'
     const command = option.includes('=') ? `git commit -m x ${option}` : `git commit -m x ${option} names.txt`;
     assert.equal(run(command)?.id, 'unreadable-command', command);
   }
+  // A shortened option that takes a value takes the next word too: `x` is the message,
+  // not a path, so the staged secret is still found (#824 review).
+  sandbox.git('add', 'config.ts');
+  for (const command of ['git commit --mess x', 'git commit --fil msg.txt', 'git commit --auth "a <a@example.com>" -m x']) {
+    assert.equal(run(command)?.id, 'secret', command);
+  }
   // A staged change git itself cannot read is refused, never allowed.
   writeFileSync(join(sandbox.repo, '.git', 'index'), 'not an index');
   const broken = run('git commit -m x');
