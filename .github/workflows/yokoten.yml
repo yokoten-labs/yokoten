@@ -90,7 +90,10 @@ jobs:
         # One macOS run: paths there go through symlinks (/var), which hid a real bug (#1).
         include: ${{ fromJSON(needs.changes.outputs.docs_only == 'true' && '[]' || github.event_name == 'pull_request' && '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":1}]' || '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":2,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":3,"of":3}]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # 15 minutes: the whole-suite macOS job's time budget fails past 600 s of tests, and the job
+    # must outlive that, or a slow suite is killed with no list of the slowest tests (#943). The
+    # Linux shards take about 3 minutes; their own budget still fails them past 270 s or less.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
