@@ -6,7 +6,7 @@ AI agents can make a big mistake in a second. yokoten stops it before it happens
 
 - **Stops dangerous actions**: a force push, deleting your work, leaking a secret, releasing without you.
 - **Works inside the tools you already use**: Claude Code, Codex, Copilot CLI, Muse Code and more.
-- **On by default.** No setup, nothing new to learn.
+- **On by default.** One command to start, nothing new to learn.
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -34,7 +34,7 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-r
 
 ## What it stops
 
-yokoten protects five things. All five are on in every project, with no setup.
+yokoten protects five things. All five are on in every project after `npx yokoten`, with nothing to set.
 
 - **Your work**: a force push, a hard reset, deleting `.git`, and other ways to lose work.
 - **Your secrets**: a commit that adds a key, a private email or an IP address.
@@ -44,8 +44,8 @@ yokoten protects five things. All five are on in every project, with no setup.
 
 ## How it works
 
-yokoten is a program, not an AI. The same command always gets the same answer, in about
-100 ms, at no cost. Before each command or edit, your AI tool asks yokoten. yokoten also
+yokoten is a program, not an AI. The same command always gets the same answer, in under
+a fifth of a second, at no cost. Before each command or edit, your AI tool asks yokoten. yokoten also
 checks each commit and runs in CI, so a bad change is stopped even when no agent is involved.
 
 New in v0.1.1: when several AI sessions work in one repo, `yokoten conflicts` shows which
@@ -54,7 +54,7 @@ to a file that another open change is moving.
 
 ## Works with
 
-- **Agents**: Claude Code, GitHub Copilot CLI, Antigravity CLI, Codex CLI, Muse Code, DeepSeek Harness, Grok CLI and OpenCode are verified end to end. Gemini CLI is in the code but not run end to end. See the [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with).
+- **Agents**: Claude Code, GitHub Copilot CLI, Antigravity CLI, Codex CLI, Muse Code, DeepSeek Harness, Grok CLI and OpenCode are verified end to end. Gemini CLI is in the code but not run end to end. Codex CLI, Copilot CLI, Muse Code and Grok CLI run the guard only after you trust the folder: run `npx yokoten trust` once. See the [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with).
 - **Languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
 
 ## More ways to install

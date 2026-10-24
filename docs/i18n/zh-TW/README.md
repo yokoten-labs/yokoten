@@ -7,7 +7,7 @@ AI agent 一秒鐘就能犯大錯。yokoten 在它動手之前攔下。
 
 - **攔下危險操作**：強制 push、刪掉你的工作、洩露金鑰、沒經過你就發布。
 - **在你已經在用的工具裡運作**：Claude Code、Codex、Copilot CLI、Muse Code 等等。
-- **預設開啟。** 不用設定，也不用學新東西。
+- **預設開啟。** 一條指令開始，不用學新東西。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · 繁體中文 · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -35,7 +35,7 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-r
 
 ## 它攔下什麼
 
-yokoten 保護五樣東西。五項保護在每個專案裡都預設開啟，不用設定。
+yokoten 保護五樣東西。跑過 `npx yokoten` 後，五項保護在每個專案裡都開著，不用再設定。
 
 - **你的工作**：強制 push、硬重設（hard reset）、刪除 `.git`，以及其他會弄丟工作的操作。
 - **你的秘密**：提交裡加了金鑰、私人電子郵件或 IP 位址。
@@ -45,13 +45,13 @@ yokoten 保護五樣東西。五項保護在每個專案裡都預設開啟，不
 
 ## 它怎麼運作
 
-yokoten 是程式，不是 AI。同一條指令，每次都得到同一個回答，大約 100 毫秒，不花錢。你的 AI 工具在每條指令或每次修改之前，先問 yokoten。yokoten 也會檢查每次提交，並在 CI 裡執行，所以就算沒有 agent 參與，有問題的修改也會被攔下。
+yokoten 是程式，不是 AI。同一條指令，每次都得到同一個回答，不到五分之一秒，不花錢。你的 AI 工具在每條指令或每次修改之前，先問 yokoten。yokoten 也會檢查每次提交，並在 CI 裡執行，所以就算沒有 agent 參與，有問題的修改也會被攔下。
 
 v0.1.1 新增：幾個 AI 工作階段在同一個儲存庫裡工作時，`yokoten conflicts` 會列出哪些開著的 pull request 改了同一批檔案，以及先合併哪一個。一個檔案正被另一個開著的變更移動時，守衛會攔下對它的編輯。
 
 ## 支援範圍
 
-- **Agent**：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI 和 OpenCode 都做了端對端驗證。Gemini CLI 已經寫進程式，但還沒有做端對端執行。見 [agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **Agent**：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI 和 OpenCode 都做了端對端驗證。Gemini CLI 已經寫進程式，但還沒有做端對端執行。Codex CLI、Copilot CLI、Muse Code 和 Grok CLI 要先信任這個資料夾才會執行守衛：跑一次 `npx yokoten trust`。見 [agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
 - **語言**：什麼語言都可以。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的測試指令。
 
 ## 其他安裝方式
