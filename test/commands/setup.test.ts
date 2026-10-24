@@ -134,11 +134,11 @@ function withPlugin(sandbox: ReturnType<typeof makeSandbox>, source: unknown) {
 // The sandbox sets two git entries of its own (test/repo/helpers.ts), so the override is the third.
 const HTTPS_GIT = { count: '3', key: 'url.https://github.com/.insteadOf', value: 'git@github.com:' };
 
-test('upgrade: a github marketplace moves to HTTPS, then the two updates carry the override', () => {
+test('upgrade: a github marketplace moves to HTTPS, then the two updates carry the override', async () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'github', repo: 'yokoten-labs/yokoten' });
   const fake = fakeClaude(sandbox);
-  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 0, result.stderr);
   const calls = fake.calls();
   assert.deepEqual(calls.map((call) => call.args), [
@@ -154,41 +154,41 @@ test('upgrade: a github marketplace moves to HTTPS, then the two updates carry t
   assert.match(result.stdout, /^Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts\.$/m);
 });
 
-test('upgrade: an HTTPS marketplace is not moved, and only the two updates run', () => {
+test('upgrade: an HTTPS marketplace is not moved, and only the two updates run', async () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
   const fake = fakeClaude(sandbox);
-  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fake.calls().map((call) => call.args), ['plugin marketplace update yokoten', 'plugin update yokoten-beta@yokoten']);
   assert.doesNotMatch(result.stdout, /removed the marketplace/);
 });
 
-test('upgrade: without the plugin it names npx and runs nothing', () => {
+test('upgrade: without the plugin it names npx and runs nothing', async () => {
   const sandbox = makeSandbox();
   const fake = fakeClaude(sandbox);
-  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^To get the newest yokoten, run: npx yokoten@latest$/m);
   assert.deepEqual(fake.calls(), []);
 });
 
-test('upgrade: a failing step stops the rest and gives the command to run by hand', () => {
+test('upgrade: a failing step stops the rest and gives the command to run by hand', async () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
   const fake = fakeClaude(sandbox, 'plugin');
-  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 1);
   assert.equal(fake.calls().length, 1, 'the second step waits for the first');
   assert.match(result.stderr, /^failed {2}updated the marketplace yokoten$/m);
   assert.match(result.stderr, /^To see the whole message, run this by hand: claude plugin marketplace update yokoten$/m);
 });
 
-test('upgrade: a failed move puts the old marketplace back, so the user is never left with none', () => {
+test('upgrade: a failed move puts the old marketplace back, so the user is never left with none', async () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'github', repo: 'yokoten-labs/yokoten' });
   const fake = fakeClaude(sandbox, 'plugin marketplace add https://');
-  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 1);
   assert.deepEqual(fake.calls().map((call) => call.args), [
     'plugin marketplace remove yokoten',
@@ -200,12 +200,12 @@ test('upgrade: a failed move puts the old marketplace back, so the user is never
   assert.match(result.stderr, /^ok {6}put the marketplace back as it was: yokoten-labs\/yokoten$/m);
 });
 
-test('upgrade: a git config the user set the same way is kept, and the override comes after it', () => {
+test('upgrade: a git config the user set the same way is kept, and the override comes after it', async () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
   const fake = fakeClaude(sandbox);
   const own = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.proxy', GIT_CONFIG_VALUE_0: 'http://proxy.example.com:8080' };
-  const result = sandbox.run(['upgrade'], { extra: { ...fake.extra, ...own } });
+  const result = await sandbox.call(['upgrade'], { extra: { ...fake.extra, ...own } });
   assert.equal(result.status, 0, result.stderr);
   for (const call of fake.calls()) {
     assert.deepEqual({ count: call.count, key: call.key, value: call.value, first: call.first }, { ...HTTPS_GIT, count: '2', first: 'http.proxy' }, call.args);
