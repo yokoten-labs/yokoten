@@ -19,6 +19,7 @@ import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
 import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
+import { pluginSourceNote } from '../advice/marketplace.ts';
 import { selfTest } from './self-test.ts';
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
@@ -358,6 +359,9 @@ function doctorRun(
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
     if (stale) blocks.push([`yokoten: ${formatFinding(stale)}`]);
+    // A github marketplace updates over SSH, and fails without a key; the session says how to move it (#950).
+    const source = pluginSourceNote(env);
+    if (source) blocks.push([`yokoten: ${formatFinding(source)}`]);
     if (!hasHome) blocks.push([`yokoten: ${NO_HOME_NOTE}`]);
     // This note only. The other privacy notes stay out of a session (#681).
     const claudeRules = museClaudeRules(env, root);
@@ -391,6 +395,11 @@ function doctorRun(
     return { ok, lines: blocks.flat(), blocks, report: { ...base, ok, repo: true, stage, next, findings, ...(notes.length ? { notes } : {}) } };
   }
 
+  // The first line says where the project is and the one step to take next (owner
+  // 2026-10-24): a person and an agent meet the answer before the map.
+  lines.push(where.stage !== null && next
+    ? `stage ${where.stage} of ${STAGES.length}, ${STAGES[where.stage - 1]}. Next: ${stepText(next)}.`
+    : `the road is done: ${ROAD_DONE.replace(/^yokoten: /, '')}`);
   lines.push(`yokoten ${VERSION} (${base.channel}), self-test ${failed.length ? 'FAILED' : 'ok'}`);
   // Work only on this machine (#365): notes, never a failure, and read only. Read before the
   // road line, so the state file is found in the git folder it names (#453), as a session
@@ -404,7 +413,6 @@ function doctorRun(
   const stageFile = stageFileFor(stateFile);
   const savedStage = readState(stageFile).lastStage;
   const lastStage = typeof savedStage === 'number' && Number.isInteger(savedStage) && savedStage > 0 ? savedStage : null;
-  lines.push(where.stage ? `the road: stage ${where.stage} of ${STAGES.length}, ${STAGES[where.stage - 1]}` : `the road: ${ROAD_DONE.replace(/^yokoten: /, '')}`);
   // A stage that moved by more than one since the last full doctor says which stages it
   // passed, and why each counts as done, one line each (#514). The first run has no stage to
   // compare with, and a move of one is the usual next step, so neither says anything.
@@ -416,14 +424,33 @@ function doctorRun(
     }
   }
   const steps: StepState[] = [];
-  // With no origin remote, the steps that read the server say so in one line, not one each (#502).
+  // With no origin remote, the server settings list leaves out server-settings (#502).
   const noRemote = server !== undefined && 'unread' in server && server.unread === NO_REMOTE;
-  const needRemote = noRemote ? where.steps.filter(({ step, mark }) => mark === "can't check" && step.unchecked?.(server).includes(NO_REMOTE)).map(({ step }) => step.key) : [];
   STAGES.forEach((name, i) => {
+    // Each stage is its own block, with a blank line between blocks (owner 2026-10-24).
+    lines.push('');
     lines.push(`  ${i + 1}. ${name}`);
-    for (const { step, mark } of where.steps.filter((w) => w.step.stage === i + 1)) {
+    const walked = where.steps.filter((w) => w.step.stage === i + 1);
+    // The done steps of every stage except the one holding the next step share one line:
+    // that stage is the reader's checklist, and a step named alone there still answers
+    // "is this done?" at a glance (#946).
+    const isCurrent = where.stage === i + 1;
+    const doneNames = isCurrent
+      ? []
+      : walked
+        .filter(({ mark }) => mark === 'done')
+        .map(({ step }) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`);
+    if (doneNames.length) lines.push(`    ${'done'.padEnd(11)} ${doneNames.join(', ')}`);
+    // The "can't check" steps of a stage that share one reason share one line too.
+    const unchecked = new Map<string, string[]>();
+    for (const { step, mark } of walked) {
       const state: StepState = { id: step.key, stage: step.stage, mark };
       if (step.standard) state.standard = step.standard;
+      if (mark === 'done') {
+        steps.push(state);
+        if (isCurrent) lines.push(`    ${mark.padEnd(11)} ${step.key}${step.standard ? ` (${step.standard})` : ''}`);
+        continue;
+      }
       let note = '';
       // A step that needs CI waits with "notNow" `ci` (#377): its reason, then what covers it meanwhile.
       if (mark === 'not now') note = state.reason = Object.hasOwn(config.notNow, step.key) ? config.notNow[step.key] : `${config.notNow.ci} (notNow ci); ${step.withoutCi}`;
@@ -432,14 +459,20 @@ function doctorRun(
         findings.push(f);
         note = stepText(f);
       } else if (mark === "can't check") note = uncheckedText(step, server);
+      // Keep the old words for no origin remote (#502): the server is where these live.
+      if (noRemote && note.startsWith(`${NO_REMOTE};`)) note = `${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`;
       steps.push(state);
-      if (needRemote.includes(step.key)) {
-        if (step.key === needRemote[0]) lines.push(`    can't check ${needRemote.join(', ')}: ${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`);
+      if (mark === "can't check") {
+        const names = unchecked.get(note) ?? [];
+        names.push(`${step.key}${step.standard ? ` (${step.standard})` : ''}`);
+        unchecked.set(note, names);
         continue;
       }
       lines.push(`    ${mark.padEnd(11)} ${step.key}${step.standard ? ` (${step.standard})` : ''}${note ? `: ${note}` : ''}`);
     }
+    for (const [note, names] of unchecked) lines.push(`    ${"can't check".padEnd(11)} ${names.join(', ')}${note ? `: ${note}` : ''}`);
   });
+  lines.push('');
   lines.push('project:');
   const notes: Finding[] = [];
   for (const c of agentHooks(root, env)) {
@@ -504,11 +537,13 @@ function doctorRun(
   for (const n of checkNotes) lines.push(`  note    ${formatFinding(n).replaceAll('\n', '\n        ')}`);
   notes.push(...checkNotes);
   const unsavedFound = unsaved ? unsavedNotes(unsaved, { home: env.HOME }) : [];
+  lines.push('');
   lines.push('unsaved work (only on this machine):');
   if (!unsaved) lines.push("  note    can't read this repo with git, so doctor can't tell what is only here");
   else if (!unsavedFound.length) lines.push('  ok      everything is committed and pushed');
   for (const n of unsavedFound) lines.push(`  note    ${n.id}: ${stepText(n)}`);
   notes.push(...unsavedFound);
+  lines.push('');
   lines.push('machine:');
   for (const c of machine) {
     lines.push(`  ${c.ok ? 'ok     ' : 'MISSING'} ${c.name}${c.ok ? '' : `: ${stepText(c.finding)}`}`);
@@ -534,6 +569,11 @@ function doctorRun(
     lines.push(`  note    plugin: ${stepText(stale)}`);
     notes.push(stale);
   }
+  const source = pluginSourceNote(env);
+  if (source) {
+    lines.push(`  note    plugin-source: ${stepText(source)}`);
+    notes.push(source);
+  }
   const double = hasHome ? doubleInstallCheck(root, env) : null;
   if (double) {
     lines.push(`  note    plugin-and-install: ${stepText(double)}`);
@@ -556,6 +596,7 @@ function doctorRun(
   }
   // The road's stage 5 shows the settings it groups (#7); here are the rest, which never fail doctor.
   const settings = serverChecks(server ?? { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' }, { isCiOff: Object.hasOwn(config.notNow, 'ci') });
+  lines.push('');
   lines.push('server (read only; the owner sets these once per repo):');
   for (const c of settings.filter((c) => !ROAD_SERVER_IDS.includes(c.id) && !(noRemote && c.id === 'server-settings'))) {
     lines.push(`  ${c.mark.padEnd(11)} ${c.id}${c.mark === 'ok' ? '' : `: ${stepText(c.finding)}`}`);
@@ -570,7 +611,10 @@ function doctorRun(
   // A shell that is not UTC makes each new commit carry its zone (#932). Say the one line
   // for this shell at the end, where a person looks for the next step. A session never
   // needs it: init already sets TZ=UTC for agent sessions.
-  if (!session && config.privacy.utc && !isUtcTimeZone(env)) lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
+  if (!session && config.privacy.utc && !isUtcTimeZone(env)) {
+    lines.push('');
+    lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
+  }
   // The road has no failed mark: a step is done, to do, not now or can't check. Steps
   // left are the way ahead, not problems, so they never fail doctor (#208).
   const ok = !failed.length && !isCoreBehind && !problems.length && machine.every((c) => c.ok);
