@@ -19,6 +19,7 @@ import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
 import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
+import { pluginSourceNote } from '../advice/marketplace.ts';
 import { selfTest } from './self-test.ts';
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
@@ -358,6 +359,9 @@ function doctorRun(
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
     if (stale) blocks.push([`yokoten: ${formatFinding(stale)}`]);
+    // A github marketplace updates over SSH, and fails without a key; the session says how to move it (#950).
+    const source = pluginSourceNote(env);
+    if (source) blocks.push([`yokoten: ${formatFinding(source)}`]);
     if (!hasHome) blocks.push([`yokoten: ${NO_HOME_NOTE}`]);
     // This note only. The other privacy notes stay out of a session (#681).
     const claudeRules = museClaudeRules(env, root);
@@ -533,6 +537,11 @@ function doctorRun(
   if (stale) {
     lines.push(`  note    plugin: ${stepText(stale)}`);
     notes.push(stale);
+  }
+  const source = pluginSourceNote(env);
+  if (source) {
+    lines.push(`  note    plugin-source: ${stepText(source)}`);
+    notes.push(source);
   }
   const double = hasHome ? doubleInstallCheck(root, env) : null;
   if (double) {
