@@ -84,7 +84,7 @@ export function renderBoardText(board: BoardData, extra?: BoardTextExtra): strin
   const pulls = typeof board.pulls === 'string' ? [] : board.pulls;
   const worktrees = typeof board.worktrees === 'string' ? [] : board.worktrees;
   return [
-    `yokoten board: ${board.repo}`,
+    `yokoten board: ${board.repo} (preview: it may change, and team commands come in v0.1.2, #823)`,
     `${countText(board.agents.length, 'agent')}, ${countText(pulls.length, 'open pull request')}, ${countText(worktrees.length, 'worktree')}.`,
     '',
     'Needs you:',

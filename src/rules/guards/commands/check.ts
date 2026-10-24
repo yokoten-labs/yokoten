@@ -258,12 +258,14 @@ function pushDryRun(options: string[]): boolean {
 }
 
 /**
- * Whether one side of a refspec names a tag on its own: a tag ref, a `v1` name, or a local
- * tag. A name under another `refs/` folder is not a tag, and is not read from disk (#865).
+ * Whether one side of a refspec names a tag on its own: a tag ref, a `v1` name, a local
+ * tag, or a `tags/` name, which git resolves to `refs/tags/` (#924). A name under another
+ * `refs/` folder is not a tag, and is not read from disk (#865).
  */
 function isTagName(ref: string, directory: string | null, env: Env): boolean {
   if (ref === '') return false;
   if (ref.startsWith('refs/')) return ref.startsWith('refs/tags/');
+  if (ref.startsWith('tags/')) return true;
   if (/^v\d/.test(ref)) return true;
   return directory !== null && readGit(directory, ['rev-parse', '--verify', '--quiet', `refs/tags/${ref}`], env) !== null;
 }

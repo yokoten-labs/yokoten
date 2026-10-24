@@ -9,6 +9,16 @@ import { type AgentView, type BoardData, pullView, vendorOf } from '../../../../
 
 const agent = (fields: Partial<AgentView>): AgentView => ({ key: '', name: 'a', nickname: '', isMain: false, vendor: vendorOf(''), model: '', effort: '', role: '', dot: 'idle', task: '', title: '', ref: null, doing: '', checks: '', age: '', updated: '', started: '', branch: '', ...fields });
 
+// #933: the board is a preview, and the first line of --text says so.
+test('board text: the first line says the board is a preview (#933)', () => {
+  const board: BoardData = { repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' };
+  const [first] = renderBoardText(board);
+  assert.match(first, /preview/);
+  assert.match(first, /it may change/);
+  assert.match(first, /v0\.1\.2/);
+  assert.match(first, /#823/);
+});
+
 test('board text: needs, agents, pulls and worktrees in plain words; a part that cannot be read says why', () => {
   const board: BoardData = {
     repo: '/repo',
@@ -30,7 +40,7 @@ test('board text: needs, agents, pulls and worktrees in plain words; a part that
     updated: '',
   };
   assert.deepEqual(renderBoardText(board), [
-    'yokoten board: /repo',
+    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
     '3 agents, 1 open pull request, 2 worktrees.',
     '',
     'Needs you:',
@@ -50,7 +60,7 @@ test('board text: needs, agents, pulls and worktrees in plain words; a part that
     '- /repo/.worktrees/601',
   ]);
   assert.deepEqual(renderBoardText({ repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: 'gh failed', merged: [], worktrees: 'git failed', desk: EMPTY_DESK, updated: '' }), [
-    'yokoten board: /repo',
+    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
     '0 agents, 0 open pull requests, 0 worktrees.',
     '',
     'Needs you:',
