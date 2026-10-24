@@ -77,9 +77,10 @@ export function addProjectHooks(root: string, cli: string): { guard: Added; stop
 }
 
 /** What `addProjectHooks` would do, read-only, for each hook (see `hookState`). */
-export const projectHooksState = (root: string, cli: string): { guard: HookState; stop: HookState } => ({
+export const projectHooksState = (root: string, cli: string): { guard: HookState; stop: HookState; doctor: HookState } => ({
   guard: hookState(...guardArgs(root, cli)),
   stop: hookState(...stopArgs(root, cli)),
+  doctor: hookState(...sessionArgs(root, cli)),
 });
 
 /** Whether yokoten's guard hook is in the project's hook file (#661): the file alone is not enough. */
