@@ -222,6 +222,26 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
 });
 
+// #904: the upgrade from v0.1.0. An older install added the Claude Code hooks; with the
+// plugin on, install takes them back with the runtime they point at, so the guard runs once
+// and no hook is left asking for a runtime that is gone.
+test('install: with the plugin on, the hooks an older install added go too (#904)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  assert.ok(settings.hooks?.PreToolUse, 'the older install added the guard');
+  settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] });
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  const result = await sandbox.call(['install']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^removed the Claude Code user hooks: the yokoten plugin brings them$/m);
+  const after = readFileSync(settingsFile, 'utf8');
+  assert.doesNotMatch(after, /share\/yokoten/, 'no hook points at the removed runtime');
+  assert.match(after, /my-own-hook/, "the user's own hook stays");
+});
+
 // #904: install says what it will write, and uninstall leaves the home folder as it was.
 test('install prints its plan, and uninstall restores the home folder (#904)', async () => {
   const sandbox = makeSandbox();

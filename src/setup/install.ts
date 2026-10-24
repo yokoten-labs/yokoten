@@ -332,7 +332,10 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // the plugin brings the skills, the hooks and the runtime. Another tool's hook still
   // needs the runtime, so it stays when that tool is here.
   const otherTool = codex.hasUserDir(env) || gemini.hasUserDir(env) || antigravity.hasUserDir(env) || copilot.hasUserDir(env) || grok.hasUserDir(env) || muse.hasUserDir(env) || opencode.hasUserDir(env);
-  const needsRuntime = !plugin || otherTool;
+  // `yokoten install` through the launcher runs from the runtime itself: removing it would
+  // delete the kit this run still reads, so that copy stays (#904).
+  const isRunningFromRuntime = resolve(HOME_DIR) === resolve(target.runtime);
+  const needsRuntime = !plugin || otherTool || isRunningFromRuntime;
   const plan = installPlan(env, target.runtime, plugin, needsRuntime);
   // Run from this copy, install keeps it (#204). The report shows the home folder as ~.
   if (needsRuntime) {
@@ -381,9 +384,15 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   }
   if (edited.size) report.push(`your edits stay: install skipped ${[...edited].join(', ')}. The new ${edited.size === 1 ? 'copy is' : 'copies are'} in ~/.local/share/yokoten/kit/user.`);
 
-  // The plugin brings both user hooks too, so install does not add a second copy.
-  if (plugin) report.push('skipped Claude Code hooks: the yokoten plugin brings them');
-  else {
+  // The plugin brings both user hooks too, so install does not add a second copy, and takes
+  // back the copy an older install added: it would run the guard twice, and it points at
+  // the runtime this run removes (#904).
+  if (plugin) {
+    const hooks = removeUserHooks(env);
+    if (hooks === null) report.push('kept the Claude Code hooks in ~/.claude/settings.json: it is not JSON; take them out by hand');
+    else if (hooks.doctor === 'removed' || hooks.guard === 'removed') report.push('removed the Claude Code user hooks: the yokoten plugin brings them');
+    else report.push('skipped Claude Code hooks: the yokoten plugin brings them');
+  } else {
     const claudeHooks = agentHooks('Claude Code', '~/.claude/settings.json', () => {
       const hooks = addUserHooks(env, USER_CLI, USER_MISSING);
       return [describeWrite(hooks.doctor, 'the SessionStart doctor'), describeWrite(hooks.guard, 'the user-level command guard')];
