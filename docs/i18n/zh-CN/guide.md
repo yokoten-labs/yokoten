@@ -537,7 +537,7 @@ Claude Code 用 `node` 直接跑插件里的 `.ts` 文件。之所以能跑，�
 插件和 `install` 二选一，别两个都用：插件开着的时候，`install` 不会往全局文件夹里放自己的一份。
 以前两个都装过的机器上，守卫和会话开头的 doctor 会跑两遍，每个技能也会出现两次，`doctor` 会提醒你，
 插件开着的 `install` 会把自己写过的全局副本收回来。想从 `install` 换成插件，就跑 `yokoten uninstall`。
-它会删掉 `install` 写的东西，`~/.config/yokoten` 留着不动。
+它会删掉 `install` 写的东西。`~/.config/yokoten` 里你自己的文件，比如你加的私有词，都会留着。
 
 插件开着的时候，`install` 不写自己的守卫，守卫只留插件那一个。把插件关掉或者删掉，
 这台机器就一个守卫都没有了：`doctor` 会以“no guard for Claude Code”报失败，

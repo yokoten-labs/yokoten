@@ -335,7 +335,12 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // `yokoten install` through the launcher runs from the runtime itself: removing it would
   // delete the kit this run still reads, so that copy stays (#904).
   const isRunningFromRuntime = resolve(HOME_DIR) === resolve(target.runtime);
-  const needsRuntime = !plugin || otherTool || isRunningFromRuntime;
+  // The plugin brings both user hooks too, so install takes back the copy an older install
+  // added: it would run the guard twice. It goes before the runtime does, and the runtime
+  // stays while a hook is left that still runs it: a file install cannot walk, or a user's
+  // own hook (#904).
+  const hooks = plugin ? removeUserHooks(env) : undefined;
+  const needsRuntime = !plugin || otherTool || isRunningFromRuntime || hooks === null || hookRunsYokoten(env);
   const plan = installPlan(env, target.runtime, plugin, needsRuntime);
   // Run from this copy, install keeps it (#204). The report shows the home folder as ~.
   if (needsRuntime) {
@@ -359,7 +364,7 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
       // Only what was there is named: a run on a machine with no copy says nothing per skill.
       const removedClaude = removeManaged(claudeFile, { folder: true });
       if (removedClaude !== 'not there') report.push(describeWrite(removedClaude, `skill ${name} in ${skillsDir(claudeFile)}`));
-      const removedShared = removeSharedSkill(sharedFile);
+      const removedShared = removeSharedSkill(sharedFile, claudeFile);
       if (removedShared !== 'not there') report.push(describeWrite(removedShared, `skill ${name} in ${skillsDir(sharedFile)}`));
       continue;
     }
@@ -384,12 +389,9 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   }
   if (edited.size) report.push(`your edits stay: install skipped ${[...edited].join(', ')}. The new ${edited.size === 1 ? 'copy is' : 'copies are'} in ~/.local/share/yokoten/kit/user.`);
 
-  // The plugin brings both user hooks too, so install does not add a second copy, and takes
-  // back the copy an older install added: it would run the guard twice, and it points at
-  // the runtime this run removes (#904).
+  // With the plugin on, the user hooks went above, before the runtime (#904).
   if (plugin) {
-    const hooks = removeUserHooks(env);
-    if (hooks === null) {
+    if (!hooks) {
       // The plugin check reads only enabledPlugins, so a file with a broken hooks shape gets here too.
       report.push("kept the Claude Code hooks in ~/.claude/settings.json: it is not JSON, or its hooks have an unexpected shape; fix it, then run `yokoten install` again");
       ok = false;
@@ -526,15 +528,47 @@ const isManaged = (path: string): boolean => typeof managedFileText(path) === 'o
  * Take back the shared skill: a link install made is removed, never followed. A real
  * folder is removed, kept or missing, as `removeManaged` says for its skill file.
  */
-function removeSharedSkill(file: string): 'removed' | 'kept (yours)' | 'kept (your edit)' | 'not there' {
+function removeSharedSkill(file: string, claudeFile: string): 'removed' | 'kept (yours)' | 'kept (your edit)' | 'not there' {
   const path = dirname(file);
+  let target: string;
   try {
-    readlinkSync(path);
+    target = readlinkSync(path);
   } catch {
     return removeManaged(file, { folder: true });
   }
+  // install links the shared folder to the Claude Code copy. A link to anywhere else is the
+  // user's, and a link to a skill file that stays (an edited one) stays with it.
+  const claudeDir = dirname(claudeFile);
+  if (resolve(dirname(path), target) !== resolve(claudeDir)) return 'kept (yours)';
+  if (existsSync(claudeFile)) return 'kept (your edit)';
   unlinkSync(path);
   return 'removed';
+}
+
+/**
+ * True when a hook left in Claude Code's user settings still runs yokoten, or the file can't
+ * be read. It runs after yokoten's own hooks are taken out, so what is left is the user's:
+ * any command naming yokoten counts, by the runtime's path or the launcher (#904).
+ */
+export function hookRunsYokoten(env: Env): boolean {
+  let table: unknown;
+  try {
+    table = JSON.parse(readFileSync(join(userDir(env), 'settings.json'), 'utf8'));
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+  const commands: string[] = [];
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === 'object') {
+      for (const [key, inner] of Object.entries(value)) {
+        if (key === 'command' && typeof inner === 'string') commands.push(inner);
+        else walk(inner);
+      }
+    }
+  };
+  walk((table as { hooks?: unknown } | null)?.hooks);
+  return commands.some((command) => /(^|[\\/\s"'])yokoten(\.(mjs|ts|cmd|ps1|exe))?(?=$|[\s"'])/.test(command) || /[\\/]share[\\/]+yokoten[\\/]/.test(command));
 }
 
 /** Remove a file yokoten owns, and its folder when that is left empty. A file without the mark is the user's, and so is a marked file the user edited. */
@@ -651,7 +685,7 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
   for (const name of kitSkills()) {
     const [claudeFile, sharedFile] = skillFiles(env, name);
     report.push(describeWrite(removeManaged(claudeFile, { folder: true }), `skill ${name} in ${skillsDir(claudeFile)}`));
-    report.push(describeWrite(removeSharedSkill(sharedFile), `skill ${name} in ${skillsDir(sharedFile)}`));
+    report.push(describeWrite(removeSharedSkill(sharedFile, claudeFile), `skill ${name} in ${skillsDir(sharedFile)}`));
   }
   for (const file of kitAgents()) report.push(describeWrite(removeManaged(agentFile(env, file)), `agent ${file.replace(/\.md$/, '')}`));
 
