@@ -520,7 +520,7 @@ yokoten check --pr 12
 | `worker mark <dir>` | `<dir>` のワークツリーをワーカーのものとして印を付けます。すると番人はそこにいるすべてのエージェントをワーカーとして扱います。`YOKOTEN_ROLE` を落とす実行環境（Muse Code）のエージェントもです。番人はワーカーが印を消す素朴な方法を拒否し、読めない `.git` のリンクは印ありと数えます。本当の錠はサーバーとワーカーから保たれる資格情報です。`git worktree remove <dir>` が印を消します。サブフォルダを渡すと、ワークツリーの一番上のフォルダに印を付け、どれかを言います。デスクのような普通のクローンにも印を付けます。印はその `.git` に入ります（#672）。リードは自分のチェックアウトからクローンに印を付けます。メインのチェックアウト（リードが走るクローン、またはワークツリーを持つもの）とサブモジュールには決して印を付けません。ワーカーは印を付けられず、外せません。[対応しているもの](#対応しているもの)を見てください |
 | `worker env [runtime]` | yokoten のエージェント環境がこのシェルから保つ名前を一覧し、落とす名前を数えます。実行環境を渡すと、そのログイン名も数えます。値は決して見せません。`desk` はこれを使ってエージェントを始めます。[エージェントの環境が持つもの](#エージェントの環境が持つもの)を見てください |
 | `msg send <to> [<text>]`、`msg inbox`、`msg who`、`msg log` | どのベンダーのエージェントも、このマシンのファイルを通して互いにメッセージを送ります。`log` はリードだけが走らせます。[エージェント同士のメッセージ](#エージェント同士のメッセージ)を見てください |
-| `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
+| `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] [--allow-loopback] -- <command>` | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
 | `uninstall` | `install` が書いたものを取り消します。yokoten が管理すると印を付けた入口スキルとエージェント、Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code の設定にあるフック、OpenCode のプラグイン、`~/.local/share/yokoten` です。非公開の印と mailmap のファイルは、`install` の見出しだけのときに消します。`install` が作ったフォルダは、空のときに消します。あなた自身のファイル、編集、設定は残ります。止めた記録は消えます。二回目の実行は何も変えません |
 | `bot -- <command>` | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。`gh pr edit` も、新しいタイトルや本文について同じことをし、本文が新しいティアを設定したときは古いティアのラベルを外します。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](../../server.md#3-the-bot-a-github-app) |
 | `board [--text] [--no-open]` | このマシンでだけ動くページを出します。issue ごとにまとめたエージェント、選ばれたもの、各プルリクエストの段階です。ページからオーナーはエージェントを始めたり止めたりし、何が待っているかも見ます。ブラウザーでページを開き（`--no-open` はリンクを出力するだけ）、あなたが止めるまで走ります。ページは 15 秒ごとに更新されます。`--text` はエージェント、プルリクエスト、ワークツリーを素のテキストで出力します。[チームのボード](#チームのボード)を見てください |
@@ -971,14 +971,25 @@ yokoten desk claude-code ../desks/42 -- claude -p "$(cat brief.md)"
 | Codex、および Codex を通した DeepSeek | `codex` | `CODEX_HOME` | `auth.json` | `api.openai.com`、`api.deepseek.com` | `codex exec --sandbox danger-full-access "<brief>"` |
 | Grok | `grok` | `GROK_HOME` | `auth.json` | `api.x.ai` | `grok -p "<brief>"` |
 | Muse Code | `muse` | `XDG_CONFIG_HOME`、`XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
+| OpenCode | `opencode` | `XDG_DATA_HOME`、`XDG_STATE_HOME`、`XDG_CONFIG_HOME` | `opencode.db`（ログインの行だけ） | `opencode.ai`、`api.opencode.ai`、`models.opencode.ai` | `opencode run --standalone "<brief>"` |
 
 - **Claude Code** は `platform.claude.com` でログインを更新します。`claude setup-token` のトークンを `CLAUDE_CODE_OAUTH_TOKEN` に入れるか、API 鍵なら更新は要らず、ログインとして通ります。
 - **Codex** はデスクの中で `--sandbox danger-full-access` で走ります。Codex 自身の `workspace-write` のサンドボックスは `.git` を読み取り専用にし、テストが使うパイプを止めるからです。代わりにデスクが囲いです。あなたの `config.toml` は入りません。プロバイダーはコマンドの `-c` で与えてください。ChatGPT のログインには `--host chatgpt.com,auth.openai.com` も要ります。
 - **Grok**: コミットやテストを止めるなら、デスクの中で `--sandbox` を切ってください。
+- **OpenCode**: デスクの中では `--standalone` を付けて走らせ、このマシンのサーバーではなく
+  デスクの中のサーバーを始めさせてください。ログインは `auth.json` ではなく `opencode.db` に
+  あります。デスクはログインの行だけをコピーし、あなたのセッションは置いていきます。
+  サーバーは loopback で自分と話すので、デスクは `127.0.0.1,localhost,::1` を `NO_PROXY` に
+  入れます。macOS ではデスクが先に止まります。そのサーバーを通すには `--allow-loopback` を
+  付けてください。
+- **loopback**: `--allow-loopback` は macOS のためのものです。自分のサーバーがポートを選ぶ
+  エージェントが、そこへ届けるようにします。そのときデスクはすべての loopback ポートを開き、
+  エージェントはこのマシンのサービスに届き、このマシンのプロセスはエージェントが開いたポートに
+  届きます。Linux と WSL2 では選ぶ必要がありません。
 - **もっとホスト**: `--host <host>` は、エージェントがポート 443 で別の API のホストに届くようにします。複数はカンマで区切ります。
 - **もっとファイル**: `--read <path>` は別のパスを読み取り専用で見せます。あなたのホーム、隠しフォルダ、あなた自身のエージェントの状態を開くパスは拒否されます。
 
-**プロキシ。** 四つのエージェントはどれも自分のプログラムで `HTTPS_PROXY` を名指しし、デスクは `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` をどちらの場合にも設定します。`NODE_USE_ENV_PROXY=1` も設定するので、Node 自身の `fetch` もプロキシを使います。プロキシは `CONNECT` だけを、一覧のホストへ受け取り、通信を決して読みません。開くトンネルは多くても 64 で、10 分たっても残るトンネルは閉じます。ホストを拒否するときは、デスクが最後にそのホストを名指しします。
+**プロキシ。** どのエージェントも自分のプログラムで `HTTPS_PROXY` を名指しし、デスクは `HTTPS_PROXY`、`HTTP_PROXY`、`ALL_PROXY` をどちらの場合にも設定します。`NODE_USE_ENV_PROXY=1` も設定するので、Node 自身の `fetch` もプロキシを使います。プロキシは `CONNECT` だけを、一覧のホストへ受け取り、通信を決して読みません。開くトンネルは多くても 64 で、10 分たっても残るトンネルは閉じます。ホストを拒否するときは、デスクが最後にそのホストを名指しします。
 
 **外からのレビュー。** ワーカーはデスクの中で書くので、デスクを信頼できないものとして扱ってください。作業を確かめる前に、デスクの中で git やほかのコマンドを走らせないでください。ブランチを自分のチェックアウトに取り込み、そこでレビューします。
 
