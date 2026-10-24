@@ -673,8 +673,8 @@ Run `install`, or turn on the plugin: with the plugin on, `install` keeps its ow
 out of your global folders. On a machine that had both before, the guard and the session
 doctor run twice and every skill shows up twice: `doctor` says so in a note, and `install`
 with the plugin on takes back the global copies it wrote. To move from `install` to the
-plugin, run `yokoten uninstall`. It removes what `install` wrote and keeps
-`~/.config/yokoten`.
+plugin, run `yokoten uninstall`. It removes what `install` wrote. Your own files in
+`~/.config/yokoten`, such as the private marks you added, stay.
 
 With the plugin on, `install` writes no guard of its own, because the plugin's guard is
 the one guard. Turn the plugin off or remove it, and the machine has no guard at all:
