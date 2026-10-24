@@ -35,6 +35,7 @@ import {
   closestWord,
   commandHelp,
   commandList,
+  COMMAND_GROUPS,
   COMMANDS,
   editDistance,
   findCommand,
@@ -745,4 +746,13 @@ test('sandbox: call runs a command in this process with the same result as run (
 test('main: an error names its command, and bare yokoten when there is none (#548)', () => {
   assert.equal(errorLabel(undefined), 'yokoten', 'the one-command start has no name: never "undefined"');
   assert.equal(errorLabel('doctor'), 'yokoten doctor');
+});
+
+test('help: every command is in exactly one group, and the first step comes first (#944)', async () => {
+  const grouped = COMMAND_GROUPS.flatMap((group) => group.names);
+  assert.deepEqual([...grouped].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once, and no name without a command');
+  assert.equal(new Set(grouped).size, grouped.length, 'no command in two groups');
+  const help = (await makeSandbox().call(['help'])).stdout;
+  assert.ok(help.indexOf('Start here:') < help.indexOf('Usage:'), 'the first step comes before the list');
+  for (const { title } of COMMAND_GROUPS) assert.match(help, new RegExp(`^${title}:$`, 'm'), `${title} has a heading`);
 });

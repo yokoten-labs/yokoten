@@ -12,21 +12,23 @@ import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandL
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).
+// The first step comes first, then the commands in groups, then the details (#944).
 const HELP = [
   `yokoten ${VERSION}`,
+  '',
+  'Start here: run `yokoten` in your project. It installs what is missing, adds the rules',
+  'to the project, and shows the next step.',
   '',
   'Usage: yokoten <command> [options]',
   '',
   ...commandList(),
   '',
-  "Start: run `yokoten` with no command in your project. It installs what is missing.",
-  'It adds the rules to the project and shows the next step.',
-  'To run each step yourself, use `yokoten install`, then `yokoten init`.',
-  'Run `yokoten <command> --help` for its options and an example.',
-  '--json on check, doctor, hook, explain and adopt: data on stdout,',
-  'for an agent or a script.',
-  'Exit codes: 0 ok, 1 problems found or a usage error, 2 the hook blocked the tool call',
-  'or the end of the turn.',
+  'More:',
+  '  To run each step yourself, use `yokoten install`, then `yokoten init`.',
+  '  Run `yokoten <command> --help` for its options and an example.',
+  '  --json on check, doctor, hook, explain and adopt: data on stdout, for an agent or a script.',
+  '  Exit codes: 0 ok, 1 problems found or a usage error, 2 the hook blocked the tool call',
+  '  or the end of the turn.',
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */

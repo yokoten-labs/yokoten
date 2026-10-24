@@ -276,8 +276,9 @@ test('output colour: help bolds the usage and sections, and names each command i
   const list = await sandbox.call(['help'], { isTTY: true });
   assert.match(list.stdout, /\u001b\[1mUsage: yokoten <command> \[options\]\u001b\[0m/, 'the usage line is bold');
   assert.match(list.stdout, /\u001b\[36mcheck\u001b\[0m/, 'a command name is cyan');
-  assert.match(list.stdout, /\u001b\[1mStart: /, 'a section title is bold');
-  assert.match(list.stdout, /\u001b\[1mExit codes: /, 'the last section title is bold');
+  assert.match(list.stdout, /\u001b\[1mStart:\u001b\[0m/, 'a group title is bold');
+  assert.match(list.stdout, /\u001b\[1mA team of agents:\u001b\[0m/, 'a longer group title is bold');
+  assert.match(list.stdout, /\u001b\[1mMore:\u001b\[0m/, 'the last section title is bold');
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
   assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
