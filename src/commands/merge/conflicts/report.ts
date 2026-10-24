@@ -4,7 +4,7 @@
 // says which of the two goes first, which is all a beginner needs before one merge.
 
 import { formatFinding } from '../../../rules/message.ts';
-import { type Invocation, parse, print, printJson, requireRoot, say, usage } from '../../shared.ts';
+import { type Invocation, parse, print, printJson, requireRoot, usage } from '../../shared.ts';
 import { beforeChange, buildMap, openChanges, writeMap } from './map.ts';
 import { mergeOrder } from './order.ts';
 import { rebuildPrompt } from './rebuild.ts';
@@ -164,6 +164,6 @@ export async function runConflicts(invocation: Invocation): Promise<number> {
   if (word !== undefined) return rebuild(map, word, invocation);
   if (json) printJson(invocation, map);
   else print(invocation, summaryLines(map));
-  for (const note of [...opened.notes, ...notes, ...(notKept === null ? [] : [notKept])]) say(invocation, `note: ${note}\n`, invocation.stderr);
+  for (const note of [...opened.notes, ...notes, ...(notKept === null ? [] : [notKept])]) print(invocation, [`note: ${note}`], invocation.stderr);
   return 0;
 }
