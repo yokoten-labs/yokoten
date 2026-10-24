@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The Claude Code plugin hook (#706). A cache path is a real file inside the plugin cache, or it is refused.
-// The account home comes from the password file. HOME is never the plugin root.
+// The account home comes from the password file. HOME never moves the lookup; only accountHome, or the test-only YOKOTEN_TEST_ACCOUNT_HOME (#902), does.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -117,7 +117,7 @@ function readAccountHome(accountHome) {
 // A tool call fails closed (#260, #706). A spawn error, or no exit status, is not a pass. Exit 0 and 2 pass.
 export function runLaunch({ mode, fallback, args, env, input, cwd, accountHome, spawn }) {
   const isTool = mode !== 'session';
-  const binary = resolveBinary(readAccountHome(accountHome), fallback);
+  const binary = resolveBinary(readAccountHome(accountHome ?? env?.YOKOTEN_TEST_ACCOUNT_HOME), fallback);
   if (!binary) {
     const line = `${isTool ? toolLine : sessionLine}\n`;
     return isTool ? { status: 2, stdout: '', stderr: line } : { status: 0, stdout: line, stderr: '' };

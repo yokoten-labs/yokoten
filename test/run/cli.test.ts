@@ -617,6 +617,12 @@ test('plugin launcher: a safe cache copy runs, and any other path does not (#706
   assert.equal(attacked.stdout, 'cache hook --commands-only', 'HOME is not the plugin root');
   assert.equal(existsSync(fakeMarker), false, 'a fake HOME does not run');
 
+  // The test-only account home (#902): with no accountHome, the hook env may name the
+  // sandbox. HOME alone — here the fake — still never moves the lookup (#706).
+  const pointed = launch.runLaunch({ mode: 'tool', fallback: rootBinary, args: ['hook', '--commands-only'], env: { ...sandbox.env, HOME: fakeHome, YOKOTEN_TEST_ACCOUNT_HOME: home }, input: '{}', cwd: sandbox.repo });
+  assert.equal(pointed.stdout, 'cache hook --commands-only', 'the test-only account home picks the sandbox copy');
+  assert.equal(existsSync(fakeMarker), false, 'the fake HOME does not run, named or not');
+
   reset();
   script(join(outside, 'bin', 'yokoten.mjs'), 'outside');
   install({ scope: 'user', installPath: outside, version: 'abc123' });
