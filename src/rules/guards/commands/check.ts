@@ -127,15 +127,15 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
 }
 
 /**
- * What a release refusal tells the agent to do. `start` is the command that starts the agent
- * with the approval, when the caller knows the agent (#350): the hook passes it in. Without
- * one, as here, the message names no agent.
+ * What a release refusal tells the agent to do: a plain sentence a person can act on.
+ * The approval way and each agent's command live in the guide, at the link the message
+ * carries (#931).
  */
-export function releaseFix(start?: string): string {
-  const session = start ? `a new session with ${start}` : 'a new session of their agent with YOKOTEN_RELEASE_APPROVAL=1';
-  return `if the owner asked for this, they start ${session}; do not look for another way`;
+function releaseFix(): string {
+  return 'the owner releases, with the steps in the release guide; do not look for another way';
 }
 const release = (what: string) => finding('release', what, releaseFix());
+const tagFix = 'the owner creates the tag, with the steps in the release guide; do not look for another way';
 
 // `git tag` alone, `git tag -l` and `git tag --contains` only read. Deleting a local tag
 // (`-d`) and verifying one (`-v`) publish nothing. Every other `git tag` writes a tag,
@@ -171,12 +171,6 @@ function createsTag(args: string[]): boolean {
   const isWriteFlag = args.some((arg) => TAG_WRITE_OPTIONS.has(arg) || /^-[a-zA-Z]*[asf]/.test(arg));
   return tagNameOf(args) !== null || isWriteFlag;
 }
-
-/** A word a shell can run as it is: anything else goes inside single quotes. */
-function quoteShellWord(word: string): string {
-  return /^[A-Za-z0-9._/:@%+=,-]+$/.test(word) ? word : `'${word.replace(/'/g, "'\\''")}'`;
-}
-
 
 export const MOVERS = new Set(['cd', 'pushd', 'popd']);
 function movesRepo(words: string[]): boolean {
@@ -378,7 +372,7 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
       // Name the tag, as the branch's #828 message did; a form whose name the guard cannot
       // read still refuses, with the whole command as the word it names (#873).
       if (tag !== null) {
-        return finding('release', `creating the tag ${tag}`, `if the owner asked for this, they run \`git tag ${quoteShellWord(tag)}\` themselves, or start a new session with YOKOTEN_RELEASE_APPROVAL=1; do not look for another way`);
+        return finding('release', `creating the tag ${tag}`, tagFix);
       }
       return release(`git tag ${tagArgs.join(' ')} creates a tag`);
     }
@@ -399,7 +393,7 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
     // is already refused as `move-default-branch`, since it can write any ref (#847).
     const tag = tagToUpdate(updateArgs);
     if (tag !== null && !env.YOKOTEN_RELEASE_APPROVAL) {
-      return finding('release', `creating the tag ${tag}`, `if the owner asked for this, they run \`git tag ${quoteShellWord(tag)}\` themselves; do not look for another way`);
+      return finding('release', `creating the tag ${tag}`, tagFix);
     }
   }
   const skip = args.includes('--no-verify') ? '--no-verify' : sub === 'commit' ? args.find((a) => /^-[a-z]*n[a-z]*$/i.test(a)) : undefined;

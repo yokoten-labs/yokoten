@@ -484,7 +484,6 @@ export const ADAPTER: AgentAdapter = {
   capabilities: { canRewrite: false, hasStopHook: false, needsTrust: false, failsOpen: false, passesRole: false },
   readToolCall,
   formatDenial,
-  releaseFix: 'OpenCode is not known to pass YOKOTEN_RELEASE_APPROVAL to its plugin. If the owner asked for this, stop and tell them to release outside OpenCode; do not look for another way',
   agentEnv: AGENT_ENV,
   call: (command) => ({ directory: '/repo', tool: 'bash', args: { command } }),
 };
