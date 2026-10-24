@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, formatFinding } from '../../rules/message.ts';
-import { homeOf } from '../../rules/privacy.ts';
+import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
 import { countNotes, waitingLine } from '../../run/learn.ts';
@@ -15,6 +15,7 @@ import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
 import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
+import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
 import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
@@ -346,6 +347,14 @@ function doctorRun(
       blocks.push([`yokoten: ${formatFinding(marks.finding)}`]);
       findings.push(marks.finding);
     }
+    // No guard at all is unsafe at once, so a session hears it too (#904). Only where
+    // Claude Code has its own settings: a machine without them has no such session to
+    // guard, and full doctor names the missing guard for the user who wants one.
+    const guard = hasUserSettings(env) ? machine.find((c) => c.name === 'user-guard' && !c.ok) : undefined;
+    if (guard) {
+      blocks.push([`yokoten: ${formatFinding(guard.finding)}`]);
+      findings.push(guard.finding);
+    }
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
     if (stale) blocks.push([`yokoten: ${formatFinding(stale)}`]);
@@ -377,7 +386,8 @@ function doctorRun(
     const lesson = sessionLessonNote(root, config.notNow, stateFile, env.CLAUDE_PLUGIN_ROOT ? '/yokoten:doctor' : '`yokoten doctor`');
     if (lesson.line) blocks.push([lesson.line]);
     const notes = [...unsaved.notes, ...lesson.findings, ...(claudeRules ? [claudeRules.finding] : [])];
-    const ok = !failed.length && !isCoreBehind;
+    // A machine with no guard fails the run as full doctor does; a session still starts.
+    const ok = !failed.length && !isCoreBehind && !guard;
     return { ok, lines: blocks.flat(), blocks, report: { ...base, ok, repo: true, stage, next, findings, ...(notes.length ? { notes } : {}) } };
   }
 
@@ -557,6 +567,10 @@ function doctorRun(
     lines.push(...OWNER_STEPS.map((s) => `  not checked ${s}`));
   }
   lines.push(...listBoardSteps(server));
+  // A shell that is not UTC makes each new commit carry its zone (#932). Say the one line
+  // for this shell at the end, where a person looks for the next step. A session never
+  // needs it: init already sets TZ=UTC for agent sessions.
+  if (!session && config.privacy.utc && !isUtcTimeZone(env)) lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
   // The road has no failed mark: a step is done, to do, not now or can't check. Steps
   // left are the way ahead, not problems, so they never fail doctor (#208).
   const ok = !failed.length && !isCoreBehind && !problems.length && machine.every((c) => c.ok);
