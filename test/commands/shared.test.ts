@@ -203,14 +203,33 @@ test('output colour: a terminal only, and NO_COLOR or a dumb terminal turns it o
 
 test('output colour: a mark in green, red or yellow, a heading in bold, a command in cyan (#707)', () => {
   assert.equal(paint('ok', '32', false), 'ok', 'off is plain text');
+  // Rule 3 of the layout (owner 2026-10-24): a mark and a word, and the word keeps its
+  // column, so a block of states still lines up.
   assert.equal(styleLine('  ok      tool-call-guard: ready', false), '  ok      tool-call-guard: ready');
-  assert.equal(styleLine('  ok      tool-call-guard: ready', true), '  \u001b[32mok\u001b[0m      tool-call-guard: ready');
-  assert.match(styleLine('  MISSING tree: 2 problems', true), /^\s+\u001b\[31mMISSING\u001b\[0m /);
-  assert.match(styleLine('    note    a warning', true), /^\s+\u001b\[33mnote\u001b\[0m /);
+  assert.equal(styleLine('  ok      tool-call-guard: ready', true), '  \u001b[32m✔ ok\u001b[0m    tool-call-guard: ready');
+  assert.match(styleLine('  MISSING tree: 2 problems', true), /^\s+\u001b\[31m✘ MISSING\u001b\[0m /);
+  assert.match(styleLine('    note    a warning', true), /^\s+\u001b\[33m⚠ note\u001b\[0m /);
+  assert.equal(styleLine('  next: run `yokoten init`', true), '  next: run \u001b[36m`yokoten init`\u001b[0m', 'a command line is not a state');
   assert.equal(styleLine('project:', true), '\u001b[1mproject:\u001b[0m');
   assert.equal(styleLine('yokoten stopped this: a tag push [release]', true), '\u001b[1;31myokoten stopped this: a tag push [release]\u001b[0m');
   assert.equal(styleLine('  1. safety net', true), '\u001b[1m  1. safety net\u001b[0m');
   assert.equal(styleLine('Run `yokoten init` first', true), 'Run \u001b[36m`yokoten init`\u001b[0m first');
+  // The five states, each with its glyph, in its colour.
+  const states: [string, string, string][] = [
+    ['  ok      core-rules', '32', '✔ ok'],
+    ['    done        security-files', '32', '✔ done'],
+    ['  MISSING runtime: none', '31', '✘ MISSING'],
+    ["  can't check review: unread", '33', "? can't check"],
+    ['    note    a warning', '33', '⚠ note'],
+    ['    next    do this', '33', '● next'],
+    ['    to do   do that', '33', '● to do'],
+  ];
+  for (const [line, colour, mark] of states) {
+    assert.ok(styleLine(line, true).includes(`\u001b[${colour}m${mark}\u001b[0m`), `${line.trim()} keeps its mark and word`);
+    assert.equal(styleLine(line, false), line, `${line.trim()} off a terminal keeps the word alone`);
+  }
+  // A state the five rules do not name keeps its word only.
+  assert.equal(styleLine('  not now     a decision', true), '  \u001b[33mnot now\u001b[0m     a decision');
   // A command inside a coloured line closes the colour, so the outer style is opened again
   // after it; otherwise the rest of a red refusal or a bold heading goes plain (#707).
   assert.equal(
@@ -231,7 +250,8 @@ test('output colour: doctor colours a terminal report and never a pipe or NO_COL
   const sandbox = makeSandbox();
   const colour = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
   assert.match(colour.stdout, /\u001b\[1m/, 'a heading is bold');
-  assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:ok|MISSING|note)\u001b\[0m/, 'a mark has its colour');
+  assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:✔ ok|✔ done|✘ MISSING|⚠ note|● next|● to do|\? can't check)\u001b\[0m/, 'a mark has its glyph, its word and its colour');
+  assert.ok(!/^[ ]*(?:✔|✘|●|⚠|\?)/m.test(colour.stdout), 'the glyph sits inside the colour, so a plain line never shows one');
   const plain = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
   const piped = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
   for (const [name, result] of [['NO_COLOR', plain], ['a pipe', piped]] as const) {
