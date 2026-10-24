@@ -394,6 +394,7 @@ public class YokotenJob {
     startup.stdInput = GetStdHandle(-10);
     startup.stdOutput = GetStdHandle(-11);
     startup.stdError = GetStdHandle(-12);
+    // The host lives only for this check, so these handles stay inheritable until it ends.
     MakeInheritable(startup.stdInput);
     MakeInheritable(startup.stdOutput);
     MakeInheritable(startup.stdError);
@@ -482,9 +483,13 @@ function windowsPowerShell(env: Env): string | null {
   return windowsPowerShellPath(env.SystemRoot);
 }
 
-/** True when spawning PowerShell failed because the program is missing or blocked (#735). */
-export function powerShellBlocked(code: string | undefined): boolean {
-  return code === 'ENOENT' || code === 'EACCES';
+/**
+ * What to say on stderr when the job host could not start. Any spawn error, not only a
+ * missing or blocked program, means the check never ran: it is no result of the worker's
+ * code, so the caller runs `cmd.exe` instead (#735).
+ */
+export function powerShellFallbackNote(code: string | undefined): string {
+  return `yokoten: Windows PowerShell could not hold the check in a job${code ? ` (${code})` : ''}, so a program it leaves running may keep running`;
 }
 
 /** The session id from one `/proc` stat line, or null when the line is not a stat. */
@@ -536,6 +541,8 @@ function pidsFromProc(session: number): number[] {
 }
 
 function pidsWithSession(session: number): number[] {
+  // Only Linux names a session here: macOS `ps` has no session column, so it cannot answer (#735).
+  if (process.platform !== 'linux') return [];
   if (existsSync('/proc/self/stat')) return pidsFromProc(session);
   const listed = spawnSync('ps', ['-ax', '-o', 'pid=,sess='], { encoding: 'utf8', windowsHide: true });
   return listed.status === 0 && typeof listed.stdout === 'string' ? pidsFromSessionTable(listed.stdout, session) : [];
@@ -986,7 +993,8 @@ export function shortenOutput(text: string, env: Env = {}): string {
  * stopped the same way. On Windows the job host has already closed the job, which stops
  * programs `cmd.exe` left behind (#735). A program that has already started its own session
  * is not stopped, and it cannot hold the check open. The check ends on the shell's own result.
- * `powerShellHost`, when set, is tried first. A missing or blocked program runs the platform shell.
+ * `powerShellHost`, when set, is tried first. A host that does not start, for any reason,
+ * runs the platform shell, and the output says why.
  * A short wait collects the last output, then the pipes are dropped. The result is given once.
  */
 export function runDoneWhen(
@@ -1065,8 +1073,10 @@ export function runDoneWhen(
       proc.once('error', (error) => {
         if (!isCurrent()) return;
         const code = (error as NodeJS.ErrnoException).code;
-        // The file was there at the stat, then missing or blocked. Run cmd.exe the old way (#735).
-        if (fromPowerShell && powerShellBlocked(code)) {
+        // The host never ran the check: it was missing, blocked, or refused by the system.
+        // Run cmd.exe the old way and say why, so this is not read as the worker's failure (#735).
+        if (fromPowerShell) {
+          stderr = take(stderr, `${powerShellFallbackNote(code)}\n`);
           try {
             child = spawnDoneWhen(command, cwd, childEnv, null);
           } catch (spawnError) {

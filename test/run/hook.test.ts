@@ -41,7 +41,7 @@ import {
   STATUS_TEXT_LIMIT,
   startGuard,
   wasRefusedRecently,
-  powerShellBlocked,
+  powerShellFallbackNote,
   windowsCommandTail,
   windowsJobArgs,
   windowsPowerShellPath,
@@ -531,7 +531,7 @@ test('done-when: a Windows command keeps its own quotes in the tail after /c (#7
   assert.equal(windowsCommandTail(' "C:\\Program Files\\node.exe" --test'), '" "C:\\Program Files\\node.exe" --test"');
 });
 
-test('windowsPowerShellPath: only the real program, and a blocked start is ENOENT or EACCES (#735)', () => {
+test('windowsPowerShellPath: only the real program, and any failed start names its reason (#735)', () => {
   const sandbox = makeSandbox();
   assert.equal(windowsPowerShellPath(undefined), null);
   assert.equal(windowsPowerShellPath(sandbox.repo), null, 'no powershell.exe under this root');
@@ -539,10 +539,10 @@ test('windowsPowerShellPath: only the real program, and a blocked start is ENOEN
   mkdirSync(dirname(program), { recursive: true });
   writeFileSync(program, '');
   assert.equal(windowsPowerShellPath(sandbox.repo), program);
-  assert.equal(powerShellBlocked('ENOENT'), true);
-  assert.equal(powerShellBlocked('EACCES'), true);
-  assert.equal(powerShellBlocked('EPERM'), false, 'any other spawn error still fails the check');
-  assert.equal(powerShellBlocked(undefined), false);
+  // Any spawn error means the check never ran, so `cmd.exe` takes over and the note says why.
+  assert.match(powerShellFallbackNote('ENOENT'), /could not hold the check in a job \(ENOENT\)/);
+  assert.match(powerShellFallbackNote('EPERM'), /could not hold the check in a job \(EPERM\)/);
+  assert.match(powerShellFallbackNote(undefined), /could not hold the check in a job,/);
 });
 
 // The host is named, then missing or mode 0. The check must run in the shell, not fail closed (#735).
@@ -561,6 +561,8 @@ test('done-when: a missing or blocked PowerShell still runs the check (#735)', {
   const blockedRun = await runDoneWhen('echo blocked-735', sandbox.repo, sandbox.env, 5000, undefined, blocked);
   assert.equal(blockedRun.ok, true, blockedRun.output);
   assert.match(blockedRun.output, /blocked-735/);
+  // A host that cannot start says why, and the note does not fail the check (#735).
+  assert.match(blockedRun.output, /could not hold the check in a job/);
 });
 
 test('sessionFromStat: the session is the field after the command name (#735)', () => {

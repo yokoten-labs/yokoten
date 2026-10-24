@@ -1076,7 +1076,9 @@ flowchart LR
 - On Windows, `cmd.exe` runs in a job when Windows PowerShell is there. Closing the
   job stops those programs after `cmd.exe` has exited. If PowerShell is missing,
   blocked, or cannot start the job, the check runs `cmd.exe` alone. A program left
-  behind can then keep running.
+  behind can then keep running. The host starts with `-ExecutionPolicy Bypass`,
+  so it can run the short script yokoten writes; nothing else runs there.
+  The two-minute budget includes starting that host.
 - A program that has already started its own session is not stopped. `setsid` starts
   one. A new process group in the same session is stopped on Linux. On macOS, `ps` gives no
   session id, so only the check's own process group is stopped.
