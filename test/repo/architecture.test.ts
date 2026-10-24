@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { killedLine, makeSandbox, makeTempDir, runChild } from './helpers.ts';
 import { fileURLToPath } from 'node:url';
 import { COMMANDS } from '../../src/run/cli.ts';
-import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } from '../../src/run/names.ts';
+import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } from '../../src/run/notes/names.ts';
 import { HOME_DIR, homeDirOf } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
@@ -63,6 +63,7 @@ const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
   'agents/hooks-file.ts', // no tests yet (#152); the install and init tests use it
   'host/github/index.ts', // re-exports the GitHub adapter's public names
+  'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
 ];
 
@@ -288,6 +289,17 @@ test('child processes: a killed child names the test that ran it (#436)', () => 
   assert.equal(killedLine('a', 'git', 5, { signal: 'SIGTERM', error: tooMuch }), 'test "a": its child `git` was killed for printing more than maxBuffer\n');
   assert.equal(runChild('node', ['-e', "process.stdout.write('x'.repeat(2 ** 21))"]).stdout.length, 2 ** 21, 'more than Node\'s 1 MB default');
   assert.equal(runChild('node', ['-e', '']).status, 0);
+});
+
+// #813: runChild spread the caller's options into spawnSync, so `shell: true` let a test value
+// (a temp path, a file name) become shell code. A caller that asks for a shell gets none.
+test('child processes: runChild never starts a shell (#813)', () => {
+  // The type names every field, so TypeScript callers cannot ask. Plain JavaScript, or this cast,
+  // still can: the helper must ignore it at runtime, not only refuse it at compile time.
+  const asksForShell = { shell: true } as unknown as Parameters<typeof runChild>[2];
+  const result = runChild('/bin/echo', ['a; echo shell ran'], asksForShell);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout, 'a; echo shell ran\n', 'an argument stays a value, even when a caller asks for a shell');
 });
 
 // #436: one gh call in 100 left a telemetry sender running, which wrote its device id into
@@ -678,7 +690,7 @@ test('workflows: a run on main is never cancelled, waiting or running (#660, #79
 // ---- Names (#109, record 0006) ----
 //
 // The names we declare in src/, bin/ and test/ follow the rule in AGENTS.md. The reader lives
-// in src/run/names.ts, where `check --pr` uses it too. A test may still use a one-letter name
+// in src/run/notes/names.ts, where `check --pr` uses it too. A test may still use a one-letter name
 // inside a short block (10 lines or fewer).
 
 test('names: words are counted from camelCase, PascalCase and CONSTANT_CASE (#109)', () => {

@@ -3,9 +3,11 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
-import { CLI, makeSandbox, pick } from '../../repo/helpers.ts';
+import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../repo/helpers.ts';
 import { runDoctor } from '../../../src/commands/advice/doctor.ts';
 import type { Invocation, Output } from '../../../src/commands/shared.ts';
 
@@ -25,9 +27,23 @@ test('doctor --session --agent: plain text for Codex, hookSpecificOutput JSON fo
   assert.deepEqual(Object.keys(out.hookSpecificOutput), ['additionalContext']);
   assert.equal(out.hookSpecificOutput.additionalContext, (plain.stdout + unfiltered).trimEnd());
   assert.ok(!result.stdout.includes(sandbox.home), 'output shows the home path');
-  // Outside a repo there is nothing to say, and no JSON either.
+  // Outside a repo there is nothing to say, and no JSON either. A stop marker keeps the
+  // walk from finding the repo around this folder when TMPDIR lives inside one.
+  stopCheckoutWalk(sandbox.home);
   assert.equal((await sandbox.call(['doctor', '--session', '--agent', 'gemini'], { cwd: sandbox.home })).stdout, '');
   assert.equal((await sandbox.call(['doctor', '--session', '--agent', 'cursor'])).status, 1);
+});
+
+test('doctor --session: a desk names the real model and vendor first, and the board keeps the model (#748)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', '{}\n');
+  const identity = 'yokoten: you are DeepSeek (deepseek-flash), served through codex; codex is your harness, and what it says about its own maker is the tool, not you.';
+  const out = (await sandbox.call(['doctor', '--session', '--agent', 'codex'], { extra: { YOKOTEN_MODEL: 'deepseek-flash', YOKOTEN_VENDOR: 'DeepSeek' } })).stdout;
+  assert.equal(out.split('\n')[0], identity, 'the brief starts with who the agent is');
+  assert.equal(JSON.parse(readFileSync(join(sandbox.repo, '.yokoten-agent.json'), 'utf8')).model, 'deepseek-flash', 'the board reads the real model');
+  // A model of the harness's own vendor needs no line: its prompt already tells the truth.
+  const own = (await sandbox.call(['doctor', '--session', '--agent', 'codex'], { extra: { YOKOTEN_MODEL: 'gpt-6.1-sol', YOKOTEN_VENDOR: 'OpenAI' } })).stdout;
+  assert.ok(!own.includes('you are'), 'no identity line for the harness own vendor');
 });
 
 test('doctor --session: an agent that cannot filter output hears it once, with the opt-in (#390)', async () => {
@@ -96,7 +112,7 @@ test('doctor --session: a worker hears that lead-only files are guarded; the lea
 
 // #561: full doctor says one line while the slow reads run, on a terminal only. A session
 // never reads the server, and --json keeps stdout to the report.
-test('doctor: one progress line on a terminal; none off it, in a session, or with --json (#561)', () => {
+test('doctor: one progress line on a terminal; none off it, in a session, or with --json (#561)', async () => {
   const sandbox = makeSandbox();
   const kept = (isTTY: boolean | undefined) => {
     const chunks: string[] = [];
@@ -104,19 +120,19 @@ test('doctor: one progress line on a terminal; none off it, in a session, or wit
     if (isTTY !== undefined) (stream as Writable & { isTTY: boolean }).isTTY = isTTY;
     return { stream: stream as Output, text: () => chunks.join('') };
   };
-  const run = (isTTY: boolean | undefined, args: string[]): { code: number; stdout: string } => {
+  const run = async (isTTY: boolean | undefined, args: string[]): Promise<{ code: number; stdout: string }> => {
     const stdout = kept(isTTY);
     const stderr = kept(undefined);
     const invocation: Invocation = { command: 'doctor', args, env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
-    return { code: runDoctor(invocation), stdout: stdout.text() };
+    return { code: await runDoctor(invocation), stdout: stdout.text() };
   };
   const line = 'reading GitHub settings...\n';
-  const tty = run(true, []);
+  const tty = await run(true, []);
   assert.ok(tty.stdout.startsWith(line), 'the line comes first');
-  const piped = run(undefined, []);
+  const piped = await run(undefined, []);
   assert.ok(!piped.stdout.includes('reading GitHub settings'), 'no line off a terminal');
-  assert.ok(!run(true, ['--session']).stdout.includes('reading GitHub settings'), 'no line at session start');
-  const json = run(true, ['--json']);
+  assert.ok(!(await run(true, ['--session'])).stdout.includes('reading GitHub settings'), 'no line at session start');
+  const json = await run(true, ['--json']);
   assert.ok(!json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
   JSON.parse(json.stdout);
 });

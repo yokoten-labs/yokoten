@@ -4,9 +4,9 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, parse } from 'node:path';
-import { checkCommand, checkEdit } from '../../rules/guards.ts';
+import { checkCommand, checkEdit } from '../../rules/guards/index.ts';
 import { DEFAULTS } from '../../rules/config.ts';
-import { checkBuildOutput, checkLayout } from '../../rules/layout.ts';
+import { checkBuildOutput, checkCodeOwners, checkLayout } from '../../rules/layout.ts';
 import { notUtc, POSITIVE_CONTROL, scanText } from '../../rules/privacy.ts';
 import { SECRET_CONTROL } from '../../rules/privacy/secrets.ts';
 import { judge } from '../../run/hook.ts';
@@ -18,7 +18,7 @@ import * as gemini from '../../agents/runtimes/gemini.ts';
 import * as grok from '../../agents/runtimes/grok.ts';
 import { hostGuardMisses } from '../../host/gh-commands.ts';
 import { UNSAVED_CONTROL, unsavedNotes } from '../advice/unsaved.ts';
-import { HOME_DIR } from '../files.ts';
+import { HOME_DIR, isNewerKitCopy, sealManaged } from '../files.ts';
 import { compareCoreRules } from '../init.ts';
 import { coreRulesControl, roadControl } from './lessons.ts';
 import { leftoverControl, machineControl } from './machine.ts';
@@ -36,11 +36,16 @@ export function selfTest(): string[] {
   if (scanText(SECRET_CONTROL, { file: 'control' }).length < 2) failed.push('secret check');
   if (!notUtc('A <a@example.com> 1760745600 +0700') || notUtc('A <a@example.com> 1760745600 +0000')) failed.push('time zone check');
   if (checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS).length !== 1) failed.push('layout check');
+  if (checkCodeOwners(['src/a.ts'], 'src/gone.ts @lead\n').length !== 1) failed.push('CODEOWNERS check');
   if (checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS).length !== 2) failed.push('build output check');
   if (!isUnsavedControlCaught()) failed.push('unsaved work check');
   failed.push(...roadControl());
   const kit = '# rules\n\n## This project\n';
   if (compareCoreRules('# old rules\n\n## This project\n', kit).state !== 'behind' || compareCoreRules('# rules\n', kit).state !== "can't compare") failed.push('core rules check');
+  // A note must catch an edited file behind an older kit copy, and stay quiet on the same copy.
+  const kitMark = '<!-- managed by yokoten; a test mark -->\n';
+  const olderCopy = sealManaged(`${kitMark}old body\n`);
+  if (!isNewerKitCopy(olderCopy, `${kitMark}new body\n`) || isNewerKitCopy(olderCopy, `${kitMark}old body\n`)) failed.push('edited kit note');
   failed.push(...coreRulesControl());
   failed.push(...machineControl());
   failed.push(...leftoverControl());

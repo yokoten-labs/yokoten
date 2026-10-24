@@ -1,20 +1,22 @@
-import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, formatFinding } from '../../rules/message.ts';
 import { homeOf } from '../../rules/privacy.ts';
+import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
 import { countNotes, waitingLine } from '../../run/learn.ts';
 import { type Gh, readServer, type ServerSettings, type Unread } from '../../host/github/index.ts';
 import { type Host, hostOf, isNoAdapter, noAdapter } from '../../host/hosts.ts';
 import { readUnsaved, unsavedNotes } from '../advice/unsaved.ts';
 import { VERSION } from '../files.ts';
-import { isSelf, withGitReads, workflowNotes } from '../init.ts';
+import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
 import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
-import { agentHooks, allowedMarkCount, commandWording, coreRulesCheck, doubleInstallCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, userAgentHooks } from './checks.ts';
-import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, STATE_FILE } from './lessons.ts';
+import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
+import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { selfTest } from './self-test.ts';
 
@@ -25,6 +27,7 @@ const OWNER_STEPS = ['the bot: a GitHub App (or collaborator) with write access;
 const BY_HAND = [
   'main: a ruleset with pull request required, the CI check required, code owner review, no force push, no deletion; squash merge only, delete branch on merge',
   'tags: a ruleset on v* so only you create, move or delete a release tag',
+  'release: in Settings, Environments, create release, add yourself as a required reviewer, and add a Tag rule named v*',
   'security: in Settings, Advanced Security, turn on private vulnerability reporting, secret scanning with push protection, and Dependabot alerts',
 ];
 
@@ -55,7 +58,10 @@ const NO_REMOTE_FIX = 'make the repo on your code host, add it as origin with `g
 /** The server settings of the origin's host, or why they can't be read. A host with no adapter is read without the network (#504). */
 function readOrigin(host: Host, gh: Gh): ServerSettings | Unread {
   if (host.kind === 'none') return { unread: NO_REMOTE, fix: NO_REMOTE_FIX };
-  return host.kind === 'github' ? readServer(gh, host.repo) : noAdapter(host);
+  if (host.kind === 'github') return readServer(gh, host.repo);
+  // Gitea is read by the command, which can wait for the network (#505).
+  if (host.kind === 'gitea') return { unread: 'the Gitea settings were not read', fix: 'run `yokoten doctor`' };
+  return noAdapter(host);
 }
 
 /**
@@ -212,6 +218,8 @@ export interface StepState {
  */
 export interface DoctorReport {
   version: string;
+  /** The release channel this machine runs: stable, beta or dev (#632). */
+  channel: string;
   ok: boolean;
   selfTest: { ok: boolean; failed: string[] };
   /** False outside a git repo: then there is no road to walk. */
@@ -250,9 +258,41 @@ function rewordStrings<T>(value: T, reword: (text: string) => string): T {
   return value;
 }
 
+/**
+ * Why one stage that a jump passed does not hold the road back: what its steps are, by mark
+ * (#514). A step already done and a step yokoten can't check yet get their own words, so the
+ * line says which reason applies instead of joining both with "or".
+ */
+function stageJumpText(marks: Mark[]): string {
+  const countOf = (mark: Mark) => marks.filter((each) => each === mark).length;
+  const done = countOf('done');
+  if (done === marks.length) return 'its steps were already in place';
+  const unchecked = countOf("can't check");
+  const later = countOf('not now');
+  const parts: string[] = [];
+  if (done) parts.push(`${done} of its steps ${done === 1 ? 'was' : 'were'} already in place`);
+  if (unchecked) parts.push(`${unchecked} can't be checked yet`);
+  if (later) parts.push(`${later} ${later === 1 ? 'is' : 'are'} marked not now`);
+  return parts.join(', ').replace(/, ([^,]*)$/, ' and $1');
+}
+
+/**
+ * What one guard call costs on this machine (#461): wall time and CPU time, from one real
+ * run of the guard on a trivial command. The project's own copy when it has one, else the
+ * copy that runs doctor. A report line, never a failure; null when there is nothing to run
+ * or the machine can't measure. Full doctor only: a session must start fast.
+ */
+export function guardCostCheck(root: string, probe: MachineProbe, env: Env): Practice | null {
+  if (!probe.measureGuard) return null;
+  const own = join(root, hookCliPath(root));
+  const cli = existsSync(own) ? own : fileURLToPath(new URL('../../../bin/yokoten.mjs', import.meta.url));
+  const cost = probe.measureGuard(cli, root, env);
+  return cost ? { name: 'guard', ok: true, finding: finding('guard-cost', '', ''), detail: guardLine(cost) } : null;
+}
+
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; fillMarks?: boolean; machine?: MachineProbe },
+  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe },
 ): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
   const lines: string[] = [];
   const failed = selfTest();
@@ -261,13 +301,22 @@ function doctorRun(
     lines.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);
     findings.push(finding('self-test', `${failed.join(', ')} let a known-bad input through`, 'do not trust any check until this is fixed; run `yokoten install` again, or report it in an issue'));
   }
-  const base = { version: VERSION, selfTest: { ok: !failed.length, failed }, stages: STAGES };
+  const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed }, stages: STAGES };
   if (!root) return { ok: !failed.length, lines, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings } };
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).
   // A host with no adapter needs no network, so a session knows it too (#504).
-  const host = hostOf(gitConfig(root, 'remote.origin.url', env));
-  const server: ServerRead = host.kind === 'other' ? noAdapter(host) : session ? undefined : gh ? readOrigin(host, gh) : { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' };
+  // The Gitea read is async, so the command makes it and passes it in (#505).
+  const host = givenHost ?? hostOf(gitConfig(root, 'remote.origin.url', env), config.host);
+  const server: ServerRead = givenServer !== undefined
+    ? givenServer
+    : host.kind === 'other'
+      ? noAdapter(host)
+      : session
+        ? undefined
+        : gh
+          ? readOrigin(host, gh)
+          : { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' };
   const where = walk(road(root, env, ROAD, server, config), config.notNow);
   // Full doctor from the command line adds the obvious marks first (#390); a session writes nothing.
   // With no home folder, the checks that read or keep settings there are skipped, never crash (#404).
@@ -306,6 +355,9 @@ function doctorRun(
     if (claudeRules) blocks.push([`yokoten: ${formatFinding(claudeRules.finding)}`]);
     const double = hasHome ? doubleInstallCheck(root, env) : null;
     if (double) blocks.push([`yokoten: ${formatFinding(double)}`]);
+    // An edit stays, and a kit fix that waits behind it is named here, not after a surprise (#477).
+    const edited = hasHome ? editedKitCheck(env) : null;
+    if (edited) blocks.push([`yokoten: ${formatFinding(edited)}`]);
     // A full disk stops every session unseen (record 0012): statfs and one small file, no child process.
     for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) blocks.push([`yokoten: ${formatFinding(c.finding)}`]);
     const unsaved = sessionUnsaved(root, env);
@@ -329,8 +381,30 @@ function doctorRun(
     return { ok, lines: blocks.flat(), blocks, report: { ...base, ok, repo: true, stage, next, findings, ...(notes.length ? { notes } : {}) } };
   }
 
-  lines.push(`yokoten ${VERSION}, self-test ${failed.length ? 'FAILED' : 'ok'}`);
+  lines.push(`yokoten ${VERSION} (${base.channel}), self-test ${failed.length ? 'FAILED' : 'ok'}`);
+  // Work only on this machine (#365): notes, never a failure, and read only. Read before the
+  // road line, so the state file is found in the git folder it names (#453), as a session
+  // start finds it, and a stage that jumped can say so next to the road (#514).
+  const unsaved = readUnsaved(root, { env });
+  // Full doctor keeps which lessons this clone has seen; a session start keeps only which it ran.
+  const stateFile = unsaved?.commonDir ? join(unsaved.commonDir, STATE_FILE) : findStateFile(root, env);
+  const state = readState(stateFile);
+  // The road's stage has its own file, next to the lessons state (#514). A broken or missing
+  // file has no stage: the first run has nothing to compare with.
+  const stageFile = stageFileFor(stateFile);
+  const savedStage = readState(stageFile).lastStage;
+  const lastStage = typeof savedStage === 'number' && Number.isInteger(savedStage) && savedStage > 0 ? savedStage : null;
   lines.push(where.stage ? `the road: stage ${where.stage} of ${STAGES.length}, ${STAGES[where.stage - 1]}` : `the road: ${ROAD_DONE.replace(/^yokoten: /, '')}`);
+  // A stage that moved by more than one since the last full doctor says which stages it
+  // passed, and why each counts as done, one line each (#514). The first run has no stage to
+  // compare with, and a move of one is the usual next step, so neither says anything.
+  if (where.stage !== null && lastStage !== null && where.stage - lastStage >= 2) {
+    for (let stage = lastStage + 1; stage < where.stage; stage++) {
+      const marks = where.steps.filter((walked) => walked.step.stage === stage).map((walked) => walked.mark);
+      const isDone = marks.every((mark) => mark === 'done');
+      lines.push(`stage ${stage} ${isDone ? 'is done too' : 'counts as done'}: ${stageJumpText(marks)}`);
+    }
+  }
   const steps: StepState[] = [];
   // With no origin remote, the steps that read the server say so in one line, not one each (#502).
   const noRemote = server !== undefined && 'unread' in server && server.unread === NO_REMOTE;
@@ -374,17 +448,14 @@ function doctorRun(
     lines.push(`  note    time-zone: ${stepText(zones)}`);
     notes.push(zones);
   }
-  // Work only on this machine (#365): notes, never a failure, and read only. Read here, so
-  // the state file is found in the git folder it names, as a session start finds it (#453).
-  const unsaved = readUnsaved(root, { env });
+  // Open changes that collide (#909): read from the kept map, no git call for each change.
+  const conflicts = conflictNote(root, env, Date.now(), unsaved?.commonDir ?? null);
+  if (conflicts) lines.push(`  note    conflicts: ${conflicts}`);
   const noCi = noCiNote(config.notNow, where.stage, server);
   if (noCi) {
     lines.push(`  note    no-ci: ${stepText(noCi)}`);
     notes.push(noCi);
   }
-  // Full doctor keeps which lessons this clone has seen; a session start keeps only which it ran.
-  const stateFile = unsaved?.commonDir ? join(unsaved.commonDir, STATE_FILE) : findStateFile(root, env);
-  const state = readState(stateFile);
   const seenLessons = state.seenLessons ?? [];
   const lessons = lessonChecks(root, config.notNow, undefined, stateFile ? seenLessons : null);
   const nextSeen = seenAfter(seenLessons, lessons);
@@ -398,6 +469,9 @@ function doctorRun(
   }
   const nextWorkflows = [...seenWorkflows, ...workflows.flatMap((w) => (w.seen === undefined ? [] : [w.seen]))];
   if (nextSeen.length > seenLessons.length || nextWorkflows.length > seenWorkflows.length) saveState(stateFile, { ...state, seenLessons: nextSeen, ...(nextWorkflows.length ? { seenWorkflows: nextWorkflows } : {}) });
+  // A stage this run holds is saved for the next one. The done road (`where.stage === null`)
+  // leaves the last stage where it was: there is no new stage to compare with.
+  if (where.stage !== null && where.stage !== lastStage) saveState(stageFile, { lastStage: where.stage });
   lines.push(...formatLessonChecks(lessons));
   notes.push(...lessons.flatMap((lesson) => lesson.findings));
   const checkNotes: Finding[] = [];
@@ -440,7 +514,8 @@ function doctorRun(
   // test folders left in the temp folder (#400), and a Node without the security fixes (#572).
   const agentTemp = agentTempDirCheck(env, probe);
   const leftovers = leftoverTempCheck(env, probe);
-  for (const c of [...userAgentHooks(env), ...diskSpaceChecks(root, env, probe, false), ...(agentTemp ? [agentTemp] : []), ...(leftovers ? [leftovers] : []), nodeSecurityCheck(probe)]) {
+  const guardCost = session || root === null ? null : guardCostCheck(root, probe, env);
+  for (const c of [...userAgentHooks(env), ...diskSpaceChecks(root, env, probe, false), ...(agentTemp ? [agentTemp] : []), ...(leftovers ? [leftovers] : []), nodeSecurityCheck(probe), ...(guardCost ? [guardCost] : [])]) {
     lines.push(`  ${c.ok ? 'ok     ' : 'note   '} ${c.name}${c.ok ? (c.detail ? `: ${c.detail}` : '') : `: ${stepText(c.finding)}`}`);
     if (!c.ok) notes.push(c.finding);
   }
@@ -458,6 +533,11 @@ function doctorRun(
   if (launcher) {
     lines.push(`  note    command: ${stepText(launcher)}`);
     notes.push(launcher);
+  }
+  const edited = hasHome ? editedKitCheck(env) : null;
+  if (edited) {
+    lines.push(`  note    edited-kit: ${stepText(edited)}`);
+    notes.push(edited);
   }
   const waiting = upstreamNote(root, env);
   if (waiting) {

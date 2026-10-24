@@ -55,13 +55,19 @@ yokoten: git push origin v1.2.0 pushes a release tag. Only the owner decides whe
 只要 [Node](https://nodejs.org/) 22.23.4 或更高（用 Node 24 要 24.22.1 起，用 Node 26 要 26.12.1 起）。别的都不用装。
 
 ```sh
-npx yokoten install      # 每台电脑一次
 cd your-project
+npx yokoten             # 一次就好：装好 yokoten，加上规则，显示下一步
+```
+
+这就是全部的开始。在任何项目里再运行一次 `npx yokoten`，它只做还缺的部分。想一步一步来的话：
+
+```sh
+npx yokoten install      # 每台电脑一次
 npx yokoten init         # 每个项目一次
 npx yokoten doctor       # 走到了第几关，下一步做什么
 ```
 
-用 Claude Code 的话，可以改用插件。先运行 `/plugin marketplace add yokoten-labs/yokoten`，再运行 `/plugin install yokoten@yokoten`。插件和 `npx` 选一个，不要两个都装。只在 CI 里用的话，[当成 GitHub Action 用](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)。提交检查只认 UTC 时间。在 shell 的配置文件里加一行 `export TZ=UTC`，加一次就行。
+用 Claude Code 的话，可以改用插件。先运行 `/plugin marketplace add yokoten-labs/yokoten`，再运行 `/plugin install yokoten@yokoten`。插件和 `npx` 选一个，不要两个都装。选择[要安装哪个版本](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)：Stable（默认）、Beta 或 Dev。只在 CI 里用的话，[当成 GitHub Action 用](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)。提交检查只认 UTC 时间。在 shell 的配置文件里加一行 `export TZ=UTC`，加一次就行。
 
 `npx skills add yokoten-labs/yokoten` 只复制 skills。还要再运行 `npx yokoten install`，否则没有命令守卫，也没有会话里的 doctor。
 
@@ -117,6 +123,7 @@ yokoten 在 PR 之前工作，也和 [PR 审查机器人](https://github.com/yok
 ## 了解更多
 
 - **[使用指南](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md)**：12 条规则、所有命令、它怎么工作，还有它做不到的事。
+- **[标准](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/standard.md)**：每个 agent 写出、yokoten 读取的格式。版本 1。
 - **[决定记录](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)**：为什么这样做。
 - **[更新记录](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)**、**[参与开发](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)**、**[安全](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)**、**[服务器设置](https://github.com/yokoten-labs/yokoten/blob/main/docs/server.md)**。
 

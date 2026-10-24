@@ -9,7 +9,8 @@ import { test } from 'node:test';
 import { makeSandbox, makeTempDir, ROOT } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { launcherDir, setUpLauncher } from '../../../src/setup/install.ts';
-import { doctor, launcherCheck, privacyNotes } from '../../../src/setup/doctor/index.ts';
+import { sealManaged } from '../../../src/setup/files.ts';
+import { doctor, launcherCheck, privacyNotes, releaseChannel } from '../../../src/setup/doctor/index.ts';
 
 // #522: install fills the git name, so the marks are in place. One run gives one answer.
 test('install then doctor: the private-marks lines agree, in full doctor and a session (#522)', async () => {
@@ -39,6 +40,23 @@ test('install then doctor: the private-marks lines agree, in full doctor and a s
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /private-marks is missing or has no marks/);
 });
 
+test('doctor: names a newer kit copy that waits behind an edit (#477)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const skill = join(sandbox.home, '.claude', 'skills', 'dispatch', 'SKILL.md');
+  const installed = readFileSync(skill, 'utf8');
+  // An edit on the copy install wrote: the kit has nothing newer, so doctor stays quiet.
+  writeFileSync(skill, `${installed}\nAsk the owner before a release.\n`);
+  assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /edited-kit/);
+  // An edit on an older kit copy: the newer copy waits, and doctor names how to compare.
+  const older = sealManaged(installed.replace('Hand one task', 'Hand one job'));
+  writeFileSync(skill, `${older}\nAsk the owner before a release.\n`);
+  const out = (await sandbox.call(['doctor'])).stdout;
+  assert.match(out, /^ +note +edited-kit: a newer kit copy is waiting for the skill dispatch \(~\/\.claude\/skills\/dispatch\/SKILL\.md\) you edited/m);
+  assert.match(out, /diff ~\/\.claude\/skills\/dispatch\/SKILL\.md .*kit\/user\/skills\/dispatch\/SKILL\.md/);
+  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a newer kit copy is waiting for the skill dispatch/);
+});
+
 test('doctor: the plugin, when on, stands in for install', async () => {
   const sandbox = makeSandbox();
   const machine = async () => (await sandbox.call(['doctor'])).stdout;
@@ -57,6 +75,28 @@ test('doctor: the plugin, when on, stands in for install', async () => {
   assert.doesNotMatch(out, /plugin-and-install/, 'no install pieces, no note');
   writeFileSync(join(sandbox.home, '.claude', 'settings.json'), 'not json');
   assert.match(await machine(), /MISSING session-doctor/, 'a broken settings file enables nothing');
+});
+
+test('doctor: names the release channel this machine runs (#632)', async () => {
+  const sandbox = makeSandbox();
+  const version: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
+  mkdirSync(join(sandbox.home, '.claude'), { recursive: true });
+  const settings = (enabledPlugins: unknown) => writeFileSync(join(sandbox.home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins }));
+  const channelLine = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((line) => line.startsWith('yokoten '));
+  settings({ 'yokoten@yokoten': true });
+  assert.equal(await channelLine(), `yokoten ${version} (stable), self-test ok`);
+  settings({ 'yokoten-beta@yokoten': true });
+  assert.equal(await channelLine(), `yokoten ${version} (beta), self-test ok`);
+  assert.equal(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).channel, 'beta');
+  settings({ 'yokoten-dev@yokoten': true });
+  assert.equal(await channelLine(), `yokoten ${version} (dev), self-test ok`);
+  // Another name does not count, and no plugin means the released package.
+  settings({ 'yokoten-other@yokoten': true });
+  assert.equal(await channelLine(), `yokoten ${version} (stable), self-test ok`);
+  // yokoten's own checkout runs Dev, unless a plugin says otherwise.
+  assert.equal(releaseChannel(ROOT, sandbox.env), 'dev');
+  settings({ 'yokoten@yokoten': true });
+  assert.equal(releaseChannel(ROOT, sandbox.env), 'stable');
 });
 
 test('doctor: the plugin and install both on is a note that says to uninstall (#300)', async () => {

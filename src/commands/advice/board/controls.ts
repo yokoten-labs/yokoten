@@ -17,7 +17,7 @@
 // Stop only for processes this board started, and every start and stop in a log file.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, existsSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as codex from '../../../agents/runtimes/codex.ts';
 import * as deepseekHarness from '../../../agents/runtimes/small/deepseek-harness.ts';
@@ -25,6 +25,7 @@ import * as grok from '../../../agents/runtimes/grok.ts';
 import * as muse from '../../../agents/runtimes/muse.ts';
 import { type Env } from '../../../rules/config.ts';
 import { hideHome } from '../../../rules/privacy.ts';
+import { readGit } from '../../../run/check.ts';
 import { hookCliPath } from '../../../setup/init.ts';
 import { type MachineState, type ScheduleRoom, type ScheduleSettings, type ScheduleSummary, roomStateOf, SCHEDULE_DEFAULTS, takeStarts } from '../schedule.ts';
 import { planOf, roomOf } from './waiting.ts';
@@ -74,6 +75,17 @@ export interface BoardLimits {
 /** The board's limits at start: three agents at once, no per-model cap, and a 1024 MB memory floor. */
 export const BOARD_DEFAULT_LIMITS: BoardLimits = { maxAgents: 3, byModel: {}, memoryFloorMb: SCHEDULE_DEFAULTS.memoryFloorMb };
 
+/** How long a worker the board starts may run: three hours unless yokoten.json says otherwise (#711). */
+export const BOARD_TIME_LIMIT_MS = 3 * 60 * 60 * 1000;
+
+/** The report the board writes when the time limit ends a worker that wrote none (#711). */
+export const BOARD_REPORT_PREFIX = 'REPORT-';
+
+/** Where the worker's own report goes: REPORT-<issue>.md in its worktree. */
+export function boardReportPath(worktree: string, issue: string): string {
+  return join(worktree, `${BOARD_REPORT_PREFIX}${issue}.md`);
+}
+
 /** One agent the board started. Its output stays while it runs and after it stops. */
 export interface BoardRun {
   name: string;
@@ -82,8 +94,10 @@ export interface BoardRun {
   model: string;
   worktree: string;
   pid: number | null;
-  /** Running, or stopped by the owner. A start that fails never joins the list. */
+  /** Running, or stopped by the owner or its time limit. A start that fails never joins the list. */
   status: 'running' | 'stopped';
+  /** Who ended a stopped run: the owner, or the time limit (#711). */
+  stoppedBy?: 'owner' | 'time limit';
   startedAt: string;
   stoppedAt: string;
   exitCode: number | null;
@@ -201,11 +215,13 @@ export interface BoardControls {
   handles: Map<string, BoardChild>;
   logPath: string;
   spawner: BoardSpawner;
+  /** How long each started worker may run, in milliseconds (#711). */
+  timeLimitMs: number;
 }
 
 /** Fresh controls for a board: default limits, no runs, the log at the given path. */
-export function createBoardControls(logPath: string, spawner: BoardSpawner = spawnBoardChild): BoardControls {
-  return { limits: { ...BOARD_DEFAULT_LIMITS, byModel: {} }, runs: [], seen: [], handles: new Map(), logPath, spawner };
+export function createBoardControls(logPath: string, spawner: BoardSpawner = spawnBoardChild, timeLimitMs = BOARD_TIME_LIMIT_MS): BoardControls {
+  return { limits: { ...BOARD_DEFAULT_LIMITS, byModel: {} }, runs: [], seen: [], handles: new Map(), logPath, spawner, timeLimitMs };
 }
 
 /** One line in the board's log: when, and what started, stopped, or changed. Never throws. */
@@ -224,14 +240,63 @@ export interface BoardStartAsk {
   model: string;
 }
 
-/** The brief the board hands the agent: the issue, its worktree, and the model. */
-export function boardBrief(issue: string, worktree: string, model: string): string {
+/**
+ * The commit a reused worktree resumes from: the branch's short hash, or '' when git
+ * cannot read one. The hash is enough to go back to; the subject stays out of the log.
+ */
+export function boardAnchor(dir: string, env: Env): string {
+  try {
+    return readGit(dir, ['rev-parse', '--short', 'HEAD'], { env }).toString('utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The brief the board hands the agent: the issue, its worktree, the model, and the
+ * safe exit. The exit names three anchors: a commit after each green test, a stop after
+ * the same step fails three times, and the last commit to resume from.
+ */
+export function boardBrief(issue: string, worktree: string, model: string, anchor = ''): string {
   return [
     `Issue: #${issue}`,
     `Worktree: ${worktree}`,
     `Model: ${model}`,
     'Goal: do the issue in this worktree as a yokoten worker. Follow AGENTS.md. Commit the work. Never push.',
+    `Report: write ${BOARD_REPORT_PREFIX}${issue}.md in the worktree before you stop.`,
+    'Stop: after the same step fails 3 times, or the guard refuses 3 times, stop. Tell the lead where you stopped and what is left. Stopping is good work, not failure.',
+    'Anchor: after the tests you touched pass, commit. That commit is where you resume.',
+    `Resume: ${anchor ? `the last commit is ${anchor}. ` : ''}Read \`git log --oneline -5\` and \`git status\` first, then continue. Do not undo the earlier work.`,
   ].join('\n');
+}
+
+/**
+ * Write a short report for a worker the time limit stopped, when it wrote none (#711).
+ * It uses the last output lines the board kept, so the lead still hears where it
+ * stopped. A report the worker wrote is never touched.
+ */
+export function writeStopReport(run: BoardRun, limitMs: number): string | null {
+  const path = boardReportPath(run.worktree, run.issue);
+  if (existsSync(path)) return null;
+  const minutes = Math.round(limitMs / 60_000);
+  const last = run.output.slice(-20);
+  const text = [
+    `# Report for issue #${run.issue}`,
+    '',
+    `Stopped by the time limit after ${minutes} minutes. The worker wrote no report.`,
+    `Vendor: ${run.vendor}; model: ${run.model}; issue: #${run.issue}.`,
+    '',
+    '## Last output',
+    '',
+    ...(last.length ? last.map((line) => `    ${line}`) : ['    (no output)']),
+    '',
+  ].join('\n');
+  try {
+    writeFileSync(path, text);
+    return path;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -384,7 +449,7 @@ export function startBoardAgent(root: string, env: Env, controls: BoardControls,
   if ('fail' in made) return made.fail;
   const ready = boardGuardReady(ask.vendor, made.dir, env);
   if (ready) return ready;
-  const parts = boardStartParts(ask.vendor, boardBrief(ask.issue, made.dir, ask.model), ask.model);
+  const parts = boardStartParts(ask.vendor, boardBrief(ask.issue, made.dir, ask.model, boardAnchor(made.dir, env)), ask.model);
   if (!parts) return `the board starts ${Object.keys(BOARD_START_COMMANDS).join(', ')}: start ${ask.vendor} by hand`;
   const marked = markWorktree(root, made.dir, env);
   if ('fail' in marked) return `the board could not mark the worktree at ${hideHome(made.dir, env)} as a worker's: ${marked.fail}`;
@@ -409,12 +474,14 @@ export function startBoardAgent(root: string, env: Env, controls: BoardControls,
     if (run.output.length > BOARD_OUTPUT_LINES) run.output.splice(0, run.output.length - BOARD_OUTPUT_LINES);
   };
   let child: BoardChild;
+  let timer: NodeJS.Timeout | undefined;
   try {
     child = controls.spawner(command, args, { cwd: made.dir, env: { ...env, YOKOTEN_ROLE: 'worker', YOKOTEN_MODEL: ask.model } }, {
       line: push,
       // An exit by itself stops the run: its limits slot and waiting rows free, and
       // a later stop answers already-stopped instead of signalling a dead child.
       exit: (code) => {
+        if (timer !== undefined) clearTimeout(timer);
         run.exitCode = code;
         run.status = 'stopped';
         run.stoppedAt = new Date().toISOString();
@@ -429,6 +496,22 @@ export function startBoardAgent(root: string, env: Env, controls: BoardControls,
   controls.handles.set(name, child);
   controls.runs.push(run);
   appendBoardLog(controls, boardLogLine(`start ${name} pid ${child.pid ?? '?'} issue #${ask.issue} ${ask.vendor} ${ask.model} ${made.dir} ${command} ${args.join(' ')}`));
+  // The time limit (#711): stop the worker, keep its work, and leave a report for the lead.
+  timer = setTimeout(() => {
+    if (run.status !== 'running') return;
+    try {
+      child.kill();
+    } catch {
+      // Already gone: the exit event reports it.
+    }
+    run.status = 'stopped';
+    run.stoppedBy = 'time limit';
+    run.stoppedAt = new Date().toISOString();
+    controls.handles.delete(name);
+    writeStopReport(run, controls.timeLimitMs);
+    appendBoardLog(controls, `limit ${name} pid ${run.pid ?? '?'} issue #${run.issue} stopped after ${Math.round(controls.timeLimitMs / 60_000)} minutes`);
+  }, controls.timeLimitMs);
+  timer.unref?.();
   return run;
 }
 
@@ -512,6 +595,7 @@ export function stopBoardAgent(controls: BoardControls, name: string): BoardRun 
     return `the board could not stop ${clean}: run it again`;
   }
   run.status = 'stopped';
+  run.stoppedBy = 'owner';
   run.stoppedAt = new Date().toISOString();
   appendBoardLog(controls, `stop ${run.name} pid ${run.pid ?? '?'} issue #${run.issue} ${run.vendor} ${run.model}`);
   return run;

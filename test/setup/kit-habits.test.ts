@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { ROOT } from '../repo/helpers.ts';
 
-const MANAGED = '<!-- managed by yokoten; `yokoten install` replaces this file -->';
+const MANAGED = '<!-- managed by yokoten; `yokoten install` updates this file, and keeps your edits -->';
 
 /** A kit skill, read from the repo root. */
 const readSkill = (name: string): string => readFileSync(join(ROOT, 'kit/user/skills', name, 'SKILL.md'), 'utf8');
@@ -24,6 +24,13 @@ test('kit habits: the skills name the merge order, the cause, the road and the i
   assert.ok(release.includes('weak model'));
   assert.ok(inspect.includes('How you name an issue'));
   assert.ok(inspect.includes('issue #N'));
+});
+
+test('kit habits: the lead names outside pull requests in the session summary (#88)', () => {
+  const dispatch = readSkill('dispatch');
+  assert.ok(dispatch.includes('## The summary you give the owner'));
+  assert.ok(dispatch.includes('pull requests\nfrom outside accounts this week'), 'the summary names outside pull requests, with the line break the skill uses');
+  assert.ok(dispatch.includes('even when it is zero'), 'a quiet week is said, so the owner knows the watch ran');
 });
 
 const NPM_SETTING = 'Require two-factor authentication and disallow bypass 2fa tokens';

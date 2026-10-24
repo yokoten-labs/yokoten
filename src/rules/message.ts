@@ -75,6 +75,12 @@ export const RULES = {
     check: 'the tool-call guard stops `git push --force`, `-f` and a `+ref`; `--force-with-lease` passes; a branch ruleset on the server is the lock',
     docs: guide('the-core-rules'),
   },
+  'hard-reset': {
+    rule: 'no hard reset: it throws away work (record 0034)',
+    why: 'a hard reset drops every change you have not committed, and git cannot bring it back',
+    check: 'the tool-call guard stops `git reset --hard`, and reads a shortened option as git does (`--har` means `--hard`); `git reset` without `--hard` and `git revert` pass',
+    docs: guide('the-safeguard'),
+  },
   'skip-check': {
     rule: 'never skip the commit check (core rule 6)',
     why: 'the commit check is the inspection step, and a skipped check makes a broken commit look reviewed',
@@ -100,12 +106,36 @@ export const RULES = {
   'delete-default-branch': {
     rule: 'no deleting the default branch',
     why: 'the default branch holds the work every branch builds on, so deleting it throws that work away',
-    check: 'the tool-call guard stops `git branch -d`, `-D` and `--delete`, `git update-ref -d` and `git push --delete` (or `:<branch>`) on the default branch: refs/remotes/origin/HEAD when git names it, else main and master; delete only the branch you mean',
+    check: 'the tool-call guard stops `git branch -d`, `-D` and `--delete`, `git update-ref -d` and `git push --delete` (or `:<branch>`) on the default branch: refs/remotes/origin/HEAD when git names it, else main and master; git reads a shortened long option too (`--del` means `--delete`); delete only the branch you mean',
+  },
+  'delete-checkout': {
+    rule: 'no deleting the whole checkout, or the folder that holds it (record 0034)',
+    why: 'the checkout holds every file and every commit, and deleting it leaves no copy anywhere',
+    check: 'the tool-call guard stops `rm`, `rmdir`, `unlink` and `shred` on `.`, `..`, or a path that ends at one of them; delete only the files you mean',
+    docs: guide('the-safeguard'),
+  },
+  'discard-work': {
+    rule: 'no throwing away work that exists in one place only (record 0034)',
+    why: 'untracked files, uncommitted edits and a saved stash have no other copy, so git cannot bring them back',
+    check: 'the tool-call guard stops `git clean` (except `-n` or `--dry-run`), `git checkout .` and `git restore .` of the whole tree, a forced checkout or switch (`-f`, `--force`, `--discard-changes`), and `git stash clear` or `git stash drop`; `git restore --staged` or `-S` alone passes',
+    docs: guide('the-safeguard'),
+  },
+  'erase-history': {
+    rule: 'no erasing the history at once (record 0034)',
+    why: 'unreachable commits and the reflog are the usual way back after a mistake, and erasing them takes that way back away',
+    check: 'the tool-call guard stops `git gc --prune=now` or `--prune=all`, `git prune --expire=now` or `--expire=all`, `git reflog expire`, `git reflog delete`, `git filter-branch` and `git filter-repo`; git reads a repeated option by its last value, so `--prune=2.weeks.ago --prune=now` counts as `now`',
+    docs: guide('the-safeguard'),
+  },
+  'move-default-branch': {
+    rule: 'no moving the default branch backwards (record 0034)',
+    why: 'the default branch holds the work every branch builds on, so moving it back loses those commits',
+    check: 'the tool-call guard stops `git update-ref` of the default branch (a read with `--verify` or `--list` passes), `git branch -f` on it, and `git checkout -B` or `git switch -C` on it',
+    docs: guide('the-safeguard'),
   },
   'pipe-to-shell': {
-    rule: 'no piping a download into a shell or a program named by a variable',
-    why: 'a download piped into a shell runs code nobody read, so the guard cannot check what it runs',
-    check: 'the tool-call guard stops a pipeline that feeds a download into a shell, into `eval`, into a substitution that can run it, or into a program word that is not plain text, including a name that starts with `$`. A `$` argument of a plain program passes. Save the file first, read it, then run it',
+    rule: 'no running a download you have not read',
+    why: 'a download that a program runs as code does things nobody read, so the guard cannot check what it does',
+    check: 'the tool-call guard stops a download that a program would run: in a pipeline into a shell, `eval` or a program named by a variable or not by plain text; in a substitution or a process substitution given to a shell, `eval`, `source` or an interpreter (`bash -c "$(curl …)"`, `bash <(curl …)`); in a substitution where a command goes (`$(curl …)` or a backtick), which runs the download\'s answer as a command; in a here-string into a shell; piped into an interpreter that reads its program from input (`python3 -`, `node`, `perl`, `ruby`, `php`, `lua`, `Rscript -`); piped into `make -f -`, `make -f /dev/stdin` or `make -f <(…)`; and piped into any shell, including `ash`, `mksh`, `pdksh`, `yash`, `posh`, `oksh`, `rbash` and `toybox sh`. The guard matches option names the way git does, by a unique prefix. A `$` argument of a plain program passes. Save the file first, read it, then run it',
   },
   'gh-token': {
     rule: "an agent does not see or send gh's token",
@@ -136,6 +166,12 @@ export const RULES = {
     check: 'the tool-call guard refuses a tool call, with exit 2, when reading it fails or takes longer than its deadline (5 seconds; YOKOTEN_GUARD_DEADLINE_MS changes it)',
     docs: guide('what-it-doesnt-do'),
   },
+  'repeat-stop': {
+    rule: 'a session stops after the same step fails three times (#711)',
+    why: 'a loop does not find a way through, and every extra try costs the team time and money',
+    check: 'the tool-call guard counts, per session, the same refusal for the same command shape and the same failing command; at the third repeat it stops with a stop message; a call that succeeds resets the count. The worker stop check stops a task after its time limit',
+    docs: guide('the-core-rules'),
+  },
   'test-file': {
     rule: 'a fix task changes code, never tests (core rule 4)',
     why: 'a fix task changes the code until the test passes, never the test',
@@ -160,22 +196,28 @@ export const RULES = {
     check: 'for a worker, the tool-call guard stops a command that writes, moves, removes, links or changes the mode of a file in a git folder (a glob that can match .git or the mark counts) or redirects into one, git with GIT_DIR or --git-dir, `git worktree` other than `list`, `yokoten worker unmark`, and an edit inside a git folder, by real path. The same holds for the yokoten config folder (~/.config/yokoten), which keeps the worker list and the bot keys: for a worker, any program that does more than read is refused when it names a path that is, is in or holds that folder, by real path (a symlink, `~+` and globs such as `~/.c*/yokoten` count). A read that names .git passes. A .git link it cannot read makes the session a worker. These are the plain ways; the server and keeping credentials away from the worker are the lock',
     docs: guide('managing-agents-like-a-team'),
   },
+  'file-lease': {
+    rule: 'the guard stops an edit to a file that an open change is moving or deleting (#911)',
+    why: 'two changes to a file that is being moved cannot both go in cleanly',
+    check: 'when an open change moves or deletes a file, the conflict map leases that path. The tool-call guard reads the map once per call and stops an edit to a leased path from another branch; the commit check stops a staged change in place to that path, whatever tool made it. Both allow when the map is missing, old or dated ahead of the clock, and on a detached HEAD (a rebase)',
+    docs: guide('blocked-commands'),
+  },
   email: {
     rule: 'no personal email address in the repo (core rule 11)',
     why: 'an email address points at a person, and git keeps it after the file is gone',
-    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   ip: {
     rule: 'no IP address in the repo (core rule 11)',
     why: 'an IP address can lead to your server or your home network',
-    check: 'the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'private-mark': {
     rule: 'nothing in the repo points at you: your name, city, domain or servers (core rule 11)',
     why: 'a line of your private-marks file names something that points at you',
-    check: 'the commit check reads ~/.config/yokoten/private-marks, outside the repo, and looks for each line; CI does not have the file; a hit is `sure`, and only a `private-mark: reason` line in `.yokotenignore`, which is lead-only, keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check reads ~/.config/yokoten/private-marks, outside the repo, and looks for each line; CI does not have the file; a hit is `sure`, and only a `private-mark: reason` line in `.yokotenignore`, which is lead-only, keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   ignore: {
@@ -199,7 +241,7 @@ export const RULES = {
   secret: {
     rule: 'no secret in the repo: no token and no private key (core rule 11)',
     why: 'a secret opens your accounts to anyone who can read the repo, and git keeps it after the file is gone',
-    check: 'the commit check, CI and `check --history` look for the real shape of tokens (GitHub, npm, AWS, Slack, Stripe, Google, Anthropic, OpenAI), private keys, and the real values of secret-like variables in the environment; a hit is `sure` and fails, while `likely` and `unknown` warn; `.yokotenignore` or a `yokoten-ignore secret: reason` line keeps a hit in the output but does not fail it, and a `sure` hit only through `.yokotenignore`, which is lead-only; an ignore with no reason fails; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for the real shape of tokens (GitHub, npm, AWS, Slack, Stripe, Google, Anthropic, OpenAI), private keys, and the real values of secret-like variables in the environment; a hit is `sure` and fails, while `likely` and `unknown` warn; `.yokotenignore` or a `yokoten-ignore secret: reason` line keeps a hit in the output but does not fail it, and a `sure` hit only through `.yokotenignore`, which is lead-only; an ignore with no reason fails; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'shallow-history': {
@@ -218,6 +260,18 @@ export const RULES = {
     rule: 'no folder holds more than 7 entries; the root is not counted (core rule 10)',
     why: 'a flat folder grows until nobody can find anything',
     check: 'the commit check and CI count the entries of each folder below the root; changes/ and the folders in yokoten.json "layout.exempt" (paths, or globs with `*` and `**`) may grow',
+    docs: guide('the-core-rules'),
+  },
+  'structural-change': {
+    rule: 'a change that moves, renames, splits or deletes files goes in alone (#910)',
+    why: 'two changes that restructure the same files collide, and each merge makes the next conflict worse',
+    check: 'the commit check reads the paths the staged diff moves away (`git diff --cached --name-status -M`) and the conflict map at `.git/yokoten/conflicts.json`; a path an open change also moves stops the commit and names that change. A missing or stale map allows',
+    docs: guide('the-core-rules'),
+  },
+  'stale-codeowners': {
+    rule: 'every CODEOWNERS line names a path that exists',
+    why: 'a moved or renamed file leaves its line behind, so the new path has no owner review',
+    check: '`yokoten check` and full `doctor` read the first CODEOWNERS file GitHub reads and report each rule line whose path matches no file in the tree; a pattern with `*` matches when any file does',
     docs: guide('the-core-rules'),
   },
   'build-output': {
@@ -278,6 +332,12 @@ export const RULES = {
     check: PR_CHECK,
     docs: guide('the-core-rules'),
   },
+  'pr-provenance': {
+    rule: 'the Made-with line names each desk that worked on the branch with its vendor and model, and a reviewer comes from another vendor than the writer (core rule 8, record 0021)',
+    why: 'every change is traced to the model that wrote it and another vendor that reviewed it, not by hand',
+    check: `${PR_CHECK}, against the desk status files of the branch's worktrees and desks; a run with no status files has nothing to compare, so it is not a finding`,
+    docs: guide('the-core-rules'),
+  },
   'pr-changelog': {
     rule: 'a pull request that changes behaviour adds a file in changes/ (core rule 8)',
     why: 'each pull request adds its own file, so pull requests never conflict and a release needs no digging',
@@ -319,6 +379,11 @@ export const RULES = {
     why: 'the pull request or the issue is in that file, so without it nothing is checked',
     check: 'in a CI run, `check --pr` and `check --issue` fail when the event file is missing or is not a JSON object; with no event file named, they skip',
     docs: guide('use-it-as-a-github-action'),
+  },
+  anchor: {
+    rule: 'each past day of the event log is anchored in Sigstore Rekor (record 0029)',
+    why: 'a rewritten log can carry a chain that holds, because the writer makes every hash; only an outside witness shows that a day did not change after it was anchored',
+    check: '`yokoten check --anchor` takes the hash of the last line of each past UTC day, asks Rekor for it, and verifies the signed entry timestamp with Rekor\'s key, the workflow certificate and its signature over the hash; a day with no entry, a weak chain, or an entry another identity signed fails',
   },
   'pr-approve': {
     rule: 'a tier A pull request merges only on the commit the owner approved (core rule 9)',
@@ -493,6 +558,12 @@ export const RULES = {
     check: '`doctor` compares everything above `## This project` in AGENTS.md with the kit\'s core rules, and a session hears when they differ; without that heading it can\'t compare, as a note; a `<!-- yokoten kit X.Y.Z -->` mark newer than the yokoten you run is a note to update yokoten itself, and `update` refuses it; `yokoten update` shows the change, and `--write` makes it',
     docs: guide('updating-the-rules'),
   },
+  'edited-kit': {
+    rule: 'a managed file you edited is kept, and a newer kit copy arrives only when you take it',
+    why: "an edit stays the user's, and a kit fix still reaches the parts they did not change (record 0015)",
+    check: '`install` writes the hash of the file it wrote into the mark, and keeps a file whose hash no longer matches. `doctor` compares that recorded hash with the kit\'s copy and names each edited file whose copy changed, with the `diff` command; a note, never a failure',
+    docs: guide('updating-the-rules'),
+  },
   'kit-workflows': {
     rule: "the project's CI workflows from the kit are the kit's newest, or the project's own on purpose",
     why: 'a fix to the kit\'s CI reaches a project only when its workflow file gets the new text',
@@ -526,6 +597,12 @@ export const RULES = {
     rule: 'the disk that holds the repo has room left (record 0012)',
     why: 'on a full disk, every agent session stops, and the agent cannot tell you why',
     check: '`doctor` reads the free space of the disk that holds the repo, with no child process; it warns below 20 GB when that is also under 10% of the disk (YOKOTEN_MIN_FREE_GB sets another limit). In WSL, full `doctor` also reads the Windows drive that holds the Linux disk file, and a session repeats the last reading. When a heavy job starts and that reading is low, the tool-call guard asks first; it never refuses',
+    docs: guide('machine-notes'),
+  },
+  'guard-cost': {
+    rule: 'the guard runs on every tool call, so it stays cheap (#461)',
+    why: 'a guard that costs more than the command it checks slows every session down',
+    check: 'full `doctor` runs the guard once on a trivial command and prints that call\'s wall time and CPU time in one line; a report line, never a failure, and a session does not run it',
     docs: guide('machine-notes'),
   },
   'agent-temp-dir': {
@@ -616,6 +693,22 @@ export const RULES = {
     check: `${SERVER_CHECK}: an active tag ruleset on v* with creation, update and deletion restricted`,
     docs: guide('the-core-rules'),
   },
+  'tag-bypass': {
+    rule: 'each v* tag ruleset that blocks tag creation names Repository admin in its bypass list, and names no bot (core rule 3)',
+    why: 'the owner must be able to push a release tag, and no agent must be able to',
+    check: `${SERVER_CHECK}: every active v* tag ruleset that blocks tag creation names Repository admin in its bypass list, and none names a GitHub App`,
+    docs: guide('the-core-rules'),
+  },
+  'release-reviewer': {
+    rule: 'the release environment asks for your approval before it deploys (core rule 3)',
+    why: 'without it, a publish job that a tag starts runs with no one approving it',
+    check: `${SERVER_CHECK}: the release environment has a required reviewer`,
+  },
+  'release-tag-rule': {
+    rule: 'the release environment deploys only from v* tags, and not from a branch named v*',
+    why: 'a branch rule named v* matches no tag, and with both rules a branch named v* can still publish',
+    check: `${SERVER_CHECK}: the release environment has a deployment rule of type tag named v*, and no branch rule named v*`,
+  },
   'security-switches': {
     rule: 'secret scanning, push protection, private vulnerability reporting and Dependabot alerts are on',
     why: 'the host then stops a pushed secret, and people can report a hole in private',
@@ -673,6 +766,54 @@ export const RULES = {
     why: 'the system may empty its temp folder on restart, as WSL empties /tmp',
     check: `${UNSAVED_CHECK}: each worktree's real path against the temp folders: YOKOTEN_TEMP_DIRS (empty turns it off), else the system's temp folder and /tmp. The repo itself always gets a note; a worktree only when it holds work at risk, in that work's note; the rest get one line in full doctor`,
     docs: guide('work-only-on-this-machine'),
+  },
+  'mcp-schema': {
+    rule: 'an MCP tool schema works in Claude, Gemini and OpenAI strict mode (core rule 8)',
+    why: 'a client that cannot read a schema drops the tool or refuses the server, and the user sees a missing tool, not a reason',
+    check: '`yokoten mcp` reads `tools/list` and rejects a root anyOf, oneOf or allOf (Claude), a `$ref` or `$defs`, a list of types, or an array with no items (Gemini), and a property left out of required (OpenAI strict)',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-name': {
+    rule: 'an MCP tool name is 64 characters or fewer and a property name uses letters, digits, _ . or -',
+    why: 'a client drops a tool whose name or property name it cannot read, so the user sees a missing tool',
+    check: '`yokoten mcp` reads every property name at any depth and every tool name in `tools/list`',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-annotations': {
+    rule: 'every MCP tool sets readOnlyHint, destructiveHint, idempotentHint and openWorldHint',
+    why: 'ChatGPT apps and other clients ask before a call only when the hints are there, so an unset hint hides a destructive tool',
+    check: '`yokoten mcp` reads all four hints on every tool, and each must be true or false',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-count': {
+    rule: 'an MCP server lists fewer than 40 tools',
+    why: 'Cursor uses only about the first 40, so the tools after them look broken',
+    check: '`yokoten mcp` counts the tools in `tools/list` and fails at 40 or more',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-output': {
+    rule: 'a tool with an outputSchema returns structuredContent and a text content item',
+    why: 'Cursor drops a result that is only structuredContent, so the user sees an empty answer',
+    check: '`yokoten mcp` calls each read-only tool with no required arguments, and reads both forms in its result',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-stdout': {
+    rule: 'an MCP server writes only JSON-RPC to stdout',
+    why: 'a client reads stdout as JSON-RPC, so one log line or a CRLF breaks the session',
+    check: '`yokoten mcp` starts the server, reads stdout through initialize and tools/list, and reports every line that is not a JSON-RPC message, is not UTF-8, or ends with CRLF',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-windows': {
+    rule: 'a Windows MCP config starts npx and .cmd files through cmd /c',
+    why: 'Windows cannot start npx or a .cmd file without a shell, so the server never connects',
+    check: '`yokoten mcp` reads each stdio entry and warns when its command needs a shell on Windows',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
+  },
+  'mcp-server': {
+    rule: 'an MCP server starts and answers initialize and tools/list',
+    why: 'a server that does not answer has no tools, so a check of its tools must say that instead of passing',
+    check: '`yokoten mcp` starts each stdio server in the project config and stops with this finding when it cannot start or does not answer in time',
+    docs: docsLink('guide.md', 'shipping-an-mcp-server-that-works-in-every-agent'),
   },
   'not-a-repo': {
     rule: 'yokoten runs inside a git repo',
@@ -732,6 +873,55 @@ export const formatFindingMarks = (f: Finding): string => {
  */
 export const formatFinding = (f: Finding): string =>
   `${place(f)}${f.what}${formatFindingMarks(f)}. ${sentence(f.why)}. ${sentence(f.fix)}.${f.docs === undefined ? '' : `\n  docs: ${f.docs}`}`;
+
+/**
+ * A refusal by its four parts (#707): a title with the rule id, why, what to do instead,
+ * and the docs link. A person reads it in 30 seconds, and the board draws the same parts.
+ * A refusal always keeps its link, so a report never ends without one.
+ */
+export interface Refusal {
+  /** The rule id, as `yokoten explain` knows it. */
+  id: string;
+  /** `yokoten stopped this: <what> [<id>]`. */
+  title: string;
+  /** Why it matters, as one sentence. */
+  why: string;
+  /** The safe way, as one sentence. */
+  fix: string;
+  /** Where the rule is explained in full. */
+  docs: string;
+}
+
+/** The four parts of a refusal, for a text reader or the board. */
+export const refusalParts = (f: Finding): Refusal => ({
+  id: f.id,
+  title: `yokoten stopped this: ${place(f)}${f.what} [${f.id}]`,
+  why: `${sentence(f.why)}.`,
+  fix: `${sentence(f.fix)}.`,
+  docs: f.docs ?? DOCS_URL,
+});
+
+/** The text form of a refusal, every rule the same: title, why, do instead, more. */
+export const formatRefusal = (f: Finding): string => {
+  const parts = refusalParts(f);
+  return `${parts.title}\nWhy: ${parts.why}\nDo instead: ${parts.fix}\nMore: ${parts.docs}`;
+};
+
+/**
+ * The four parts back from text, or null when the text is not a refusal in this shape.
+ * The board reads a session log, which may hold an older message or a runtime's wrapper.
+ */
+export function parseRefusal(text: string): Refusal | null {
+  const lines = text.split('\n').map((line) => line.trimEnd());
+  const title = lines.find((line) => line.startsWith('yokoten stopped this: '));
+  if (title === undefined) return null;
+  const named = /^yokoten stopped this: (.+) \[([\w-]+)\]$/.exec(title);
+  const why = lines.find((line) => line.startsWith('Why: '))?.slice('Why: '.length);
+  const fix = lines.find((line) => line.startsWith('Do instead: '))?.slice('Do instead: '.length);
+  const docs = lines.find((line) => line.startsWith('More: '))?.slice('More: '.length);
+  if (named === null || why === undefined || fix === undefined) return null;
+  return { id: named[2] ?? '', title: named[0], why, fix, docs: docs ?? DOCS_URL };
+}
 
 // ---- Steps a scan takes (#754) ----
 //

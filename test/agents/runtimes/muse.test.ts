@@ -38,7 +38,7 @@ test('hook --agent muse: bash by command, the edit tools by path; a refusal is e
   let result = await call('bash', { command: 'git push --tags origin', description: 'Push tags', workdir: sandbox.repo });
   assert.equal(result.status, 2);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /^yokoten: git push --tags pushes tags\. Only the owner decides when to release/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release/);
   result = await call('bash', { command: 'git status', description: 'Status', workdir: null });
   assert.deepEqual([result.status, result.stdout, result.stderr], [0, '', '']);
   // Muse cuts YOKOTEN_ROLE from a hook's env, so a real Muse session is always the lead.
@@ -92,7 +92,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   assert.match((await sandbox.call(['doctor'])).stdout, /ok +muse-hook/);
   const trusted = await sandbox.call(['init']);
   assert.match(trusted.stdout, /kept the Muse Code tool-call hook/);
-  assert.match(trusted.stdout, /Muse Code runs the hooks in \.muse\/hooks\.json only after you trust this folder/);
+  assert.match(trusted.stdout, /yokoten's guard is already on in Muse Code/);
   written.hooks.Stop[0].hooks[0].command = 'node old/yokoten.ts hook --stop --agent muse';
   sandbox.write('.muse/hooks.json', JSON.stringify(written));
   assert.equal(projectHooksState(sandbox.repo, cli).stop, 'updated');
@@ -115,7 +115,7 @@ test('muse trust (#341): doctor says when Muse skips the hooks; ok only when tru
   assert.match(await doctor(), /done +tool-hook\n/);
   // A home without a store: the guard is off, and it is a step on the road (#554), not a note.
   mkdirSync(join(sandbox.home, '.config', 'muse'), { recursive: true });
-  const off = /(next|to do) +tool-hook: the guard is off in Muse Code until you trust this folder; run `muse` in this folder and choose "Trust and continue", or pass `--trust-workspace` to `muse exec`/;
+  const off = /(next|to do) +tool-hook: the guard is off in Muse Code until you trust this folder; run `yokoten trust`, or pass `--trust-workspace` to `muse exec`/;
   assert.match(await doctor(), off);
   assert.doesNotMatch(await doctor(), /muse-hook: (can't check|Muse Code skips)/);
   assert.equal(isGuardOff(root, { HOME: sandbox.home }), true);
@@ -137,7 +137,7 @@ test('muse trust (#341): doctor says when Muse skips the hooks; ok only when tru
   // A store doctor can't read is a note, and the note names the headless way to trust (#557).
   assert.match(
     await doctor(),
-    /note +muse-hook: can't check whether Muse Code trusts this folder: can't read ~\/\.config\/muse\/trust\.json; if you use Muse Code: run `muse` in this folder and choose "Trust and continue", or pass `--trust-workspace` to `muse exec`/,
+    /note +muse-hook: can't check whether Muse Code trusts this folder: can't read ~\/\.config\/muse\/trust\.json; if you use Muse Code: run `yokoten trust`, or pass `--trust-workspace` to `muse exec`/,
   );
   assert.equal(isGuardOff(root, { HOME: sandbox.home }), false, "a store doctor can't read is a note, not a step");
   assert.equal(isGuardOff(join(sandbox.home, 'none'), { HOME: sandbox.home }), false, 'no .muse/hooks.json, no step');

@@ -18,12 +18,13 @@ import { join } from 'node:path';
 import type { Env } from '../rules/config.ts';
 import { homeIn, homeOf } from '../rules/privacy.ts';
 import { guardCommand } from '../run/cli.ts';
-import { type FolderTrust, folderKeys, isFolder } from './folder-trust.ts';
+import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from './folder-trust.ts';
+import { type TrustChange, type TrustPlan } from './runtimes/codex.ts';
 import { type Added, addHook, checkHooksFile, type HookState, hookState, isObject, readSettings, removeHook } from './hooks-file.ts';
 import type { RuntimeEnv } from './desk/agent-env.ts';
 
 /** The one step that makes Copilot CLI run the project's hooks. */
-export const TRUST_STEP = 'run `copilot` in this folder and choose "Yes, and remember this folder for future sessions"';
+export const TRUST_STEP = TRUST_COMMAND;
 
 /**
  * Whether `folder` is `trusted` or inside it. Both without a trailing slash. A "/" entry
@@ -32,11 +33,16 @@ export const TRUST_STEP = 'run `copilot` in this folder and choose "Yes, and rem
  */
 const isInside = (folder: string, trusted: string) => trusted === '' || folder === trusted || folder.startsWith(`${trusted}/`);
 
+/** Copilot's home folder: `$COPILOT_HOME`, or ~/.copilot; empty with neither. */
+const homeDir = (env: Env): string => {
+  const user = homeOf(env);
+  return env.COPILOT_HOME || (user ? join(user, '.copilot') : '');
+};
+
 /** Whether Copilot CLI trusts the project at `root`, from its config file. Read-only. */
 export function readTrust(root: string, env: Env): FolderTrust {
   const store = env.COPILOT_HOME ? '$COPILOT_HOME/config.json' : '~/.copilot/config.json';
-  const user = homeOf(env);
-  const home = env.COPILOT_HOME || (user ? join(user, '.copilot') : '');
+  const home = homeDir(env);
   if (!home) return { state: 'no home', store };
   const file = join(home, 'config.json');
   if (!isFolder(home)) return { state: 'no home', store };
@@ -58,6 +64,36 @@ export function readTrust(root: string, env: Env): FolderTrust {
   return { state: isTrusted ? 'trusted' : 'untrusted', store };
 }
 
+/**
+ * What yokoten must write into `config.json` to trust this folder (#661). Copilot reads
+ * Claude Code's hooks, so one entry in `trustedFolders` is what makes them run here.
+ * A file whose `//` comment lines sit inside the JSON is left alone: yokoten won't rewrite
+ * a shape it cannot keep.
+ */
+export function trustProject(root: string, env: Env): TrustPlan {
+  const store = env.COPILOT_HOME ? '$COPILOT_HOME/config.json' : '~/.copilot/config.json';
+  const home = homeDir(env);
+  if (!home) return { state: 'no home', store, changes: [] };
+  const file = join(home, 'config.json');
+  let saved: unknown = {};
+  if (existsSync(file)) {
+    try {
+      const text = readFileSync(file, 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('//'))
+        .join('\n');
+      saved = JSON.parse(text);
+    } catch {
+      return { state: 'unreadable', store, changes: [] };
+    }
+  }
+  if (!isObject(saved)) return { state: 'unreadable', store, changes: [] };
+  if (readTrust(root, env).state === 'trusted') return { state: 'same', store, changes: [] };
+  const folder = folderKeys(root)[0];
+  const change: TrustChange = { agent: 'Copilot CLI', store, file, format: 'json', path: [], key: 'trustedFolders', value: folder, before: null, kind: 'list' };
+  return { state: 'trusted', store, changes: [change], seed: { trustedFolders: [] } };
+}
+
 // ---- The user's guard (#342) ----
 
 /** Copilot's home folder: `$COPILOT_HOME` when set, else `~/.copilot`. `homeIn` throws with no home. */
@@ -71,9 +107,11 @@ export const userHooksFile = (env: Env): string => (env.COPILOT_HOME ? '$COPILOT
 
 /**
  * The user's command guard, as `addHook`'s arguments. Copilot sends Claude Code's shape, so
- * the default reader judges it. Commands only: file rules stay with the project.
+ * the default reader judges it. Commands only: file rules stay with the project. Copilot
+ * refuses on exit 2 alone, so `--denial exit2` keeps that answer rather than Claude Code's
+ * JSON deny on exit 0 (#707).
  */
-const userGuardArgs = (env: Env, cli: string, missing: string) => [userHooks(env), 'PreToolUse', 'Bash', guardCommand(cli, 'hook --agent claude-code --commands-only', missing, { isToolCall: true })] as const;
+const userGuardArgs = (env: Env, cli: string, missing: string) => [userHooks(env), 'PreToolUse', 'Bash', guardCommand(cli, 'hook --agent claude-code --commands-only --denial exit2', missing, { isToolCall: true })] as const;
 
 /** Write the user's guard, in every folder; `missing` is what it says when `cli` is gone. */
 export function addUserHooks(env: Env, cli: string, missing: string): { guard: Added } {
