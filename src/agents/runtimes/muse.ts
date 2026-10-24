@@ -260,7 +260,6 @@ export const ADAPTER: AgentAdapter = {
   capabilities: { canRewrite: false, hasStopHook: true, needsTrust: true, failsOpen: true, passesRole: false },
   readToolCall,
   readStop,
-  releaseFix: 'Muse Code is not known to pass YOKOTEN_RELEASE_APPROVAL to its hooks: it passes them only a short list of variables. If the owner asked for this, stop and tell them to release outside Muse Code; do not look for another way',
   agentEnv: AGENT_ENV,
   desk: DESK,
   call: (command) => ({ cwd: '/repo', tool_name: 'bash', tool_input: { command } }),

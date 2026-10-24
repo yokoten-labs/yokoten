@@ -10,7 +10,6 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { releaseFix } from '../../rules/guards/index.ts';
 import { homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
@@ -1157,8 +1156,6 @@ export const DESK: RuntimeDesk = {
   identity: readModelIdentity,
 };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'codex',
@@ -1169,7 +1166,6 @@ export const ADAPTER: AgentAdapter = {
   capabilities: { canRewrite: false, hasStopHook: true, needsTrust: true, failsOpen: false, passesRole: true },
   readToolCall,
   readStop,
-  releaseFix: releaseFix(approve('codex')),
   agentEnv: AGENT_ENV,
   desk: DESK,
   call: (command) => ({ cwd: '/repo', tool_name: 'Bash', tool_input: { command } }),

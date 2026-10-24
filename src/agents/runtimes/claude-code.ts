@@ -5,7 +5,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { releaseFix } from '../../rules/guards/index.ts';
 import { homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
@@ -433,8 +432,6 @@ export const DESK: RuntimeDesk = {
   hosts: ['api.anthropic.com', 'platform.claude.com'],
 };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'claude-code',
@@ -449,7 +446,6 @@ export const ADAPTER: AgentAdapter = {
   formatAsk,
   formatContext,
   formatRewrite,
-  releaseFix: releaseFix(`${approve('claude')} (or your agent's command)`),
   agentEnv: AGENT_ENV,
   desk: DESK,
   call: (command) => ({ cwd: '/repo', tool_name: 'Bash', tool_input: { command } }),

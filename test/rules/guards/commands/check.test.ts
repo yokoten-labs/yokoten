@@ -71,10 +71,9 @@ test('release: making a tag is creating a release, so the owner does it (#812)',
   allowed('git tag -d v1.2.0');
   allowed('git tag -v v1.2.0');
   allowed('git tag v1.2.0', { YOKOTEN_RELEASE_APPROVAL: '1' });
-  assert.match(checkCommand('git tag v1.2.0', { cwd: process.cwd(), env: {} })?.fix ?? '', /run `git tag v1\.2\.0` themselves/);
-  // A name the shell would run is quoted, so the line handed back can be pasted (#847).
-  const runLine = checkCommand('git tag v1$(id)', { cwd: process.cwd(), env: {} })?.fix ?? '';
-  assert.match(runLine, /run `git tag 'v1\$\(id\)'` themselves/);
+  assert.equal(checkCommand('git tag v1.2.0', { cwd: process.cwd(), env: {} })?.fix, 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way');
+  // No command is handed back, so a name the shell would run is never echoed as one (#931).
+  assert.equal(checkCommand('git tag v1$(id)', { cwd: process.cwd(), env: {} })?.fix, 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way');
 });
 
 test('release: making a repo public is the owner\'s', () => {
@@ -107,8 +106,12 @@ test('release: the owner\'s approval lets it through', () => {
   allowed('npm publish', env);
 });
 
-test('release: without an agent, the fix names none (#350)', () => {
-  assert.equal(checkCommand('git push --tags', { cwd: process.cwd(), env: {} })?.fix, 'if the owner asked for this, they start a new session of their agent with YOKOTEN_RELEASE_APPROVAL=1; do not look for another way');
+test('release: the fix is plain, and the approval way lives in the guide (#931)', () => {
+  const plain = 'stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way';
+  for (const command of ['git push --tags', 'npm publish', 'gh repo edit --visibility public']) {
+    assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.fix, plain, command);
+  }
+  assert.equal(checkCommand('git tag v1.2.0', { cwd: process.cwd(), env: {} })?.fix, 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way');
 });
 
 test('approval in the command text does not count', () => {
@@ -188,15 +191,12 @@ test('redteam #829: a tag made by git update-ref is refused, and so is pushing i
   assert.equal((await askHook(sandbox, 'git push origin feature-v2')).status, 0, 'a branch push still passes');
 });
 
-test('redteam #865: the tag name handed back by update-ref is quoted (#847)', () => {
-  // The line must be safe to paste: an unquoted name would run as a shell command.
-  for (const [ref, quoted] of [
-    ['refs/tags/rel-1', 'rel-1'],
-    ['refs/tags/v1$(id)', "'v1$(id)'"],
-    ["'refs/tags/v1 with space'", "'v1 with space'"],
-  ] as const) {
-    const fix = checkCommand(`git update-ref ${ref} HEAD`, { cwd: process.cwd(), env: {} })?.fix ?? '';
-    assert.ok(fix.includes(`run \`git tag ${quoted}\` themselves`), `${ref}: ${fix}`);
+test('redteam #865: update-ref makes a tag, and the fix hands back no command (#931)', () => {
+  for (const ref of ['refs/tags/rel-1', 'refs/tags/v1$(id)', "'refs/tags/v1 with space'"]) {
+    const found = checkCommand(`git update-ref ${ref} HEAD`, { cwd: process.cwd(), env: {} });
+    assert.equal(found?.id, 'release', ref);
+    assert.match(found?.what ?? '', /^creating the tag /, ref);
+    assert.equal(found?.fix, 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way', ref);
   }
 });
 

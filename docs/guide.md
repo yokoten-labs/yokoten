@@ -83,9 +83,9 @@ When it stops something, it shows the same four parts:
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
-Why: A tag publishes a release, and only you decide when to release.
-Do instead: If the owner asked for this, they run `git tag v1.2.0` themselves.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-safeguard
+Why: Only the owner decides when to release.
+Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 The first line names the exact tag, file or branch, and the rule. `Why` says what could go
@@ -205,16 +205,17 @@ This repo walks the same road, so you can see each stage working:
 And when an agent tries to push a release tag:
 
 ```
-yokoten: git push --tags pushes tags. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push --tags pushes tags [release]
+Why: Only the owner decides when to release.
+Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-The fix names the command that starts the agent the hook ran for: `codex`, `gemini`, `agy` or
-`dsh tui --patch .dsh/yokoten.patch.yml`. Copilot CLI sends the same call as Claude Code, so
-that message says "or your agent's command". Muse Code passes its hooks only a short list of
-variables, and `YOKOTEN_ROLE` is lost. It is not known to pass `YOKOTEN_RELEASE_APPROVAL`
-either, so in Muse Code the message says to release outside it. If Gemini CLI's strict
-environment sanitization is on, the variable is dropped, and the owner releases outside Gemini CLI.
+The refusal is the same for every agent: it tells the agent to stop and let the owner release.
+The approval way, and the command that starts each agent with it, are in
+[How to release](#how-to-release). Muse Code and OpenCode are not known to pass the variable
+to their hooks, so the owner releases outside them. If Gemini CLI's strict environment
+sanitization is on, the variable is dropped, and the owner releases outside Gemini CLI.
 
 Every message has the same three parts: **what** happened, **why** it matters, and the
 **fix**, a command or an edit. A problem in a file starts with its place, `file:line:`.
@@ -1808,6 +1809,25 @@ The full table, with the reasons, is in [`kit/project/AGENTS.md`](../kit/project
 10. No folder holds more than 7 entries.
 11. Nothing in the repo, or in what yokoten prints, points at a person or holds a secret.
 12. Decisions are written down once and kept. Facts are replaced. Times are UTC.
+
+### How to release
+
+Only the owner releases (rule 3). An agent that is stopped from releasing tells the owner,
+and the owner takes these steps:
+
+1. Ask an agent to prepare the release pull request. The `release` skill writes the
+   changelog and the version.
+2. Read the pull request, approve it, and merge it.
+3. Create the tag yourself: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. If the project publishes from CI, approve the publish on the run page
+   (**Review deployments**).
+
+An agent can push the tag only in a session the owner starts with approval:
+`YOKOTEN_RELEASE_APPROVAL=1 claude`. For another agent, put the same variable before its
+command: `codex`, `gemini`, `agy`, or `dsh tui --patch .dsh/yokoten.patch.yml`. Copilot
+CLI uses the Claude Code command. Muse Code and OpenCode are not known to pass the variable
+to their hooks, so the owner releases outside them. If Gemini CLI's strict environment
+sanitization is on, the variable is dropped, and the owner releases outside Gemini CLI.
 
 ## Naming
 

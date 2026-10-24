@@ -179,7 +179,7 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   result = await sandbox.call(['hook', '--commands-only'], { cwd: away, input: JSON.stringify({ cwd: away, tool_name: 'Bash', tool_input: { command: 'git push --tags' } }) });
   assert.equal(result.status, 2);
   assert.doesNotMatch(result.stderr, /fatal|not a git repository/);
-  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: .*`YOKOTEN_RELEASE_APPROVAL=1 claude` \(or your agent's command\)/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/);
   // A broken config is an internal error: the turn ends, with one line on stderr.
   sandbox.write('yokoten.json', '{ broken');
   result = await sandbox.call(['hook', '--stop'], { input: JSON.stringify({ cwd: sandbox.repo }) });
@@ -249,33 +249,34 @@ test('hook --stop --agent codex|gemini: the end-of-turn event sends the agent ba
   assert.match((await sandbox.call(['doctor'])).stdout, /note +codex-hook: no stop check in \.codex\/hooks\.json/);
 });
 
-// The release finding still names the command that starts the agent the hook ran for (#350),
-// in its JSON. The five-line refusal gives the person the command to run instead.
-test('hook --agent: the release finding names the agent\'s own command (#350)', async () => {
+// The release refusal is the same plain sentence for every runtime (#931): the approval way
+// and each agent's command live in the guide, at the link the refusal carries.
+test('hook --agent: the release refusal is the same plain sentence (#931)', async () => {
   const sandbox = makeSandbox();
   const cwd = sandbox.repo;
   const command = 'git push --tags origin';
   const shell = (tool_name: string, extra: object = {}) => ({ cwd, hook_event_name: 'PreToolUse', tool_name, tool_input: { command, ...extra } });
-  const agents: Record<string, [object, RegExp]> = {
-    'claude-code': [shell('Bash'), /they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` \(or your agent's command\); do not look/],
-    codex: [shell('Bash'), /they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 codex`; do not look/],
-    gemini: [{ ...shell('run_shell_command'), hook_event_name: 'BeforeTool' }, /they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 gemini` \(if its strict environment sanitization is on, the variable is dropped: the owner releases outside Gemini CLI\); do not look/],
-    antigravity: [{ toolCall: { name: 'run_command', args: { CommandLine: command, Cwd: cwd } }, workspacePaths: [cwd] }, /they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 agy`; do not look/],
-    muse: [shell('bash', { workdir: cwd }), /Muse Code is not known to pass YOKOTEN_RELEASE_APPROVAL to its hooks: it passes them only a short list of variables\. If the owner asked for this, stop and tell them to release outside Muse Code; do not look/],
-    'deepseek-harness': [shell('bash'), /they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 dsh tui --patch \.dsh\/yokoten\.patch\.yml`; do not look/],
-    opencode: [{ tool: 'shell', args: { command }, directory: cwd }, /OpenCode is not known to pass YOKOTEN_RELEASE_APPROVAL to its plugin/],
+  const agents: Record<string, object> = {
+    'claude-code': shell('Bash'),
+    codex: shell('Bash'),
+    gemini: { ...shell('run_shell_command'), hook_event_name: 'BeforeTool' },
+    antigravity: { toolCall: { name: 'run_command', args: { CommandLine: command, Cwd: cwd } }, workspacePaths: [cwd] },
+    muse: shell('bash', { workdir: cwd }),
+    'deepseek-harness': shell('bash'),
+    opencode: { tool: 'shell', args: { command }, directory: cwd },
   };
-  for (const [agent, [input, fix]] of Object.entries(agents)) {
+  const plain = 'stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way';
+  for (const [agent, input] of Object.entries(agents)) {
     const result = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input) });
-    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\./, agent);
-    assert.match(result.stderr, fix, agent);
+    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/, agent);
+    assert.doesNotMatch(result.stderr, /YOKOTEN_RELEASE_APPROVAL|new session/, agent);
     // --json carries the same fix.
     const json = JSON.parse((await sandbox.call(['hook', '--agent', agent, '--json'], { input: JSON.stringify(input) })).stdout);
-    assert.match(json.finding.fix, fix, agent);
+    assert.equal(json.finding.fix, plain, agent);
     // Another refusal keeps its own fix.
     const force = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input).replace('--tags', '--force') });
     assert.match(force.stderr, /git push --force/, `${agent}: a force push`);
-    assert.doesNotMatch(force.stderr, /RELEASE_APPROVAL/, `${agent}: a force push`);
+    assert.doesNotMatch(force.stderr, /How to release/, `${agent}: a force push`);
   }
 });
 
