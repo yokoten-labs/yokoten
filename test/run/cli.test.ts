@@ -33,8 +33,11 @@ import {
 import { invoke } from '../repo/invoke.ts';
 import {
   closestWord,
+  commandHelp,
+  commandList,
   COMMANDS,
   editDistance,
+  findCommand,
   guardCommand,
   HELP_OPTIONS,
   PLUGIN_COPY_GONE,
@@ -191,6 +194,15 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
     for (const command of COMMANDS) assert.match(r.stdout, new RegExp(`^ {2}${command.name} `, 'm'), `${args.join(' ')}: lists ${command.name}`);
   }
   assert.equal((await run(['-v'])).stdout, (await run(['--version'])).stdout);
+});
+
+// #933: the board is a preview, and `yokoten help` and `yokoten board --help` say so.
+test('help: the board row and `board --help` say preview (#933)', () => {
+  const board = findCommand('board');
+  assert.ok(board !== undefined, 'board is a command');
+  const row = commandList().find((line) => line.trimStart().startsWith('board '));
+  assert.match(row ?? '', /\(preview\)/);
+  assert.match(commandHelp(board).join('\n'), /preview: it may change, and team commands come in v0\.1\.2 \(#823\)/i);
 });
 
 test('compile cache: a cache folder that cannot be made does not stop the command (#286)', () => {

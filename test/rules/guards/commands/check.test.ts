@@ -45,6 +45,20 @@ test('release: tag pushes, release commands and publishing are the owner\'s', ()
   allowed('git push origin main');
 });
 
+test('release: a remote tag named under tags/ counts as a tag (#924)', () => {
+  for (const command of [
+    'git push origin :tags/rel',
+    'git push origin --delete tags/rel',
+    'git push --force-with-lease origin main:tags/rel',
+  ]) {
+    const found = checkCommand(command, { cwd: process.cwd(), env: {} });
+    assert.equal(found?.id, 'release', command);
+    assert.match(found?.what ?? '', /pushes a release tag/, command);
+  }
+  allowed('git push origin main');
+  allowed('git push origin feature:main');
+});
+
 test('release: making a tag is creating a release, so the owner does it (#812)', () => {
   for (const command of ['git tag v1.2.0', 'git tag -a v1.2.0 -m release', 'git tag -s v1 -m x', 'git tag -f v1']) {
     const found = checkCommand(command, { cwd: process.cwd(), env: {} });
