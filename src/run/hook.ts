@@ -201,6 +201,8 @@ export interface Action {
   /** The files an edit touches, absolute or relative to `cwd`. */
   paths: string[];
   cwd?: string;
+  /** The language the command is written in, when the runtime names it (#332). */
+  shell?: 'powershell';
   /** The action comes from a worker, whatever the session's own role. */
   worker: boolean;
 }
@@ -1299,7 +1301,7 @@ export function judge(
     const titles = !commandsOnly && root !== null && existsSync(join(root, 'yokoten.json'));
     const ruledRepos = ruled.map((repo) => ({ root: repo.root, leadOnly: repo.config.leadOnly }));
     for (const command of commands) {
-      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos });
+      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, shell: action.shell });
       if (reason) return reason;
     }
   }
