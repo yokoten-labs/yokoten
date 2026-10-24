@@ -2,6 +2,8 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
+import { rmSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { moveCollision, structural } from '../../../../src/commands/merge/conflicts/moves.ts';
 import type { Change, ConflictMap } from '../../../../src/commands/merge/conflicts/types.ts';
@@ -132,6 +134,14 @@ test('check --staged: a change in place to a file another change moves waits, fr
   assert.equal((await sandbox.call(['check', '--staged'])).status, 0, 'a draft holds no lease');
   writeMap(sandbox, [mover], { builtAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() });
   assert.equal((await sandbox.call(['check', '--staged'])).status, 0, 'a map from the future allows');
+  // A file turned into a symlink is a type change ("T"), a change in place too (#922).
+  rmSync(join(sandbox.repo, 'src/a.ts'));
+  symlinkSync('b.ts', join(sandbox.repo, 'src/a.ts'));
+  sandbox.git('add', 'src/a.ts');
+  writeMap(sandbox, [mover]);
+  const link = await sandbox.call(['check', '--staged', '--json']);
+  assert.equal(link.status, 1, link.stderr);
+  assert.equal(JSON.parse(link.stdout).findings[0].id, 'file-lease');
 });
 
 test('check --staged: a detached HEAD (a rebase) is not stopped by the move window (#910)', async () => {

@@ -1260,7 +1260,7 @@ function leaseFinding(path: string, folder: string, now: number, branches: Map<s
   let branch = branches.get(folder);
   if (branch === undefined) branches.set(folder, (branch = leaseBranch(folder)));
   // A detached HEAD is a rebase or a bisect: no branch to compare, so the lease lets it pass,
-  // as a missing map does. The commit check still reads what it changes.
+  // as a missing map does. The commit check allows a detached HEAD too.
   if (branch === '') return null;
   const lease = leaseFor(path, branch, leaseMapAt(folder, now));
   if (lease === null) return null;

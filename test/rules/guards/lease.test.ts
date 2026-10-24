@@ -98,7 +98,7 @@ test('lease: a map dated ahead of the clock and a detached HEAD both pass (#911)
   const future = makeSandbox();
   future.write('.git/yokoten/conflicts.json', mapJson(MAP, new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString()));
   assert.equal(judge({ paths: ['src/app.ts'], worker: false }, options(future)), null, 'a map from the future is no map');
-  // A rebase runs on a detached HEAD: no branch to compare, so the commit check reads it instead.
+  // A rebase runs on a detached HEAD: no branch to compare, so the lease and the commit check both allow it.
   const detached = makeSandbox();
   detached.write('.git/yokoten/conflicts.json', mapJson(MAP));
   writeFileSync(join(detached.repo, '.git', 'HEAD'), `${detached.git('rev-parse', 'HEAD').stdout.trim() || '0'.repeat(40)}\n`);

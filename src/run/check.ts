@@ -240,14 +240,15 @@ interface MapChange {
  * redirect too, so this is where a file lease (#911) holds when the guard did not see it.
  */
 function stagedMoves(root: string, env: Env): { moves: string[]; edits: string[] } {
-  // -z --name-status gives "R100", the old path, the new path; "D" or "M" give one path.
-  const out = list(git(root, env, ['diff', '--cached', '--name-status', '-M', '--diff-filter=RDM', '-z']));
+  // -z --name-status gives "R100", the old path, the new path; "D", "M" or "T" give one path.
+  // "T" is a type change, such as a file turned into a symlink: a change in place too.
+  const out = list(git(root, env, ['diff', '--cached', '--name-status', '-M', '--diff-filter=RDMT', '-z']));
   const moves: string[] = [];
   const edits: string[] = [];
   for (let i = 0; i < out.length; ) {
     const status = out[i] ?? '';
     const path = out[i + 1];
-    if (path !== undefined) (status === 'M' ? edits : moves).push(path);
+    if (path !== undefined) (status === 'M' || status === 'T' ? edits : moves).push(path);
     i += status.startsWith('R') ? 3 : 2;
   }
   return { moves, edits };
