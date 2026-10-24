@@ -109,7 +109,34 @@ export function formatLessonChecks(lessons: LessonCheck[]): string[] {
       : [];
     if (mark === 'not now') return [`  not now lesson ${id}: ${reason}`];
     if (mark === 'ok') return [...intro, `  ok      lesson ${id}`];
-    return [...intro, ...findings.map((f) => `  note    lesson ${id}: ${stepText(f)}`)];
+    return [...intro, ...lessonFindingLines(id, findings)];
+  });
+}
+
+/** The place before a finding's words: `a.ts: what` or `a.ts:12: what`; null when it has none. */
+function placeOf(what: string): { place: string; rest: string } | null {
+  const match = /^(.+?):(?:(\d+):)? (.*)$/.exec(what);
+  return match ? { place: match[1] ?? '', rest: match[3] ?? '' } : null;
+}
+
+/**
+ * A lesson's findings as lines. Findings with the same words after the place share one
+ * line: the first three places, then `+N more` and the command that shows all (#946).
+ */
+function lessonFindingLines(id: string, findings: Finding[]): string[] {
+  const groups = new Map<string, { rest: string; places: string[]; finding: Finding }>();
+  for (const finding of findings) {
+    const place = placeOf(finding.what);
+    // A finding with no place keeps the old line, one per finding: there is nothing to list.
+    if (!place) return findings.map((one) => `  note    lesson ${id}: ${stepText(one)}`);
+    const group = groups.get(place.rest);
+    if (group) group.places.push(place.place);
+    else groups.set(place.rest, { rest: place.rest, places: [place.place], finding });
+  }
+  return [...groups.values()].map(({ rest, places, finding }) => {
+    if (places.length === 1) return `  note    lesson ${id}: ${stepText(finding)}`;
+    const more = places.length > 3 ? `, +${places.length - 3} more (\`yokoten doctor --json\`)` : '';
+    return `  note    lesson ${id}: ${rest}: ${places.slice(0, 3).join(', ')}${more}; ${finding.fix}`;
   });
 }
 
