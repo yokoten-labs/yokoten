@@ -31,16 +31,10 @@ yokoten 是程式，不是 AI。
 
 yokoten 保護五樣東西：你的工作、你的秘密、你的發布、你執行的程式碼，還有這道保護本身。
 
-其中一部分現在已經開著。守衛會攔下強制 push、刪除 `.git`、推標籤、發套件、把下載的內容直接送進 shell，以及跳過提交檢查。
-提交檢查會攔下提交裡的秘密。專案要先執行 `yokoten init`。
-五項保護裡剩下的，會在 v0.1.1 到來。
+五項保護預設全開，每個專案都有，不用設定。守衛會攔下強制 push、硬重設（hard reset）、刪除 `.git`、建立新標籤、發套件、把儲存庫改成公開，以及讓程式直接執行沒人看過的下載內容。提交裡加了秘密、私人電子郵件或 IP 位址，它也會攔下，就算專案沒執行過 `yokoten init`。跳過提交檢查同樣會被攔下。
 
 守衛是看不見的：你什麼都不用打，它也在工作。
 有幾條指令是給你用的，例如 `yokoten install` 和 `yokoten doctor`。
-團隊指令計畫在 v0.1.2（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
-
-yokoten 用同一套規則守著九個 AI 寫程式 agent：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI 和 OpenCode。
-其中七個做了端對端驗證。Gemini CLI 和 OpenCode 已經寫進程式，但還沒有做端對端執行。
 
 yokoten 攔住一件事時，不寫程式的人也能照著做。
 它會說出攔住了什麼、為什麼、該怎麼做，然後給出指南的連結。
@@ -76,6 +70,14 @@ npx yokoten doctor       # 你在第幾關，下一步做什麼
 agent 嘗試強制 push。yokoten 把它擋下，說明原因，並給出改法。接著 `doctor` 只指出下一步那一件事：
 
 <img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="終端機畫面。agent 執行 git push --force origin main，yokoten 的 hook 把它擋下，說明發生了什麼、為什麼危險、該怎麼改：改用 --force-with-lease。接著 yokoten doctor 顯示目前在第 1 關（共 5 關），下一步是加上測試。">
+
+## 一個儲存庫裡的多個 AI 工作階段
+
+v0.1.1 新增。幾個 AI 工作階段同時工作時，它們的變更可能會撞在一起。
+
+- `yokoten conflicts` 列出哪些開著的 pull request 改了同一批檔案，以及先合併哪一個。
+- 移動或刪除檔案的變更先合併。另一個提交要移動同一批檔案，就得等它。
+- 一個檔案正被另一個開著的變更移動時，守衛會攔下對它的編輯，並說出要等哪個變更。
 
 ## 接下來
 

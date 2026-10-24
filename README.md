@@ -31,18 +31,14 @@ It is not an AI agent, not a chat tool, and not a team page.
 yokoten protects five things: your work, your secrets, your releases, the code you run,
 and the safeguard itself.
 
-Some of that is on now. The guard stops a force push, a delete of `.git`, a tag push, a
-package publish, a download piped into a shell, and a skipped commit check.
-The commit check stops a secret in a commit. It needs `yokoten init` in the project.
-The rest of the five protections come in v0.1.1.
+All five are on by default, in every project, with no setup. The guard stops a force push,
+a hard reset, a delete of `.git`, a new tag, a package publish, a repo made public, and a
+download that a program would run unread. It stops a commit that adds a secret, a private
+email or an IP address, even in a project with no `yokoten init`. It also stops a skipped
+commit check.
 
 The guard is invisible: it works when you type nothing.
 A few commands are for you, such as `yokoten install` and `yokoten doctor`.
-Team commands are planned for v0.1.2 ([issue #823](https://github.com/yokoten-labs/yokoten/issues/823)).
-
-yokoten guards nine AI coding agents with the same rules: Claude Code, GitHub Copilot CLI,
-Antigravity CLI, Codex CLI, Muse Code, DeepSeek Harness, Grok CLI, Gemini CLI, and OpenCode.
-Seven are verified end to end. Gemini CLI and OpenCode are in the code but not run end to end.
 
 When yokoten stops an action, a non-coder can act on the answer.
 It says what was stopped, why, and what to do instead, then links the guide.
@@ -55,7 +51,7 @@ yokoten: git push origin v1.2.0 pushes a release tag. Only the owner decides whe
 ## One engine, many safeguards
 
 yokoten is a library of safeguards with one engine behind it.
-The five protections are the first set of rules, and they come on for everyone in v0.1.1.
+The five protections are the first set of rules, and they are on for everyone.
 Each rule says three things: where it checks, what it looks for, and what it says when it stops an action.
 
 The same rules hold at each checkpoint:
@@ -104,6 +100,14 @@ An agent tries a force push. yokoten stops it, says why, and gives the fix. Then
 `doctor` names the one next step:
 
 <img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="A terminal. An agent runs git push --force origin main. The yokoten hook blocks it and says what happened, why, and the fix: use --force-with-lease. Then yokoten doctor shows stage 1 of 5 and names the next step: add tests.">
+
+## Many AI sessions in one repo
+
+New in v0.1.1. When several AI sessions work at once, their changes can collide.
+
+- `yokoten conflicts` shows which open pull requests touch the same files, and which to merge first.
+- A change that moves or deletes files goes in before the others. A commit that moves the same files waits.
+- The guard stops an edit to a file that another open change is moving. It names the change to wait for.
 
 ## Coming next
 

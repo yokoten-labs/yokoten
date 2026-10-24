@@ -1,3 +1,3 @@
 Changed
 
-The README says yokoten is a program that guards AI coding tools. It says what the guard stops today and that the rest of the five protections come in v0.1.1. The commit check needs `yokoten init`. Team commands are planned for v0.1.2 (#823). The agent list matches the guide's table, and the zh-CN, zh-TW and ja copies follow (#832).
+The README says yokoten is a program that guards AI coding tools. It lists what the five protections stop, all on by default, with no setup in the project. A commit that adds a secret is stopped even with no `yokoten init`. A new section explains how yokoten keeps several AI sessions in one repo from colliding. Team commands are planned for v0.1.2 (#823). The zh-CN, zh-TW and ja copies follow (#832).

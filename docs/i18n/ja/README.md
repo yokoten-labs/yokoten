@@ -31,16 +31,10 @@ yokoten はプログラムです。AI ではありません。
 
 yokoten は五つを守ります。あなたの作業、秘密、公開、実行するコード、そしてこの保護そのものです。
 
-その一部は、いまから有効です。番人は force push、`.git` の削除、タグの push、パッケージの公開、ダウンロードをシェルへ流し込むこと、コミットチェックの省略を止めます。
-コミットチェックはコミットに含まれる秘密を止めます。プロジェクトで `yokoten init` を先に実行する必要があります。
-五つの保護の残りは、v0.1.1 で来ます。
+五つの保護は、どのプロジェクトでも最初から有効で、設定はいりません。番人は force push、hard reset、`.git` の削除、新しいタグ、パッケージの公開、リポジトリの公開、だれも読んでいないダウンロードをプログラムに実行させることを止めます。秘密、個人のメールアドレス、IP アドレスを加えるコミットも止めます。`yokoten init` をしていないプロジェクトでも同じです。コミットチェックの省略も止めます。
 
 番人は目に見えません。何も入力しなくても働きます。
 人が打つコマンドはわずかです。例えば `yokoten install` と `yokoten doctor` です。
-チーム用のコマンドは v0.1.2 を予定しています（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
-
-yokoten は九つの AI コーディングエージェントを同じルールで守ります。Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI、OpenCode です。
-そのうち七つはエンドツーエンドで検証済みです。Gemini CLI と OpenCode はコードにありますが、エンドツーエンドではまだ実行していません。
 
 yokoten が止めたとき、コードを書かない人でも、その答えで動けます。
 止めたこと、理由、どうすればよいかを伝え、ガイドへのリンクを示します。
@@ -76,6 +70,14 @@ Claude Code ではプラグインも使えます。`/plugin marketplace add yoko
 エージェントが force push を試すと、yokoten が止めます。理由と直し方も示します。そのあと `doctor` が、次の一手を一つ挙げます。
 
 <img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="ターミナル。エージェントが git push --force origin main を実行すると、yokoten のフックがそれを止め、何が起きたか、なぜ危険か、直し方（--force-with-lease を使う）を示します。続いて yokoten doctor が 5 段階中の第 1 段階にいることを示し、次の一手としてテストの追加を挙げます。">
+
+## 一つのリポジトリで複数の AI セッション
+
+v0.1.1 の新機能です。複数の AI セッションが同時に働くと、変更がぶつかることがあります。
+
+- `yokoten conflicts` は、同じファイルに触れる開いた pull request と、先にマージするものを示します。
+- ファイルを移動または削除する変更を先に入れます。同じファイルを移動する別のコミットは待ちます。
+- 別の開いた変更が移動中のファイルを編集しようとすると、番人が止め、待つべき変更の名前を示します。
 
 ## この次
 
