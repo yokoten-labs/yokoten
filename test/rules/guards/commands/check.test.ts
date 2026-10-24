@@ -248,6 +248,9 @@ test('redteam #865: the host API routes that create a repo or change one are ref
   for (const command of ['gh api orgs/acme/repos', 'gh api -X GET user/repos', 'gh api -X GET repos/$OWNER/$REPO']) {
     assert.equal((await askHook(sandbox, command)).status, 0, `the hook refused a read: ${command}`);
   }
+  // A POST onto the repo itself is a settings write like the PATCH above (#884); a POST to a
+  // subresource of the variable repo, such as a new issue, is the bot's own work and stays allowed.
+  assert.equal((await askHook(sandbox, 'gh api -X POST repos/$OWNER/$REPO/issues')).status, 0, 'the hook refused a POST to a subresource');
 });
 
 test('redteam #865: git --git-dir still shows the tag and push.followTags', async () => {
