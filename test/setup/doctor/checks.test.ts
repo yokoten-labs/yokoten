@@ -235,11 +235,25 @@ test("doctor --session: a user's own hook that runs the runtime keeps it (#935)"
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   settings.enabledPlugins = { 'yokoten@yokoten': true };
-  settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check' }] }];
+  for (const command of ['node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check', '"$HOME/.local/bin/yokoten" check', 'yokoten check']) {
+    settings.hooks.Stop = [{ hooks: [{ type: 'command', command }] }];
+    writeFileSync(settingsFile, JSON.stringify(settings));
+    await sandbox.call(['doctor', '--session']);
+    assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), `the runtime stays while ${command} runs it`);
+    assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), `the launcher stays for ${command}`);
+  }
+});
+
+test("doctor --session: a hook that only looks like yokoten's lets the runtime go (#935)", async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'my-yokoten check; node ~/.local/share/yokoten-old/run.mjs' }] }];
   writeFileSync(settingsFile, JSON.stringify(settings));
   await sandbox.call(['doctor', '--session']);
-  assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays while a hook runs it');
-  assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays with it');
+  assert.ok(!existsSync(join(sandbox.home, '.local/share/yokoten')), 'nothing runs the runtime, so it goes');
 });
 
 test('doctor --session: without the plugin, an install stays as it is (#935)', async () => {

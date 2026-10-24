@@ -556,15 +556,30 @@ function removeManaged(path: string, { folder = false }: { folder?: boolean } = 
   return 'removed';
 }
 
-/** True when Claude Code's user settings still name the runtime, or cannot be read. */
-function settingsName(env: Env, runtime: string): boolean {
-  const file = join(userDir(env), 'settings.json');
+/**
+ * True when a hook left in Claude Code's user settings still runs yokoten, or the file can't
+ * be read. It runs after yokoten's own hooks are taken out, so what is left is the user's:
+ * any command naming yokoten counts, by the runtime's path or the launcher (#935).
+ */
+function hookRunsYokoten(env: Env): boolean {
+  let table: unknown;
   try {
-    const text = readFileSync(file, 'utf8');
-    return text.includes(runtime) || text.includes('.local/share/yokoten');
+    table = JSON.parse(readFileSync(join(userDir(env), 'settings.json'), 'utf8'));
   } catch (err) {
     return (err as NodeJS.ErrnoException).code !== 'ENOENT';
   }
+  const commands: string[] = [];
+  const walk = (value: unknown): void => {
+    if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === 'object') {
+      for (const [key, inner] of Object.entries(value)) {
+        if (key === 'command' && typeof inner === 'string') commands.push(inner);
+        else walk(inner);
+      }
+    }
+  };
+  walk((table as { hooks?: unknown } | null)?.hooks);
+  return commands.some((command) => /(^|[\\/\s"'])yokoten(\.(mjs|ts|cmd|ps1|exe))?(?=$|[\s"'])/.test(command) || /[\\/]share[\\/]+yokoten[\\/]/.test(command));
 }
 
 /** What a session start took back from an older install (#935): the files removed, and the edits that stay. */
@@ -599,7 +614,7 @@ export function cleanOlderInstall(env: Env, { platform = process.platform }: { p
   const target = paths(env);
   // The runtime stays while anything still runs it: this very process, or a hook left in
   // the settings (a file it could not walk, or a user's own hook that calls the runtime).
-  if (resolve(HOME_DIR) === resolve(target.runtime) || settingsName(env, target.runtime)) return cleanup;
+  if (resolve(HOME_DIR) === resolve(target.runtime) || hookRunsYokoten(env)) return cleanup;
   if (existsSync(target.runtime)) {
     rmSync(target.runtime, { recursive: true, force: true });
     cleanup.files += 1;
