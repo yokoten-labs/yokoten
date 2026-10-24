@@ -13,7 +13,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const TRANSCRIPT_URL = new URL('transcript.txt', import.meta.url);
 const OUTPUT_URL = new URL('../../docs/assets/demo.svg', import.meta.url);
-const TITLE = 'An agent runs git push --force. yokoten blocks it and says what happened, why, and the fix. Then yokoten doctor names the next step.';
+const TITLE = 'An agent runs git push --tags. yokoten blocks it and says what happened, why, and what the person does instead. Then yokoten doctor names the next step.';
 
 const FONT_SIZE = 13;
 const LINE_HEIGHT = 20;

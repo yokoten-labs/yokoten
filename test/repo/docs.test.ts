@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { longSentences } from '../../src/rules/pr.ts';
-import { parseSourceMarker } from '../../src/run/translations.ts';
+import { parseSourceMarker } from '../../src/run/notes/translations.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -357,7 +357,7 @@ function collectWords(): string[] {
   const wanted = /const wanted = \[([\s\S]*?)\];/.exec(desk);
   if (!wanted) throw new Error('desk readable list changed');
   words.push(...quotedStrings(wanted[1]));
-  const roleSet = /YOKOTEN_ROLE: '([^']+)'[\s\S]{0,120}?TZ: '([^']+)'/.exec(desk);
+  const roleSet = /YOKOTEN_ROLE: '([^']+)'[\s\S]{0,300}?TZ: '([^']+)'/.exec(desk);
   if (!roleSet) throw new Error('desk role env changed');
   words.push('YOKOTEN_ROLE', roleSet[1], 'TZ', roleSet[2]);
   for (const match of desk.matchAll(/\b(YOKOTEN_[A-Z0-9_]+)\b/g)) words.push(match[1]);
@@ -558,8 +558,8 @@ test('standard: each shape says who writes, who reads, how it is checked, and it
   const english = shapeSections(read(ENGLISH));
   const chinesePage = read(CHINESE);
   const chinese = shapeSections(chinesePage);
-  assert.equal(english.length, 8);
-  assert.equal(chinese.length, 8);
+  assert.equal(english.length, 9);
+  assert.equal(chinese.length, 9);
   for (const section of english) {
     for (const line of ['Who writes', 'Who reads', 'How yokoten checks it', 'Version 1']) {
       assert.ok(section.includes(line), `missing ${line} in: ${section.split('\n')[0]}`);
@@ -611,6 +611,13 @@ test('standard: a link to a missing file is caught', () => {
 test('standard: links in the spec and the manifesto resolve', () => {
   const missing = LINK_PAGES.flatMap((page) => missingLinkTargets(read(page), join(ROOT, page)).map((link) => `${page} -> ${link}`));
   assert.deepEqual(missing, []);
+});
+
+test('standard: the README points at the page, so a reader can find it', () => {
+  assert.match(read('README.md'), /\[The standard\]\([^)]*docs\/standard\.md\)/);
+  assert.match(read('docs/i18n/zh-CN/README.md'), /docs\/i18n\/zh-CN\/standard\.md/);
+  assert.ok(existsSync(join(ROOT, ENGLISH)));
+  assert.ok(existsSync(join(ROOT, CHINESE)));
 });
 
 test('standard: a wide desk symlink sentence is caught', () => {

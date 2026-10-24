@@ -4,11 +4,11 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import childProcess from 'node:child_process';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, stepMark, withPlanning } from '../../repo/helpers.ts';
+import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
 import { blocksToSay, doctor, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
@@ -18,7 +18,7 @@ import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
 
 const marks = (s: ServerSettings | Unread) => Object.fromEntries(serverChecks(s).map((c) => [c.id, c.mark]));
 
-const SERVER_KEYS = ['protection', 'merge-settings', 'security-settings'];
+const SERVER_KEYS = ['protection', 'merge-settings', 'security-settings', 'tag-bypass', 'release-reviewer', 'release-tag-rule'];
 
 const serverSteps = () => ROAD.filter((s) => SERVER_KEYS.includes(s.key));
 
@@ -41,7 +41,7 @@ test('server: a repo with every setting on is ok, and doctor only reads (#7)', (
   const s = readServer(fake.gh, REPO);
   assert.deepEqual(marks(s), {
     'main-rules': 'ok', 'required-checks': 'ok', 'code-owner-review': 'ok', 'squash-only': 'ok',
-    'delete-branch': 'ok', 'tag-rules': 'ok', 'security-switches': 'ok', 'forgotten-branches': 'note',
+    'delete-branch': 'ok', 'tag-rules': 'ok', 'tag-bypass': 'ok', 'release-reviewer': 'ok', 'release-tag-rule': 'ok', 'security-switches': 'ok', 'forgotten-branches': 'note',
   });
   const note = serverChecks(s).find((c) => c.id === 'forgotten-branches');
   assert.match(note?.finding.what ?? '', /^1 branch\(es\) with no open pull request \(old\/b\)$/, 'a branch of a fork with the same name does not count');
@@ -61,7 +61,7 @@ test('server: each setting off is MISSING, with what and the fix (#7)', () => {
     ...GOOD,
     [`repos/${REPO}`]: { default_branch: 'trunk', allow_squash_merge: true, allow_merge_commit: true, allow_rebase_merge: false, delete_branch_on_merge: false, security_and_analysis: { secret_scanning: { status: 'disabled' } } },
     [`repos/${REPO}/rules/branches/trunk`]: [{ type: 'pull_request', parameters: {} }],
-    [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'deletion' }] },
+    [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'deletion' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
     [`repos/${REPO}/private-vulnerability-reporting`]: { enabled: false },
     [`repos/${REPO}/vulnerability-alerts`]: undefined,
     [`repos/${REPO}/branches?per_page=100`]: 'trunk\nfeat/a\n',
@@ -81,25 +81,49 @@ test("server: gh missing, signed out or refused is \"can't check\" with the fix,
   // A free private repo, read by someone who is not an admin: rulesets refused, settings hidden.
   const refused = { ...GOOD, [`repos/${REPO}`]: { default_branch: 'main' }, [`repos/${REPO}/rules/branches/main`]: said(403), [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: said(403), [`repos/${REPO}/private-vulnerability-reporting`]: said(403), [`repos/${REPO}/vulnerability-alerts`]: undefined };
   const checks = serverChecks(readServer(serverGh(refused).gh, REPO));
-  for (const id of ['main-rules', 'required-checks', 'code-owner-review', 'squash-only', 'delete-branch', 'tag-rules', 'security-switches']) {
+  for (const id of ['main-rules', 'required-checks', 'code-owner-review', 'squash-only', 'delete-branch', 'tag-rules', 'tag-bypass', 'security-switches']) {
     assert.equal(checks.find((c) => c.id === id)?.mark, "can't check", id);
   }
   assert.match(checks.find((c) => c.id === 'tag-rules')?.finding.fix ?? '', /GitHub Pro/);
-  assert.match(checks.find((c) => c.id === 'delete-branch')?.finding.what ?? '', /only a repo admin/);
+  assert.match(checks.find((c) => c.id === 'delete-branch')?.finding.what ?? '', /code host did not say/);
 });
 
 test('road: the server steps are stage 5, and pass a repo with every setting on (#7)', () => {
   assert.deepEqual(serverSteps().map((s) => [s.key, s.stage]), SERVER_KEYS.map((key) => [key, 5]));
-  assert.deepEqual(serverFound(readServer(serverGh(GOOD).gh, REPO)), { protection: true, 'merge-settings': true, 'security-settings': true });
+  assert.deepEqual(serverFound(readServer(serverGh(GOOD).gh, REPO)), { protection: true, 'merge-settings': true, 'security-settings': true, 'tag-bypass': true, 'release-reviewer': true, 'release-tag-rule': true });
 });
 
 test('road: each server step catches its setting off, and says what and the fix (#7)', () => {
   const each: [string, Record<string, unknown>, RegExp][] = [
     ['protection', { [`repos/${REPO}/rules/branches/main`]: [{ type: 'pull_request', parameters: { allowed_merge_methods: ['squash'] } }] }, /no rule for no force push, no deletion; no CI check must pass before a merge; code owner review is not required/],
-    ['protection', { [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'deletion' }] } }, /^no active tag ruleset on v\*/],
+    ['protection', {
+      // Ruleset 7 blocks deletion only, and 8 blocks creation with a bypass: tag-rules fails, tag-bypass passes.
+      [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
+      [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'deletion' }], bypass_actors: [] },
+      [`repos/${REPO}/rulesets/8`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
+    }, /^no active tag ruleset on v\*/],
     ['merge-settings', { [`repos/${REPO}`]: { ...(GOOD[`repos/${REPO}`] as object), delete_branch_on_merge: false } }, /^merged branches are not deleted$/],
     ['merge-settings', { [`repos/${REPO}/rules/branches/main`]: [{ type: 'pull_request', parameters: { require_code_owner_review: true, allowed_merge_methods: ['squash', 'rebase'] } }, ...(GOOD[`repos/${REPO}/rules/branches/main`] as object[]).slice(1)] }, /not only by squash/],
     ['security-settings', { [`repos/${REPO}/private-vulnerability-reporting`]: { enabled: false } }, /^private vulnerability reporting is off$/],
+    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [] } }, /bypass list does not name Repository admin/],
+    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [{ actor_id: 99, actor_type: 'Integration' }] } }, /bypass list names the bot/],
+    // Two v* rulesets both block tag creation, and a push meets both: a bypass on one is not enough (#850).
+    ['tag-bypass', {
+      [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
+      [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
+      [`repos/${REPO}/rulesets/8`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }], bypass_actors: [] },
+    }, /bypass list does not name Repository admin/],
+    // A bypass on another v* ruleset, one that does not block tag creation, is no way to push a tag (#537).
+    ['tag-bypass', {
+      [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
+      [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: [] },
+      [`repos/${REPO}/rulesets/8`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'required_signatures' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
+    }, /bypass list does not name Repository admin/],
+    ['release-reviewer', { [`repos/${REPO}/environments/release`]: { protection_rules: [] } }, /^the release environment has no required reviewer/],
+    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [] } }, /^the release environment has no tag rule for v\*$/],
+    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'branch' }] } }, /v\* rule is a branch rule/],
+    // A tag rule and a branch rule named v* together let a branch deploy (#537).
+    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'tag' }, { id: 2, name: 'v*', type: 'branch' }] } }, /also accepts a branch named v\*/],
   ];
   for (const [key, change, what] of each) {
     const server = readServer(serverGh({ ...GOOD, ...change }).gh, REPO);
@@ -112,6 +136,63 @@ test('road: each server step catches its setting off, and says what and the fix 
   }
 });
 
+test('server: a bypass counts only where a push meets it, and both tag-bypass faults are named (#850)', () => {
+  const list = `repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`;
+  const vTags = { conditions: { ref_name: { include: ['refs/tags/v*'] } } };
+  const admin = [{ actor_id: 5, actor_type: 'RepositoryRole' }];
+  // A bot on a v* ruleset that does not block creation cannot push a tag, so it is no fault (#850).
+  const outside = readServer(serverGh({
+    ...GOOD,
+    [list]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
+    [`repos/${REPO}/rulesets/7`]: { ...vTags, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: admin },
+    [`repos/${REPO}/rulesets/8`]: { ...vTags, rules: [{ type: 'update' }], bypass_actors: [{ actor_id: 99, actor_type: 'Integration' }] },
+  }).gh, REPO);
+  assert.equal(marks(outside)['tag-bypass'], 'ok');
+  // When the owner cannot push and a bot can, the line names both, not only the bot.
+  const both = readServer(serverGh({
+    ...GOOD,
+    [`repos/${REPO}/rulesets/7`]: { ...vTags, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: [{ actor_id: 99, actor_type: 'Integration' }] },
+  }).gh, REPO);
+  const f = stepFinding(ROAD.find((s) => s.key === 'tag-bypass')!, '.', {}, { server: both });
+  assert.match(f.what, /does not name Repository admin.*; .*names the bot/);
+});
+
+test('doctor: the tag bypass and the release environment each show one line with the place to click (#537)', () => {
+  const root = makeTempDir('yokoten-release-');
+  execFileSync('git', ['init', '-q', root]);
+  execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
+  const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
+  const lineOf = (routes: Record<string, unknown>, key: string) => run(routes).lines.find((line) => {
+    if (new RegExp(`^ {4}to do +${key}\\b`).test(line)) return true;
+    // The done steps of a stage share one line: the key is one name in it (#946).
+    const done = /^ {4}done +(.*)$/.exec(line);
+    return done?.[1]?.split(', ').some((name) => name === key || name.startsWith(`${key} (`)) ?? false;
+  }) ?? '';
+  // All set: no line for these asks the owner for anything.
+  for (const key of ['tag-bypass', 'release-reviewer', 'release-tag-rule']) assert.match(lineOf(GOOD, key), /^ {4}done /, key);
+  // Positive control: each known-bad setting is caught, with its own line and GitHub's menu.
+  const cases: [string, Record<string, unknown>, RegExp][] = [
+    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [] } }, /Repository admin/],
+    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [{ actor_id: 9, actor_type: 'Integration' }] } }, /names the bot/],
+    // A bypass on another v* ruleset, one that does not block tag creation, leaves the owner unable to push a tag (#537).
+    ['tag-bypass', {
+      [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
+      [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: [] },
+      [`repos/${REPO}/rulesets/8`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'required_signatures' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
+    }, /Repository admin/],
+    ['release-reviewer', { [`repos/${REPO}/environments/release`]: { protection_rules: [] } }, /no required reviewer/],
+    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'branch' }] } }, /branch rule/],
+    // A tag rule with a branch rule named v* lets a branch deploy (#537).
+    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'tag' }, { id: 2, name: 'v*', type: 'branch' }] } }, /also accepts a branch named v\*/],
+  ];
+  for (const [key, change, what] of cases) {
+    const line = lineOf({ ...GOOD, ...change }, key);
+    assert.match(line, new RegExp(`^ {4}to do +${key}: `), key);
+    assert.match(line, what, key);
+    assert.match(line, /; in Settings, (Rules|Environments), /, `${key}: says where to click`);
+  }
+});
+
 test("road: with no gh, no network, a non-GitHub remote or a session, the server steps are can't check, never done (#7)", () => {
   const unreads = [
     undefined, // a session
@@ -120,7 +201,7 @@ test("road: with no gh, no network, a non-GitHub remote or a session, the server
     readServer(() => { throw new Error('getaddrinfo ENOTFOUND api.github.com'); }, REPO),
     { unread: 'the origin remote is not on a host yokoten knows (GitHub for now)', fix: 'add a GitHub origin remote, or check these settings by hand' },
   ];
-  for (const server of unreads) assert.deepEqual(serverFound(server), { protection: null, 'merge-settings': null, 'security-settings': null });
+  for (const server of unreads) assert.deepEqual(serverFound(server), { protection: null, 'merge-settings': null, 'security-settings': null, 'tag-bypass': null, 'release-reviewer': null, 'release-tag-rule': null });
   const protection = ROAD.find((s) => s.key === 'protection')!;
   assert.equal(protection.unchecked?.(undefined), 'a session never calls the network; run `yokoten doctor`');
   assert.match(protection.unchecked?.(unreads[1]) ?? '', /^gh is not installed; get it from https:\/\/cli\.github\.com/);
@@ -147,10 +228,12 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
   const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
   let result = run(GOOD);
   const text = () => result.lines.join('\n');
-  // No origin remote at all: say so, in one line for every step that reads the server (#208, #502).
+  // No origin remote at all: say so once in each block that has such steps (#502, #946).
   const cant = result.lines.filter((l) => /can't check/.test(l));
-  assert.equal(cant.length, 1, cant.join('\n'));
-  assert.match(text(), /^ {4}can't check [a-z, -]*protection[a-z, -]*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/m);
+  assert.equal(cant.length, 3, cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check labels, milestone: there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check review \(Scorecard: Code-Review\): there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check .*protection.*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/.test(line)), cant.join('\n'));
   assert.ok(!/can't check.*can't check/.test(text()), 'no line says "can\'t check" twice');
   assert.equal(result.report.steps?.find((s) => s.id === 'protection')?.mark, "can't check", 'the data still has each step');
   assert.ok(result.lines.some((l) => /secret scanning with push protection/.test(l)), 'the by-hand list when nothing is read');
@@ -175,6 +258,32 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
   assert.notEqual(session.report.next?.id, 'protection');
 });
 
+test('doctor: the next step comes first, each part is a block, and done steps share a line (#946)', async () => {
+  const sandbox = makeSandbox();
+  const text = (await sandbox.call(['doctor'])).stdout;
+  const lines = text.trimEnd().split('\n');
+  // The first line says where the project is and the one step to take next.
+  assert.match(lines[0] ?? '', /^stage \d of 5, [^.]+\. Next: .+\.$/, text);
+  // Every stage and every part has a short heading, then a blank line before it.
+  const stageHeads = lines.map((line, at) => ({ line, at })).filter(({ line }) => /^ {2}\d\. \S/.test(line));
+  assert.equal(stageHeads.length, 5, text);
+  for (const { line, at } of stageHeads) assert.equal(lines[at - 1], '', `${line} starts its block`);
+  for (const heading of ['project:', 'unsaved work (only on this machine):', 'machine:', 'server (read only;']) {
+    const at = lines.findIndex((line) => line === heading || line.startsWith(heading));
+    assert.ok(at > 0, heading);
+    assert.equal(lines[at - 1], '', `${heading} starts its block`);
+  }
+  // The done steps of a stage share one line, and none of them keeps its own.
+  const done = lines.filter((line) => /^ {4}done  /.test(line));
+  assert.ok(done.length > 0, text);
+  assert.ok(done.some((line) => line.includes(', ')), 'a stage with several done steps lists them together');
+  // --json is the same data as before: one entry per step, with no block layout.
+  const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { steps: { id: string }[]; blocks?: unknown };
+  assert.ok(json.steps.length > 0);
+  assert.equal(json.steps.filter((step) => step.id === 'rules').length, 1);
+  assert.equal(json.blocks, undefined);
+});
+
 // #561: a server read that hangs stops at its time cap, and the step says why. The cap's
 // own message proves it fired; the test reads no clock, which a loaded machine slows (#436).
 test("doctor: a slow server read stops in time, and each step says it can't be checked and why (#561)", { skip: process.platform === 'win32' && 'a shell stub needs an execute bit' }, () => {
@@ -195,7 +304,7 @@ test("doctor: a slow server read stops in time, and each step says it can't be c
 });
 
 // The steps that only the code host can judge (#504): on a host with no adapter, each says what it asks.
-const FORGE_STEPS = ['tests', 'ci', 'labels', 'milestone', 'titles', 'codeowners', 'bot', 'review', 'protection', 'merge-settings', 'security-settings'];
+const FORGE_STEPS = ['tests', 'ci', 'labels', 'milestone', 'titles', 'codeowners', 'bot', 'review', 'protection', 'merge-settings', 'security-settings', 'tag-bypass', 'release-reviewer', 'release-tag-rule'];
 // What only GitHub has: its menus, its CLI, init's GitHub flag, the GitHub App. A standard's name ("GitHub community profile") and yokoten's own docs are not instructions.
 const GITHUB_ONLY = /github\.com(?!\/yokoten-labs\/yokoten\/)|\bgh\b|--github|in Settings, |GitHub App|Rulesets|Dependabot alerts/;
 
@@ -222,7 +331,7 @@ test('doctor: on another host, each forge step says once what it asks, with no G
       if (session) continue;
       for (const key of FORGE_STEPS) {
         assert.equal(result.report.steps?.find((s) => s.id === key)?.mark, "can't check", `${remote}: ${key}`);
-        const lines = result.lines.filter((line) => new RegExp(`^ {4}can't check ${key}\\b`).test(line));
+        const lines = result.lines.filter((line) => new RegExp(`^ {4}can't check +${key}\\b`).test(line));
         assert.equal(lines.length, 1, `${remote}: ${key} has one line`);
         assert.ok(lines[0].includes(`: yokoten can't check this on ${label} yet; do it by hand: `), `${remote}: ${key}`);
       }
@@ -364,13 +473,13 @@ test('road: the labels and milestone steps are stage 2; missing labels or no ope
 test('doctor: the no-build-output step looks at the tracked files (#56)', async () => {
   const sandbox = makeSandbox();
   const line = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((l) => / no-build-output/.test(l)) ?? '';
-  assert.match(await line(), /^ +done +no-build-output/);
+  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
   sandbox.write('build/a.js', 'x\n');
   sandbox.write('lib/x.so', 'x\n');
   sandbox.git('add', '.');
   assert.match(await line(), /^ +to do +no-build-output \(Scorecard: Binary-Artifacts\): build output in the repo \(build\/a\.js, lib\/x\.so\)/);
   sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['build/**', 'lib/**'] }));
-  assert.match(await line(), /^ +done +no-build-output/);
+  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
 });
 
 test('doctor: shows check\'s notes, worded as check words them, and they never change the exit code (#228)', async () => {
@@ -450,7 +559,9 @@ test('doctor --session: exactly three lines, about the first step of the first s
     'Why: an agent follows the rules it can read, and only those.',
     'Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).',
   ]);
-  // Outside a repo it says nothing (unless yokoten itself is broken).
+  // Outside a repo it says nothing (unless yokoten itself is broken). A stop marker keeps
+  // the walk from finding the repo around this folder when TMPDIR lives inside one.
+  stopCheckoutWalk(sandbox.home);
   assert.equal((await sandbox.call(['doctor', '--session'], { cwd: sandbox.home })).stdout, '');
 });
 
@@ -526,6 +637,57 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   rmSync(join(sandbox.repo, 'AGENTS.md'));
   assert.match(await next(bot), /stage 1 of 5, safety net\. Next: no AGENTS\.md/);
   assert.match((await sandbox.call(['doctor'], { extra: { ...extra, ...bot } })).stdout, /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
+});
+
+test('doctor: a stage that jumped says which stages it passed, once (#514)', async () => {
+  const sandbox = makeSandbox();
+  const jumpLine = /^stage \d (is done too|counts as done): /m;
+  // The first run has nothing to compare with: stage 1 is next, and no line.
+  const first = await sandbox.call(['doctor']);
+  assert.match(first.stdout, /^stage 1 of 5, /m);
+  assert.doesNotMatch(first.stdout, jumpLine);
+  // The stage file sits next to the lessons state, in the git folder, not one folder deeper (#514).
+  const stagePath = join(sandbox.repo, '.git/yokoten/stage.json');
+  assert.ok(existsSync(stagePath), `the stage file is ${stagePath}`);
+  assert.deepEqual(JSON.parse(readFileSync(stagePath, 'utf8')), { lastStage: 1 });
+  assert.equal(existsSync(join(sandbox.repo, '.git/yokoten/yokoten')), false, 'no nested yokoten folder');
+  // Stage 1 to stage 4 at once: init writes the rules, hooks and changelog, and the
+  // remote, the test workflow and the templates finish stages 2 and 3.
+  assert.equal((await sandbox.call(['init'])).status, 0);
+  sandbox.withTests();
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
+  sandbox.git('commit', '--allow-empty', '-qm', 'first');
+  sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const jumpedRun = await sandbox.call(['doctor']);
+  assert.match(jumpedRun.stdout, /^stage 4 of 5, /m);
+  // Each passed stage says its own reason: stage 2 has steps only the server can check,
+  // while stage 3 was already in place.
+  assert.match(jumpedRun.stdout, /^stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
+  assert.match(jumpedRun.stdout, /^stage 3 is done too: its steps were already in place$/m);
+  // The lines are told once: the next run starts from stage 4.
+  const later = await sandbox.call(['doctor']);
+  assert.match(later.stdout, /^stage 4 of 5, /m);
+  assert.doesNotMatch(later.stdout, jumpLine);
+  // A session stays short: it never prints the lines.
+  assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, jumpLine);
+});
+
+test('doctor: a jump over one stage says that stage, in the singular (#514)', async () => {
+  const sandbox = makeSandbox();
+  // Stage 1 is done and stage 2 is next (no remote), so this run records stage 2.
+  assert.equal((await sandbox.call(['init'])).status, 0);
+  sandbox.withTests();
+  const atTwo = await sandbox.call(['doctor']);
+  assert.match(atTwo.stdout, /^stage 2 of 5, /m);
+  // The remote finishes stage 2, and stage 3 was already in place: only stage 3 was
+  // passed, so the line names one stage and not "stages 3 are".
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
+  sandbox.git('commit', '--allow-empty', '-qm', 'first');
+  sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const jumped = await sandbox.call(['doctor']);
+  assert.match(jumped.stdout, /^stage 4 of 5, /m);
+  assert.match(jumped.stdout, /^stage 3 is done too: its steps were already in place$/m);
+  assert.doesNotMatch(jumped.stdout, /^stages /m);
 });
 
 test('doctor: the tests step wants a test command and a CI step that runs it (#55)', async () => {
@@ -1007,6 +1169,33 @@ test('doctor: the sandbox step is to do, then done after init, then names a too-
   assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
   const doctor = (await sandbox.call(['doctor'])).stdout;
   assert.match(doctor, /^ {4}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
+});
+
+// #667: full doctor runs check, so a CODEOWNERS line that protects nothing is a finding.
+test('doctor: a CODEOWNERS line that matches no file is a finding (#667)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('src/a.ts', 'a\n');
+  sandbox.write('.github/CODEOWNERS', 'src/gone.ts @lead\n');
+  sandbox.git('add', '.');
+  const full = doctor(sandbox.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: () => { throw new Error('no gh in this test'); } });
+  const found = full.report.findings.find((f) => f.id === 'stale-codeowners');
+  assert.equal(found?.line, 1);
+  assert.match(found?.what ?? '', /protects nothing; point it at the new path/);
+});
+
+test('doctor: a shell that is not UTC gets the line for that shell, once, at the end (#932)', async () => {
+  const sandbox = makeSandbox();
+  const extra = { TZ: 'America/New_York', SHELL: '/usr/bin/fish' };
+  const full = (await sandbox.call(['doctor'], { extra })).stdout.trimEnd().split('\n');
+  const last = full.at(-1) ?? '';
+  assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
+  assert.match(last, /`set -gx TZ UTC`/);
+  assert.match(last, /~\/\.config\/fish\/config\.fish/);
+  assert.equal(full.filter((line) => line.includes('time zone is not UTC')).length, 1, 'said once');
+  // A session never needs it: init already sets TZ=UTC for agent sessions.
+  assert.doesNotMatch((await sandbox.call(['doctor', '--session'], { extra })).stdout, /time zone is not UTC/);
+  // A shell already in UTC hears nothing.
+  assert.doesNotMatch((await sandbox.call(['doctor'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
 });
 
 // #500: after a fresh install, every line that names a command uses one way to run yokoten.

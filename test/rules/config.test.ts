@@ -19,7 +19,7 @@ import {
 import {
   checkCommand,
   checkEdit,
-} from '../../src/rules/guards.ts';
+} from '../../src/rules/guards/index.ts';
 import { loadHookConfig } from '../../src/run/hook.ts';
 
 // #228: each key with the wrong shape, by its key path, and the key it falls back on.
@@ -59,6 +59,18 @@ test('glob: a slash anchors at the root, no slash matches in any folder', () => 
   assert.ok(m('a?.md', 'ab.md'));
   assert.ok(!m('a?.md', 'a/.md'));
   assert.ok(!m('a.md', 'aXmd'), 'a dot is a dot');
+});
+
+test('glob: one list is compiled once, and a cached answer keeps its case and anchors (#710)', () => {
+  const globs = ['AGENTS.md', '.github/**'];
+  const asked = matcher(globs);
+  assert.equal(matcher(globs), asked, 'the same list is compiled once');
+  assert.ok(asked('AGENTS.md'));
+  assert.ok(asked('.github/workflows/ci.yml'));
+  assert.ok(!asked('kit/.github/workflows/ci.yml'), 'each glob keeps its anchor');
+  assert.ok(matcher(['*.md'], { foldsCase: true })('README.MD'), 'a folded list matches in any case');
+  assert.ok(!matcher(['*.md'])('README.MD'), 'a folded answer is not given to a case-sensitive list');
+  assert.ok(!matcher([])('any.md'), 'an empty list matches nothing');
 });
 
 test('config: missing file means defaults, a key overrides, bad JSON says where', () => {

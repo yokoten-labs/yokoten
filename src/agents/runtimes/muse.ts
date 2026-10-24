@@ -16,10 +16,13 @@ import type { Env } from '../../rules/config.ts';
 import { homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import type { Action } from '../../run/hook.ts';
-import { type FolderTrust, folderKeys, isFolder } from '../folder-trust.ts';
-import { type Added, addHook, checkHooksFile, type HookArgs, type HookState, hookState, isObject } from '../hooks-file.ts';
+import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
+import { type TrustChange, type TrustPlan } from './codex.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
+import { readStop } from './claude-code.ts';
+import type { AgentAdapter } from './runtime.ts';
 
 // bash takes `command` and `workdir`; the edit tools take `path`.
 const SHELL = 'bash';
@@ -43,7 +46,7 @@ export function readToolCall(input: unknown): Action {
 }
 
 /** A Stop event: the same fields as Claude Code's (`cwd`, `stop_hook_active`). */
-export { readStop } from './claude-code.ts';
+export { readStop };
 
 const projectHooks = (root: string) => join(root, '.muse', 'hooks.json');
 
@@ -79,6 +82,9 @@ export const projectHooksState = (root: string, cli: string): { guard: HookState
   stop: hookState(...stopArgs(root, cli)),
 });
 
+/** Whether yokoten's guard hook is in the project's hook file (#661): the file alone is not enough. */
+export const hasProjectHook = (root: string): boolean => hasHook(projectHooks(root), 'PreToolUse', 'hook');
+
 // ---- Trust (#341) ----
 //
 // Muse saves trust in `trust.json` in its config folder: `$XDG_CONFIG_HOME/muse`, or
@@ -89,7 +95,7 @@ export const projectHooksState = (root: string, cli: string): { guard: HookState
 // key with a trailing slash trusts nothing: so doctor compares whole keys, exactly.
 
 /** The one step that makes Muse run the project's hooks. */
-export const TRUST_STEP = 'run `muse` in this folder and choose "Trust and continue"';
+export const TRUST_STEP = TRUST_COMMAND;
 
 /** The fix when the guard is off: both ways to trust a folder (#554). */
 export const TRUST_FIX = `${TRUST_STEP}, or pass \`--trust-workspace\` to \`muse exec\``;
@@ -129,6 +135,43 @@ export function readTrust(root: string, env: Env): FolderTrust {
     return isObject(entry) && entry.decision === 'trusted';
   });
   return { state: isTrusted ? 'trusted' : 'untrusted', store };
+}
+
+/**
+ * What yokoten must write into `trust.json` to trust this folder (#661). Muse's trust is
+ * per folder: this one decision is what makes yokoten's hooks run.
+ */
+export function trustProject(root: string, env: Env): TrustPlan {
+  const store = env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/muse/trust.json' : '~/.config/muse/trust.json';
+  const user = homeOf(env);
+  const config = env.XDG_CONFIG_HOME || (user ? join(user, '.config') : '');
+  if (!config) return { state: 'no home', store, changes: [] };
+  const home = join(config, 'muse');
+  const file = join(home, 'trust.json');
+  let text = '';
+  try {
+    if (existsSync(file)) text = readFileSync(file, 'utf8');
+  } catch {
+    return { state: 'unreadable', store, changes: [] };
+  }
+  let projects: Record<string, unknown> = {};
+  if (text !== '') {
+    let saved: unknown;
+    try {
+      saved = JSON.parse(text);
+    } catch {
+      return { state: 'unreadable', store, changes: [] };
+    }
+    if (!isObject(saved) || saved.schema_version !== 1 || !isObject(saved.projects)) return { state: 'unreadable', store, changes: [] };
+    projects = saved.projects;
+  }
+  const keys = folderKeys(root);
+  const folder = keys.find((key) => Object.hasOwn(projects, key)) ?? keys[0];
+  const entry = projects[folder];
+  if (isObject(entry) && entry.decision === 'trusted') return { state: 'same', store, changes: [] };
+  const before = isObject(entry) && typeof entry.decision === 'string' ? entry.decision : null;
+  const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before };
+  return { state: 'trusted', store, changes: [change], seed: { schema_version: 1, projects: {} } };
 }
 
 // ---- The user's hooks (#557) ----
@@ -173,6 +216,16 @@ export function hasUserDir(env: Env): boolean {
   }
 }
 
+/** Take out the two user hooks, and the file when they were all it held; null when it is not JSON and stays as it is. */
+export function removeUserHooks(env: Env): { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' } | null {
+  try {
+    const file = userSettings(env);
+    return { doctor: removeHook(file, 'SessionStart', 'doctor'), guard: removeHook(file, 'PreToolUse', 'hook') };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The user's hooks against what `addUserHooks` would write with the same `cli` and
  * `missing`, read-only (see `hookState`).
@@ -195,4 +248,19 @@ export const DESK: RuntimeDesk = {
   login: (env) => [{ from: join(configDir(env), 'auth.json'), to: join('config', 'muse', 'auth.json') }],
   stateEnv: (state) => ({ XDG_CONFIG_HOME: join(state, 'config'), XDG_DATA_HOME: join(state, 'data') }),
   hosts: ['api.meta.ai'],
+};
+
+/** The contract every adapter fills (#395). */
+export const ADAPTER: AgentAdapter = {
+  name: 'muse',
+  label: 'Muse Code',
+  projectHook: '`.muse/hooks.json`: PreToolUse and Stop',
+  userHook: '~/.config/muse/settings.json',
+  blocking: 'exit 2, the reason on stderr',
+  capabilities: { canRewrite: false, hasStopHook: true, needsTrust: true, failsOpen: true, passesRole: false },
+  readToolCall,
+  readStop,
+  agentEnv: AGENT_ENV,
+  desk: DESK,
+  call: (command) => ({ cwd: '/repo', tool_name: 'bash', tool_input: { command } }),
 };

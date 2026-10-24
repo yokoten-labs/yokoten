@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
 import { at, makeRepoTemplate, makeTempDir } from '../repo/helpers.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
-import { checkCommand } from '../../src/rules/guards.ts';
+import { checkCommand } from '../../src/rules/guards/index.ts';
 import { formatFinding } from '../../src/rules/message.ts';
 import {
   describeMark,
@@ -24,6 +24,7 @@ import {
   foldText,
   hasMark,
   isBotProgram,
+  isUtcTimeZone,
   hideHome,
   homeIn,
   loadMarkKinds,
@@ -44,6 +45,8 @@ import {
   repoKey,
   repoMarkKinds,
   scanText,
+  shellName,
+  timeZoneFix,
   useRealHome,
   withHome,
 } from '../../src/rules/privacy.ts';
@@ -408,6 +411,52 @@ test('commit times: an ident with a non-UTC offset is caught (#40)', () => {
   assert.equal(notUtc(`A <a${at}example.com> 1760745600 +0000`), false);
   assert.equal(notUtc(`A <a${at}example.com> 1760745600 -0000`), false);
   assert.equal(notUtc('no time here'), false);
+});
+
+test('time zone: bash gets its line, and where to keep it (#932)', () => {
+  assert.equal(shellName({ SHELL: '/bin/bash' }), 'bash');
+  const fix = timeZoneFix({ SHELL: '/bin/bash' });
+  assert.ok(fix.includes('`export TZ=UTC`'), fix);
+  assert.ok(fix.includes('~/.bashrc'), fix);
+});
+
+test('time zone: zsh gets its line, and where to keep it (#932)', () => {
+  assert.equal(shellName({ SHELL: '/usr/local/bin/zsh' }), 'zsh');
+  const fix = timeZoneFix({ SHELL: '/usr/local/bin/zsh' });
+  assert.ok(fix.includes('`export TZ=UTC`'), fix);
+  assert.ok(fix.includes('~/.zshrc'), fix);
+});
+
+test('time zone: fish gets its line, and where to keep it (#932)', () => {
+  assert.equal(shellName({ SHELL: '/usr/bin/fish' }), 'fish');
+  const fix = timeZoneFix({ SHELL: '/usr/bin/fish' });
+  assert.ok(fix.includes('`set -gx TZ UTC`'), fix);
+  assert.ok(fix.includes('~/.config/fish/config.fish'), fix);
+});
+
+test('time zone: PowerShell gets its line, and where to keep it (#932)', () => {
+  assert.equal(shellName({ PSModulePath: 'C:\\Program Files\\PowerShell\\Modules' }), 'powershell');
+  const fix = timeZoneFix({ PSModulePath: 'C:\\Program Files\\PowerShell\\Modules' });
+  assert.ok(fix.includes('`$env:TZ = "UTC"`'), fix);
+  assert.ok(fix.includes('$PROFILE'), fix);
+});
+
+test('time zone: cmd gets its line, and where to keep it (#932)', () => {
+  assert.equal(shellName({ ComSpec: 'C:\\Windows\\system32\\cmd.exe' }), 'cmd');
+  const fix = timeZoneFix({ ComSpec: 'C:\\Windows\\system32\\cmd.exe' });
+  assert.ok(fix.includes('`set TZ=UTC`'), fix);
+  assert.ok(fix.includes('`setx TZ UTC`'), fix);
+});
+
+test('time zone: Git Bash stays bash although ComSpec is set (#932)', () => {
+  assert.equal(shellName({ SHELL: '/usr/bin/bash', ComSpec: 'C:\\Windows\\system32\\cmd.exe' }), 'bash');
+});
+
+test('time zone: a clock is UTC when TZ says so, or the offset is 0 (#932)', () => {
+  assert.equal(isUtcTimeZone({ TZ: 'UTC' }, 300), true);
+  assert.equal(isUtcTimeZone({ TZ: 'America/New_York' }, 0), false);
+  assert.equal(isUtcTimeZone({}, 0), true);
+  assert.equal(isUtcTimeZone({}, 300), false);
 });
 
 test('output: the home folder shows as ~ (#25)', () => {

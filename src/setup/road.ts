@@ -25,7 +25,7 @@ import { sandboxProblem as geminiSandboxProblem } from '../agents/runtimes/gemin
 import { sandboxProblem as grokSandboxProblem } from '../agents/runtimes/grok.ts';
 import { isGuardOff, TRUST_FIX } from '../agents/runtimes/muse.ts';
 import { type CommandTest, commitCheckLine, runs } from '../run/cli.ts';
-import { isNoAdapter } from '../host/hosts.ts';
+import { hostOf, isNoAdapter } from '../host/hosts.ts';
 import { CODEOWNERS_PLACES, hasBot, KEYS_FILE, missingBotSetup, type Planning, type ServerSettings, type Unread } from '../host/github/index.ts';
 import { KIT, runtimeVersion, VERSION } from './files.ts';
 import { claudeReadsRules, cliPath, COMMIT_HOOKS, deadHookNotes, findRulesGap, handOffBlocks, hasHandOff, hookFile, isCommitHook, isExecutable, isSelf, type OldHook, OWNER_PLACEHOLDER, readHookSetup, readOldHooks } from './init.ts';
@@ -34,7 +34,7 @@ import { indexFiles } from '../run/check.ts';
 import { FIRST_MILESTONE, lackingLabels, pickNewMilestone } from './plan.ts';
 import { nodeTestsFix } from './advice/tests-job.ts';
 import { commands, FALLBACK_RUNNERS, orList, runLines, runsTests, scriptedRuns, testLanguages } from './advice/test-commands.ts';
-import { skillFiles, skillsDir } from './install.ts';
+import { ENTRY_SKILL, skillFiles, skillsDir } from './install.ts';
 
 /** The stage names, in order. A step's `stage` is its number here, from 1. */
 export const STAGES = ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'];
@@ -123,11 +123,30 @@ export { gitConfig };
 export { runsTests };
 
 
-const ciFiles = (root: string): string[] => {
-  const dir = join(root, '.github', 'workflows');
-  return existsSync(dir) ? readdirSync(dir).map((f) => read(join(dir, f))) : [];
+const WORKFLOW_DIRS = ['.github/workflows'];
+/**
+ * The workflow folders this project's code host reads. Gitea reads both, because it also
+ * runs GitHub workflows; every other host reads only `.github/workflows`, because a file
+ * in `.gitea/workflows` never runs on GitLab or on a host with no adapter (#849). A
+ * project that names Gitea in `yokoten.json` reads both before it has a remote.
+ */
+const workflowDirs = (root: string, env: Env, config?: Config): string[] => {
+  const host = hostOf(gitConfig(root, 'remote.origin.url', env), config?.host ?? 'auto');
+  const isGitea = host.kind === 'gitea' || (host.kind === 'none' && config?.host === 'gitea');
+  return isGitea ? [...WORKFLOW_DIRS, '.gitea/workflows'] : WORKFLOW_DIRS;
 };
-const ciText = (root: string) => ciFiles(root).join('\n');
+// Read the folder directly: a check-then-read can race with a folder that goes away (#849).
+const ciFiles = (root: string, env: Env, config?: Config): string[] =>
+  workflowDirs(root, env, config).flatMap((dir) => {
+    const folder = join(root, dir);
+    try {
+      return readdirSync(folder).map((f) => read(join(folder, f)));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+  });
+const ciText = (root: string, env: Env, config?: Config) => ciFiles(root, env, config).join('\n');
 
 const TODO_FILES = ['TODO.md', 'TODO', 'todo.md', 'docs/todo'];
 // Names as the folder lists them: on a case-insensitive disk (macOS) TODO.md also "exists" as todo.md.
@@ -157,9 +176,8 @@ export function skillsLacking(env: Env): string[] | null {
   // No home folder (#356): no skills folder to look in, so none is there.
   if (!homeOf(env)) return ['your home folder (HOME is not set)'];
   const lacking = new Map<string, string[]>();
-  for (const name of readdirSync(kitSkills)) {
-    for (const file of skillFiles(env, name)) if (!existsSync(file)) lacking.set(skillsDir(file), [...(lacking.get(skillsDir(file)) ?? []), name]);
-  }
+  // Install keeps one entry skill in the home folders (#904); the rest live in its kit copy.
+  for (const file of skillFiles(env, ENTRY_SKILL)) if (!existsSync(file)) lacking.set(skillsDir(file), [...(lacking.get(skillsDir(file)) ?? []), ENTRY_SKILL]);
   return [...lacking].map(([dir, names]) => `${dir} (${names.join(', ')})`);
 }
 
@@ -269,17 +287,17 @@ export const onPullRequest = (workflow: string): boolean => {
  * the step is then "can't check", and doctor goes on (#322).
  */
 export const catchLongLines =
-  (check: (root: string) => boolean) =>
-  (root: string): Found => {
+  (check: (root: string, env: Env, config?: Config) => boolean) =>
+  (root: string, env: Env = {}, _?: ServerRead, config?: Config): Found => {
     try {
-      return check(root);
+      return check(root, env, config);
     } catch (error) {
       if (error instanceof RangeError) return null;
       throw error;
     }
   };
-const WORKFLOW_TOO_LONG = 'a line in .github/workflows is too long to read; make it shorter and run doctor again';
-const ciRunsTests = (root: string) => runsTests(ciText(root), testScript(root), isWorkspaces(root), scriptedRuns(root));
+const WORKFLOW_TOO_LONG = 'a line in a workflow is too long to read; make it shorter and run doctor again';
+const ciRunsTests = (root: string, env: Env, config?: Config) => runsTests(ciText(root, env, config), testScript(root), isWorkspaces(root), scriptedRuns(root));
 /**
  * Why no workflow runs the tests, naming the language found by the files at the root
  * (test-commands.ts), so the reader sees doctor knows the project; the usual three when none is.
@@ -395,6 +413,9 @@ export interface ServerCheck {
 }
 
 const RULESET = 'in Settings, Rules, Rulesets, edit the ruleset on the default branch';
+const TAG_BYPASS_FIX = 'in Settings, Rules, Rulesets, edit the v* tag ruleset that blocks tag creation, and add Repository admin to its bypass list and remove any bot';
+const RELEASE_REVIEWER_FIX = 'in Settings, Environments, create "release" if it is missing, then turn on "Required reviewers" and add yourself';
+const RELEASE_TAG_RULE_FIX = 'in Settings, Environments, release, under "Deployment branches and tags", choose "Selected branches and tags", then add a Tag rule named v* and remove any Branch rule named v*';
 
 /**
  * Each server setting, judged. `settings` is what the host adapter read, or why it could not.
@@ -405,7 +426,7 @@ export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff
   const cant = (id: RuleId, u: Unread): ServerCheck => ({ id, mark: "can't check", finding: finding(id, u.unread, u.fix) });
   if ('unread' in settings) return [cant('server-settings', settings)];
   const judge = (id: RuleId, found: boolean | Unread | null, what: string, fix: string): ServerCheck => {
-    if (found === null) return cant(id, { unread: 'only a repo admin can see this setting', fix: 'run doctor signed in to gh as a repo admin' });
+    if (found === null) return cant(id, { unread: 'the code host did not say whether this setting is on', fix: 'sign in as a repo admin on the code host, then run doctor again' });
     if (typeof found !== 'boolean') return cant(id, found);
     return { id, mark: found ? 'ok' : 'MISSING', finding: finding(id, what, fix) };
   };
@@ -416,13 +437,34 @@ export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff
   const off = ([['secret scanning', sec.secretScanning], ['push protection', sec.pushProtection], ['private vulnerability reporting', sec.privateReporting], ['Dependabot alerts', sec.dependabotAlerts]] as const)
     .filter(([, on]) => on === false).map(([name]) => name);
   const unknown = Object.values(sec).some((on) => on === null);
+  const bypass = settings.tagBypass;
+  // Two faults can hold at once: you cannot push the tag, and a bot can. Say both, so one
+  // sentence does not hide the other (#850).
+  const bypassFaults = 'unread' in bypass ? [] : [
+    bypass.admin ? '' : 'the v* tag ruleset\'s bypass list does not name Repository admin, so you cannot push a release tag',
+    bypass.bot ? 'the v* tag ruleset\'s bypass list names the bot, so the bot can push a release tag' : '',
+  ].filter(Boolean);
+  const bypassOk = 'unread' in bypass ? bypass : bypassFaults.length === 0;
+  const bypassWhat = 'unread' in bypass ? '' : bypassFaults.join('; ');
+  const release = settings.release;
+  const reviewerOk = 'unread' in release ? release : release.reviewer;
+  // A tag rule alone is not the lock: with a branch rule named v* too, a branch can deploy (#537).
+  const tagRuleOk = 'unread' in release ? release : release.tagRule && !release.branchRule;
+  const tagRuleWhat = 'unread' in release ? '' : release.tagRule
+    ? 'the release environment also accepts a branch named v*, so a branch can deploy'
+    : release.branchRule
+      ? 'the release environment\'s v* rule is a branch rule, so it never matches a tag'
+      : 'the release environment has no tag rule for v*';
   const checks = [
     judge('main-rules', rules ? !lacking.length : branch as Unread, `the default branch (${settings.defaultBranch}) has no rule for ${lacking.join(', ')}`, `${RULESET}, or add one, and turn those rules on`),
     ...(isOff ? [] : [judge('required-checks', rules ? rules.requiredChecks.length > 0 : branch as Unread, 'no CI check must pass before a merge', `${RULESET}: require status checks, and add the CI check by name (yokoten's kit names it \`ci\`)`)]),
     judge('code-owner-review', rules ? rules.codeOwnerReview : branch as Unread, 'code owner review is not required', `${RULESET}: in "Require a pull request", turn on "Require review from Code Owners"`),
     judge('squash-only', squash, 'pull requests can merge by merge commit or rebase, not only by squash', 'in Settings, General, Pull Requests, allow squash merging only'),
     judge('delete-branch', settings.deleteBranchOnMerge, 'merged branches are not deleted', 'in Settings, General, Pull Requests, turn on "Automatically delete head branches"'),
-    judge('tag-rules', settings.tags, 'no active tag ruleset on v* that restricts creation, update and deletion', 'in Settings, Rules, Rulesets, add a tag ruleset on v* with those three rules, and you on the bypass list'),
+    judge('tag-rules', settings.tags, 'no active tag ruleset on v* that restricts creation, update and deletion', 'in Settings, Rules, Rulesets, add an active tag ruleset on v* with those three rules'),
+    judge('tag-bypass', bypassOk, bypassWhat, TAG_BYPASS_FIX),
+    judge('release-reviewer', reviewerOk, 'the release environment has no required reviewer, so the publish job runs without your approval', RELEASE_REVIEWER_FIX),
+    judge('release-tag-rule', tagRuleOk, tagRuleWhat, RELEASE_TAG_RULE_FIX),
     judge('security-switches', off.length ? false : unknown ? null : true, `${off.join(', ')} ${off.length > 1 ? 'are' : 'is'} off`, 'in Settings, Advanced Security, turn them on'),
   ];
   const { forgotten } = settings;
@@ -439,6 +481,9 @@ const SERVER_STEPS: Record<string, RuleId[]> = {
   protection: ['main-rules', 'required-checks', 'code-owner-review', 'tag-rules'],
   'merge-settings': ['squash-only', 'delete-branch'],
   'security-settings': ['security-switches'],
+  'tag-bypass': ['tag-bypass'],
+  'release-reviewer': ['release-reviewer'],
+  'release-tag-rule': ['release-tag-rule'],
 };
 
 /** Every server check that a road step reports. */
@@ -487,7 +532,7 @@ const serverStep = (key: string, fields: { lacking: string; fix: string; byHand:
 // that mark is the owner's own decision in yokoten.json, and doctor never makes it for them.
 
 /** What the review step judges, as full doctor read it, or why there is nothing to judge. */
-const reviewRead = (server: ServerRead): { approvals: number; actionsCanApprove: boolean | null } | Unread => {
+const reviewRead = (server: ServerRead): { approvals: number; actionsCanApprove: boolean | null; actionsApprovalNote?: string } | Unread => {
   const settings = server ?? SESSION_UNREAD;
   if ('unread' in settings) return settings;
   const branch = settings.branch;
@@ -496,7 +541,7 @@ const reviewRead = (server: ServerRead): { approvals: number; actionsCanApprove:
     return branch;
   }
   if (branch.approvals === null) return { unread: 'no ruleset asks for an approval, and the old branch protection can be read only by an admin', fix: 'sign in to gh as a repo admin and run doctor again' };
-  return { approvals: branch.approvals, actionsCanApprove: settings.actionsCanApprove };
+  return { approvals: branch.approvals, actionsCanApprove: settings.actionsCanApprove, ...(settings.actionsApprovalNote ? { actionsApprovalNote: settings.actionsApprovalNote } : {}) };
 };
 
 /** True when approvals are required but a workflow may still approve a pull request. */
@@ -528,7 +573,7 @@ const reviewStep: Step = {
   unchecked: (server) => {
     const read = reviewRead(server);
     if ('unread' in read) return `${read.unread}; ${read.fix}`;
-    return read.approvals >= 1 && read.actionsCanApprove === null ? `the Actions setting ${ACTIONS_SETTING} can be read only by an admin; sign in to gh as a repo admin and run doctor again` : '';
+    return read.approvals >= 1 && read.actionsCanApprove === null ? (read.actionsApprovalNote ?? `the Actions setting ${ACTIONS_SETTING} can be read only by an admin; sign in to gh as a repo admin and run doctor again`) : '';
   },
   byHand: 'a merge to the default branch needs one approving review; let the bot open the pull requests, so you can approve them, and let no CI job approve one',
   why: 'the bot opens the pull requests, so you approve work you did not write, and nothing merges unread',
@@ -751,7 +796,7 @@ export const ROAD: Step[] = [
     fix: testsFix,
     byHand: 'your host\'s CI runs the tests on every push and on every pull request',
     why: 'tests that run on every push catch a broken change before it reaches main',
-    how: 'package.json has a real "test" script and a `run:` step in .github/workflows runs it, or a `run:` step starts a test runner such as `node --test`, `go test`, `pytest`, `tox`, `make test` or `npx vitest`; in a workspaces repo, `npm test --workspaces` or `pnpm -r test` counts too',
+    how: 'package.json has a real "test" script and a `run:` step in a workflow runs it, or a `run:` step starts a test runner such as `node --test`, `go test`, `pytest`, `tox`, `make test` or `npx vitest`; in a workspaces repo, `npm test --workspaces` or `pnpm -r test` counts too',
     standard: 'Best Practices: test',
     withoutCi: 'run the tests yourself before each merge',
   },
@@ -770,13 +815,13 @@ export const ROAD: Step[] = [
     stage: 2,
     key: 'ci',
     // `check --pr` is the titles step, and `check --issue` checks issues; this one wants the tree check itself.
-    check: catchLongLines((root) => ciRuns(ciText(root), runs('check(?!\\s+--(?:pr|issue))')) || ciFiles(root).some((f) => yokotenActions(f).length > 0)),
+    check: catchLongLines((root, env, config) => ciRuns(ciText(root, env, config), runs('check(?!\\s+--(?:pr|issue))')) || ciFiles(root, env, config).some((f) => yokotenActions(f).length > 0)),
     unchecked: () => WORKFLOW_TOO_LONG,
     what: () => 'CI does not run `yokoten check`',
     fix: (root) => keptWorkflow(root, 'yokoten.yml', 'check', 'actions/checkout and actions/setup-node'),
     byHand: 'your host\'s CI runs `yokoten check` on every push and on every pull request',
     why: 'a commit made with the hook off would reach main unchecked',
-    how: 'a workflow in .github/workflows runs `yokoten check` (by its path, or with npx, bunx or pnpm dlx), or has a step that uses yokoten-labs/yokoten',
+    how: 'a workflow in the folder this project\'s code host reads (`.github/workflows`, and `.gitea/workflows` too on Gitea) runs `yokoten check` (by its path, or with npx, bunx or pnpm dlx), or has a step that uses yokoten-labs/yokoten',
     standard: 'Scorecard: CI-Tests',
     withoutCi: 'the commit hook runs `yokoten check` on each commit',
   },
@@ -850,13 +895,13 @@ export const ROAD: Step[] = [
   {
     stage: 3,
     key: 'titles',
-    check: catchLongLines((root) => ciRuns(ciText(root), runs('check --pr')) || ciFiles(root).some((f) => onPullRequest(f) && yokotenActions(f).some((a) => a.prCheck))),
+    check: catchLongLines((root, env, config) => ciRuns(ciText(root, env, config), runs('check --pr')) || ciFiles(root, env, config).some((f) => onPullRequest(f) && yokotenActions(f).some((a) => a.prCheck))),
     unchecked: () => WORKFLOW_TOO_LONG,
     what: () => 'CI does not check pull requests (`yokoten check --pr`)',
     fix: (root) => keptWorkflow(root, 'pr.yml', 'check --pr', 'actions/checkout with `fetch-depth: 0` and actions/setup-node, in a job that runs on pull_request'),
     byHand: 'before a pull request merges, its title has the commit form (`feat: ...`, `fix: ...`) and says what changed',
     why: 'a pull request title becomes the commit on main, so it must say what changed and why',
-    how: 'a workflow in .github/workflows runs `yokoten check --pr`, or runs on pull requests with a step that uses yokoten-labs/yokoten and does not set `pr-check: false`',
+    how: 'a workflow in the folder this project\'s code host reads (`.github/workflows`, and `.gitea/workflows` too on Gitea) runs `yokoten check --pr`, or runs on pull requests with a step that uses yokoten-labs/yokoten and does not set `pr-check: false`',
     standard: 'Conventional Commits 1.0.0',
     withoutCi: 'run `yokoten check --pr <number>` before each merge',
   },
@@ -958,6 +1003,27 @@ export const ROAD: Step[] = [
     byHand: 'the host stops a pushed secret, people can report a security hole in private, and you hear of a dependency with a known hole, as far as your host can do these',
     why: 'the host then stops a pushed secret, and people can report a hole in private',
     how: 'through the code host\'s API, in full doctor only: secret scanning, push protection, private vulnerability reporting and Dependabot alerts are on; some are visible only to a repo admin',
+  }),
+  serverStep('tag-bypass', {
+    lacking: 'the v* tag ruleset\'s bypass list does not let you push a release tag, or names a bot',
+    fix: TAG_BYPASS_FIX,
+    byHand: 'the v* tag ruleset lets you, and no bot, create, move or delete a release tag',
+    why: 'a tag that nobody can push blocks a release, and a bot on the list can push one',
+    how: 'through the code host\'s API, in full doctor only: every active v* tag ruleset that blocks tag creation names Repository admin in its bypass list, and none names a bot',
+  }),
+  serverStep('release-reviewer', {
+    lacking: 'the release environment has no required reviewer',
+    fix: RELEASE_REVIEWER_FIX,
+    byHand: 'the release environment asks for your approval before it deploys',
+    why: 'without it, a publish job that a tag starts runs without anyone approving it',
+    how: 'through the code host\'s API, in full doctor only: the release environment lists a required reviewer',
+  }),
+  serverStep('release-tag-rule', {
+    lacking: 'the release environment does not deploy only from v* tags',
+    fix: RELEASE_TAG_RULE_FIX,
+    byHand: 'the release environment deploys only from v* tags, and not from a branch named v*',
+    why: 'a branch rule named v* matches no tag, and with both rules a branch named v* can still publish',
+    how: 'through the code host\'s API, in full doctor only: the release environment has a deployment rule of type tag named v*, and no branch rule named v*',
   }),
 ];
 

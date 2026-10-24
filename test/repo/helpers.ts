@@ -33,19 +33,22 @@ import {
   beforeEach,
 } from 'node:test';
 import { templateRepo } from './git-template.ts';
-import { sourceMarker } from '../../src/run/translations.ts';
+import { sourceMarker } from '../../src/run/notes/translations.ts';
 import {
   type Gh,
   type Label,
   readServer,
   type ServerSettings,
 } from '../../src/host/github/index.ts';
+import type { Env } from '../../src/rules/config.ts';
 import type { Fact } from '../../src/setup/advice/adopt.ts';
 import {
   road,
   ROAD,
 } from '../../src/setup/road.ts';
+import { checkCommand } from '../../src/rules/guards/index.ts';
 import type { MachineProbe } from '../../src/setup/doctor/machine.ts';
+import { lineHash } from '../../src/host/sigstore/record.ts';
 
 export const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'yokoten.ts');
 
@@ -83,6 +86,47 @@ after(removeParent);
 process.on('exit', removeParent);
 
 /** A new empty folder in the system temp folder, removed when the test that made it ends. */
+/**
+ * A small event log for the anchor tests (#768): one start line per time, chained from 64
+ * zeros, with the issue set to the line's number. `lines` lets a test change one line
+ * after the chain was made, which is the tamper the check must see.
+ */
+export function makeEventLog(times: string[]): { text: string; lines: string[]; hashes: string[] } {
+  let previous = '0'.repeat(64);
+  const hashes: string[] = [];
+  const lines = times.map((time, index) => {
+    const nanos = String(BigInt(Date.parse(time)) * 1000000n);
+    const line = JSON.stringify({
+      resourceLogs: [
+        {
+          resource: { attributes: [{ key: 'service.name', value: { stringValue: 'yokoten' } }] },
+          scopeLogs: [
+            {
+              scope: { name: 'yokoten' },
+              logRecords: [
+                {
+                  timeUnixNano: nanos,
+                  observedTimeUnixNano: nanos,
+                  eventName: 'yokoten.agent.start',
+                  attributes: [
+                    { key: 'gen_ai.agent.name', value: { stringValue: 'desk' } },
+                    { key: 'yokoten.issue', value: { stringValue: String(index + 1) } },
+                    { key: 'yokoten.event.previous_hash', value: { stringValue: previous } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    hashes.push(lineHash(line));
+    previous = hashes[hashes.length - 1];
+    return line;
+  });
+  return { text: lines.join('\n') + '\n', lines, hashes };
+}
+
 export function makeTempDir(prefix = 'yokoten-'): string {
   if (!tempParent) tempParent = mkdtempSync(join(tmpdir(), 'yokoten-test-'));
   const path = mkdtempSync(join(tempParent, prefix));
@@ -132,6 +176,7 @@ export function killedLine(testName: string | undefined, command: string, timeou
 
 /**
  * spawnSync for a test, with text output, CHILD_TIMEOUT_MS and CHILD_MAX_BUFFER unless given.
+ * No shell, ever (#813): an argument is a value the test chose, never shell code.
  * A killed child is printed on stderr with the test that ran it.
  */
 export function runChild(command: string, args: string[], options: Pick<SpawnSyncOptionsWithStringEncoding, 'cwd' | 'env' | 'input' | 'timeout' | 'maxBuffer' | 'stdio'> = {}): SpawnSyncReturns<string> {
@@ -156,6 +201,19 @@ export function runChild(command: string, args: string[], options: Pick<SpawnSyn
 // NODE_OPTIONS carries the real-home preload that home.ts builds. A sandbox child gets a fresh env,
 // so without this it would read the real private-marks file when its own file is missing (#739).
 const sandboxEnv = (home: string) => ({ PATH: process.env.PATH, HOME: home, NODE_COMPILE_CACHE: COMPILE_CACHE, ...(process.env.NODE_OPTIONS ? { NODE_OPTIONS: process.env.NODE_OPTIONS } : {}), TZ: 'UTC', YOKOTEN_TEMP_DIRS: '', GH_TELEMETRY: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(home, '.gitconfig'), GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false', GIT_CONFIG_KEY_1: 'gc.auto', GIT_CONFIG_VALUE_1: '0', NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' });
+
+// A host sets markers in the environment it runs its hooks in. A test that starts
+// `yokoten hook` must not inherit them from whoever runs the tests (#800): the hook answers
+// for that host, so the same test can pass outside an agent and fail inside one.
+// `hookEnvironment` is this process's environment with those markers cleared; `host` sets
+// the ones a test wants back, after the clear.
+const HOST_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'YOKOTEN_HOOK_DENIAL'] as const;
+
+export function hookEnvironment(host: Env = {}): Env {
+  const env: Env = { ...process.env };
+  for (const name of HOST_MARKERS) delete env[name];
+  return { ...env, ...host };
+}
 
 /** A repo built once per test process by `build`, copied into each folder given (#475): see git-template.ts. */
 export const makeRepoTemplate = (build: (dir: string) => void) => templateRepo(makeFileTempDir, build);
@@ -188,9 +246,9 @@ export function makeSandbox() {
   // The same as run, in this process (#475): no child, so no second strip of every file's types.
   // Its result has run's shape. invoke.ts is loaded on the first call, so a file that never
   // calls it does not load every command. Keep one or two run tests per command for the entry.
-  const call = async (args: string[], { input, cwd = repo, extra = {} }: { input?: string; cwd?: string; extra?: Record<string, string> } = {}) => {
+  const call = async (args: string[], { input, cwd = repo, extra = {}, isTTY }: { input?: string; cwd?: string; extra?: Record<string, string>; isTTY?: boolean } = {}) => {
     const { invoke } = await import('./invoke.ts');
-    const done = await invoke(args, { env: { ...env, ...extra }, cwd, stdin: input });
+    const done = await invoke(args, { env: { ...env, ...extra }, cwd, stdin: input, isTTY });
     return { status: done.code, stdout: done.stdout, stderr: done.stderr };
   };
   const write = (path: string, text: string) => {
@@ -229,7 +287,17 @@ export const GOOD: Record<string, unknown> = {
     { type: 'deletion' },
   ],
   [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }],
-  [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }] },
+  [`repos/${REPO}/rulesets/7`]: {
+    conditions: { ref_name: { include: ['refs/tags/v*'] } },
+    rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }],
+    bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }],
+  },
+  [`repos/${REPO}/environments/release`]: {
+    protection_rules: [{ type: 'required_reviewers', reviewers: [{ type: 'User', reviewer: { login: 'octo' } }] }],
+  },
+  [`repos/${REPO}/environments/release/deployment-branch-policies`]: {
+    branch_policies: [{ id: 1, name: 'v*', type: 'tag' }],
+  },
   [`repos/${REPO}/private-vulnerability-reporting`]: { enabled: true },
   [`repos/${REPO}/vulnerability-alerts`]: '',
   [`repos/${REPO}/pulls?state=open&per_page=100`]: 'octo:feat/a\nsomeone:main\n',
@@ -433,6 +501,53 @@ export function fakeMachine(free: number, more: Partial<MachineProbe> & { progra
   };
 }
 // The team of #674 (test/agents/desk/team/, test/commands/advice/messages.test.ts).
+/**
+ * A small MCP server for the mcp tests (#370). `clean` answers with portable tools and
+ * both result forms; `traps` writes a log line, a non-UTF-8 byte and CRLF endings, and
+ * lists tools with each schema, name, hint, count and output trap.
+ */
+export const MCP_SAMPLE_SERVER = `
+import { createInterface } from 'node:readline';
+
+const mode = process.argv[2] ?? 'clean';
+const end = mode === 'traps' ? '\\r\\n' : '\\n';
+const send = (message) => process.stdout.write(JSON.stringify(message) + end);
+const hints = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const output = { type: 'object', properties: { reply: { type: 'string' } }, required: ['reply'] };
+const plain = { type: 'object', properties: {} };
+
+const clean = [
+  { name: 'echo', description: 'Echo text back', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, outputSchema: output, annotations: hints },
+  { name: 'status', description: 'Report status', inputSchema: plain, outputSchema: output, annotations: hints },
+];
+
+const traps = [
+  { name: 'bad_schema', description: 'One tool, every schema trap', inputSchema: { anyOf: [{ type: 'string' }, { type: 'number' }], properties: { 'session id': { type: ['string', 'null'] }, list: { type: 'array' }, ref: { $ref: '#/$defs/missing' } }, required: [] }, annotations: hints },
+  { name: 'no_hints', description: 'No annotations', inputSchema: plain },
+  { name: 'result_only', description: 'Only structuredContent', inputSchema: plain, outputSchema: output, annotations: hints },
+  { name: 'n'.repeat(65), description: 'A name over 64', inputSchema: plain, annotations: hints },
+];
+while (traps.length < 40) traps.push({ name: 'filler_' + traps.length, description: 'Filler', inputSchema: plain, annotations: hints });
+
+const tools = mode === 'traps' ? traps : clean;
+if (mode === 'traps') {
+  process.stdout.write('starting sample server\\n');
+  process.stdout.write(Buffer.from([0xff, 0x0a]));
+}
+
+const lines = createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  let request;
+  try { request = JSON.parse(line); } catch { return; }
+  if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'sample', version: '1' } } });
+  else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools } });
+  else if (request.method === 'tools/call') {
+    const result = request.params.name === 'result_only' ? { structuredContent: { reply: 'ok' } } : { structuredContent: { reply: 'ok' }, content: [{ type: 'text', text: 'ok' }] };
+    send({ jsonrpc: '2.0', id: request.id, result });
+  }
+});
+`;
+
 /** A lead's checkout and a desk next to it, both with a `.git` folder git would use: no git process is needed. */
 export function makeTeamFixture() {
   // The real path: on macOS the temp folder is a link (/var to /private/var), and whoAmI answers with real paths.
@@ -453,4 +568,95 @@ export function fence(team: string): () => void {
     for (const part of ['', 'agents', 'outbox', 'lead']) chmodSync(join(team, part), 0o755);
   };
 }
+
+export const blocked = (command: string, env: Env = {}) => assert.ok(checkCommand(command, { cwd: process.cwd(), env }), `should block: ${command}`);
+
+export const allowed = (command: string, env: Env = {}) => assert.equal(checkCommand(command, { cwd: process.cwd(), env }), null, `should allow: ${command}`);
+
+// The hooks setting in a project with its own hooks folder (#217). A repo with husky's
+// pre-commit running the check (and husky's own `.husky/_/pre-commit`, which git runs), a
+// folder without it, and core.hooksPath set to `hooks/own`. Hook files are executable.
+export function writeHook(path: string, text: string, mode = 0o755): void {
+  writeFileSync(path, text);
+  chmodSync(path, mode);
+}
+
+// husky 9.1.7's own files in .husky/_: each hook sources h, and h runs .husky/<hook> with sh -e.
+export const HUSKY_HOOK = '#!/usr/bin/env sh\n. "$(dirname "$0")/h"';
+
+export const HUSKY_H = `#!/usr/bin/env sh
+[ "$HUSKY" = "2" ] && set -x
+n=$(basename "$0")
+s=$(dirname "$(dirname "$0")")/$n
+
+[ ! -f "$s" ] && exit 0
+
+if [ -f "$HOME/.huskyrc" ]; then
+	echo "husky - '~/.huskyrc' is DEPRECATED, please move your code to ~/.config/husky/init.sh"
+fi
+i="\${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"
+[ -f "$i" ] && . "$i"
+
+[ "\${HUSKY-}" = "0" ] && exit 0
+
+export PATH="node_modules/.bin:$PATH"
+sh -e "$s" "$@"
+c=$?
+
+[ $c != 0 ] && echo "husky - $n script failed (code $c)"
+[ $c = 127 ] && echo "husky - command not found in PATH=$PATH"
+exit $c
+`;
+
+export function makeHooksRepo(): string {
+  const root = makeTempDir('yokoten-hooks-');
+  // A bare enough `.git` for git to read the setting, made without a git process (#475).
+  mkdirSync(join(root, '.git', 'objects'), { recursive: true });
+  mkdirSync(join(root, '.git', 'refs'), { recursive: true });
+  writeFileSync(join(root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(root, '.git', 'config'), '[core]\n\thooksPath = hooks/own\n');
+  mkdirSync(join(root, '.husky', '_'), { recursive: true });
+  writeHook(join(root, '.husky', 'pre-commit'), '#!/bin/sh\nnpx lint-staged\nnode ".yokoten/bin/yokoten.ts" check --staged || exit 1\n');
+  writeHook(join(root, '.husky', '_', 'pre-commit'), HUSKY_HOOK);
+  writeHook(join(root, '.husky', '_', 'h'), HUSKY_H, 0o644);
+  mkdirSync(join(root, 'hooks', 'plain'), { recursive: true });
+  writeHook(join(root, 'hooks', 'plain', 'pre-commit'), '#!/bin/sh\n# yokoten check is not run here\nnpm test\n');
+  return root;
+}
+
+// #192: a project blocks programs in yokoten.json "commands.block", each with its reason.
+export const pythonBlocked = { commands: { block: { python: 'TypeScript only', python3: 'this project is TypeScript only (AGENTS.md).' } } };
+
+// The third review of #226. The reader's work is bounded: each construct is read once, and
+// one budget covers every read of a command.
+export const isBlockedByList = (command: string, config: { commands: { block: Record<string, string> } } = pythonBlocked) => checkCommand(command, { cwd: process.cwd(), env: {}, config })?.id === 'blocked-command';
+
+// #226: gaps the reviews of #195 and #199 left. The blocked name is built from pieces.
+export const py = ['py', 'thon3'].join('');
+
+export const shouldBlock = (commands: string[]) => {
+  for (const command of commands) assert.ok(isBlockedByList(command), `should block: ${command}`);
+};
+
+export const shouldPass = (commands: string[]) => {
+  for (const command of commands) assert.equal(isBlockedByList(command), false, `should allow: ${command}`);
+};
+
+// The review of #226: the reader must never fail open or lose a command.
+export const force = ['git', 'push', '--for' + 'ce'].join(' ');
+
+// The command that sets the hooks folder, built so that this file's own text does not read as one.
+export const setHooks = (folder: string) => `${['git config core', 'hooksPath'].join('.')} ${folder}`;
+
+// #283: heredoc shapes bash runs that the guard skipped. Each was run in bash (with a
+// harmless command in place of the push) to see where bash ends the body and what it runs.
+export const refusedAs = (command: string, id: string) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.id, id, `should refuse as ${id}: ${JSON.stringify(command)}`);
+
+// A worker's shell writes and commits to lead-only files (#402). The file rules apply in a
+// repo that uses yokoten, as for an edit, so the sandbox gets a yokoten.json.
+export const yokotenSandbox = () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', '{}\n');
+  return sandbox;
+};
 

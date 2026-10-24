@@ -91,7 +91,7 @@ Tell the user in plain words, one step at a time, and offer to do it (as-is, lig
 
 最後の三つはサーバーの設定です。完全な `doctor` は `gh api` で読み、読むだけです。`gh`、サインイン、ネットワーク、GitHub のリモートがないときは、**can't check** であり、done にはなりません。セッションはネットワークを決して呼ばないので、そこでは常に **can't check** です。
 
-**別のホスト。** doctor はホストを `origin` リモートから読みます。GitHub では上のとおりサーバーを読みます。Gitea や GitLab など別のホストでも、中核は同じに動きます。ルール、番人、コミットチェックです。ホストだけが判断できるステップは、`tests`、`ci`、`labels`、`milestone`、`titles`、`codeowners`、`bot`、`review` と、サーバーの三つのステップです。そこではどれも **can't check** になり、何を尋ねるかを言うので、手で設定できます。それらが関所を止めることはありません。自前のサーバーの名前は決して出力しません。doctor は「このホスト」と呼びます。Gitea のアダプターが次に来ます（issue #505）。
+**別のホスト。** doctor はホストを `origin` リモートから読みます。GitHub では上のとおりサーバーを読みます。Gitea では、`yokoten.json` にホストを書いて（`"host": "gitea"`）、bot ユーザーのトークンを `GITEA_TOKEN` に入れます。すると doctor は Gitea の API で、ブランチとタグの保護、ラベル、マイルストーン、忘れられたブランチを読みます。`gitea.com` はキーなしで分かります。GitLab など別のホストでも、中核は同じに動きます。ルール、番人、コミットチェックです。ホストだけが判断できるステップは、`tests`、`ci`、`labels`、`milestone`、`titles`、`codeowners`、`bot`、`review` と、サーバーの三つのステップです。そこではどれも **can't check** になり、何を尋ねるかを言うので、手で設定できます。それらが関所を止めることはありません。自前のサーバーの名前は決して出力しません。doctor は「このホスト」と呼びます。
 
 関所 2 の `labels` と `milestone` も同じように読みます。標準のラベルは `bug`、`feat`、`docs`、`refactor`、`ci`、`owner`、`incident`、`good first issue`、`hotfix`、`security` と、ティアのラベル `tier A`、`tier B`、`tier C` です。`init` は足りないものを示し、`init --github --yes` が追加します。
 
@@ -118,11 +118,17 @@ Tell the user in plain words, one step at a time, and offer to do it (as-is, lig
 そして、エージェントがリリースのタグを push しようとすると、こう出ます。
 
 ```
-yokoten: git push --tags pushes tags. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push --tags pushes tags [release]
+Why: Only the owner decides when to release.
+Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-直し方は、フックが走らせたエージェントを始めるコマンドを名指しします。`codex`、`gemini`、`agy`、または `dsh tui --patch .dsh/yokoten.patch.yml` です。Copilot CLI は Claude Code と同じ呼び出しを送るので、そのメッセージは「またはあなたのエージェントのコマンド」と言います。Muse Code はフックに短い変数の一覧しか渡さず、`YOKOTEN_ROLE` は失われます。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse Code ではメッセージはその外でリリースするよう伝えます。Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
+直し方はどのエージェントでも同じです。エージェントに止まってオーナーにリリースを任せるよう伝えます。
+リリースの承認の方法と、各エージェントを始めるコマンドは、英語ガイドの
+[How to release](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release)にあります。
+Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
+Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
 
 どのメッセージも同じ三つの部分を持ちます。何が起きたか（**what**）、なぜ大事か（**why**）、そして直し方（**fix**）です。コマンドか編集です。ファイルの問題はその場所 `file:line:` から始まります。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。このガイドのある節がルールを説明しているとき、メッセージはその節へのリンクを最後の行に付けます。`docs: <url>` です。
 
@@ -350,7 +356,9 @@ Claude Code は、プラグインの `.ts` ファイルを `node` で走らせ�
 
 プラグインは Claude Code でだけ動きます。非公開の印のファイルは作りません。`doctor` がそのファイルを名指しし、あなたが作ります。ユーザー設定でプラグインがオンのときは、`doctor` はそのフックとスキルをインストール済みと数えます。
 
-プラグインか `install` の片方だけを使ってください。両方だと、番人とセッションの doctor が二回走り、すべてのスキルが二回出ます。`doctor` が注意でそう言います。`install` からプラグインに移るには、`yokoten uninstall` を実行します。`install` が書いたものを消し、`~/.config/yokoten` は残します。
+プラグインか `install` の片方だけを使ってください。プラグインがオンのとき、`install` はグローバルのフォルダに自分のコピーを置きません。前から両方あったマシンでは、番人とセッションの doctor が二回走り、すべてのスキルが二回出ます。`doctor` が注意でそう言い、プラグインがオンの `install` は自分が書いたグローバルのコピーを取り戻します。`install` からプラグインに移るには、`yokoten uninstall` を実行します。`install` が書いたものを消します。`~/.config/yokoten` にあるあなた自身のファイル（追加した非公開の印など）は残ります。
+
+プラグインがオンのとき、`install` は自分の番人を書きません。番人はプラグインのもの一つだけです。プラグインをオフにするか消すと、この機械には番人が一つも残りません。そのとき `doctor` は「no guard for Claude Code」で失敗し、`yokoten install` が `install` 自身の番人を書きます。
 
 ### npx でインストールする
 
@@ -435,7 +443,7 @@ jobs:
 - **入力**: `pr-check`（既定は `true`）、`issue-check`（既定は `true`）、`node-version`（既定は `^22.23.4`。2026 年 10 月のセキュリティ修正を含む最初の Node 22）です。`pr-check: false` でプルリクエストの標準を飛ばし、`issue-check: false` で issue タイトルの標準を飛ばします。
 - **Node**: アクションは、ジョブの残りのためにも Node を用意します。
 
-`check --pr` は、プルリクエストを核心ルール 8 の標準に保ちます。まだそれに従っていないリポジトリは、`pr-check: false` で始められます。Dependabot が開くプルリクエストにはタイトルのチェックが付き、ほかのルールは注意として出ます。Dependabot が自分の本文を書くからです。キットの `init` のワークフローは、まだ `.yokoten/` を走らせます。最初のリリースのあとにアクションへ移るので、`@main` に決して依存しません。
+`check --pr` は、プルリクエストを核心ルール 8 の標準に保ちます。まだそれに従っていないリポジトリは、`pr-check: false` で始められます。Dependabot が開くプルリクエストにはタイトルのチェックが付き、ほかのルールは注意として出ます。Dependabot が自分の本文を書くからです。キットの `check` ワークフローは、まずプロジェクトの `.yokoten/` のコピーを走らせます。コミットフックと同じ yokoten なので、同じチェックです。そのあとこのアクションを最初のリリースのコミットに固定して走らせるので、`.yokoten/` を変えたプルリクエストも、書き換えられないチェックを受けます。Dependabot がこの固定を新しいリリースのコミットに更新します。キットの `pr` と `issue` のワークフローは、プロジェクトの `.yokoten/` のコピーを走らせます。
 
 ### CI なしの非公開リポジトリ
 
@@ -494,7 +502,7 @@ yokoten check --pr 12
 
 | コマンド | すること |
 |---------|--------------|
-| `install` | スキルを `~/.claude/skills` と `~/.agents/skills` に、エージェントを `~/.claude/agents` に、SessionStart の `doctor` フックとユーザーレベルのコマンドの番人と空の非公開の印のファイルを入れます。二つのフックは Claude Code に入り、`~/.codex` や `~/.gemini` がすでにあるときは Codex と Gemini CLI にも入ります。このマシンで見つけた印を足し、git の mailmap を設定します。[プライバシー](#プライバシー)を見てください |
+| `install` | 入口のスキル `yokoten` 一つを `~/.claude/skills` と `~/.agents/skills` に、エージェントを `~/.claude/agents` に、SessionStart の `doctor` フックとユーザーレベルのコマンドの番人と空の非公開の印のファイルを入れます。書く前に、書くファイルと設定キーを表示します。二つのフックは Claude Code に入り、`~/.codex` や `~/.gemini` がすでにあるときは Codex と Gemini CLI にも入ります。Claude Code のプラグインがオンのときは、グローバルのスキル、エージェント、フックを書かず、古い `install` が書いたものを取り戻します。このマシンで見つけた印を足し、git の mailmap を設定します。[プライバシー](#プライバシー)を見てください |
 | `init [dir]` | 実践をプロジェクトに入れます。ファイルを足し、すでにあるものは残してそう言います。あなたが変えていないキットのワークフローは最新版になります。GitHub も `gh` を通して読み、足す標準のラベルとマイルストーンを言います。GitHub は決して変えません。`gh`、サインイン、GitHub のリモートがないときは、飛ばしたものを言います |
 | `init --github --yes [--remove-default-labels] [--board]` | 足りない標準のラベルと、開いているマイルストーンがないときは「First release」を足します。閉じたマイルストーンがすでにそのタイトルを持つときは、新しいものは「Next release」です。閉じたマイルストーンは決して開き直しません。すでにある標準のラベルは標準の色と説明になります。`yokoten.json` の領域が 8 つ以下なら、領域ごとに灰色のラベルを一つ足します。二回目の実行は何も変えません。その集合の外の GitHub の既定のラベル（`question`、`wontfix` など）は `--remove-default-labels` のときだけ消します。`--board` はリポジトリにリンクしたボードも作ります。gh トークンの `project` スコープが要ります |
 | `init --no-ci` | CI を切っておきます。`yokoten.json` の `"notNow"` に `"ci"` を足し、ワークフローも Dependabot の設定も書かず、それらがまだキットの複製なら消します。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
@@ -519,8 +527,8 @@ yokoten check --pr 12
 | `worker env [runtime]` | yokoten のエージェント環境がこのシェルから保つ名前を一覧し、落とす名前を数えます。実行環境を渡すと、そのログイン名も数えます。値は決して見せません。`desk` はこれを使ってエージェントを始めます。[エージェントの環境が持つもの](#エージェントの環境が持つもの)を見てください |
 | `msg send <to> [<text>]`、`msg inbox`、`msg who`、`msg log` | どのベンダーのエージェントも、このマシンのファイルを通して互いにメッセージを送ります。`log` はリードだけが走らせます。[エージェント同士のメッセージ](#エージェント同士のメッセージ)を見てください |
 | `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
-| `uninstall` | `install` が書いたものを取り消します。yokoten が管理すると印を付けたスキルとエージェント、`~/.claude/settings.json` の二つのフック、`~/.local/share/yokoten` です。あなた自身のファイル、ほかの設定、`~/.config/yokoten`（鍵、非公開の印）は残ります。二回目の実行は何も変えません |
-| `bot -- <command>` | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](../../server.md#3-the-bot-a-github-app) |
+| `uninstall` | `install` が書いたものを取り消します。yokoten が管理すると印を付けた入口スキルとエージェント、Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code の設定にあるフック、OpenCode のプラグイン、`~/.local/share/yokoten` です。非公開の印と mailmap のファイルは、`install` の見出しだけのときに消します。`install` が作ったフォルダは、空のときに消します。あなた自身のファイル、編集、設定は残ります。止めた記録は消えます。二回目の実行は何も変えません |
+| `bot -- <command>` | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。`gh pr edit` も、新しいタイトルや本文について同じことをし、本文が新しいティアを設定したときは古いティアのラベルを外します。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](../../server.md#3-the-bot-a-github-app) |
 | `board [--text] [--no-open]` | このマシンでだけ動くページを出します。issue ごとにまとめたエージェント、選ばれたもの、各プルリクエストの段階です。ページからオーナーはエージェントを始めたり止めたりし、何が待っているかも見ます。ブラウザーでページを開き（`--no-open` はリンクを出力するだけ）、あなたが止めるまで走ります。ページは 15 秒ごとに更新されます。`--text` はエージェント、プルリクエスト、ワークツリーを素のテキストで出力します。[チームのボード](#チームのボード)を見てください |
 
 各コマンドは `--help` か `-h` で自分のヘルプを出力します。何をするか、オプション、例一つです。`yokoten help <command>` も同じものを出力し、`yokoten --help` はコマンドを一覧します。`yokoten version`（または `--version`、`-v`）はバージョンを出力します。ヘルプは何も変えず、0 で終わります。打ち間違いには、yokoten が一番近いコマンドかオプションを名指しします。`yokoten docter` は `Did you mean "doctor"?` と聞きます。`bot --` のあとは、すべての語がそれが走らせるコマンドのものです。だから `yokoten bot -- gh --help` は `gh --help` を走らせます。

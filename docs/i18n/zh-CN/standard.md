@@ -145,7 +145,7 @@ OpenTelemetry 没有这份工作的名字，所以 `eventName` 以 `yokoten.agen
 缺了必填字段，检查不通过。
 不认识的 `eventName`，检查不通过。
 代码还不会写这份日志。
-现在也没有代码在跑这项检查。
+`yokoten check --anchor` 读现有的日志，和 Rekor 里每天的锚点（#768）。
 版本 1。这份日志没有版本字段。
 
 以后追加的 hook 在 [src/run/hook.ts](../../../src/run/hook.ts)，它的测试在 [test/run/hook.test.ts](../../../test/run/hook.test.ts)。
@@ -221,6 +221,7 @@ agent 离开以后，它的列表也丢掉。
 - [src/agents/runtimes/muse.ts](../../../src/agents/runtimes/muse.ts) 和 [test/agents/runtimes/muse.test.ts](../../../test/agents/runtimes/muse.test.ts)。
 - [src/agents/runtimes/small/deepseek-harness.ts](../../../src/agents/runtimes/small/deepseek-harness.ts) 和 [test/agents/runtimes/small/deepseek-harness.test.ts](../../../test/agents/runtimes/small/deepseek-harness.test.ts)。
 - [src/agents/runtimes/grok.ts](../../../src/agents/runtimes/grok.ts) 和 [test/agents/runtimes/grok.test.ts](../../../test/agents/runtimes/grok.test.ts)。
+- [src/agents/runtimes/runtime.ts](../../../src/agents/runtimes/runtime.ts) 和 [test/agents/runtimes/runtime.test.ts](../../../test/agents/runtimes/runtime.test.ts)。
 - [src/agents/runtimes/small/opencode.ts](../../../src/agents/runtimes/small/opencode.ts) 和 [test/agents/runtimes/small/opencode.test.ts](../../../test/agents/runtimes/small/opencode.test.ts)。
 
 ## 状态文件
@@ -390,7 +391,7 @@ Dependabot 开的 PR，这一行有问题只是提醒，不算失败。
 
 Made-with 行是来源记录的第一种样子。
 它写明谁写的、谁审的。
-来源记录也读事件日志。
+来源记录也读 desk 状态文件和事件日志。
 代码还不会读这份日志。
 它还不是一份完整的物料清单。
 批准的人不是这一行上的字段。
@@ -399,16 +400,64 @@ Made-with 行是来源记录的第一种样子。
 | --- | --- |
 | 写的人 | `writers`，来自 `worker` 再加上 `vendor` 和 `model` |
 | 审的人 | `reviewers`，最多两个，来自 `reviewed by` |
-| 批准的人 | 主人在代码宿主上的 Approve。不在这一行上。只有 tier A。 |
+| 批准的人 | 主人在代码宿主上最新的 Approve。不在这一行上。 |
 | lead | `leads`，来自 `lead` 再加上厂商和模型。lead 不是批准的人。 |
 | 没写角色的 | `others`，一对没有角色词的名字 |
 
+没有 `worker`，也没有别的名字时，`lead` 就是写的人。
+`check --pr` 拿这一行和分支上每个 agent 的状态文件对照。
+分支上的 agent，指按 PR 分支检出的 worktree，或 `yokoten desk` 起的 clone。
+状态文件在那个 worktree 的根目录。
+检出别的分支的 worktree 不计。
+这一行要用厂商和模型写出每个 desk。
+同一个厂商可以有两种写法，比如 `Claude Code` 和 `claude-code`。
+这一行完全没写的 desk 会跳过，所以旧的行不会变成问题。
+没有状态文件时没有东西可对照，就不报 desk 的问题。
+审的人和写的人同属一个厂商，也是问题（record 0021）。
+这条检查的 id 是 `pr-provenance`。
+
+`yokoten provenance <ref>` 给一个提交打印一条记录，给一个范围就每个提交一条。
+记录里有写的人、审的人、批准的人、等级和 issue。
+批准的人是主题末尾那个 PR 上最新的 Approve。
+gh 读不到时，批准的人写成 unknown，命令仍然以 0 退出。
+`--json` 把同样的记录作为数据打印。
+
 谁来写。PR 作者写这一行。主人在代码宿主上写 Approve。
-谁来读。PR 检查，还有读正文的人。
-怎么检查。Made-with 检查给出写的人和审的人。tier A 时，`checkApprovalFreshness` 要求主人的 Approve 落在 head 上，或者之后只有基础分支的合并，而且这个 PR 自己的 diff 没变。这条检查的 id 是 `pr-approve`。tier B 和 tier C 不走这道门。
+谁来读。PR 检查、`yokoten provenance`，还有读正文的人。
+怎么检查。Made-with 检查给出写的人和审的人。`provenanceFindings` 拿它们和分支的 desk 状态文件对照。tier A 时，`checkApprovalFreshness` 要求主人的 Approve 落在 head 上，或者之后只有基础分支的合并，而且这个 PR 自己的 diff 没变。这条检查的 id 是 `pr-approve`。tier B 和 tier C 不走这道门。
 版本 1。这是第一种样子，自己没有版本字段。
 
 - [src/rules/pr.ts](../../../src/rules/pr.ts) 和 [test/rules/pr.test.ts](../../../test/rules/pr.test.ts)。
+- [src/run/hook.ts](../../../src/run/hook.ts) 和 [test/run/check.test.ts](../../../test/run/check.test.ts)。
+- [src/commands/check.ts](../../../src/commands/check.ts) 和 [test/commands/check.test.ts](../../../test/commands/check.test.ts)。
+
+## 教训文件
+
+一条教训是从真实事故里做出来的一条检查。
+它包含四个部分：事故、检查、阳性对照，以及它适用的地方。
+
+- 事故是 `lesson.ts` 顶部附近 `//` 行里的事故 issue URL。
+- 检查是 `lesson.ts` 里的 `findProblems(root)`。它只读文件，对每个出现的地方返回一条发现。
+- 阳性对照是 `lesson.test.ts`。检查什么都抓不到时，它会失败。
+- 它适用的地方是 kit。`yokoten doctor` 在每个带这个 kit 的项目里运行它，除非 "notNow" 点名了它。
+
+一条教训以一个小的 JSON 文件传输。
+`yokoten learn --export <id>` 打印它，`--out <file>` 把它写进文件。
+
+| 字段 | 内容 |
+| --- | --- |
+| `version` | `1`。读的一方拒绝其他数字。 |
+| `id` | 小写单词，或 `incident-<n>`。不能只有数字。 |
+| `incident` | 这条教训来自的事故 URL。 |
+| `files` | `lesson.ts` 和 `lesson.test.ts`，每个带 `path` 和 `text`。其他路径不传输。 |
+
+谁来写。一个人，在一次事故之后。事故 issue 是起点。
+谁来读。另一个项目里的 `yokoten learn --import <file>`。
+怎么检查。导出拒绝 TODO、缺少事故、密钥或私人细节。导入检查形状、两个路径、大小，以及同样的隐私规则。
+只有加 `--write`，导入才写进 `lessons/<id>/`；加 `--ship` 之前，什么都不运行。
+版本 1。`LessonPack` 有 `version`。
+
+- [src/run/learn.ts](../../../src/run/learn.ts) 和 [test/run/learn.test.ts](../../../test/run/learn.test.ts)。
 
 ## 风险等级
 
@@ -464,7 +513,7 @@ CI 里从基础分支读 CODEOWNERS。
 | `hidden` | 这些目录如果存在就藏起来：`/home`、`/root`、`/mnt`、`/media`、`/run`，再加上家目录和工位的上一级。在 `darwin` 上是 `/Users`、`/Volumes`，再加上家目录和上一级。 |
 | `locked` | `.git/config`、`.git/hooks` 和 `.git/yokoten-worker` 保持只读。在团队里，`.git/yokoten-desk.json` 也锁上。 |
 | `hosts` | 只能到 API 主机，而且要经过外面的代理。只接受 CONNECT。端口是 `443`，除非主机那一项自己写了端口。隧道最多 `64` 条。`10 minutes` 没有数据就关掉。代理不读隧道里的内容。 |
-| `env` | `YOKOTEN_ROLE` 是 `worker`。`TZ` 是 `UTC`。在团队里还会设置 `YOKOTEN_DESK` 和 `YOKOTEN_TEAM`。 |
+| `env` | `YOKOTEN_ROLE` 是 `worker`。`TZ` 是 `UTC`。在团队里还会设置 `YOKOTEN_DESK` 和 `YOKOTEN_TEAM`。知道模型时，`YOKOTEN_MODEL` 写出模型。只有当厂商不是运行环境自己的厂商时，才设置 `YOKOTEN_VENDOR`，让 agent 知道自己实际是谁。 |
 | `command` | lead 传进来的那条命令。 |
 
 `/run` 要藏起来，因为那里的 socket 能在栅栏外面启动程序。

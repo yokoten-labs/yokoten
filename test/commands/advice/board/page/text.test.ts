@@ -9,6 +9,16 @@ import { type AgentView, type BoardData, pullView, vendorOf } from '../../../../
 
 const agent = (fields: Partial<AgentView>): AgentView => ({ key: '', name: 'a', nickname: '', isMain: false, vendor: vendorOf(''), model: '', effort: '', role: '', dot: 'idle', task: '', title: '', ref: null, doing: '', checks: '', age: '', updated: '', started: '', branch: '', ...fields });
 
+// #933: the board is a preview, and the first line of --text says so.
+test('board text: the first line says the board is a preview (#933)', () => {
+  const board: BoardData = { repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' };
+  const [first] = renderBoardText(board);
+  assert.match(first, /preview/);
+  assert.match(first, /it may change/);
+  assert.match(first, /v0\.1\.2/);
+  assert.match(first, /#823/);
+});
+
 test('board text: needs, agents, pulls and worktrees in plain words; a part that cannot be read says why', () => {
   const board: BoardData = {
     repo: '/repo',
@@ -30,7 +40,7 @@ test('board text: needs, agents, pulls and worktrees in plain words; a part that
     updated: '',
   };
   assert.deepEqual(renderBoardText(board), [
-    'yokoten board: /repo',
+    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
     '3 agents, 1 open pull request, 2 worktrees.',
     '',
     'Needs you:',
@@ -50,7 +60,7 @@ test('board text: needs, agents, pulls and worktrees in plain words; a part that
     '- /repo/.worktrees/601',
   ]);
   assert.deepEqual(renderBoardText({ repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: 'gh failed', merged: [], worktrees: 'git failed', desk: EMPTY_DESK, updated: '' }), [
-    'yokoten board: /repo',
+    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
     '0 agents, 0 open pull requests, 0 worktrees.',
     '',
     'Needs you:',
@@ -93,4 +103,24 @@ test('board text: the waiting list and the started runs', () => {
   assert.ok(empty.some((line) => line.includes('No agents started here yet.')), 'empty runs say so');
   const legacy = renderBoardText(board);
   assert.ok(!legacy.some((line) => line.includes('Waiting for you:')), 'no extra, no new sections');
+});
+
+// #611: the usage view gives each agent, model and day its tokens and an estimate.
+test('board text: the usage view says tokens and an API price in plain words', () => {
+  const board: BoardData = {
+    repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '',
+    usage: {
+      cells: [{ agent: 'Ada', vendor: 'Claude', model: 'claude-opus-5-5', role: 'engineer', day: '2026-10-22', input: 2_000_000, cached: 1_000_000, output: 100_000, usd: 39, isPartial: false, isLocal: false }],
+      days: ['2026-10-22'],
+      partial: ['mystery-9: no price in the table'],
+      checked: '2026-10-23',
+      sources: [],
+    },
+  };
+  const text = renderBoardText(board).join('\n');
+  assert.match(text, /Usage \(estimates from the last 7 days of local session logs; nothing leaves this machine\):/);
+  assert.match(text, /- Claude Ada \[engineer\] · claude-opus-5-5 · 2026-10-22: 2,000,000 in, 1,000,000 cached, 100,000 out: about \$39.00 if paid by API/);
+  assert.match(text, /- Total: 2,000,000 in, 1,000,000 cached, 100,000 out: about \$39.00 if paid by API/);
+  assert.match(text, /Partial:\n- mystery-9: no price in the table\./);
+  assert.match(text, /Prices checked 2026-10-23/);
 });

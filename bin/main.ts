@@ -12,19 +12,23 @@ import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandL
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).
+// The first step comes first, then the commands in groups, then the details (#944).
 const HELP = [
   `yokoten ${VERSION}`,
+  '',
+  'Start here: run `yokoten` in your project. It installs what is missing, adds the rules',
+  'to the project, and shows the next step.',
   '',
   'Usage: yokoten <command> [options]',
   '',
   ...commandList(),
   '',
-  'Start: `yokoten install` once on this machine, then `yokoten init` in your project.',
-  'Run `yokoten <command> --help` for its options and an example.',
-  '--json on check, doctor, hook, explain and adopt: data on stdout,',
-  'for an agent or a script.',
-  'Exit codes: 0 ok, 1 problems found or a usage error, 2 the hook blocked the tool call',
-  'or the end of the turn.',
+  'More:',
+  '  To run each step yourself, use `yokoten install`, then `yokoten init`.',
+  '  Run `yokoten <command> --help` for its options and an example.',
+  '  --json on check, doctor, hook, explain and adopt: data on stdout, for an agent or a script.',
+  '  Exit codes: 0 ok, 1 problems found or a usage error, 2 the hook blocked the tool call',
+  '  or the end of the turn.',
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
@@ -58,6 +62,10 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       const guard = args.includes('--stop') ? undefined : import('../src/run/hook.ts').then((m) => m.takeGuard());
       return Promise.all([guard, import('../src/commands/hook.ts')]).then(([started, m]) => m.runHook(invocation, started));
     }
+    case 'anchor':
+      return import('../src/commands/hook.ts').then((m) => m.runAnchor(invocation));
+    case 'stops':
+      return import('../src/commands/hook.ts').then((m) => m.runStops(invocation));
     case 'worker':
       return import('../src/commands/hook.ts').then((m) => m.runWorker(invocation));
     case 'desk':
@@ -66,10 +74,18 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       return import('../src/commands/advice/messages.ts').then((m) => m.runMsg(invocation));
     case 'check':
       return import('../src/commands/check.ts').then((m) => m.runCheck(invocation));
+    case 'ci-health':
+      return import('../src/commands/check.ts').then((m) => m.runCiHealth(invocation));
+    case 'provenance':
+      return import('../src/commands/check.ts').then((m) => m.runProvenance(invocation));
+    case 'mcp':
+      return import('../src/commands/advice/mcp.ts').then((m) => m.runMcp(invocation));
     case 'borrowed':
       return import('../src/commands/check.ts').then((m) => m.runBorrowed(invocation));
     case 'redact':
       return import('../src/commands/check.ts').then((m) => m.runRedact(invocation));
+    case 'test':
+      return import('../src/commands/check.ts').then((m) => m.runTest(invocation));
     case 'marks':
       return import('../src/commands/check.ts').then((m) => m.runMarks(invocation));
     case 'changelog':
@@ -84,12 +100,20 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       return import('../src/commands/advice/doctor.ts').then((m) => m.runAdopt(invocation));
     case 'init':
       return import('../src/commands/setup.ts').then((m) => m.runInit(invocation));
+    case 'trust':
+      return import('../src/commands/setup.ts').then((m) => m.runTrust(invocation));
     case 'update':
       return import('../src/commands/setup.ts').then((m) => m.runUpdate(invocation));
+    case 'upgrade':
+      return import('../src/commands/setup.ts').then((m) => m.runUpgrade(invocation));
     case 'bot':
       return import('../src/commands/merge/bot.ts').then((m) => m.runBot(invocation));
+    case 'pr':
+      return import('../src/commands/check.ts').then((m) => m.runPr(invocation));
     case 'train':
       return import('../src/commands/merge/train.ts').then((m) => m.runTrain(invocation));
+    case 'conflicts':
+      return import('../src/commands/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
     case 'board':
       return import('../src/commands/advice/board/server.ts').then((m) => m.runBoard(invocation));
     case 'install':
@@ -117,6 +141,8 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       return 0;
     }
     case undefined:
+      // No command in a project is not an error: it is the start (#548).
+      return import('../src/commands/setup.ts').then((m) => m.runStart(invocation));
     case '--help':
     case '-h':
       break;
@@ -127,13 +153,17 @@ function dispatch(invocation: Invocation): number | Promise<number> {
   return 0;
 }
 
+/** Where an error line starts: the command, or `yokoten` alone when there is none (#548). */
+export const errorLabel = (command: string | undefined): string => `yokoten${command ? ` ${command}` : ''}`;
+
 /** Run one command line, and give its exit code. Exit 1, not 2, on an error: a broken guard should be seen, not block every tool call. */
 export function main(invocation: Invocation): Promise<number> {
   return Promise.resolve(invocation)
     .then(dispatch)
     .catch((err: Error) => {
       printJsonError(invocation, String(err?.message ?? err).split('\n')[0]);
-      say(invocation, `yokoten ${invocation.command}: ${err.message}\n`, invocation.stderr);
+      // No command (the one-command start, #548) has no name to print: never "yokoten undefined".
+      say(invocation, `${errorLabel(invocation.command)}: ${err.message}\n`, invocation.stderr);
       return 1;
     });
 }

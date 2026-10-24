@@ -143,10 +143,99 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
   return null;
 }
 
+// A person's terminal output (#707): colour and a shape that reads at a glance, like
+// `node -h`. An agent reads plain text, so a hook answer, a log and a file never get a
+// code. Colour is for a terminal only, and `NO_COLOR` turns it off (no-color.org).
+const BOLD = '1';
+const GREEN = '32';
+const YELLOW = '33';
+const RED = '31';
+const CYAN = '36';
+
+/** `text` in a colour code, or as it is when colour is off. */
+export const paint = (text: string, code: string, isColour: boolean): string => (isColour ? `\u001b[${code}m${text}\u001b[0m` : text);
+
+/**
+ * Whether a stream gets colour: a terminal, and `NO_COLOR` is not set. `TERM=dumb` is a
+ * terminal that can't show it either.
+ */
+export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean => stream.isTTY === true && env.NO_COLOR === undefined && env.TERM !== 'dumb';
+
+// A mark at the start of a line, padded to the column the next word starts in.
+const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
+const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
+// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note,
+// ? can't check. A terminal gets it; a pipe, a file or an agent keeps the word alone,
+// so an old console never shows a broken glyph. `not now` and `skipped` are not among
+// the five states, so they keep their word only.
+const MARK_GLYPH: Record<string, string> = {
+  ok: '✔', done: '✔', wrote: '✔', linked: '✔', added: '✔', removed: '✔', kept: '✔', updated: '✔',
+  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
+};
+/** The padding after a mark, two columns shorter, so the text after it keeps its column. */
+const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
+const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
+// The last form is a title alone on its line, such as a group in `yokoten help` (#944).
+const STAGE = /^\s+\d+\. \S/;
+const COMMAND = /`[^`\n]+`/g;
+// One row of `yokoten help`: two spaces, the command's name, then its summary.
+const COMMAND_ROW = /^(\s{2})([a-z][a-z-]*)(\s{2,})(.*)$/;
+
+/**
+ * One line of a person's output: a mark in its colour, a heading in bold, a refusal in
+ * red, a command in cyan. Everything else stays as it is. The columns do not move: the
+ * code goes around the mark, not in place of its padding.
+ */
+export function styleLine(line: string, isColour: boolean): string {
+  if (!isColour) return line;
+  const mark = MARK.exec(line);
+  // The style of the whole line, when one covers it. A command's reset would end that
+  // style for the rest of the line, so it is opened again after each command (#707).
+  let outer: string | undefined;
+  let styled = line;
+  if (line.startsWith('yokoten stopped this: ')) {
+    outer = `${BOLD};${RED}`;
+  } else if (mark) {
+    const word = mark[2] ?? '';
+    const colour = GREEN_MARKS.has(word) ? GREEN : word === 'MISSING' ? RED : YELLOW;
+    const glyph = MARK_GLYPH[word];
+    const said = glyph === undefined ? word : `${glyph} ${word}`;
+    const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
+    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
+  } else if (HEADING.test(line) || STAGE.test(line)) {
+    outer = BOLD;
+  } else {
+    const row = COMMAND_ROW.exec(line);
+    if (row && findCommand(row[2] ?? '') !== undefined) styled = `${row[1] ?? ''}${paint(row[2] ?? '', CYAN, true)}${row[3] ?? ''}${row[4] ?? ''}`;
+  }
+  // A command's own help names it in the usage line, which is bold: the name goes cyan and
+  // the bold is opened again after it, as for a command at the start of a line (#929).
+  const usage = /^(Usage: yokoten )([a-z][a-z-]*)(.*)$/.exec(styled);
+  if (usage && findCommand(usage[2] ?? '') !== undefined) {
+    styled = `${usage[1] ?? ''}${paint(usage[2] ?? '', CYAN, true)}${usage[3] ? `\u001b[${BOLD}m` : ''}${usage[3] ?? ''}`;
+  }
+  const painted = styled.replace(COMMAND, (command, offset: number) =>
+    `${paint(command, CYAN, true)}${outer !== undefined && offset + command.length < styled.length ? `\u001b[${outer}m` : ''}`,
+  );
+  return outer === undefined ? painted : paint(painted, outer, true);
+}
+
+/** A whole text, line by line. */
+export const styleText = (text: string, isColour: boolean): string => (isColour ? text.split('\n').map((line) => styleLine(line, true)).join('\n') : text);
+
+/**
+ * Whether a command may colour its text on this stream (#707): a terminal, no `NO_COLOR`,
+ * and never the hook, whose answer an agent reads.
+ */
+export const canColour = (invocation: Invocation, stream: Output): boolean => invocation.command !== 'hook' && isColourTerminal(invocation.env, stream);
+
 // Everything yokoten prints goes through here or `say`, never straight to a stream: the
 // output lands in transcripts and CI logs, so the home folder is shown as ~ (core rule 11).
+// Colour is added here only, and only on a terminal, so an agent or a file never sees it.
 export function print(invocation: Invocation, lines: string[], stream: Output = invocation.stdout): void {
-  if (lines.length) say(invocation, `${lines.join('\n')}\n`, stream);
+  if (!lines.length) return;
+  const text = lines.join('\n');
+  say(invocation, `${canColour(invocation, stream) ? styleText(text, true) : text}\n`, stream);
 }
 export function say(invocation: Invocation, text: string, stream: Output): void {
   stream.write(hideHome(text, invocation.env));

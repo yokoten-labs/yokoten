@@ -27,18 +27,22 @@
 // An action that is not plainly read-only, with no command and no path, is refused
 // in the plugin. An empty Action would let the hook allow it.
 //
-// The plugin runs yokoten hook through guardCommand. The call is JSON on stdin.
-// Exit 2 denies with stderr. Exit 0 and exit 1 let the call go on.
-// A crash, a signal or a timeout denies.
+// The plugin runs `yokoten hook --protocol` through guardCommand, and sends one
+// yokoten-guard/1 call as JSON on stdin: the action, the role and the project folder.
+// The answer is JSON on stdout. `refuse` denies the call with the answer's reason text.
+// `allow` and `ask` let it go on. Exit 0 and exit 1 also let it go on. A crash, a signal,
+// a timeout, or an answer it cannot read denies.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn, homeOf } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
+import { GUARD_PROTOCOL_ID } from '../../../run/protocol.ts';
 import type { RuntimeEnv } from '../../desk/agent-env.ts';
 import { isFolder } from '../../folder-trust.ts';
+import type { AgentAdapter } from '../runtime.ts';
 import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile } from '../../hooks-file.ts';
 
 /** The project plugin `init` writes. OpenCode loads every file in this folder at startup. */
@@ -218,9 +222,9 @@ export const formatDenial = (reason: string): { stdout: string; exitCode: number
 
 /**
  * The plugin text. `command` is the shell line that runs the guard (`guardCommand`).
- * The call goes to that line as JSON on stdin. Exit 0 and exit 1 let the call go on.
- * Exit 2 denies with the guard's reason. A crash, a signal or a timeout denies.
- * OpenCode 2 registers in setup. OpenCode 1 uses server().
+ * The plugin sends one yokoten-guard/1 call as JSON on stdin and reads the answer JSON on
+ * stdout. `refuse` denies the call with the reason's text. A crash, a signal, a timeout
+ * or an unreadable answer denies. OpenCode 2 registers in setup. OpenCode 1 uses server().
  */
 export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): string {
   const wait = Number.isFinite(timeoutMs) && timeoutMs >= 1 ? Math.floor(timeoutMs) : PLUGIN_TIMEOUT_MS;
@@ -235,6 +239,8 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
     const reads = new Set(${JSON.stringify(READ_ACTIONS)});
     const shells = new Set(${JSON.stringify(SHELL_ACTIONS)});
     const edits = new Set(${JSON.stringify(EDIT_ACTIONS)});
+    const protocol = ${JSON.stringify(GUARD_PROTOCOL_ID)};
+    const role = typeof process !== 'undefined' && process.env && process.env.YOKOTEN_ROLE === 'worker' ? 'worker' : 'lead';
 
     const text = (value) => (typeof value === 'string' && value !== '' ? value : undefined);
     const record = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {});
@@ -295,15 +301,49 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
       return pathsOf([], metadata, false).length > 0 ? 'ask' : 'deny';
     };
 
-    const ask = (payload, folder) => {
-      const options = { input: JSON.stringify(payload), encoding: 'utf8', timeout: waitMs };
-      const cwd = text(folder);
-      if (cwd) options.cwd = cwd;
+    const hasShellMark = (value) => /[\\s;&|\`$<>]/.test(value);
+    const looksLikePath = (value) => !hasShellMark(value) && (value.includes('/') || value.includes('\\\\') || value.startsWith('.'));
+
+    // The guard protocol's action: only fields the guard reads, never the runtime's event.
+    const actionOf = (name, resources, metadata) => {
+      const items = list(resources);
+      const called = typeof name === 'string' ? name.trim().toLowerCase() : '';
+      if (shells.has(called)) return { command: commandOf(items, metadata) };
+      if (edits.has(called)) {
+        const paths = pathsOf(items, metadata, true);
+        const command = commandOf([], metadata) || text(record(record(metadata).input).code) || paths.find(hasShellMark);
+        return { ...(command ? { command } : {}), ...(paths.length ? { paths } : {}) };
+      }
+      const commands = commandFields(items, metadata);
+      const fromFields = pathsOf([], metadata, false);
+      const fromResources = items.filter(looksLikePath);
+      const paths = [...fromResources, ...fromFields.filter((item) => !fromResources.includes(item))];
+      return {
+        ...(commands.length === 1 ? { command: commands[0] } : commands.length > 1 ? { commands } : {}),
+        ...(paths.length ? { paths } : {}),
+      };
+    };
+
+    const ask = (action, folder) => {
+      // OpenCode 2 can send a call with no folder, and setup with none (#917): the server runs
+      // in the project, so its own folder is the project then.
+      const project = text(folder) || process.cwd();
+      if (!project) return failed;
+      const payload = { protocol, action, role, project };
+      const options = { input: JSON.stringify(payload), encoding: 'utf8', timeout: waitMs, cwd: project };
       const result = spawnSync('bash', ['-c', guardLine], options);
-      const refused = Boolean(result.error) || result.status === null || (result.status !== 0 && result.status !== 1);
-      if (!refused) return '';
-      const reason = !result.error && result.status !== null ? String(result.stderr ?? '').trim() : failed;
-      return reason || failed;
+      if (result.error || result.status === null) return failed;
+      // Exit 1 is the guard line's own "node is not here": the call goes on, as before.
+      if (result.status === 1) return '';
+      let answer;
+      try {
+        answer = JSON.parse(String(result.stdout ?? ''));
+      } catch {
+        answer = null;
+      }
+      if (!answer || answer.protocol !== protocol) return failed;
+      if (answer.decision === 'refuse') return text(answer.reason && answer.reason.message) || failed;
+      return '';
     };
 
     const rootOf = (ctx) => text(ctx && ctx.directory) || text(ctx && ctx.worktree);
@@ -313,8 +353,7 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
       const folder = text(call.cwd) || text(call.directory) || root;
       const kind = kindOf(call.action, call.resources, call.metadata);
       if (kind === 'skip') return;
-      const payload = { action: typeof call.action === 'string' ? call.action : '', resources: call.resources, metadata: call.metadata, directory: folder };
-      const reason = kind === 'deny' ? unreadable : ask(payload, folder);
+      const reason = kind === 'deny' ? unreadable : ask(actionOf(call.action, call.resources, call.metadata), folder);
       if (!reason) return;
       call.effect = 'deny';
       call.message = reason;
@@ -325,8 +364,7 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
       const commandText = text(call.command);
       const folder = text(call.cwd) || root;
       if (!commandText) throw new Error(unreadable);
-      const payload = { action: 'bash', resources: [commandText], metadata: { command: commandText }, directory: folder };
-      const reason = ask(payload, folder);
+      const reason = ask({ command: commandText }, folder);
       if (reason) throw new Error(reason);
     };
 
@@ -353,7 +391,7 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
             const command = text(args.command) || text(args.code);
             const file = text(args.filePath) || text(args.path) || text(args.file_path);
             if (!command && !file) throw new Error(unreadable);
-            const reason = ask({ tool, args, directory: root }, root);
+            const reason = ask({ ...(command ? { command } : {}), ...(file ? { paths: [file] } : {}) }, root);
             if (reason) throw new Error(reason);
           },
         };
@@ -365,10 +403,10 @@ export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): st
 
 /** The project's guard: the repo's own yokoten, so a file edit is judged too. */
 const projectCommand = (cli: string) =>
-  guardCommand(`"$(git rev-parse --show-toplevel)/${cli}"`, 'hook --agent opencode', missingProjectRuntime(cli), { isToolCall: true });
+  guardCommand(`"$(git rev-parse --show-toplevel)/${cli}"`, 'hook --protocol', missingProjectRuntime(cli), { isToolCall: true });
 
 /** The user's command guard, in every repo. `missing` is what it says when `cli` is gone. */
-const userCommand = (cli: string, missing: string) => guardCommand(cli, 'hook --agent opencode --commands-only', missing, { isToolCall: true });
+const userCommand = (cli: string, missing: string) => guardCommand(cli, 'hook --protocol --commands-only', missing, { isToolCall: true });
 
 /** The plugin's text, or why yokoten will not replace it. A missing file is empty text. */
 function readPlugin(path: string): { text: string } | { problem: Problem } {
@@ -433,5 +471,32 @@ export const userPluginState = (env: Env, cli: string, missing: string): HookSta
 /** The user's command guard, in `~/.config/opencode/plugins/yokoten.ts`. */
 export const addUserPlugin = (env: Env, cli: string, missing: string): Added => writePlugin(userPluginPath(env), pluginSource(userCommand(cli, missing)));
 
+/** Take back the user plugin, only when it is still the text yokoten writes. */
+export function removeUserPlugin(env: Env, cli: string, missing: string): 'removed' | 'not there' | 'kept (yours)' {
+  const path = userPluginPath(env);
+  if (!existsSync(path)) return 'not there';
+  try {
+    if (readFileSync(path, 'utf8') !== pluginSource(userCommand(cli, missing))) return 'kept (yours)';
+  } catch {
+    return 'kept (yours)';
+  }
+  rmSync(path, { force: true });
+  return 'removed';
+}
+
 /** The names this runtime's agent gets on top of the shared ones. OpenCode's login name was not in the docs. */
 export const AGENT_ENV: RuntimeEnv = { login: [], config: [] };
+
+/** The contract every adapter fills (#395). */
+export const ADAPTER: AgentAdapter = {
+  name: 'opencode',
+  label: 'OpenCode',
+  projectHook: '`.opencode/plugins/yokoten.ts`: OpenCode 2 permission `evaluate`, and OpenCode 1 `tool.execute.before`',
+  userHook: '~/.config/opencode/plugins/yokoten.ts',
+  blocking: 'OpenCode 2 sets `effect` to deny; OpenCode 1 throws the reason',
+  capabilities: { canRewrite: false, hasStopHook: false, needsTrust: false, failsOpen: false, passesRole: false },
+  readToolCall,
+  formatDenial,
+  agentEnv: AGENT_ENV,
+  call: (command) => ({ directory: '/repo', tool: 'bash', args: { command } }),
+};

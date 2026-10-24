@@ -28,7 +28,7 @@ test('board --text: the entry, an agent that joins and leaves, and the usage err
   // The entry, through the real binary; the rest runs in this process.
   const started = sandbox.run(['board', '--text']);
   assert.equal(started.status, 0, started.stderr);
-  assert.match(started.stdout, /^yokoten board: \S+\n0 agents, 0 open pull requests, 1 worktree\.\n\nNeeds you:\n- nothing\.\n\nAgents:\n- none\. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself\.\n\nPull requests:\n- this repo has no GitHub remote, so the board shows no pull requests\n\nWorktrees:\n- \S+ \(main\)\n$/);
+  assert.match(started.stdout, /^yokoten board: \S+ \(preview: it may change, and team commands come in v0\.1\.2, #823\)\n0 agents, 0 open pull requests, 1 worktree\.\n\nNeeds you:\n- nothing\.\n\nAgents:\n- none\. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself\.\n\nPull requests:\n- this repo has no GitHub remote, so the board shows no pull requests\n\nWorktrees:\n- \S+ \(main\)\n$/);
   const file = join(sandbox.repo, '.yokoten-agent.json');
   const who = nicknameOf(nicknameId(realpathSync(sandbox.repo), 'worker-1'), []);
   writeFileSync(file, JSON.stringify({ name: 'worker-1', vendor: 'claude-code', task: 'issue 601', worktree: sandbox.repo, doing: 'writing tests', updated: new Date().toISOString() }));
@@ -44,7 +44,7 @@ test('board --text: the entry, an agent that joins and leaves, and the usage err
   writeFileSync(file, JSON.stringify({ name: 'worker-1', worktree: sandbox.repo }));
   const hidden = await sandbox.call(['board', '--text'], { extra: { HOME: dirname(sandbox.repo) } });
   assert.equal(hidden.status, 0, hidden.stderr);
-  assert.match(hidden.stdout, /^yokoten board: ~\/repo\n/);
+  assert.match(hidden.stdout, /^yokoten board: ~\/repo \(preview: [^\n]+\)\n/);
   assert.match(hidden.stdout, new RegExp(`- ${who}: in ~/repo\n`));
   assert.match(hidden.stdout, /\nWorktrees:\n- ~\/repo \(main\)\n/);
   assert.ok(!hidden.stdout.includes(sandbox.repo), 'no full path under the home folder');
@@ -53,6 +53,18 @@ test('board --text: the entry, an agent that joins and leaves, and the usage err
   const outside = await sandbox.call(['board', '--text'], { cwd: sandbox.home });
   assert.equal(outside.status, 1, 'outside a repo it says so');
   assert.match(outside.stderr, /is not inside a git repo/);
+});
+
+// #933: the board is a preview, and the first line of `board --text` says so.
+test('board --text: the first line says preview, what may change, and v0.1.2 (#933)', async () => {
+  const sandbox = makeSandbox();
+  const result = await sandbox.call(['board', '--text']);
+  assert.equal(result.status, 0, result.stderr);
+  const [first] = result.stdout.split('\n');
+  assert.match(first, /preview/);
+  assert.match(first, /it may change/);
+  assert.match(first, /v0\.1\.2/);
+  assert.match(first, /#823/);
 });
 
 // #601: the pull requests come from `gh pr list`. A fake gh first on PATH answers; the real
@@ -222,8 +234,8 @@ test('board server: /data serves the waiting list, issues, runs and limits', asy
   const { server, url } = await startBoardServer(sandbox.repo, sandbox.env, gh);
   try {
     const data = JSON.parse((await boardRead(url, 'data')).text) as Record<string, unknown>;
-    for (const key of ['waiting', 'issues', 'runs', 'limits']) assert.ok(key in data, `the page reads ${key} from /data`);
-    assert.deepEqual(data.limits, { maxAgents: 3, byModel: {} });
+    for (const key of ['waiting', 'issues', 'runs', 'limits', 'schedule', 'room']) assert.ok(key in data, `the page reads ${key} from /data`);
+    assert.deepEqual(data.limits, { maxAgents: 3, byModel: {}, memoryFloorMb: 1024 });
   } finally {
     await new Promise<void>((done) => server.close(() => done()));
   }
@@ -437,6 +449,44 @@ test('board server: over the limit the start is refused', async () => {
     assert.equal(capped.status, 409);
     assert.match(capped.text, /model-a/, 'names the model');
     assert.equal((await boardPost(url, 'agents/start', 'issue=14&vendor=grok&model=model-b')).status, 200, 'another model still starts');
+  } finally {
+    await new Promise<void>((done) => server.close(() => done()));
+  }
+});
+
+// #709: "Start next" starts the ready issue the schedule puts first, and a memory floor
+// that is set too high holds it.
+test('board server: start next takes the ready issue from the schedule', async () => {
+  const sandbox = makeSandbox();
+  sandbox.git('remote', 'add', 'origin', 'git@github.com:octo/demo.git');
+  const agents = fakeAgents();
+  const controls = createBoardControls(join(sandbox.repo, '.yokoten-board.log'), agents.spawner);
+  const rows = [
+    { number: 12, title: 'first', url: 'https://example.com/issues/12', body: '', createdAt: '2026-10-01T00:00:00Z', updatedAt: '', labels: [], milestone: null },
+    { number: 13, title: 'second', url: 'https://example.com/issues/13', body: 'Depends on issue #12', createdAt: '', updatedAt: '', labels: [], milestone: null },
+  ];
+  const gh = async (args: string[]) => args[0] === 'issue' ? JSON.stringify(rows) : '[]';
+  const github = createBoardGitHub();
+  const { server, url } = await startBoardServer(sandbox.repo, sandbox.env, gh, { controls, github });
+  try {
+    assert.equal((await boardRead(url, 'data')).status, 200);
+    await github.reading;
+    // A high floor holds the start; the page's own button says why in plain words.
+    assert.equal((await boardPost(url, 'agents/limits', 'memory=65536')).status, 200);
+    const held = await boardPost(url, 'agents/start', 'next=1&vendor=claude-code&model=model-a');
+    assert.equal(held.status, 409, 'a full memory floor starts nothing');
+    assert.match(held.text, /under the 65536 MB floor/);
+    assert.equal(agents.started.length, 0);
+    // With the floor off, the smallest ready number starts; 13 waits on 12.
+    assert.equal((await boardPost(url, 'agents/limits', 'memory=0')).status, 200);
+    const started = await boardPost(url, 'agents/start', 'next=1&vendor=claude-code&model=model-a');
+    assert.equal(started.status, 200, started.text);
+    const body = JSON.parse(started.text) as { started: { issue: string }[]; waiting: number[]; heldBy: string };
+    assert.deepEqual(body.started.map((run) => run.issue), ['12'], 'the ready list holds 12 alone');
+    assert.deepEqual(body.waiting, [], '13 waits on 12');
+    assert.equal(agents.started.length, 1);
+    assert.equal(agents.started[0].cwd, join(sandbox.repo, '.worktrees', '12'));
+    assert.equal((await boardPost(url, 'agents/start', 'next=1&vendor=gemini&model=model-a')).status, 400, 'an unknown vendor is refused');
   } finally {
     await new Promise<void>((done) => server.close(() => done()));
   }

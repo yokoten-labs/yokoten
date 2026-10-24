@@ -25,9 +25,10 @@ import {
   checkCommand,
   checkEdit,
   privateOutput,
-} from '../../src/rules/guards.ts';
+} from '../../src/rules/guards/index.ts';
 import {
   checkBuildOutput,
+  checkCodeOwners,
   checkLayout,
 } from '../../src/rules/layout.ts';
 import {
@@ -35,14 +36,17 @@ import {
   finding,
   type Finding,
   formatFinding,
+  formatRefusal,
   measureWork,
   noteWork,
   notRepoFinding,
+  parseRefusal,
   type Rule,
   RULES,
 } from '../../src/rules/message.ts';
 import {
   checkApprovalFreshness,
+  provenanceFindings,
   checkIssueLabels,
   checkIssueTitle,
   checkOwnedTier,
@@ -67,9 +71,15 @@ import {
   readGit,
   timeZoneNote,
 } from '../../src/run/check.ts';
-import { lateFinding } from '../../src/run/hook.ts';
-import { nameNotes } from '../../src/run/names.ts';
-import { translationNotes } from '../../src/run/translations.ts';
+import { lateFinding, repeatStopFinding } from '../../src/run/hook.ts';
+import {
+  lintCallResult,
+  lintServerEntry,
+  lintStdout,
+  lintTools,
+} from '../../src/commands/advice/mcp.ts';
+import { nameNotes } from '../../src/run/notes/names.ts';
+import { translationNotes } from '../../src/run/notes/translations.ts';
 import { readCurrentPullRequest } from '../../src/host/current-pr.ts';
 import {
   readIssue,
@@ -100,7 +110,8 @@ import {
   upstreamNote,
   userAgentHooks,
 } from '../../src/setup/doctor/index.ts';
-import { openCodePluginNote } from '../../src/setup/doctor/checks.ts';
+import { editedKitCheck, openCodePluginNote } from '../../src/setup/doctor/checks.ts';
+import { KIT, sealManaged } from '../../src/setup/files.ts';
 import { workflowNotes } from '../../src/setup/init.ts';
 import {
   ROAD,
@@ -134,7 +145,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     found.push(f);
   };
   const env = { YOKOTEN_FIX_TASK: '1', YOKOTEN_ROLE: 'worker' };
-  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
+  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git tag v1.2.3', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git reset --hard', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1', 'gh api -X PATCH repos/o/r -f visibility=public']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
   add(checkCommand('python3 --version', { cwd: process.cwd(), env: {}, config: { commands: { block: { python3: 'this project is TypeScript only' } } } }));
   add(checkCommand(`bash -c "${':;'.repeat(300000)}"`, { cwd: process.cwd(), env: {} })); // too many commands to read
   add(checkCommand('alias x=y', { cwd: process.cwd(), env: {} }));
@@ -147,20 +158,30 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   const mainRepo = makeTempDir('yokoten-default-main-');
   execFileSync('git', ['init', '-q', '-b', 'main', mainRepo]);
   add(checkCommand('git branch -D main', { cwd: mainRepo, env: {} }));
+  // The other ways to lose work or history (#828).
+  add(checkCommand('rm -rf .', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git clean -fdx', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git gc --prune=now', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git branch -f main HEAD~1', { cwd: mainRepo, env: {} }));
   add(checkEdit('test/a.test.ts', { config: DEFAULTS, env }));
   add(checkEdit('AGENTS.md', { config: DEFAULTS, env }));
   add(checkCommand('git push', { cwd: process.cwd(), env }));
   add(checkCommand('git worktree remove ../wt', { cwd: process.cwd(), env }));
   add(lateFinding({ command: 'ls', paths: [], worker: false }, 5000));
+  // The third same refusal in one session (#711): the count needs a session, so the message
+  // is asked for here, as `late` is.
+  add(repeatStopFinding());
   found.push(...scanText(`${POSITIVE_CONTROL}\n${SECRET_CONTROL}\nhome town`, { file: 'a.md', marks: ['home town'] }));
   add(scanText(`// ${['yokoten', 'ignore'].join('-')} secret`, { file: 'a.md' })[0]);
   add(addedIgnores('a.ts', `// ${['yokoten', 'ignore'].join('-')} secret: a fixture`, new Set([1]), {})[0]);
   found.push(...checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS));
   found.push(...checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS));
+  found.push(...checkCodeOwners(['src/app.ts'], 'src/gone.ts @lead\n'));
   found.push(...checkPullRequest({ title: `Bad title (#1) ${'x'.repeat(70)}.`, body: '## Why\n\n', files: ['src/a.ts', 'kit/x'], labels: [], milestone: null }, DEFAULTS));
   add(checkOwnedTier({ body: 'tier: B\n', files: ['kit/x'] }, { text: '/kit/ @owner\n', from: 'the base branch' }));
   // An Approve on an older commit, with code changes after it (#612).
   add(checkApprovalFreshness({ tier: 'A', head: 'b'.repeat(40), approved: 'a'.repeat(40), after: 2, sameDiff: true }));
+  add(provenanceFindings({ writers: [{ vendor: 'Claude Code', model: 'm' }], reviewers: [{ vendor: 'Anthropic', model: 'n' }], leads: [], others: [] }, [])[0]);
   found.push(...checkIssueTitle('Bad title (#1) that runs on well past the sixty character limit.', {}));
   found.push(...checkIssueLabels([], ['feat', 'tier A']));
   add(largeDiff(500));
@@ -218,6 +239,8 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   for (const c of diskSpaceChecks(dir, { HOME: dir }, fullMachine, false)) add(c.finding);
   add(agentTempDirCheck({}, fullMachine)?.finding);
   for (const nodeVersion of ['24.21.0', '23.11.1']) add(nodeSecurityCheck({ nodeVersion }).finding);
+  // The guard's own cost, a reading doctor prints as a line (#461).
+  add(finding('guard-cost', 'one guard call costs 90 ms', 'nothing to fix: this is a reading of the machine'));
   // An old test folder in the temp folder (#400): seen from two days on.
   const temp = makeTempDir();
   mkdirSync(join(temp, 'yokoten-old'));
@@ -273,6 +296,13 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     writeFileSync(join(dir, 'AGENTS.md'), rules);
     add(coreRulesCheck(dir)?.finding);
   }
+  // A kit skill the user edited, with a newer kit copy waiting (#477): a note, never a failure.
+  const editedHome = makeTempDir();
+  const kitSkill = readFileSync(join(KIT, 'user', 'skills', 'dispatch', 'SKILL.md'), 'utf8');
+  const olderSkill = sealManaged(kitSkill.replace('Hand one task', 'Hand one job'));
+  mkdirSync(join(editedHome, '.claude', 'skills', 'dispatch'), { recursive: true });
+  writeFileSync(join(editedHome, '.claude', 'skills', 'dispatch', 'SKILL.md'), `${olderSkill}\nAsk the owner before a release.\n`);
+  add(editedKitCheck({ HOME: editedHome }));
   // A kit workflow with the project's changes (#456).
   mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
   writeFileSync(join(dir, '.github', 'workflows', 'yokoten.yml'), 'on: push\n');
@@ -280,10 +310,31 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   // The server, with every setting off, and with nothing readable.
   const off = { pullRequest: false, codeOwnerReview: false, mergeMethods: [], requiredChecks: [], noForcePush: false, noDeletion: false, approvals: 0 };
   const security = { secretScanning: false, pushProtection: false, privateReporting: false, dependabotAlerts: false };
-  const server = { repo: 'octo/demo', defaultBranch: 'main', isPrivate: false, actionsCanApprove: false, mergeMethods: ['merge', 'squash'], deleteBranchOnMerge: false, branch: off, tags: false, security, forgotten: ['old'] };
+  const server = { repo: 'octo/demo', defaultBranch: 'main', isPrivate: false, actionsCanApprove: false, mergeMethods: ['merge', 'squash'], deleteBranchOnMerge: false, branch: off, tags: false, tagBypass: { admin: false, bot: false }, release: { reviewer: false, tagRule: false, branchRule: false }, security, forgotten: ['old'] };
   // Work only on this machine (#365): one case of each, as facts, so no git runs here.
   found.push(...unsavedNotes(UNSAVED_CONTROL, { home: undefined, now: 1 }));
   for (const c of [...serverChecks(server), ...serverChecks({ unread: 'gh is not installed', fix: 'get it' })]) add(c.finding);
+  // The MCP traps (#370): one known-bad input for each: a tool that breaks every schema,
+  // name and annotation rule, a list at the small-client limit, a result with one form, a
+  // stray stdout line, and a Windows launch entry beside an entry with no command.
+  const cleanTool = {
+    name: 'read',
+    inputSchema: { type: 'object', properties: { value: { type: 'string' } }, required: ['value'] },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  };
+  const badTool = { name: 'x'.repeat(65), inputSchema: { type: 'object', properties: { 'a b': { type: 'string' } } } };
+  found.push(...lintTools([badTool]));
+  found.push(...lintTools(Array.from({ length: 40 }, () => cleanTool)));
+  found.push(...lintCallResult('status', { structuredContent: { reply: 'ok' } }));
+  found.push(...lintStdout(['starting server']));
+  found.push(...lintServerEntry('demo', { command: 'npx', args: ['-y', 'demo'] }));
+  found.push(...lintServerEntry('demo', {}));
+
+  // The event log's daily anchor check (#768): one finding of each shape, so the rule is reached.
+  found.push(finding('anchor', '2026-10-20 no longer matches its anchor: Rekor holds no entry for this hash', 'restore the line the chain names, or keep this log and start a new one'));
+  // The collision stops (#910, #911) need a conflict map of open changes; their own tests build one.
+  found.push(finding('structural-change', 'PR #12 moves src/a.ts too', 'wait for PR #12 to go in, then move src/a.ts', { file: 'src/a.ts' }));
+  found.push(finding('file-lease', 'PR #12 is moving src/a.ts. An edit here now will conflict when it merges', 'work on something else until PR #12 merges, or ask the lead to put this task after it'));
 
   const known = new Set(ids());
   for (const f of found) {
@@ -335,6 +386,32 @@ test('docs: a finding carries its rule\'s link, in text, JSON and explain (#94)'
   assert.equal(explained && explainLines(explained).at(-1), `Docs: ${link}`);
   const step = explain('commit-check');
   assert.ok(step && step.docs === undefined && !explainLines(step).some((line) => line.startsWith('Docs:')), 'a step has no link yet');
+});
+
+// #707: every refusal has the same four parts, the rule id in its title, and a link even
+// when the finding has no section of its own.
+test('refusal: title, why, do instead and more, the same for every rule (#707)', () => {
+  const refused = finding('release', 'git push --tags pushes tags', 'ask the owner to start a new session');
+  const text = formatRefusal(refused);
+  assert.equal(
+    text,
+    `yokoten stopped this: git push --tags pushes tags [release]\nWhy: Only the owner decides when to release.\nDo instead: Ask the owner to start a new session.\nMore: ${DOCS_URL}#how-to-release`,
+  );
+  for (const id of Object.keys(RULES) as (keyof typeof RULES)[]) {
+    const link = (RULES[id] as Rule).docs ?? DOCS_URL;
+    const one = formatRefusal(finding(id, 'something was refused', 'do the safe thing'));
+    assert.match(one, /^yokoten stopped this: something was refused \[[\w-]+\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+$/, id);
+    assert.ok(one.includes(link), `${id}: the link is always there`);
+    assert.ok(!one.includes('\u001b'), `${id}: no ANSI code in a refusal`);
+  }
+  // The board reads the same parts back, past a runtime's wrapper.
+  const parsed = parseRefusal(`PreToolUse:Bash hook error:\n${text}\n`);
+  assert.equal(parsed?.id, 'release');
+  assert.equal(parsed?.title, 'yokoten stopped this: git push --tags pushes tags [release]');
+  assert.equal(parsed?.why, 'Only the owner decides when to release.');
+  assert.equal(parsed?.fix, 'Ask the owner to start a new session.');
+  assert.equal(parsed?.docs, `${DOCS_URL}#how-to-release`);
+  assert.equal(parseRefusal('yokoten: an older form'), null);
 });
 
 test('docs: no message names a docs/<file>.md path without a link (#524)', () => {
