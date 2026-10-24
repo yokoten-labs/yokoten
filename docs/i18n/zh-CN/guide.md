@@ -73,8 +73,8 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
 Why: Only the owner decides when to release.
-Do instead: The owner creates the tag, with the steps in the release guide; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Do instead`
@@ -185,8 +185,8 @@ AI 想推送发版 tag 时，会看到：
 ```
 yokoten stopped this: git push --tags pushes tags [release]
 Why: Only the owner decides when to release.
-Do instead: The owner releases, with the steps in the release guide; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 每条提示都一样：让 agent 停下来，请主人发版。发版批准的办法、以及启动每个 agent 的命令，

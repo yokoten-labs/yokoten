@@ -179,7 +179,7 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   result = await sandbox.call(['hook', '--commands-only'], { cwd: away, input: JSON.stringify({ cwd: away, tool_name: 'Bash', tool_input: { command: 'git push --tags' } }) });
   assert.equal(result.status, 2);
   assert.doesNotMatch(result.stderr, /fatal|not a git repository/);
-  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: The owner releases, with the steps in the release guide; do not look for another way\.\nMore: https:\/\/\S+#the-core-rules\n$/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/);
   // A broken config is an internal error: the turn ends, with one line on stderr.
   sandbox.write('yokoten.json', '{ broken');
   result = await sandbox.call(['hook', '--stop'], { input: JSON.stringify({ cwd: sandbox.repo }) });
@@ -265,10 +265,10 @@ test('hook --agent: the release refusal is the same plain sentence (#931)', asyn
     'deepseek-harness': shell('bash'),
     opencode: { tool: 'shell', args: { command }, directory: cwd },
   };
-  const plain = 'the owner releases, with the steps in the release guide; do not look for another way';
+  const plain = 'stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way';
   for (const [agent, input] of Object.entries(agents)) {
     const result = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input) });
-    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: The owner releases, with the steps in the release guide; do not look for another way\.\nMore: https:\/\/\S+#the-core-rules\n$/, agent);
+    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/, agent);
     assert.doesNotMatch(result.stderr, /YOKOTEN_RELEASE_APPROVAL|new session/, agent);
     // --json carries the same fix.
     const json = JSON.parse((await sandbox.call(['hook', '--agent', agent, '--json'], { input: JSON.stringify(input) })).stdout);
@@ -276,7 +276,7 @@ test('hook --agent: the release refusal is the same plain sentence (#931)', asyn
     // Another refusal keeps its own fix.
     const force = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input).replace('--tags', '--force') });
     assert.match(force.stderr, /git push --force/, `${agent}: a force push`);
-    assert.doesNotMatch(force.stderr, /release guide/, `${agent}: a force push`);
+    assert.doesNotMatch(force.stderr, /How to release/, `${agent}: a force push`);
   }
 });
 

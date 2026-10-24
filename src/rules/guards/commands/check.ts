@@ -132,10 +132,10 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
  * carries (#931).
  */
 function releaseFix(): string {
-  return 'the owner releases, with the steps in the release guide; do not look for another way';
+  return 'stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way';
 }
 const release = (what: string) => finding('release', what, releaseFix());
-const tagFix = 'the owner creates the tag, with the steps in the release guide; do not look for another way';
+const tagFix = 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way';
 
 // `git tag` alone, `git tag -l` and `git tag --contains` only read. Deleting a local tag
 // (`-d`) and verifying one (`-v`) publish nothing. Every other `git tag` writes a tag,

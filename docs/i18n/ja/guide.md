@@ -120,8 +120,8 @@ Tell the user in plain words, one step at a time, and offer to do it (as-is, lig
 ```
 yokoten stopped this: git push --tags pushes tags [release]
 Why: Only the owner decides when to release.
-Do instead: The owner releases, with the steps in the release guide; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 直し方はどのエージェントでも同じです。エージェントに止まってオーナーにリリースを任せるよう伝えます。

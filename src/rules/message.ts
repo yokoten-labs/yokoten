@@ -67,7 +67,7 @@ export const RULES = {
     rule: 'only the owner creates tags and releases (core rule 3)',
     why: RELEASE_WHY,
     check: 'the tool-call guard stops a tag push (`--tags`, `--follow-tags`, `--mirror`, a `v*`, a local tag or a `refs/tags/` ref), `git update-ref` on a tag, `npm version`, `push.followTags`, `gh release`, API calls that write through the host, `gh workflow run`, `glab` and `tea` releases, package and image tools, and release scripts, unless the session started with YOKOTEN_RELEASE_APPROVAL; a tag ruleset on the server is the lock',
-    docs: guide('the-core-rules'),
+    docs: guide('how-to-release'),
   },
   'force-push': {
     rule: 'no plain force push (core rule 7)',
