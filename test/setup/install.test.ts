@@ -252,6 +252,54 @@ test('install: with the plugin on, a hooks shape it cannot walk fails the run an
   assert.match(result.stdout, /its hooks have an unexpected shape/);
 });
 
+test('install: with the plugin on, a hooks file it cannot walk keeps the runtime its hooks run (#904)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.PreToolUse.push({ hooks: 5 });
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  assert.notEqual((await sandbox.call(['install'])).status, 0);
+  assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the old hooks still run the runtime, so it stays');
+});
+
+test("install: with the plugin on, a user's own hook that runs yokoten keeps the runtime (#904)", async () => {
+  for (const command of ['"$HOME/.local/bin/yokoten" check', 'yokoten check', '$(yokoten check)', 'echo hi;yokoten check', 'yokoten|tee out']) {
+    const sandbox = makeSandbox();
+    assert.equal((await sandbox.call(['install'])).status, 0);
+    const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+    const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+    settings.enabledPlugins = { 'yokoten@yokoten': true };
+    settings.hooks.Stop = [{ hooks: [{ type: 'command', command }] }];
+    writeFileSync(settingsFile, JSON.stringify(settings));
+    assert.equal((await sandbox.call(['install'])).status, 0);
+    assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), `the runtime stays while ${command} runs it`);
+  }
+});
+
+test('install: with the plugin on, a hook that only looks like yokoten lets the runtime go (#904)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'my-yokoten check; node ~/.local/share/yokoten-old/run.mjs' }] }];
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.ok(!existsSync(join(sandbox.home, '.local/share/yokoten')), 'nothing runs the runtime, so it goes');
+});
+
+test("install: a user's own link under a skill's name in ~/.agents stays (#904)", async () => {
+  const sandbox = makeSandbox();
+  const mine = join(sandbox.home, 'my-skills');
+  mkdirSync(mine, { recursive: true });
+  mkdirSync(join(sandbox.home, '.agents', 'skills'), { recursive: true });
+  symlinkSync(mine, join(sandbox.home, '.agents', 'skills', 'dispatch'), 'dir');
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal(readlinkSync(join(sandbox.home, '.agents', 'skills', 'dispatch')), mine, 'the link is the user\'s, so it stays');
+});
+
 // #904: install says what it will write, and uninstall leaves the home folder as it was.
 test('install prints its plan, and uninstall restores the home folder (#904)', async () => {
   const sandbox = makeSandbox();

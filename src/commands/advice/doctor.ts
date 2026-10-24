@@ -18,6 +18,7 @@ import { formatFinding } from '../../rules/message.ts';
 import { hideHome } from '../../rules/privacy.ts';
 import { draft, facts, table } from '../../setup/advice/adopt.ts';
 import { explain, explainLines, ids } from '../../setup/advice/explain.ts';
+import { cleanOlderInstall } from '../../setup/install.ts';
 import { blocksToSay, doctor, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
 import { READERS } from '../hook.ts';
 import { type Invocation, noRootFinding, parse, print, printJson, requireRoot, rootOf, say, usage } from '../shared.ts';
@@ -42,6 +43,9 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   if (root && !session && !options.flags.has('--json') && invocation.stdout.isTTY === true) say(invocation, `${slowReadLine(host?.kind === 'gitea' ? 'Gitea' : 'GitHub')}\n`, invocation.stdout);
   // The Gitea read waits for the network, so it happens here; the GitHub read stays in doctor, which uses gh.
   const gitea = host?.kind === 'gitea' && !session ? await readGiteaServer(host, env) : undefined;
+  // A plugin user updates with `claude plugin update`, which never runs install: the start
+  // takes back what v0.1.0 left, with install's own rules (#935).
+  const cleanup = session ? cleanOlderInstall(env) : null;
   const { ok, lines: allLines, blocks, report } = doctor(root, { env, config, session, host, ...(gitea ? { server: gitea } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, fillMarks: !session });
   // Full doctor outside a repo says so (#205). A session there stays quiet: no noise in a non-repo folder.
   if (!root && !session) {
@@ -54,6 +58,12 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   if (root && session) noteSessionStart(cwd, env, agent, start?.model ?? '', start?.transcriptPath ?? '');
   // A compaction start repeats only what changed (#405); any other start says all.
   const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : allLines;
+  // One line, and only when an older install's copies were there (#935). The edit that
+  // stays is named on that first start; a later start finds nothing and says nothing.
+  if (cleanup?.files && !options.flags.has('--json')) {
+    lines.push(`yokoten: cleaned ${cleanup.files} ${cleanup.files === 1 ? 'file' : 'files'} an older install left; the plugin brings them now`);
+    if (cleanup.edits.length) lines.push(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`);
+  }
   // A desk that named a vendor other than the harness's (#748) speaks first: the agent
   // learns who it is before the harness's prompt tells it about its own maker.
   const identity = root && session && !options.flags.has('--json') ? identityLine(agent, env) : '';

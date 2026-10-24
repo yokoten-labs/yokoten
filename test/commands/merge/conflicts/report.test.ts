@@ -39,12 +39,16 @@ function issueExample(): ConflictMap {
   );
 }
 
-test('the summary says what collides and what to merge first, in the issue\'s words', () => {
+test('the summary puts the next pick first, then one headed block for each thing', () => {
   assert.deepEqual(summaryLines(issueExample()), [
-    '2 changes collide with main: PR #12, PR #15.',
     'Merge next: PR #20, because it moves or deletes 1 file, so it goes first and alone.',
-    'PR #12 and PR #15 both change src/app.ts. Merge PR #12 first, then PR #15.',
-    'PR #20 moves 1 file that 3 other changes touch. It goes in alone, before them.',
+    '',
+    'What goes first',
+    '  PR #20 moves 1 file that 3 other changes touch. It goes in alone, before them.',
+    '',
+    'Pairs that collide',
+    '  2 changes collide with main: PR #12, PR #15.',
+    '  PR #12 and PR #15 both change src/app.ts. Merge PR #12 first, then PR #15.',
   ]);
 });
 
@@ -68,10 +72,18 @@ test('a draft is listed but not ordered, and a hot path is named', () => {
   const one = change('pr:12', 'PR #12', ['src/app.ts', 'src/b.ts']);
   const lines = summaryLines(mapOf([draft, one], [], ['src/app.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts']));
   assert.deepEqual(lines, [
-    '1 change collides with main: PR #18.',
     'Merge next: PR #12, because it collides with no other open change.',
-    'PR #18 is a draft, so it is listed here, but not ordered.',
-    '4 files are hot: src/app.ts, src/b.ts, src/c.ts, and 1 more. Three or more open changes touch them, or an open change moves them.',
+    '',
+    'Pairs that collide',
+    '  1 change collides with main: PR #18.',
+    '',
+    'Hot files',
+    '  4 files are hot: three or more open changes touch them, or an open change moves them.',
+    '  src/app.ts, src/b.ts, src/c.ts',
+    '  +1 more: `yokoten conflicts --json`',
+    '',
+    'Drafts',
+    '  PR #18 is a draft, so it is listed here, but not ordered.',
   ]);
 });
 
@@ -81,8 +93,20 @@ test('a long map stays short on a line', () => {
   const changes = Array.from({ length: 9 }, (_, index) => change(`pr:${index + 1}`, `PR #${index + 1}`, [`src/${index}.ts`]));
   const collisions: Collision[] = changes.slice(1).map((held) => ({ first: 'pr:1', second: held.id, files: ['src/app.ts'] }));
   const lines = summaryLines(mapOf(changes, collisions));
-  assert.equal(lines.filter((line) => line.includes('both change')).length, 5);
-  assert.ok(lines.some((line) => line === '3 more pairs collide: `yokoten conflicts --json` names every one.'), lines.join('\n'));
+  assert.equal(lines[0], 'Merge next: PR #1, because it collides with 8 other open changes, more than any other change left.');
+  assert.equal(lines.filter((line) => line.includes('both change')).length, 3);
+  assert.ok(lines.includes('  +5 more: `yokoten conflicts --json`'), lines.join('\n'));
+});
+
+test('the map notes join the drafts in the last block', () => {
+  const draft = change('pr:18', 'PR #18', ['src/app.ts'], [], { draft: true, main: ['src/app.ts'] });
+  const lines = summaryLines(mapOf([draft]), ['1 open change is not in this clone, so the map leaves it out']);
+  assert.deepEqual(lines.slice(-4), [
+    '',
+    'Drafts and notes',
+    '  PR #18 is a draft, so it is listed here, but not ordered.',
+    '  note: 1 open change is not in this clone, so the map leaves it out',
+  ]);
 });
 
 test('a change that moves a shared file is named once, with how many others touch it', () => {

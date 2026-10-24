@@ -90,7 +90,10 @@ jobs:
         # One macOS run: paths there go through symlinks (/var), which hid a real bug (#1).
         include: ${{ fromJSON(needs.changes.outputs.docs_only == 'true' && '[]' || github.event_name == 'pull_request' && '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":1}]' || '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":2,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":3,"of":3}]') }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    # 15 minutes: the whole-suite macOS job's time budget fails past 600 s of tests, and the job
+    # must outlive that, or a slow suite is killed with no list of the slowest tests (#943). The
+    # Linux shards take about 3 minutes; their own budget still fails them past 270 s or less.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -109,8 +112,10 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
       # The time and the slowest tests go in the job summary. It fails far above the slowest run
       # seen: 180 s a shard, or 90 s on Node 24 on Linux, the fastest setup (#475). The one
-      # whole-suite macOS job gets 300 s: its slowest run seen took 191 s (record 0016).
-      - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 300' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
+      # whole-suite macOS job gets 400 s: it took 191 s once, then 419 to 510 s on 2026-10-24,
+      # all tests passing, so the suite fails only past 600 s with the room for a busy runner.
+      # The slow tests behind that growth are #943's second half (record 0016).
+      - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 400' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
   # Types are checked here and nowhere else: Node runs the .ts files without them.
   # Skipped on a docs-only pull request.
   typecheck:
