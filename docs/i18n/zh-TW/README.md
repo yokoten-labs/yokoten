@@ -62,7 +62,7 @@ npx yokoten init        # 每個專案一次
 npx yokoten doctor      # 走到了第幾關，下一步做什麼
 ```
 
-- **Claude Code 外掛**：先執行 `/plugin marketplace add yokoten-labs/yokoten`，再執行 `/plugin install yokoten@yokoten`。外掛和 `npx` 選一個，不要兩個都裝。
+- **Claude Code 外掛**：先執行 `/plugin marketplace add https://github.com/yokoten-labs/yokoten.git`（用 HTTPS，不需要 SSH 金鑰），再執行 `/plugin install yokoten@yokoten`。外掛和 `npx` 選一個，不要兩個都裝。
 - **版本**：Stable（預設）、Beta 或 Dev。見[要安裝哪個版本](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英文）。
 - **只在 CI 裡用**：[當成 GitHub Action 用](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英文）。
 - **Node**：22.23.4 或更新；用 Node 24 要 24.22.1 起，用 Node 26 要 26.12.1 起。

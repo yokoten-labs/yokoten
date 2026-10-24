@@ -62,7 +62,7 @@ npx yokoten init        # プロジェクトごとに一度
 npx yokoten doctor      # いまどこにいて、次に何をするか
 ```
 
-- **Claude Code プラグイン**：`/plugin marketplace add yokoten-labs/yokoten` のあと `/plugin install yokoten@yokoten`。プラグインか `npx` のどちらか一つを使います。
+- **Claude Code プラグイン**：`/plugin marketplace add https://github.com/yokoten-labs/yokoten.git`（HTTPS なので SSH 鍵はいりません）のあと `/plugin install yokoten@yokoten`。プラグインか `npx` のどちらか一つを使います。
 - **バージョン**：Stable（既定）、Beta、Dev。[どのバージョンを入れるか](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英語）を見てください。
 - **CI だけで使う**：[GitHub Action として使う](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英語）。
 - **Node**：22.23.4 以降。Node 24 なら 24.22.1 以降、Node 26 なら 26.12.1 以降。

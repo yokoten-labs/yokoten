@@ -65,7 +65,7 @@ npx yokoten init        # once per project
 npx yokoten doctor      # where you are, and the one next step
 ```
 
-- **Claude Code plugin**: `/plugin marketplace add yokoten-labs/yokoten`, then `/plugin install yokoten@yokoten`. Use the plugin or `npx`, not both.
+- **Claude Code plugin**: `/plugin marketplace add https://github.com/yokoten-labs/yokoten.git` (HTTPS, so no SSH key is needed), then `/plugin install yokoten@yokoten`. Use the plugin or `npx`, not both.
 - **Versions**: Stable (the default), Beta or Dev. See [which version to install](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install).
 - **CI only**: [use it as a GitHub Action](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action).
 - **Node**: 22.23.4 or later, 24.22.1 or later on Node 24, 26.12.1 or later on Node 26.
