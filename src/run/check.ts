@@ -231,20 +231,27 @@ interface MapChange {
   branch: string;
   label: string;
   moves: string[];
+  draft: boolean;
 }
 
-/** The paths the next commit moves away: a rename's old path, or a deleted path (#910). */
-function stagedMoves(root: string, env: Env): string[] {
-  // -z --name-status gives "R100", the old path, the new path; a delete gives "D", the path.
-  const out = list(git(root, env, ['diff', '--cached', '--name-status', '-M', '--diff-filter=RD', '-z']));
+/**
+ * The paths the next commit moves away (a rename's old path, or a deleted path), and the paths
+ * it changes in place (#910). A change in place reaches the commit from any tool, a shell
+ * redirect too, so this is where a file lease (#911) holds when the guard did not see it.
+ */
+function stagedMoves(root: string, env: Env): { moves: string[]; edits: string[] } {
+  // -z --name-status gives "R100", the old path, the new path; "D", "M" or "T" give one path.
+  // "T" is a type change, such as a file turned into a symlink: a change in place too.
+  const out = list(git(root, env, ['diff', '--cached', '--name-status', '-M', '--diff-filter=RDMT', '-z']));
   const moves: string[] = [];
+  const edits: string[] = [];
   for (let i = 0; i < out.length; ) {
-    const isRename = out[i]?.startsWith('R') === true;
+    const status = out[i] ?? '';
     const path = out[i + 1];
-    if (path !== undefined) moves.push(path);
-    i += isRename ? 3 : 2;
+    if (path !== undefined) (status === 'M' || status === 'T' ? edits : moves).push(path);
+    i += status.startsWith('R') ? 3 : 2;
   }
-  return moves;
+  return { moves, edits };
 }
 
 /**
@@ -266,7 +273,7 @@ function mapChanges(root: string, env: Env, now = Date.now()): MapChange[] {
   }
   if (map === null || typeof map !== 'object' || map.version !== 1 || typeof map.builtAt !== 'string') return [];
   const builtAt = Date.parse(map.builtAt);
-  if (!Number.isFinite(builtAt) || now - builtAt > MAP_MAX_AGE_MS) return [];
+  if (!Number.isFinite(builtAt) || now - builtAt > MAP_MAX_AGE_MS || builtAt - now > 60_000) return [];
   if (!Array.isArray(map.changes)) return [];
   const changes: MapChange[] = [];
   for (const change of map.changes as Array<Record<string, unknown>>) {
@@ -275,6 +282,7 @@ function mapChanges(root: string, env: Env, now = Date.now()): MapChange[] {
       branch: change.branch,
       label: change.label,
       moves: change.moves.filter((path): path is string => typeof path === 'string'),
+      draft: change.draft === true,
     });
   }
   return changes;
@@ -297,18 +305,24 @@ function isMerging(root: string, env: Env): boolean {
  * per path, so the unstage line can name it; the first finding names the change to wait for.
  */
 function moveWindowProblems(root: string, env: Env): Finding[] {
-  const moves = stagedMoves(root, env);
-  if (!moves.length) return [];
+  const { moves, edits } = stagedMoves(root, env);
+  if (!moves.length && !edits.length) return [];
   // A merge brings another branch's moves, and the commit that made them was checked on its
   // own branch. A map built before that change merged can still list it, so a merge allows.
   if (isMerging(root, env)) return [];
   const branch = git(root, env, ['rev-parse', '--abbrev-ref', 'HEAD']).trim();
+  // A detached HEAD is a rebase replaying commits each checked on their branch already.
+  if (branch === 'HEAD') return [];
   const problems: Finding[] = [];
   for (const change of mapChanges(root, env)) {
     if (change.branch === branch) continue;
     for (const path of [...new Set(change.moves)]) {
-      if (!moves.includes(path)) continue;
-      problems.push(finding('structural-change', `${change.label} moves ${path} too`, `wait for ${change.label} to go in, then move ${path}`, { file: path }));
+      if (moves.includes(path)) {
+        problems.push(finding('structural-change', `${change.label} moves ${path} too`, `wait for ${change.label} to go in, then move ${path}`, { file: path }));
+      } else if (edits.includes(path) && !change.draft) {
+        // The guard's lease, at commit time: a shell edit never named the path to the guard (#911).
+        problems.push(finding('file-lease', `${change.label} is moving ${path}. This change to it will conflict when it merges`, `work on something else until ${change.label} merges, or ask the lead to put this task after it`, { file: path }));
+      }
     }
   }
   return problems;

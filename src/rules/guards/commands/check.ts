@@ -17,6 +17,7 @@ import { fileRules, plainArgs, type FileRules } from '../lead-only/targets.ts';
 import { withBudget } from '../bash/read/run.ts';
 import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
+import { checkCommitPrivacy } from './commit-privacy.ts';
 
 export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
@@ -101,7 +102,11 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // private mark names the mark, which is the part the agent must fix (#391, #829).
       checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder } }) ??
       checkPublish(words, env) ??
-      (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd }) : null);
+      (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd }) : null) ??
+      // Last, so a worker's own rule names the case first. The commit's content: a repo with no
+      // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
+      // history (#824). Only a commit pays for it.
+      checkCommitPrivacy(words, { env, privacy: config?.privacy, folder: postCwd });
     if (reason) return reason;
     later ??=
       checkGitConfigEnvironment(words) ??

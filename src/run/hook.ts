@@ -16,6 +16,7 @@ import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/message.ts';
 import type { DeskAgent } from '../rules/pr.ts';
 import { loadMarks, makeRedactor } from '../rules/privacy.ts';
+import { realHomeRead, useRealHome } from '../rules/privacy/home.ts';
 import { findEnvironmentValues, makeSecretHider, SECRET } from '../rules/privacy/secrets.ts';
 
 // ---- The stop log (#621) ----
@@ -1219,7 +1220,8 @@ function leaseMapAt(folder: string, now: number): LeaseMap | null {
     leaseMapCache = { file, mtimeMs: stats.mtimeMs, size: stats.size, ...readLeaseMap(file) };
   }
   const { map, builtAt } = leaseMapCache;
-  if (map === null || !Number.isFinite(builtAt) || now - builtAt > LEASE_MAX_AGE_MS) return null;
+  // A map dated ahead of this clock is no map either, as `conflicts` and doctor read it.
+  if (map === null || !Number.isFinite(builtAt) || now - builtAt > LEASE_MAX_AGE_MS || builtAt - now > 60_000) return null;
   return map;
 }
 
@@ -1258,6 +1260,9 @@ function leaseBranch(folder: string): string {
 function leaseFinding(path: string, folder: string, now: number, branches: Map<string, string>): Finding | null {
   let branch = branches.get(folder);
   if (branch === undefined) branches.set(folder, (branch = leaseBranch(folder)));
+  // A detached HEAD is a rebase or a bisect: no branch to compare, so the lease lets it pass,
+  // as a missing map does. The commit check allows a detached HEAD too.
+  if (branch === '') return null;
   const lease = leaseFor(path, branch, leaseMapAt(folder, now));
   if (lease === null) return null;
   const what = `${lease.label} is moving ${path}. An edit here now will conflict when it merges`;
@@ -1387,7 +1392,10 @@ export function startGuard(): Guard {
   // The main thread's stack (V8's default, just under 1 MB), not a worker's default 4 MB:
   // the guard reads a command the same way in the worker as in `judge`, so a command too
   // deep to read there is refused here too, not let through.
-  const worker = new Worker(workerStart(), { eval: true, workerData: { yokotenJudge: true }, resourceLimits: { stackSizeMb: WORKER_STACK_MB } });
+  // The real home is a process slot, not an env value: a worker thread does not inherit it,
+  // so pass what the main thread resolved, and the privacy check reads the same folder (#824).
+  const realHome = realHomeRead()();
+  const worker = new Worker(workerStart(), { eval: true, workerData: { yokotenJudge: true, realHome }, resourceLimits: { stackSizeMb: WORKER_STACK_MB } });
   worker.unref();
   let ended: string | null = null;
   let onEnd: (what: string) => void = () => {};
@@ -1458,6 +1466,9 @@ await import('../host/gh-commands.ts');
 
 // The worker's side: wait for one action, judge it and send the finding back.
 if (!isMainThread && parentPort && workerData?.yokotenJudge) {
+  // A worker thread has its own globals: keep the main thread's real home, so a test's
+  // stand-in and the password database give the same answer here as there (#824).
+  if (typeof workerData.realHome === 'string') useRealHome(() => workerData.realHome as string);
   const port = parentPort;
   port.once('message', ({ action, options }: { action: Action; options: JudgeOptions }) => port.postMessage(judge(action, options)));
 }

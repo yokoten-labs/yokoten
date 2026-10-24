@@ -156,11 +156,12 @@ export async function runConflicts(invocation: Invocation): Promise<number> {
     return 1;
   }
   const { map, notes } = built;
-  const word = options.values['--rebuild'];
-  if (word !== undefined) return rebuild(map, word, invocation);
   // The guard reads this file and never runs git (record 0013), so a map kept now is cheap
   // for every tool call that follows. A map that can't be kept is a note: the answer stands.
+  // Kept before --rebuild too: the rebuild prompt is read from the same map the guard holds.
   const notKept = writeMap(root, invocation.env, map);
+  const word = options.values['--rebuild'];
+  if (word !== undefined) return rebuild(map, word, invocation);
   if (json) printJson(invocation, map);
   else print(invocation, summaryLines(map));
   for (const note of [...opened.notes, ...notes, ...(notKept === null ? [] : [notKept])]) say(invocation, `note: ${note}\n`, invocation.stderr);
