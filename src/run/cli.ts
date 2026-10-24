@@ -226,6 +226,20 @@ export const COMMANDS: Command[] = [
     example: 'yokoten update --write',
   },
   {
+    name: 'upgrade',
+    summary: 'yokoten itself, to the newest version',
+    usage: '',
+    text: [
+      'Brings yokoten itself to the newest version. With the Claude Code plugin on, it',
+      'updates the marketplace, then the plugin, with git told to fetch github.com over',
+      'HTTPS for those two calls only. A marketplace that fetches over SSH moves to the',
+      'HTTPS address first, so no GitHub SSH key is needed. Without the plugin, it names',
+      'the command that installs the newest yokoten and runs nothing.',
+    ],
+    options: [],
+    example: 'yokoten upgrade',
+  },
+  {
     name: 'doctor',
     summary: 'the road: where this project is and its next step',
     usage: '[--session] [--json] [--agent <name>]',
@@ -675,7 +689,7 @@ export function commandHelp(command: Command): string[] {
  * leave the rest. Every command is in exactly one group; a test keeps it that way.
  */
 export const COMMAND_GROUPS: readonly { title: string; names: readonly string[] }[] = [
-  { title: 'Start', names: ['install', 'init', 'doctor', 'trust', 'uninstall'] },
+  { title: 'Start', names: ['install', 'init', 'doctor', 'trust', 'uninstall', 'upgrade'] },
   { title: 'Every day', names: ['check', 'conflicts', 'train', 'pr', 'changelog', 'explain', 'stops', 'marks', 'redact', 'test'] },
   { title: 'A team of agents', names: ['worker', 'desk', 'msg', 'board', 'bot', 'anchor', 'provenance', 'mcp'] },
   { title: 'Keep the project healthy', names: ['update', 'adopt', 'ci-health', 'borrowed', 'learn', 'hook', 'help', 'version'] },

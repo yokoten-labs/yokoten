@@ -1,14 +1,16 @@
-// `yokoten` with no command, `init`, `update`, `install` and `uninstall`: they write yokoten into a project or a machine.
+// `yokoten` with no command, `init`, `update`, `install`, `uninstall` and `upgrade`: they write yokoten into a project or a machine, or bring it up to date.
 
 import { existsSync, readSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { ghIn } from '../host/github/index.ts';
-import { loadConfig } from '../rules/config.ts';
+import { type Env, loadConfig } from '../rules/config.ts';
 import { homeOf, NO_HOME } from '../rules/privacy.ts';
 import { formatFinding } from '../rules/message.ts';
 import { init, trust, undoTrust, updateCoreRules } from '../setup/init.ts';
 import { type Ask, install, isMachineSetUp, uninstall } from '../setup/install.ts';
 import { readOriginUrl, setUpPlanning } from '../setup/plan.ts';
+import { enabledPlugin, HTTPS_ADDRESS, readPluginMarketplace } from '../setup/advice/marketplace.ts';
 import { type Invocation, noRootFinding, type Output, parse, print, requireRoot, rootOf, usage } from './shared.ts';
 
 /**
@@ -187,5 +189,97 @@ export function runUninstall(invocation: Invocation): number {
   if (typeof options === 'string') return usage(invocation, options);
   const done = uninstall(invocation.env);
   print(invocation, done.lines);
+  return done.ok ? 0 : 1;
+}
+
+/** The name Claude Code gives the marketplace when it is added by its address: the manifest's name. */
+const MARKETPLACE_NAME = 'yokoten';
+
+/** A clone over a slow line takes minutes; ten is a hang. */
+const CLAUDE_TIMEOUT = 600_000;
+
+/**
+ * A per-process git config, for the two update calls only: `insteadOf` sends a `git@github.com:`
+ * address over HTTPS. Nothing in the user's own git config changes (#950).
+ */
+const HTTPS_GIT: Env = {
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'url.https://github.com/.insteadOf',
+  GIT_CONFIG_VALUE_0: 'git@github.com:',
+};
+
+/** A step's own line: the result first, then what it did. */
+const ok = (text: string): string => `ok      ${text}`;
+const failed = (text: string): string => `failed  ${text}`;
+
+/** What `yokoten upgrade` did: its lines, and whether every step worked. */
+export interface UpgradeDone {
+  ok: boolean;
+  lines: string[];
+}
+
+/** Claude Code's command. Windows has no `claude` without a suffix: the shell finds `claude.cmd`. */
+const claudeFile = (): string => (process.platform === 'win32' ? 'claude.cmd' : 'claude');
+
+/**
+ * Runs `claude <args>` with `env`. A failure keeps the last line it said, so the user reads
+ * Claude Code's own words, and the command to run by hand for the rest.
+ */
+function runClaude(args: string[], env: Env): { ok: boolean; said: string } {
+  const result = spawnSync(claudeFile(), args, { env, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32', timeout: CLAUDE_TIMEOUT });
+  if (result.error) return { ok: false, said: result.error.message };
+  const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+  const said = output.split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
+  return { ok: result.status === 0, said };
+}
+
+/**
+ * Brings the yokoten plugin to the newest version: the marketplace, then the plugin, over
+ * HTTPS. Without the plugin it names the one command that installs the newest yokoten and
+ * runs nothing: there is nothing of yokoten's to update in Claude Code then.
+ */
+export function upgrade(env: Env): UpgradeDone {
+  const plugin = enabledPlugin(env);
+  if (plugin === null) {
+    return {
+      ok: true,
+      lines: [
+        'yokoten upgrade: yokoten is not a Claude Code plugin here, so there is no plugin to update.',
+        'To get the newest yokoten, run: npx yokoten@latest',
+      ],
+    };
+  }
+  const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
+  // Each step says one line. A failed step stops the rest: the next one needs it.
+  const step = (label: string, args: string[], stepEnv: Env = env): boolean => {
+    const done = runClaude(args, stepEnv);
+    lines.push(done.ok ? ok(label) : failed(label));
+    if (done.ok) return true;
+    if (done.said) lines.push(`  ${done.said}`);
+    lines.push(`To see the whole message, run this by hand: claude ${args.join(' ')}`);
+    return false;
+  };
+  const marketplace = readPluginMarketplace(env);
+  let name = marketplace?.name ?? plugin.marketplace;
+  // A github source is cloned over SSH, so it fails on a machine with no GitHub SSH key:
+  // the marketplace moves to the HTTPS address first, and the same channel is installed again.
+  if (marketplace?.source === 'github') {
+    lines.push('The marketplace fetches over SSH; this moves it to the HTTPS address, which needs no SSH key.');
+    if (!step(`removed the marketplace ${name}`, ['plugin', 'marketplace', 'remove', name])) return { ok: false, lines };
+    if (!step(`added the marketplace by its HTTPS address: ${HTTPS_ADDRESS}`, ['plugin', 'marketplace', 'add', HTTPS_ADDRESS])) return { ok: false, lines };
+    name = MARKETPLACE_NAME;
+    if (!step(`installed ${plugin.name}@${name} again`, ['plugin', 'install', `${plugin.name}@${name}`])) return { ok: false, lines };
+  }
+  if (!step(`updated the marketplace ${name}`, ['plugin', 'marketplace', 'update', name], { ...env, ...HTTPS_GIT })) return { ok: false, lines };
+  if (!step(`updated the plugin ${plugin.name}@${name}`, ['plugin', 'update', `${plugin.name}@${name}`], { ...env, ...HTTPS_GIT })) return { ok: false, lines };
+  lines.push('Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts.');
+  return { ok: true, lines };
+}
+
+export function runUpgrade(invocation: Invocation): number {
+  const options = parse('upgrade', invocation.args);
+  if (typeof options === 'string') return usage(invocation, options);
+  const done = upgrade(invocation.env);
+  print(invocation, done.lines, done.ok ? invocation.stdout : invocation.stderr);
   return done.ok ? 0 : 1;
 }
