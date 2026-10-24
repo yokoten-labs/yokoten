@@ -76,6 +76,30 @@ test('release: making a tag is creating a release, so the owner does it (#812)',
   assert.equal(checkCommand('git tag v1$(id)', { cwd: process.cwd(), env: {} })?.fix, 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way');
 });
 
+test('release: a tag name with a shell character is quoted in the refusal, so a shell cannot run it (#962)', () => {
+  for (const [command, expected] of [
+    ['git tag v1$(id)', `creating the tag 'v1$(id)'`],
+    ['git tag `id`', "creating the tag '`id`'"],
+    ["git tag -a 'a b; rm x' -m m", `creating the tag 'a b; rm x'`],
+    [`git tag "v1'x"`, `creating the tag 'v1'\\''x'`],
+    ['git tag "v1$(id)"', `creating the tag 'v1$(id)'`],
+    ['git update-ref refs/tags/v1$(id) HEAD', `creating the tag 'v1$(id)'`],
+  ] as Array<[string, string]>) {
+    const found = checkCommand(command, { cwd: process.cwd(), env: {} });
+    assert.equal(found?.id, 'release', command);
+    // Positive control: the old refusal repeated the name as it is, which the shell would run.
+    assert.equal(found?.what, expected, command);
+  }
+  // A name a shell can copy safely prints as it did before (#962).
+  assert.equal(checkCommand('git tag v1.2.0', { cwd: process.cwd(), env: {} })?.what, 'creating the tag v1.2.0');
+  assert.equal(checkCommand('git tag -a v1.2.0 -m release', { cwd: process.cwd(), env: {} })?.what, 'creating the tag v1.2.0');
+  // A name a shell would run prints only inside quotes, never as it is (#962).
+  for (const command of ['git tag v1$(id)', 'git tag $(id)', 'git update-ref refs/tags/$(id) HEAD']) {
+    const found = checkCommand(command, { cwd: process.cwd(), env: {} });
+    assert.match(found?.what ?? '', /^creating the tag '/, command);
+  }
+});
+
 test('release: making a repo public is the owner\'s', () => {
   blocked('gh repo edit --visibility public');
   blocked('gh repo edit octo/demo --visibility=public');

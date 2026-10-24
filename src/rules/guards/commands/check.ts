@@ -138,6 +138,17 @@ function releaseFix(): string {
 const release = (what: string) => finding('release', what, releaseFix());
 const tagFix = 'stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way';
 
+/** A character a shell reads: a name holding one must not print as it is in a refusal (#962). */
+const SHELL_READS = /[^A-Za-z0-9._@+/-]/;
+
+/**
+ * A tag name in a refusal must not be a command a person who copies the line into a shell
+ * runs (#962): a name with a shell-reading character prints in single quotes, a plain name as today.
+ */
+function shellQuoted(tag: string): string {
+  return SHELL_READS.test(tag) ? `'${tag.replaceAll(`'`, `'\\''`)}'` : tag;
+}
+
 // `git tag` alone, `git tag -l` and `git tag --contains` only read. Deleting a local tag
 // (`-d`) and verifying one (`-v`) publish nothing. Every other `git tag` writes a tag,
 // which the owner alone creates (record 0028): `git push --follow-tags` would publish it.
@@ -375,9 +386,9 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
       // Name the tag, as the branch's #828 message did; a form whose name the guard cannot
       // read still refuses, with the whole command as the word it names (#873).
       if (tag !== null) {
-        return finding('release', `creating the tag ${tag}`, tagFix);
+        return finding('release', `creating the tag ${shellQuoted(tag)}`, tagFix);
       }
-      return release(`git tag ${tagArgs.join(' ')} creates a tag`);
+      return release(`git tag ${tagArgs.map(shellQuoted).join(' ')} creates a tag`);
     }
   }
   if (sub === 'reset' && args.some((arg) => isGitLongOption(arg, '--hard'))) {
@@ -396,7 +407,7 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
     // is already refused as `move-default-branch`, since it can write any ref (#847).
     const tag = tagToUpdate(updateArgs);
     if (tag !== null && !env.YOKOTEN_RELEASE_APPROVAL) {
-      return finding('release', `creating the tag ${tag}`, tagFix);
+      return finding('release', `creating the tag ${shellQuoted(tag)}`, tagFix);
     }
   }
   const skip = args.includes('--no-verify') ? '--no-verify' : sub === 'commit' ? args.find((a) => /^-[a-z]*n[a-z]*$/i.test(a)) : undefined;
