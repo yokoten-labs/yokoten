@@ -238,6 +238,28 @@ export function readBoardPulls(gh: Gh, repo: string): BoardPull[] | string {
   return boardPullsOf(answers);
 }
 
+/** The most open pull requests the sweep reads: enough for one day's work, and a full answer is a doubt (#708). */
+const OPEN_PULL_LIMIT = 1000;
+
+/**
+ * The branches of `repo`'s open pull requests, for the sweep (#708), or the reason gh
+ * can't read them. A draft is an open pull request too: its desk keeps its work.
+ *
+ * A full answer means the list may stop at the limit, and a branch past it would lose its
+ * desk (#802 review): then every merged desk is listed, never removed.
+ */
+export function readOpenPullBranches(gh: Gh, repo: string): string[] | string {
+  let rows: unknown;
+  try {
+    rows = JSON.parse(gh(['pr', 'list', '--repo', repo, '--state', 'open', '--json', 'headRefName', '--limit', String(OPEN_PULL_LIMIT)]));
+  } catch (error) {
+    return boardPullsFailed(error);
+  }
+  if (!Array.isArray(rows)) return 'gh gave no pull request list: run it again';
+  if (rows.length >= OPEN_PULL_LIMIT) return `gh listed ${rows.length} open pull requests, its limit: the list may stop there`;
+  return rows.filter(isObject).map((row) => asText(row.headRefName)).filter(Boolean);
+}
+
 /** readBoardPulls without blocking (#688): both queries run at once, and `signal` stops them. */
 export async function readBoardPullsLater(gh: GhLater, repo: string, signal?: AbortSignal): Promise<BoardPull[] | string> {
   let answers: string[];
