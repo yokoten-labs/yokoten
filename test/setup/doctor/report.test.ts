@@ -162,7 +162,12 @@ test('doctor: the tag bypass and the release environment each show one line with
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
   const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
-  const lineOf = (routes: Record<string, unknown>, key: string) => run(routes).lines.find((line) => new RegExp(`^ {4}(done|to do) +${key}\\b`).test(line)) ?? '';
+  const lineOf = (routes: Record<string, unknown>, key: string) => run(routes).lines.find((line) => {
+    if (new RegExp(`^ {4}to do +${key}\\b`).test(line)) return true;
+    // The done steps of a stage share one line: the key is one name in it (#946).
+    const done = /^ {4}done +(.*)$/.exec(line);
+    return done?.[1]?.split(', ').some((name) => name === key || name.startsWith(`${key} (`)) ?? false;
+  }) ?? '';
   // All set: no line for these asks the owner for anything.
   for (const key of ['tag-bypass', 'release-reviewer', 'release-tag-rule']) assert.match(lineOf(GOOD, key), /^ {4}done /, key);
   // Positive control: each known-bad setting is caught, with its own line and GitHub's menu.
@@ -223,10 +228,12 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
   const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
   let result = run(GOOD);
   const text = () => result.lines.join('\n');
-  // No origin remote at all: say so, in one line for every step that reads the server (#208, #502).
+  // No origin remote at all: say so once in each block that has such steps (#502, #946).
   const cant = result.lines.filter((l) => /can't check/.test(l));
-  assert.equal(cant.length, 1, cant.join('\n'));
-  assert.match(text(), /^ {4}can't check [a-z, -]*protection[a-z, -]*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/m);
+  assert.equal(cant.length, 3, cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check labels, milestone: there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check review \(Scorecard: Code-Review\): there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {4}can't check .*protection.*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/.test(line)), cant.join('\n'));
   assert.ok(!/can't check.*can't check/.test(text()), 'no line says "can\'t check" twice');
   assert.equal(result.report.steps?.find((s) => s.id === 'protection')?.mark, "can't check", 'the data still has each step');
   assert.ok(result.lines.some((l) => /secret scanning with push protection/.test(l)), 'the by-hand list when nothing is read');
@@ -249,6 +256,32 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
   // A session never calls gh, so the server steps never hold its stage.
   const session = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: () => { throw new Error('a session called gh'); } });
   assert.notEqual(session.report.next?.id, 'protection');
+});
+
+test('doctor: the next step comes first, each part is a block, and done steps share a line (#946)', async () => {
+  const sandbox = makeSandbox();
+  const text = (await sandbox.call(['doctor'])).stdout;
+  const lines = text.trimEnd().split('\n');
+  // The first line says where the project is and the one step to take next.
+  assert.match(lines[0] ?? '', /^stage \d of 5, [^.]+\. Next: .+\.$/, text);
+  // Every stage and every part has a short heading, then a blank line before it.
+  const stageHeads = lines.map((line, at) => ({ line, at })).filter(({ line }) => /^ {2}\d\. \S/.test(line));
+  assert.equal(stageHeads.length, 5, text);
+  for (const { line, at } of stageHeads) assert.equal(lines[at - 1], '', `${line} starts its block`);
+  for (const heading of ['project:', 'unsaved work (only on this machine):', 'machine:', 'server (read only;']) {
+    const at = lines.findIndex((line) => line === heading || line.startsWith(heading));
+    assert.ok(at > 0, heading);
+    assert.equal(lines[at - 1], '', `${heading} starts its block`);
+  }
+  // The done steps of a stage share one line, and none of them keeps its own.
+  const done = lines.filter((line) => /^ {4}done  /.test(line));
+  assert.ok(done.length > 0, text);
+  assert.ok(done.some((line) => line.includes(', ')), 'a stage with several done steps lists them together');
+  // --json is the same data as before: one entry per step, with no block layout.
+  const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { steps: { id: string }[]; blocks?: unknown };
+  assert.ok(json.steps.length > 0);
+  assert.equal(json.steps.filter((step) => step.id === 'rules').length, 1);
+  assert.equal(json.blocks, undefined);
 });
 
 // #561: a server read that hangs stops at its time cap, and the step says why. The cap's
@@ -298,7 +331,7 @@ test('doctor: on another host, each forge step says once what it asks, with no G
       if (session) continue;
       for (const key of FORGE_STEPS) {
         assert.equal(result.report.steps?.find((s) => s.id === key)?.mark, "can't check", `${remote}: ${key}`);
-        const lines = result.lines.filter((line) => new RegExp(`^ {4}can't check ${key}\\b`).test(line));
+        const lines = result.lines.filter((line) => new RegExp(`^ {4}can't check +${key}\\b`).test(line));
         assert.equal(lines.length, 1, `${remote}: ${key} has one line`);
         assert.ok(lines[0].includes(`: yokoten can't check this on ${label} yet; do it by hand: `), `${remote}: ${key}`);
       }
@@ -440,13 +473,13 @@ test('road: the labels and milestone steps are stage 2; missing labels or no ope
 test('doctor: the no-build-output step looks at the tracked files (#56)', async () => {
   const sandbox = makeSandbox();
   const line = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((l) => / no-build-output/.test(l)) ?? '';
-  assert.match(await line(), /^ +done +no-build-output/);
+  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
   sandbox.write('build/a.js', 'x\n');
   sandbox.write('lib/x.so', 'x\n');
   sandbox.git('add', '.');
   assert.match(await line(), /^ +to do +no-build-output \(Scorecard: Binary-Artifacts\): build output in the repo \(build\/a\.js, lib\/x\.so\)/);
   sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['build/**', 'lib/**'] }));
-  assert.match(await line(), /^ +done +no-build-output/);
+  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
 });
 
 test('doctor: shows check\'s notes, worded as check words them, and they never change the exit code (#228)', async () => {
@@ -611,7 +644,7 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   const jumpLine = /^stage \d (is done too|counts as done): /m;
   // The first run has nothing to compare with: stage 1 is next, and no line.
   const first = await sandbox.call(['doctor']);
-  assert.match(first.stdout, /^the road: stage 1 of 5/m);
+  assert.match(first.stdout, /^stage 1 of 5, /m);
   assert.doesNotMatch(first.stdout, jumpLine);
   // The stage file sits next to the lessons state, in the git folder, not one folder deeper (#514).
   const stagePath = join(sandbox.repo, '.git/yokoten/stage.json');
@@ -626,14 +659,14 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const jumpedRun = await sandbox.call(['doctor']);
-  assert.match(jumpedRun.stdout, /^the road: stage 4 of 5/m);
+  assert.match(jumpedRun.stdout, /^stage 4 of 5, /m);
   // Each passed stage says its own reason: stage 2 has steps only the server can check,
   // while stage 3 was already in place.
   assert.match(jumpedRun.stdout, /^stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
   assert.match(jumpedRun.stdout, /^stage 3 is done too: its steps were already in place$/m);
   // The lines are told once: the next run starts from stage 4.
   const later = await sandbox.call(['doctor']);
-  assert.match(later.stdout, /^the road: stage 4 of 5/m);
+  assert.match(later.stdout, /^stage 4 of 5, /m);
   assert.doesNotMatch(later.stdout, jumpLine);
   // A session stays short: it never prints the lines.
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, jumpLine);
@@ -645,14 +678,14 @@ test('doctor: a jump over one stage says that stage, in the singular (#514)', as
   assert.equal((await sandbox.call(['init'])).status, 0);
   sandbox.withTests();
   const atTwo = await sandbox.call(['doctor']);
-  assert.match(atTwo.stdout, /^the road: stage 2 of 5/m);
+  assert.match(atTwo.stdout, /^stage 2 of 5, /m);
   // The remote finishes stage 2, and stage 3 was already in place: only stage 3 was
   // passed, so the line names one stage and not "stages 3 are".
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const jumped = await sandbox.call(['doctor']);
-  assert.match(jumped.stdout, /^the road: stage 4 of 5/m);
+  assert.match(jumped.stdout, /^stage 4 of 5, /m);
   assert.match(jumped.stdout, /^stage 3 is done too: its steps were already in place$/m);
   assert.doesNotMatch(jumped.stdout, /^stages /m);
 });
