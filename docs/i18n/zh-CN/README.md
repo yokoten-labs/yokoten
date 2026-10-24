@@ -65,7 +65,7 @@ v0.1.1 新增：几个 AI 会话在同一个仓库里干活时，`yokoten confli
 | DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
 | Grok CLI (`grok`) | yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash` |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **语言**：什么语言都行。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的测试命令。
 

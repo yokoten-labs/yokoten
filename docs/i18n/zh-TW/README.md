@@ -65,7 +65,7 @@ v0.1.1 新增：幾個 AI 工作階段在同一個儲存庫裡工作時，`yokot
 | DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
 | Grok CLI (`grok`) | yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash` |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **語言**：什麼語言都可以。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的測試指令。
 

@@ -65,7 +65,7 @@ v0.1.1 の新機能：一つのリポジトリで複数の AI セッションが
 | DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
 | Grok CLI (`grok`) | yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash` |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **言語**：どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
 
