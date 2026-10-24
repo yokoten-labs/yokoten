@@ -65,8 +65,10 @@ test('plugin: the marketplace lists the three release channels and their refs (#
   const [stable, beta, dev] = market.plugins;
   for (const entry of market.plugins) {
     assert.match(entry.name, idPattern);
-    assert.equal(entry.source.source, 'github', 'Claude Code names a tag on a github source with source and ref');
-    assert.equal(entry.source.repo, 'yokoten-labs/yokoten');
+    // An https url, not a github source: Claude Code clones a github source over SSH, which
+    // fails, install and every update, on a machine with no GitHub SSH key (#950).
+    assert.equal(entry.source.source, 'url', 'Claude Code names a tag on a url source with source and ref');
+    assert.equal(entry.source.url, 'https://github.com/yokoten-labs/yokoten.git');
     assert.equal(typeof entry.description, 'string');
     // No version in a marketplace entry: the git ref is the version users get.
     assert.equal(entry.version, undefined);
