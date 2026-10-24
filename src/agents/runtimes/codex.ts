@@ -78,6 +78,8 @@ export function readToolCall(input: unknown): Action {
     command: name === SHELL ? command : undefined,
     paths: !command ? [] : name === 'apply_patch' ? patchPaths(command) : name === SHELL ? shellPatchPaths(command, cwd) : [],
     cwd,
+    // On Windows the shell tool runs PowerShell: the guard reads its commands that way (#332).
+    shell: process.platform === 'win32' && name === SHELL ? 'powershell' : undefined,
     // Since rust-v0.163.0 a subagent's call may carry `agent_type`: a built-in role
     // (default, worker, explorer) or a custom one's name from .codex/agents/*.toml. Not
     // on the docs page yet, so it is optional; without it YOKOTEN_ROLE decides. A type
