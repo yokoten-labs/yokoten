@@ -47,9 +47,9 @@ npx yokoten doctor       # 你在第幾關，下一步做什麼
 
 ## 你會看到的畫面
 
-agent 嘗試強制 push。yokoten 把它擋下，說明原因，並給出改法。接著 `doctor` 只指出下一步那一件事：
+agent 嘗試推送發版 tag。yokoten 把它擋下，說明原因，並告訴人該怎麼做。接著 `doctor` 只指出下一步那一件事：
 
-<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="680" alt="終端機畫面。agent 執行 git push --force origin main，yokoten 的 hook 把它擋下，說明發生了什麼、為什麼危險、該怎麼改：改用 --force-with-lease。接著 yokoten doctor 顯示目前在第 1 關（共 5 關），下一步是加上測試。">
+<img src="https://raw.githubusercontent.com/yokoten-labs/yokoten/main/docs/assets/demo.svg" width="823" alt="終端機畫面。agent 執行 git push --tags origin，yokoten 的 hook 把它擋下，說明發生了什麼、為什麼，以及主人照發版指南的步驟發版。接著 yokoten doctor 顯示目前在第 1 關（共 5 關），下一步是加上測試。">
 
 ## 讓一組 agent 一起工作
 

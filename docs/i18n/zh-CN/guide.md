@@ -72,9 +72,9 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
-Why: A tag publishes a release, and only you decide when to release.
-Do instead: If the owner asked for this, they run `git tag v1.2.0` themselves.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-safeguard
+Why: Only the owner decides when to release.
+Do instead: The owner creates the tag, with the steps in the release guide; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
 第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Do instead`
@@ -183,16 +183,16 @@ Status 字段设成 Todo、In progress、In review、Done 四项。建看板要 
 AI 想推送发版 tag 时，会看到：
 
 ```
-yokoten: git push --tags pushes tags. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push --tags pushes tags [release]
+Why: Only the owner decides when to release.
+Do instead: The owner releases, with the steps in the release guide; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
-提示里写的是启动当前这个 agent 的命令：`codex`、`gemini`、`agy`，或者
-`dsh tui --patch .dsh/yokoten.patch.yml`。Copilot CLI 发来的调用和 Claude Code 一模一样，分不出来，
-所以这条提示会加一句 "or your agent's command"。Muse Code 跑钩子时只留下几个环境变量，`YOKOTEN_ROLE`
-就传不过去；也没见过它把 `YOKOTEN_RELEASE_APPROVAL` 传给钩子。所以在 Muse Code 里，提示会让主人
-到 Muse Code 外面去发版。Gemini CLI 如果开了严格的环境变量清理，这个变量会被删掉，主人就要到
-Gemini CLI 外面去发。
+每条提示都一样：让 agent 停下来，请主人发版。发版批准的办法、以及启动每个 agent 的命令，
+都在英文指南的[核心规则](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules)里。
+Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它们外面发版。Gemini CLI 如果开了严格的
+环境变量清理，这个变量会被删掉，主人就要到 Gemini CLI 外面去发。
 
 （提示用英文写，因为 AI 读英文最不容易出错。）
 

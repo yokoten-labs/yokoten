@@ -118,11 +118,17 @@ Tell the user in plain words, one step at a time, and offer to do it (as-is, lig
 そして、エージェントがリリースのタグを push しようとすると、こう出ます。
 
 ```
-yokoten: git push --tags pushes tags. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push --tags pushes tags [release]
+Why: Only the owner decides when to release.
+Do instead: The owner releases, with the steps in the release guide; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
-直し方は、フックが走らせたエージェントを始めるコマンドを名指しします。`codex`、`gemini`、`agy`、または `dsh tui --patch .dsh/yokoten.patch.yml` です。Copilot CLI は Claude Code と同じ呼び出しを送るので、そのメッセージは「またはあなたのエージェントのコマンド」と言います。Muse Code はフックに短い変数の一覧しか渡さず、`YOKOTEN_ROLE` は失われます。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse Code ではメッセージはその外でリリースするよう伝えます。Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
+直し方はどのエージェントでも同じです。エージェントに止まってオーナーにリリースを任せるよう伝えます。
+リリースの承認の方法と、各エージェントを始めるコマンドは、英語ガイドの
+[核心ルール](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules)にあります。
+Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
+Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
 
 どのメッセージも同じ三つの部分を持ちます。何が起きたか（**what**）、なぜ大事か（**why**）、そして直し方（**fix**）です。コマンドか編集です。ファイルの問題はその場所 `file:line:` から始まります。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。このガイドのある節がルールを説明しているとき、メッセージはその節へのリンクを最後の行に付けます。`docs: <url>` です。
 

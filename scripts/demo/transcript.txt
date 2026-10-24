@@ -1,8 +1,9 @@
-> git push --force origin main
+> git push --tags origin
 !   blocked by the yokoten hook (exit 2)
--   yokoten: git push --force forces the push.
--   A plain force push can throw away work that someone else pushed.
--   Use --force-with-lease, which stops when the remote has work you have not seen.
+-   yokoten stopped this: git push --tags pushes tags [release]
+-   Why: Only the owner decides when to release.
+-   Do instead: The owner releases, with the steps in the release guide; do not look for another way.
+-   More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 
 $ yokoten doctor
 - yokoten 0.1.0, self-test ok
