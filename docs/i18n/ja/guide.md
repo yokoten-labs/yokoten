@@ -126,7 +126,7 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-rel
 
 直し方はどのエージェントでも同じです。エージェントに止まってオーナーにリリースを任せるよう伝えます。
 リリースの承認の方法と、各エージェントを始めるコマンドは、英語ガイドの
-[核心ルール](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules)にあります。
+[How to release](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release)にあります。
 Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
 Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
 

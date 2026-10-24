@@ -190,7 +190,7 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-rel
 ```
 
 每条提示都一样：让 agent 停下来，请主人发版。发版批准的办法、以及启动每个 agent 的命令，
-都在英文指南的[核心规则](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules)里。
+都在英文指南的[How to release](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release)里。
 Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它们外面发版。Gemini CLI 如果开了严格的
 环境变量清理，这个变量会被删掉，主人就要到 Gemini CLI 外面去发。
 
