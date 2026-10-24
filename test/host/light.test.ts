@@ -69,12 +69,12 @@ test('guard cost: the shell times line gives user plus system CPU of the child, 
   assert.equal(guardLine({ wallMs: 90.4, cpuMs: null }), '90 ms per command');
 });
 
-test('guard cost: a real run is measured in wall time and, off Windows, CPU time (#461)', () => {
+test('guard cost: a real run is measured in wall time (#461)', () => {
   const sandbox = makeSandbox();
   const cost = measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i; process.stdout.write(String(n))'], '', { cwd: sandbox.repo, env: sandbox.env });
   assert.ok(cost, 'it ran');
   assert.ok(cost.wallMs > 0);
-  if (process.platform !== 'win32') assert.ok(cost.cpuMs !== null && cost.cpuMs > 0, 'the CPU time of the child is there');
+  assert.equal(cost.cpuMs, null);
   assert.equal(measureRun(['/no/such/program'], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a program that is not there is not a cost');
   assert.equal(measureRun([sandbox.repo], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a folder is found, but it is not a program');
   const refused = measureRun([process.execPath, '-e', 'process.exit(2)'], '', { cwd: sandbox.repo, env: sandbox.env });

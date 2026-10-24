@@ -92,16 +92,17 @@ export function parseChildTimes(text: string): number | null {
  */
 export function measureRun(argv: string[], input: string, options: { cwd: string; env: Record<string, string | undefined> }): GuardCost | null {
   const start = process.hrtime.bigint();
-  const isPosix = process.platform !== 'win32';
-  const result = isPosix
-    ? spawnSync('sh', ['-c', '"$@" >/dev/null 2>&1; code=$?; times; printf "code=%s" "$code" >&2', 'sh', ...argv], { ...options, input, encoding: 'utf8', timeout: 10_000 })
-    : spawnSync(argv[0], argv.slice(1), { ...options, input, encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });
+  const result = spawnSync(argv[0], argv.slice(1), {
+    ...options,
+    input,
+    encoding: 'utf8',
+    timeout: 10_000,
+    stdio: ['pipe', 'ignore', 'ignore'],
+    windowsHide: true,
+  });
   const wallMs = Number(process.hrtime.bigint() - start) / 1e6;
   if (result.error || result.status === null) return null;
-  if (!isPosix) return { wallMs, cpuMs: null };
-  const code = /(?:^|\n)code=(\d+)$/.exec((result.stderr ?? '').trim())?.[1];
-  if (code === undefined || code === '126' || code === '127') return null;
-  return { wallMs, cpuMs: parseChildTimes(result.stdout ?? '') };
+  return { wallMs, cpuMs: null };
 }
 
 /** The cores Node may use. */
