@@ -164,6 +164,16 @@ export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean
 // A mark at the start of a line, padded to the column the next word starts in.
 const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
 const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
+// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note,
+// ? can't check. A terminal gets it; a pipe, a file or an agent keeps the word alone,
+// so an old console never shows a broken glyph. `not now` and `skipped` are not among
+// the five states, so they keep their word only.
+const MARK_GLYPH: Record<string, string> = {
+  ok: '✔', done: '✔', wrote: '✔', linked: '✔', added: '✔', removed: '✔', kept: '✔', updated: '✔',
+  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
+};
+/** The padding after a mark, two columns shorter, so the text after it keeps its column. */
+const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
 const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
 // The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
@@ -186,8 +196,12 @@ export function styleLine(line: string, isColour: boolean): string {
   if (line.startsWith('yokoten stopped this: ')) {
     outer = `${BOLD};${RED}`;
   } else if (mark) {
-    const colour = GREEN_MARKS.has(mark[2] ?? '') ? GREEN : mark[2] === 'MISSING' ? RED : YELLOW;
-    styled = `${mark[1] ?? ''}${paint(mark[2] ?? '', colour, true)}${mark[3] ?? ''}${mark[4] ?? ''}`;
+    const word = mark[2] ?? '';
+    const colour = GREEN_MARKS.has(word) ? GREEN : word === 'MISSING' ? RED : YELLOW;
+    const glyph = MARK_GLYPH[word];
+    const said = glyph === undefined ? word : `${glyph} ${word}`;
+    const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
+    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;
   } else {

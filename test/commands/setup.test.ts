@@ -21,7 +21,7 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   assert.match(first.stdout, /^yokoten is not installed on this machine yet/m);
   assert.match(first.stdout, /^This project has no yokoten rules yet/m);
   assert.match(first.stdout, /^Setup is done\. Here is where this project is now:$/m);
-  assert.match(first.stdout, /the road: stage 1 of 5/);
+  assert.match(first.stdout, /^stage 1 of 5, safety net\. Next: /m);
   assert.ok(existsSync(join(sandbox.repo, 'AGENTS.md')), 'the rules are in the project');
   assert.ok(existsSync(join(sandbox.repo, 'yokoten.json')), 'init wrote yokoten.json');
   assert.ok(existsSync(join(sandbox.home, '.local', 'share', 'yokoten', 'bin', 'yokoten.mjs')), 'install wrote the runtime');
@@ -30,7 +30,7 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   assert.doesNotMatch(again.stdout, /not installed on this machine yet/);
   assert.doesNotMatch(again.stdout, /no yokoten rules yet/);
   assert.doesNotMatch(again.stdout, /Setup is done/);
-  assert.match(again.stdout, /the road: stage 1 of 5/);
+  assert.match(again.stdout, /^stage 1 of 5, safety net\. Next: /m);
 });
 
 test('start: a shell that is not UTC ends on the line for that shell (#932)', async () => {
