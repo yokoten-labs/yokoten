@@ -164,7 +164,8 @@ export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean
 // A mark at the start of a line, padded to the column the next word starts in.
 const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
 const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
-const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)/;
+const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
+// The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
 const COMMAND = /`[^`\n]+`/g;
 // One row of `yokoten help`: two spaces, the command's name, then its summary.

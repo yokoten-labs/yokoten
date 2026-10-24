@@ -70,5 +70,5 @@ test('start: help still prints the command list (#548)', async () => {
   const result = await sandbox.call(['--help']);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /Usage: yokoten <command> \[options\]/);
-  assert.match(result.stdout, /run `yokoten` with no command in your project/);
+  assert.match(result.stdout, /Start here: run `yokoten` in your project/);
 });
