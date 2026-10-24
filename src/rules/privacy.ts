@@ -1014,7 +1014,49 @@ export function notUtc(ident: string): boolean {
   return zone !== undefined && zone !== '+0000' && zone !== '-0000';
 }
 
-export const TIME_ZONE_FIX = 'commit with TZ=UTC (`TZ=UTC git commit`, or `export TZ=UTC` in your shell); yokoten init sets it for agent sessions';
+/** The shell a person is in, from the environment: PowerShell and cmd on Windows, else SHELL. */
+export type ShellName = 'bash' | 'zsh' | 'fish' | 'powershell' | 'cmd' | 'sh';
+
+/**
+ * The shell in use (#932). SHELL names it on macOS and Linux, and in Git Bash on Windows,
+ * where ComSpec is also set; PowerShell sets PSModulePath, and cmd sets ComSpec. An unknown
+ * shell gets the POSIX line, which works in every shell that reads a profile.
+ */
+export function shellName(env: Env): ShellName {
+  const name = (env.SHELL ?? '').split(/[\\/]/).pop()?.toLowerCase() ?? '';
+  if (name === 'bash') return 'bash';
+  if (name === 'zsh') return 'zsh';
+  if (name === 'fish') return 'fish';
+  if (name === 'pwsh' || name === 'pwsh.exe' || name === 'powershell' || name === 'powershell.exe') return 'powershell';
+  if (name === 'cmd' || name === 'cmd.exe') return 'cmd';
+  if (name === 'sh' || name === 'dash' || name === 'ksh') return 'sh';
+  if (env.PSModulePath) return 'powershell';
+  if (env.ComSpec) return 'cmd';
+  return 'sh';
+}
+
+/** The line that sets a shell to UTC, and where to keep it (#932). */
+const SHELL_TIME_ZONE: Record<ShellName, { line: string; keep: string }> = {
+  bash: { line: 'export TZ=UTC', keep: 'add it to ~/.bashrc' },
+  zsh: { line: 'export TZ=UTC', keep: 'add it to ~/.zshrc' },
+  fish: { line: 'set -gx TZ UTC', keep: 'add it to ~/.config/fish/config.fish' },
+  powershell: { line: '$env:TZ = "UTC"', keep: 'add it to $PROFILE' },
+  cmd: { line: 'set TZ=UTC', keep: 'run `setx TZ UTC` once to keep it in new windows' },
+  sh: { line: 'export TZ=UTC', keep: 'add it to your shell profile' },
+};
+
+/** Whether the clock is UTC: TZ says so, or the machine's own offset is 0 (#932). */
+export function isUtcTimeZone(env: Env, offsetMinutes = new Date().getTimezoneOffset()): boolean {
+  const zone = env.TZ?.trim();
+  if (zone) return /^(?:UTC|Etc\/UTC|GMT|Etc\/GMT|Z)$/i.test(zone);
+  return offsetMinutes === 0;
+}
+
+/** The one copy-paste line for the shell in use, and where to keep it (#932). */
+export function timeZoneFix(env: Env): string {
+  const { line, keep } = SHELL_TIME_ZONE[shellName(env)];
+  return `Set your shell to UTC with \`${line}\` (${keep}); yokoten init sets it for agent sessions`;
+}
 
 /**
  * A known-bad sample, so a check can prove it still catches what it should. It is built
