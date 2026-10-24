@@ -556,6 +556,17 @@ function removeManaged(path: string, { folder = false }: { folder?: boolean } = 
   return 'removed';
 }
 
+/** True when Claude Code's user settings still name the runtime, or cannot be read. */
+function settingsName(env: Env, runtime: string): boolean {
+  const file = join(userDir(env), 'settings.json');
+  try {
+    const text = readFileSync(file, 'utf8');
+    return text.includes(runtime) || text.includes('.local/share/yokoten');
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ENOENT';
+  }
+}
+
 /** What a session start took back from an older install (#935): the files removed, and the edits that stay. */
 export type OlderInstallCleanup = { files: number; edits: string[] };
 
@@ -586,6 +597,9 @@ export function cleanOlderInstall(env: Env, { platform = process.platform }: { p
   const otherTool = codex.hasUserDir(env) || gemini.hasUserDir(env) || antigravity.hasUserDir(env) || copilot.hasUserDir(env) || grok.hasUserDir(env) || muse.hasUserDir(env) || opencode.hasUserDir(env);
   if (otherTool) return cleanup;
   const target = paths(env);
+  // The runtime stays while anything still runs it: this very process, or a hook left in
+  // the settings (a file it could not walk, or a user's own hook that calls the runtime).
+  if (resolve(HOME_DIR) === resolve(target.runtime) || settingsName(env, target.runtime)) return cleanup;
   if (existsSync(target.runtime)) {
     rmSync(target.runtime, { recursive: true, force: true });
     cleanup.files += 1;

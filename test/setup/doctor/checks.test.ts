@@ -229,6 +229,19 @@ test('doctor --session: another agent tool keeps the runtime and the launcher (#
   assert.ok(!existsSync(join(sandbox.home, '.claude/skills/yokoten')), 'the skills still go');
 });
 
+test("doctor --session: a user's own hook that runs the runtime keeps it (#935)", async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check' }] }];
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  await sandbox.call(['doctor', '--session']);
+  assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays while a hook runs it');
+  assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays with it');
+});
+
 test('doctor --session: without the plugin, an install stays as it is (#935)', async () => {
   const sandbox = makeSandbox();
   assert.equal((await sandbox.call(['install'])).status, 0);
