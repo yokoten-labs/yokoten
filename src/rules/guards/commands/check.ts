@@ -5,7 +5,7 @@ import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand 
 import { type Config, type Env } from '../../config.ts';
 import { markFinding, checkWorkerWrites } from '../worker/mark.ts';
 import { checkWorkerBox } from '../worker/box.ts';
-import { checkWorkerPointers, hostRunRemoval, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
+import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark } from '../worker/sends.ts';
 import { base, isGit, GIT_VALUE_OPTIONS, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
 import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner } from './lose-work.ts';
@@ -84,6 +84,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkGit(words, { env, config, cwd, rules }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
+      hostSettingsWrite(words) ??
       hostAlias(words) ??
       hostHiddenCommand(words) ??
       hostWorkflowOff(words) ??

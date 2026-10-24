@@ -370,6 +370,8 @@ const TEAM_PARTS = new Set(['agents', 'outbox', 'lead']);
 /** What a host adapter says about its own commands. The guard calls these and does not know the host. */
 export interface HostCommands {
   hostRunRemoval(words: string[]): Finding | undefined;
+  /** A host call that changes repository or organization settings (#825). */
+  hostSettingsWrite(words: string[]): Finding | undefined;
   hostAlias(words: string[]): Finding | undefined;
   hostHiddenCommand(words: string[]): Finding | undefined;
   /** A gh command that prints its token (#668). */
@@ -401,6 +403,10 @@ export function hostRunRemoval(words: string[]): Finding | null {
     return ghIndex(words, findProgramPlaces(words)) === -1 ? null : finding('run-remove', "the guard's GitHub command rules did not load, so it cannot read this `gh` command", 'start the session again; if it happens again, report it as a yokoten bug');
   }
   return hostCommands.hostRunRemoval(words) ?? null;
+}
+
+export function hostSettingsWrite(words: string[]): Finding | null {
+  return hostCommands?.hostSettingsWrite(words) ?? null;
 }
 
 export function hostAlias(words: string[]): Finding | null {

@@ -96,5 +96,5 @@ test('guard: a worker command that points at a config folder runs only plain rea
 // git with no option before its subcommand and no --output; less and file write no file.
 
 test('useHostCommands: a second, different registration is refused (#650)', () => {
-  assert.throws(() => useHostCommands({ hostRunRemoval: () => undefined, hostAlias: () => undefined, hostHiddenCommand: () => undefined, hostTokenReveal: () => undefined, hostWorkflowOff: () => undefined }), /already registered/);
+  assert.throws(() => useHostCommands({ hostRunRemoval: () => undefined, hostSettingsWrite: () => undefined, hostAlias: () => undefined, hostHiddenCommand: () => undefined, hostTokenReveal: () => undefined, hostWorkflowOff: () => undefined }), /already registered/);
 });
