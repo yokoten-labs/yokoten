@@ -103,7 +103,7 @@ export function pluginSourceNote(env: Env): Finding | null {
   return finding(
     'plugin-version',
     'the yokoten marketplace is a github source, so Claude Code clones it over SSH',
-    'run `yokoten upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key',
+    'run `npx yokoten@latest upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key',
     { why: 'without a GitHub SSH key the clone fails, so the plugin never updates and you stay on an old yokoten' },
   );
 }

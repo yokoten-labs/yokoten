@@ -76,12 +76,14 @@ test('start: help still prints the command list (#548)', async () => {
 // ---- upgrade (#950): a fake `claude` first on PATH writes its arguments and the git
 // variables it got. The real `claude` is never run. ----
 
-/** What one run of the fake `claude` saw: its words, and the per-process git config. */
+/** What one run of the fake `claude` saw: its words, and the last per-process git config entry. */
 interface FakeCall {
   args: string;
   count: string;
   key: string;
   value: string;
+  /** The first entry, which is the user's own when they set one. */
+  first: string;
 }
 
 const FAKE_CLAUDE = [
@@ -89,27 +91,32 @@ const FAKE_CLAUDE = [
   '{',
   '  echo "CALL $*"',
   '  echo "COUNT ${GIT_CONFIG_COUNT:-}"',
-  '  echo "KEY ${GIT_CONFIG_KEY_0:-}"',
-  '  echo "VALUE ${GIT_CONFIG_VALUE_0:-}"',
+  '  last=$(( ${GIT_CONFIG_COUNT:-0} - 1 ))',
+  '  echo "KEY $(printenv "GIT_CONFIG_KEY_$last")"',
+  '  echo "VALUE $(printenv "GIT_CONFIG_VALUE_$last")"',
+  '  echo "FIRST ${GIT_CONFIG_KEY_0:-}"',
   '} >> "$FAKE_CLAUDE_LOG"',
   'echo "ran: $*"',
+  // A call that starts with FAKE_CLAUDE_FAIL fails.
+  'case "$*" in "${FAKE_CLAUDE_FAIL:-none}"*) exit 1 ;; esac',
 ].join('\n');
 
 /** Puts a fake `claude` first on PATH, and gives back the extra env and a reader of its log. */
-function fakeClaude(sandbox: ReturnType<typeof makeSandbox>, isFailing = false) {
+function fakeClaude(sandbox: ReturnType<typeof makeSandbox>, failsOn = 'none') {
   const bin = join(sandbox.home, 'fake-bin');
   mkdirSync(bin, { recursive: true });
   const file = join(bin, 'claude');
-  writeFileSync(file, `${FAKE_CLAUDE}\nexit ${isFailing ? 1 : 0}\n`);
+  writeFileSync(file, `${FAKE_CLAUDE}\nexit 0\n`);
   chmodSync(file, 0o755);
   const log = join(sandbox.home, 'claude.log');
-  const extra = { PATH: `${bin}:${process.env.PATH}`, FAKE_CLAUDE_LOG: log };
+  const extra = { PATH: `${bin}:${process.env.PATH}`, FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_FAIL: failsOn };
   const calls = (): FakeCall[] => {
     if (!existsSync(log)) return [];
     const lines = readFileSync(log, 'utf8').split('\n');
     const found: FakeCall[] = [];
-    for (let at = 0; at + 3 < lines.length; at += 4) {
-      found.push({ args: lines[at].replace(/^CALL /, ''), count: lines[at + 1].replace(/^COUNT /, ''), key: lines[at + 2].replace(/^KEY /, ''), value: lines[at + 3].replace(/^VALUE /, '') });
+    for (let at = 0; at + 4 < lines.length; at += 5) {
+      const after = (offset: number) => lines[at + offset].replace(/^[A-Z]+ ?/, '');
+      found.push({ args: after(0), count: after(1), key: after(2), value: after(3), first: after(4) });
     }
     return found;
   };
@@ -124,7 +131,8 @@ function withPlugin(sandbox: ReturnType<typeof makeSandbox>, source: unknown) {
   writeFileSync(join(claude, 'plugins', 'known_marketplaces.json'), JSON.stringify({ yokoten: { source } }));
 }
 
-const HTTPS_GIT = { count: '1', key: 'url.https://github.com/.insteadOf', value: 'git@github.com:' };
+// The sandbox sets two git entries of its own (test/repo/helpers.ts), so the override is the third.
+const HTTPS_GIT = { count: '3', key: 'url.https://github.com/.insteadOf', value: 'git@github.com:' };
 
 test('upgrade: a github marketplace moves to HTTPS, then the two updates carry the override', () => {
   const sandbox = makeSandbox();
@@ -140,9 +148,8 @@ test('upgrade: a github marketplace moves to HTTPS, then the two updates carry t
     'plugin marketplace update yokoten',
     'plugin update yokoten-beta@yokoten',
   ]);
-  // Only the two update calls tell git to use HTTPS: the moves need it not.
-  for (const call of calls.slice(0, 3)) assert.notEqual(call.key, HTTPS_GIT.key, `${call.args} carries no override`);
-  for (const call of calls.slice(3)) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
+  // Every call clones or fetches, so every call tells git to use HTTPS.
+  for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
   assert.match(result.stdout, /^ok {6}removed the marketplace yokoten$/m);
   assert.match(result.stdout, /^Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts\.$/m);
 });
@@ -169,12 +176,40 @@ test('upgrade: without the plugin it names npx and runs nothing', () => {
 test('upgrade: a failing step stops the rest and gives the command to run by hand', () => {
   const sandbox = makeSandbox();
   withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
-  const fake = fakeClaude(sandbox, true);
+  const fake = fakeClaude(sandbox, 'plugin');
   const result = sandbox.run(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 1);
   assert.equal(fake.calls().length, 1, 'the second step waits for the first');
   assert.match(result.stderr, /^failed {2}updated the marketplace yokoten$/m);
   assert.match(result.stderr, /^To see the whole message, run this by hand: claude plugin marketplace update yokoten$/m);
+});
+
+test('upgrade: a failed move puts the old marketplace back, so the user is never left with none', () => {
+  const sandbox = makeSandbox();
+  withPlugin(sandbox, { source: 'github', repo: 'yokoten-labs/yokoten' });
+  const fake = fakeClaude(sandbox, 'plugin marketplace add https://');
+  const result = sandbox.run(['upgrade'], { extra: fake.extra });
+  assert.equal(result.status, 1);
+  assert.deepEqual(fake.calls().map((call) => call.args), [
+    'plugin marketplace remove yokoten',
+    'plugin marketplace add https://github.com/yokoten-labs/yokoten.git',
+    'plugin marketplace add yokoten-labs/yokoten',
+  ]);
+  // The way back clones a github source too, so it fetches over HTTPS as well.
+  assert.equal(fake.calls()[2].key, HTTPS_GIT.key);
+  assert.match(result.stderr, /^ok {6}put the marketplace back as it was: yokoten-labs\/yokoten$/m);
+});
+
+test('upgrade: a git config the user set the same way is kept, and the override comes after it', () => {
+  const sandbox = makeSandbox();
+  withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
+  const fake = fakeClaude(sandbox);
+  const own = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.proxy', GIT_CONFIG_VALUE_0: 'http://proxy.example.com:8080' };
+  const result = sandbox.run(['upgrade'], { extra: { ...fake.extra, ...own } });
+  assert.equal(result.status, 0, result.stderr);
+  for (const call of fake.calls()) {
+    assert.deepEqual({ count: call.count, key: call.key, value: call.value, first: call.first }, { ...HTTPS_GIT, count: '2', first: 'http.proxy' }, call.args);
+  }
 });
 
 test('help: upgrade is in the Start group', async () => {

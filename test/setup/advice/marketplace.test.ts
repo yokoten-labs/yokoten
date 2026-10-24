@@ -64,7 +64,7 @@ test('marketplace: a github source gets one note, naming the one command that mo
   assert.ok(note, 'a github source is a note');
   const text = formatFinding(note);
   assert.match(text, /the yokoten marketplace is a github source, so Claude Code clones it over SSH\./);
-  assert.match(text, /Run `yokoten upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key\./);
+  assert.match(text, /Run `npx yokoten@latest upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key\./);
   assert.match(text, /Without a GitHub SSH key the clone fails/, 'the note says what goes wrong');
 });
 

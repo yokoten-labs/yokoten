@@ -194,19 +194,26 @@ export function runUninstall(invocation: Invocation): number {
 
 /** The name Claude Code gives the marketplace when it is added by its address: the manifest's name. */
 const MARKETPLACE_NAME = 'yokoten';
+/** The short form a `github` marketplace is added by. */
+const GITHUB_REPO = 'yokoten-labs/yokoten';
 
 /** A clone over a slow line takes minutes; ten is a hang. */
 const CLAUDE_TIMEOUT = 600_000;
 
 /**
- * A per-process git config, for the two update calls only: `insteadOf` sends a `git@github.com:`
- * address over HTTPS. Nothing in the user's own git config changes (#950).
+ * A per-process git config for each `claude` call: `insteadOf` sends a `git@github.com:`
+ * address over HTTPS. Nothing in the user's own git config changes (#950). The entry goes
+ * after the ones the user already set this way (a proxy, a credential helper), so theirs stay.
  */
-const HTTPS_GIT: Env = {
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: 'url.https://github.com/.insteadOf',
-  GIT_CONFIG_VALUE_0: 'git@github.com:',
-};
+function withHttpsGit(env: Env): Env {
+  const count = /^\d+$/.test(env.GIT_CONFIG_COUNT ?? '') ? Number(env.GIT_CONFIG_COUNT) : 0;
+  return {
+    ...env,
+    GIT_CONFIG_COUNT: String(count + 1),
+    [`GIT_CONFIG_KEY_${count}`]: 'url.https://github.com/.insteadOf',
+    [`GIT_CONFIG_VALUE_${count}`]: 'git@github.com:',
+  };
+}
 
 /** A step's own line: the result first, then what it did. */
 const ok = (text: string): string => `ok      ${text}`;
@@ -250,9 +257,11 @@ export function upgrade(env: Env): UpgradeDone {
     };
   }
   const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
+  // Every call fetches over HTTPS: an add or an install clones too, and so does the way back.
+  const httpsEnv = withHttpsGit(env);
   // Each step says one line. A failed step stops the rest: the next one needs it.
-  const step = (label: string, args: string[], stepEnv: Env = env): boolean => {
-    const done = runClaude(args, stepEnv);
+  const step = (label: string, args: string[]): boolean => {
+    const done = runClaude(args, httpsEnv);
     lines.push(done.ok ? ok(label) : failed(label));
     if (done.ok) return true;
     if (done.said) lines.push(`  ${done.said}`);
@@ -266,12 +275,16 @@ export function upgrade(env: Env): UpgradeDone {
   if (marketplace?.source === 'github') {
     lines.push('The marketplace fetches over SSH; this moves it to the HTTPS address, which needs no SSH key.');
     if (!step(`removed the marketplace ${name}`, ['plugin', 'marketplace', 'remove', name])) return { ok: false, lines };
-    if (!step(`added the marketplace by its HTTPS address: ${HTTPS_ADDRESS}`, ['plugin', 'marketplace', 'add', HTTPS_ADDRESS])) return { ok: false, lines };
+    if (!step(`added the marketplace by its HTTPS address: ${HTTPS_ADDRESS}`, ['plugin', 'marketplace', 'add', HTTPS_ADDRESS])) {
+      // The old one is gone by now: put it back, so a failed move never leaves no marketplace.
+      step(`put the marketplace back as it was: ${GITHUB_REPO}`, ['plugin', 'marketplace', 'add', GITHUB_REPO]);
+      return { ok: false, lines };
+    }
     name = MARKETPLACE_NAME;
     if (!step(`installed ${plugin.name}@${name} again`, ['plugin', 'install', `${plugin.name}@${name}`])) return { ok: false, lines };
   }
-  if (!step(`updated the marketplace ${name}`, ['plugin', 'marketplace', 'update', name], { ...env, ...HTTPS_GIT })) return { ok: false, lines };
-  if (!step(`updated the plugin ${plugin.name}@${name}`, ['plugin', 'update', `${plugin.name}@${name}`], { ...env, ...HTTPS_GIT })) return { ok: false, lines };
+  if (!step(`updated the marketplace ${name}`, ['plugin', 'marketplace', 'update', name])) return { ok: false, lines };
+  if (!step(`updated the plugin ${plugin.name}@${name}`, ['plugin', 'update', `${plugin.name}@${name}`])) return { ok: false, lines };
   lines.push('Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts.');
   return { ok: true, lines };
 }
