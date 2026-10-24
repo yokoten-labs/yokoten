@@ -548,7 +548,8 @@ function removeSharedSkill(file: string, claudeFile: string): 'removed' | 'kept 
 /**
  * True when a hook left in Claude Code's user settings still runs yokoten, or the file can't
  * be read. It runs after yokoten's own hooks are taken out, so what is left is the user's:
- * any command naming yokoten counts, by the runtime's path or the launcher (#904).
+ * any command naming yokoten counts, by the runtime's path or the launcher, also next to
+ * shell syntax such as `$(…)`, `;` or `|`. `my-yokoten` and `yokoten-old` are other programs (#904).
  */
 export function hookRunsYokoten(env: Env): boolean {
   let table: unknown;
@@ -568,7 +569,7 @@ export function hookRunsYokoten(env: Env): boolean {
     }
   };
   walk((table as { hooks?: unknown } | null)?.hooks);
-  return commands.some((command) => /(^|[\\/\s"'])yokoten(\.(mjs|ts|cmd|ps1|exe))?(?=$|[\s"'])/.test(command) || /[\\/]share[\\/]+yokoten[\\/]/.test(command));
+  return commands.some((command) => /(^|[^\w.-])yokoten(\.(mjs|ts|cmd|ps1|exe))?(?![\w-])/.test(command) || /[\\/]share[\\/]+yokoten[\\/]/.test(command));
 }
 
 /** Remove a file yokoten owns, and its folder when that is left empty. A file without the mark is the user's, and so is a marked file the user edited. */
