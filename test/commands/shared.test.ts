@@ -209,6 +209,12 @@ test('output colour: a mark in green, red or yellow, a heading in bold, a comman
   assert.equal(styleLine('  ok      tool-call-guard: ready', true), '  \u001b[32m✔ ok\u001b[0m    tool-call-guard: ready');
   assert.match(styleLine('  MISSING tree: 2 problems', true), /^\s+\u001b\[31m✘ MISSING\u001b\[0m /);
   assert.match(styleLine('    note    a warning', true), /^\s+\u001b\[33m⚠ note\u001b\[0m /);
+  // A file kept because the user changed it is a note, not done; the words stay the same (#964).
+  for (const kept of ["  kept    the skill foo in ~/.claude/skills/foo (yours, not yokoten's)", '  kept    (your edit) the skill foo']) {
+    assert.match(styleLine(kept, true), /^\s+\u001b\[33m⚠ kept\u001b\[0m /, kept);
+    assert.equal(styleLine(kept, false), kept);
+  }
+  assert.match(styleLine('  kept    the tool-call hook in .claude/settings.json', true), /^\s+\u001b\[32m✔ kept\u001b\[0m /, 'a file that was already right stays done');
   assert.equal(styleLine('  next: run `yokoten init`', true), '  next: run \u001b[36m`yokoten init`\u001b[0m', 'a command line is not a state');
   assert.equal(styleLine('project:', true), '\u001b[1mproject:\u001b[0m');
   assert.equal(styleLine('yokoten stopped this: a tag push [release]', true), '\u001b[1;31myokoten stopped this: a tag push [release]\u001b[0m');

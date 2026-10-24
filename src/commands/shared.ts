@@ -164,6 +164,8 @@ export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean
 // A mark at the start of a line, padded to the column the next word starts in.
 const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
 const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
+// The two ways `describeWrite` says a file stays the user's: `kept (your edit) …` and `kept … (yours, not yokoten's)`.
+const KEPT_YOURS = /^\(your edit\)|\(yours, not yokoten's\)$/;
 // The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note,
 // ? can't check. A terminal gets it; a pipe, a file or an agent keeps the word alone,
 // so an old console never shows a broken glyph. `not now` and `skipped` are not among
@@ -197,8 +199,10 @@ export function styleLine(line: string, isColour: boolean): string {
     outer = `${BOLD};${RED}`;
   } else if (mark) {
     const word = mark[2] ?? '';
-    const colour = GREEN_MARKS.has(word) ? GREEN : word === 'MISSING' ? RED : YELLOW;
-    const glyph = MARK_GLYPH[word];
+    // A file kept because the user changed it was not updated: a note, not done (#964).
+    const yours = word === 'kept' && KEPT_YOURS.test(mark[4] ?? '');
+    const colour = GREEN_MARKS.has(word) && !yours ? GREEN : word === 'MISSING' ? RED : YELLOW;
+    const glyph = yours ? MARK_GLYPH.note : MARK_GLYPH[word];
     const said = glyph === undefined ? word : `${glyph} ${word}`;
     const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
     styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
