@@ -199,7 +199,7 @@ export const RULES = {
   'file-lease': {
     rule: 'the guard stops an edit to a file that an open change is moving or deleting (#911)',
     why: 'two changes to a file that is being moved cannot both go in cleanly',
-    check: 'when an open change moves or deletes a file, the conflict map leases that path; the tool-call guard reads the map once per call, stops an edit to a leased path from another branch, and allows when the map is missing or old',
+    check: 'when an open change moves or deletes a file, the conflict map leases that path. The tool-call guard reads the map once per call and stops an edit to a leased path from another branch; the commit check stops a staged change in place to that path, whatever tool made it. Both allow when the map is missing, old or dated ahead of the clock, and on a detached HEAD (a rebase)',
     docs: guide('blocked-commands'),
   },
   email: {
