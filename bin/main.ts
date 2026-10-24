@@ -104,6 +104,8 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       return import('../src/commands/setup.ts').then((m) => m.runTrust(invocation));
     case 'update':
       return import('../src/commands/setup.ts').then((m) => m.runUpdate(invocation));
+    case 'upgrade':
+      return import('../src/commands/setup.ts').then((m) => m.runUpgrade(invocation));
     case 'bot':
       return import('../src/commands/merge/bot.ts').then((m) => m.runBot(invocation));
     case 'pr':
