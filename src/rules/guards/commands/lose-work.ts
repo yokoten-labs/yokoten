@@ -1243,8 +1243,10 @@ const PIPE_SHELL_FIX = 'save it first (`curl -fsSL <url> -o <file>`), read it, t
 const DOWNLOAD_PROGRAMS = new Set(['curl', 'wget', 'wget2', 'aria2c', 'fetch']);
 // Where a download reads from. A download command with no URL is not one here.
 const DOWNLOAD_URL = /(?:https?|ftp):\/\/[^\s'"|;)]+/;
-// A URL without the `user:password@` part: a refusal names the download but never a secret in it (core rule 11).
-const withoutCredentials = (url: string) => url.replace(/\/\/[^/@]*@/, '//');
+// A URL without the `user:password@` part or a query value: a refusal names the download
+// but never a secret in it (core rule 11). A signed URL keeps its key, not its signature.
+const withoutCredentials = (url: string) =>
+  url.replace(/\/\/[^/@]*@/, '//').replace(/([?&][^=&\s]+)=[^&\s]*/g, '$1=…');
 
 /** A pipeline that feeds a download into a shell, `eval`, or a program word that is not plain text runs code nobody read (#560, #574, #734, #745). */
 export function checkPipeToShell(command: string): Finding | null {
@@ -1373,7 +1375,11 @@ const PRINT_ONLY_OPTION = /^(?:--(?:version|help|usage)|-[Vh])$/;
 const VERSION_IS_V = new Set(['perl', 'ruby', 'php', 'lua', 'luajit', 'node', 'nodejs', 'tclsh']);
 // A file that is the program's input: `<` names it, `make -f` names it, and an
 // interpreter operand names it too (#830, #885).
-const STDIN_FILE = /^\/?(?:dev\/(?:stdin|fd\/0)|proc\/(?:self|\d+)\/fd\/0)$/;
+const STDIN_FILE = /^(?:dev\/(?:stdin|fd\/0)|proc\/(?:self|\d+)\/fd\/0)$/;
+// A path with its empty and `.` pieces dropped, so `/dev/stdin`, `//dev/stdin` and
+// `/dev/./stdin` are the same file (#885).
+const normalizedPath = (word: string) => word.split('/').filter((part) => part !== '' && part !== '.').join('/');
+const isStdinFile = (word: string) => STDIN_FILE.test(normalizedPath(word));
 const MAKE_PROGRAMS = new Set(['make', 'gmake', 'bmake']);
 // The URL of a download inside `text`, if any.
 const downloadIn = (text: string): string | undefined => DOWNLOAD_URL.exec(text)?.[0];
@@ -1387,19 +1393,26 @@ function printsOnly(name: string, arg: string): boolean {
   return arg === '-v' && VERSION_IS_V.has(name);
 }
 
-/** Whether `words[from]` names an interpreter that reads its program from input. */
+/**
+ * Whether `words[from]` names an interpreter that reads its program from input.
+ * An operand is the program to run, so a `-` after it is that program's argument (#885).
+ */
 function interpreterReadsStdin(words: string[], from: number): boolean {
   const name = interpreterName(words[from] ?? '');
   const isInterpreter = STDIN_PROGRAMS.has(name) || STDIN_NEEDS_DASH.has(name);
   if (!isInterpreter) return false;
   const args = words.slice(from + 1);
-  // A `-` word, or a file that is input, is the program the interpreter runs (#885).
-  if (args.some((arg) => arg === '-' || STDIN_FILE.test(arg))) return true;
-  // Another operand is a script file, unless an inline-program option came first.
-  if (args.some((arg) => !arg.startsWith('-'))) return false;
-  if (args.some((arg) => INLINE_PROGRAM_OPTION.test(arg))) return false;
-  // `python3 --version` and `perl -v` print and exit: they never run the pipe as a program.
-  if (args.some((arg) => printsOnly(name, arg))) return false;
+  for (const arg of args) {
+    // `-`, and a file that is input, is the program the interpreter runs (#885).
+    if (arg === '-' || isStdinFile(arg)) return true;
+    // `python3 --version` and `perl -v` print and exit: they never run the pipe as a program.
+    if (printsOnly(name, arg)) return false;
+    // An inline program (`-c`, `-e`, `-m`) is the program, so no input is read.
+    if (INLINE_PROGRAM_OPTION.test(arg)) return false;
+    // Any other operand is a script file, and the file is the program.
+    if (!arg.startsWith('-')) return false;
+  }
+  // No word at all: the interpreter reads its program from its input.
   return STDIN_PROGRAMS.has(name);
 }
 
@@ -1410,7 +1423,7 @@ function findStdinRunner(commands: string[][]): string | undefined {
       if (place.index < 0) continue;
       if (interpreterReadsStdin(words, place.index)) {
         const args = words.slice(place.index + 1);
-        const stdin = args.some((arg) => arg === '-' || STDIN_FILE.test(arg)) ? ' -' : '';
+        const stdin = args.some((arg) => arg === '-' || isStdinFile(arg)) ? ' -' : '';
         return `${programName(place.word)}${stdin}`;
       }
     }
@@ -1445,7 +1458,7 @@ function makeReadsStdin(words: string[], from: number): boolean {
     const found = makefileValue(words, at);
     if (found === null) continue;
     at = found.next;
-    if (found.value === '-' || STDIN_FILE.test(found.value) || runsDownload(found.value)) return true;
+    if (found.value === '-' || isStdinFile(found.value) || runsDownload(found.value)) return true;
   }
   return false;
 }
@@ -1697,6 +1710,12 @@ function startsWithPipe(text: string, from: number): boolean {
   return text[at] === '|' && text[at + 1] !== '|';
 }
 
+/** Whether the `#` at `at` starts a comment, so bash drops the rest of its line (#830). */
+function startsComment(command: string, at: number): boolean {
+  if (at === 0) return true;
+  return /[\s;|&(]/.test(command[at - 1] ?? '');
+}
+
 /** The command's pipelines: cut at ; && || and line ends, outside quotes and groups. */
 function splitPipelines(command: string): string[] {
   const pipelines: string[] = [];
@@ -1724,6 +1743,13 @@ function splitPipelines(command: string): string[] {
     } else if (character === "'" || character === '"') {
       quote = character;
       current += character;
+    } else if (character === '#' && startsComment(command, at)) {
+      // Bash runs nothing in a comment. Skipping it keeps `curl … |` and the next line
+      // one pipeline, even with a comment between them (#830).
+      while (at + 1 < command.length && command[at + 1] !== '\n' && command[at + 1] !== '\r') {
+        at++;
+        spend(1);
+      }
     } else if (character === '(') {
       depth++;
       current += character;
