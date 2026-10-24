@@ -370,20 +370,37 @@ function patchFiles(patch: string): string[] {
 }
 
 // `git commit` options whose value is the next word.
-const COMMIT_VALUES = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--author', '--date', '--cleanup', '--template', '--trailer', '--pathspec-from-file']);
+const COMMIT_VALUES = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--author', '--date', '--cleanup', '--template', '--trailer']);
 
 /**
- * The files a `git commit` commits, as full paths: its pathspecs when it names any, else
- * what is staged, and with -a what is changed too. In a short option cluster, m, F, C, c
- * and t take a value; S and u take the rest of the word.
+ * True when a long option name makes git read the paths to commit from a file. Git
+ * accepts any unique prefix of a long option, so `--pathspec-from-f` counts too. A prefix
+ * that also fits `--pathspec-file-nul` is ambiguous, and git itself refuses it.
  */
-export function commitTargets(words: string[], folder: string | null, rootOf: FileRules['rootOf'], env: Env): WriteTarget[] {
-  const start = words.findIndex(isGit);
-  if (start === -1) return [];
-  const { sub, args, dir } = gitParts(withoutShellRedirects(words, start + 1), folder);
-  if (sub !== 'commit') return [];
+function isNamesFromFile(name: string): boolean {
+  return '--pathspec-from-file'.startsWith(name) && !'--pathspec-file-nul'.startsWith(name);
+}
+
+/**
+ * True when a long option takes the next word as its value. Git accepts a unique prefix,
+ * so `--mess x` is `--message x`: read as a path, `x` would hide the staged change (#824).
+ * A prefix of two of these is ambiguous, and git refuses it, so skipping a word is safe.
+ */
+function takesValue(name: string): boolean {
+  return [...COMMIT_VALUES].some((option) => name.length > 2 && option.startsWith(name));
+}
+
+/** What a `git commit` asks for: the paths it names, and whether -a, -i or a pathspec file is set. */
+export type CommitOptions = { named: string[]; isAll: boolean; isInclude: boolean; namesFromFile: boolean };
+
+/**
+ * A `git commit`'s arguments read once. In a short option cluster, m, F, C, c and t take a
+ * value; S and u take the rest of the word.
+ */
+export function parseCommitOptions(args: string[]): CommitOptions {
   let isAll = false;
   let isInclude = false;
+  let namesFromFile = false;
   const named: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const word = args[index];
@@ -392,9 +409,13 @@ export function commitTargets(words: string[], folder: string | null, rootOf: Fi
       break;
     }
     if (word.startsWith('--')) {
+      const name = word.split('=', 1)[0];
       if (word === '--all') isAll = true;
       if (word === '--include') isInclude = true;
-      if (COMMIT_VALUES.has(word)) index++;
+      if (isNamesFromFile(name)) {
+        namesFromFile = true;
+        if (word === name) index++;
+      } else if (!word.includes('=') && takesValue(word)) index++;
     } else if (word.startsWith('-') && word !== '-') {
       for (const [at, letter] of [...word].entries()) {
         if (at === 0) continue;
@@ -405,6 +426,19 @@ export function commitTargets(words: string[], folder: string | null, rootOf: Fi
       }
     } else named.push(word);
   }
+  return { named, isAll, isInclude, namesFromFile };
+}
+
+/**
+ * The files a `git commit` commits, as full paths: its pathspecs when it names any, else
+ * what is staged, and with -a what is changed too.
+ */
+export function commitTargets(words: string[], folder: string | null, rootOf: FileRules['rootOf'], env: Env): WriteTarget[] {
+  const start = words.findIndex(isGit);
+  if (start === -1) return [];
+  const { sub, args, dir } = gitParts(withoutShellRedirects(words, start + 1), folder);
+  if (sub !== 'commit') return [];
+  const { named, isAll, isInclude } = parseCommitOptions(args);
   const targets = named.map((path) => ({ path, from: dir }));
   if (named.length > 0 && !isInclude) return targets;
   // From an unknown folder the staged files (and with -a, the changed ones too) are
