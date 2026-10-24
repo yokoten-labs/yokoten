@@ -137,6 +137,12 @@ export const RULES = {
     why: 'a download that a program runs as code does things nobody read, so the guard cannot check what it does',
     check: 'the tool-call guard stops a download that a program would run: in a pipeline into a shell, `eval` or a program named by a variable or not by plain text; in a substitution or a process substitution given to a shell, `eval`, `source` or an interpreter (`bash -c "$(curl …)"`, `bash <(curl …)`); in a substitution where a command goes (`$(curl …)` or a backtick), which runs the download\'s answer as a command; in a here-string into a shell; piped into an interpreter that reads its program from input (`python3 -`, `node`, `perl`, `ruby`, `php`, `lua`, `Rscript -`); piped into `make -f -`, `make -f /dev/stdin` or `make -f <(…)`; and piped into any shell, including `ash`, `mksh`, `pdksh`, `yash`, `posh`, `oksh`, `rbash` and `toybox sh`. The guard matches option names the way git does, by a unique prefix. A `$` argument of a plain program passes. Save the file first, read it, then run it',
   },
+  'hidden-code': {
+    rule: 'a command the guard cannot fully read is refused, not let through',
+    why: 'bash can run code the guard did not read, from a name it expands later, so a rule the guard keeps could be bypassed',
+    check: 'the tool-call guard stops code bash can run but the guard cannot read: a PS4 or PROMPT_COMMAND that holds a substitution, a `for`, `select`, `((…))`, `let`, arithmetic, indirect or subscript expansion that reads a name the command set to hidden text, a `printf -v`, `test -v` or assignment name with a subscript, and a glob given to `git`, `sort`, `less`, `curl` or `wget` before `--`, because a file named `--output=x` turns it into an option; write the program as a plain name and the value as plain text',
+    docs: guide('what-it-doesnt-do'),
+  },
   'gh-token': {
     rule: "an agent does not see or send gh's token",
     why: "with gh's token, curl or a script calls the host directly, around every rule the guard keeps for gh",

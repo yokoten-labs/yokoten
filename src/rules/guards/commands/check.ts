@@ -18,6 +18,7 @@ import { withBudget } from '../bash/read/run.ts';
 import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
+import { checkHiddenCode } from '../bash/hidden.ts';
 
 export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
@@ -123,7 +124,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
   const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : null;
-  return worker ?? later;
+  return worker ?? later ?? checkHiddenCode(commands);
 }
 
 /**
