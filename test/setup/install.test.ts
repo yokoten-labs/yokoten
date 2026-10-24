@@ -242,6 +242,16 @@ test('install: with the plugin on, the hooks an older install added go too (#904
   assert.match(after, /my-own-hook/, "the user's own hook stays");
 });
 
+test('install: with the plugin on, a hooks shape it cannot walk fails the run and says so (#904)', async () => {
+  const sandbox = makeSandbox();
+  const settingsFile = join(sandbox.home, '.claude', 'settings.json');
+  mkdirSync(join(sandbox.home, '.claude'), { recursive: true });
+  writeFileSync(settingsFile, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true }, hooks: { PreToolUse: [{ hooks: 5 }] } }));
+  const result = await sandbox.call(['install']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /its hooks have an unexpected shape/);
+});
+
 // #904: install says what it will write, and uninstall leaves the home folder as it was.
 test('install prints its plan, and uninstall restores the home folder (#904)', async () => {
   const sandbox = makeSandbox();

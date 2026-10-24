@@ -389,8 +389,11 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // the runtime this run removes (#904).
   if (plugin) {
     const hooks = removeUserHooks(env);
-    if (hooks === null) report.push('kept the Claude Code hooks in ~/.claude/settings.json: it is not JSON; take them out by hand');
-    else if (hooks.doctor === 'removed' || hooks.guard === 'removed') report.push('removed the Claude Code user hooks: the yokoten plugin brings them');
+    if (hooks === null) {
+      // The plugin check reads only enabledPlugins, so a file with a broken hooks shape gets here too.
+      report.push("kept the Claude Code hooks in ~/.claude/settings.json: it is not JSON, or its hooks have an unexpected shape; fix it, then run `yokoten install` again");
+      ok = false;
+    } else if (hooks.doctor === 'removed' || hooks.guard === 'removed') report.push('removed the Claude Code user hooks: the yokoten plugin brings them');
     else report.push('skipped Claude Code hooks: the yokoten plugin brings them');
   } else {
     const claudeHooks = agentHooks('Claude Code', '~/.claude/settings.json', () => {
