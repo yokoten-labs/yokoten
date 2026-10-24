@@ -97,9 +97,11 @@ const GRAPHQL_ROUTE = /^(?:api\/)?graphql$/i;
 const MUTATION = /\bmutation\b/i;
 // The first field of a mutation, after its optional name and variable declarations.
 const MUTATION_FIELD = /^(?:[\s\ufeff]|#[^\n]*(?:\n|$))*mutation\b(?:\s+[A-Za-z_]\w*)?(?:\s*\([^)]*\))?\s*\{\s*([A-Za-z_]\w*)/i;
-// A document the shell builds is not one the guard can read: a variable, a substitution or
-// a backtick. A GraphQL variable declaration (`query($id: ID!)`) is none of these.
-const SHELL_DOCUMENT = /^\$|\$\(|\$\{|`/;
+// A document the shell builds is not one the guard can read: a `$` or a backtick anywhere in
+// it, `query { a } $DOC` too. The guard sees the words after the shell took the quotes off,
+// so a GraphQL variable (`query($id: ID!)`) looks the same and is refused as well; write the
+// value into the document instead. The release check reads a query the same way (#865).
+const isShellExpanded = (text: string) => /\$|`/.test(text);
 // The options that carry the document: a field, or an input file (#825).
 const GRAPHQL_FIELD = new Set(['-f', '--raw-field', '-F', '--field']);
 const GRAPHQL_INPUT = new Set(['--input']);
@@ -214,7 +216,7 @@ function isGraphqlSettingsWrite(args: string[]): boolean {
     const value = field.value ?? '';
     const equals = value.indexOf('=');
     const document = equals === -1 ? value : value.slice(equals + 1);
-    if (document.startsWith('@') || SHELL_DOCUMENT.test(document)) return true;
+    if (document.startsWith('@') || isShellExpanded(document)) return true;
     hasDocument = true;
     if (MUTATION.test(documentCode(document)) && !isCommentMutation(document)) return true;
     index = field.next - 1;
@@ -456,13 +458,6 @@ const API_VALUE_OPTIONS = new Set([
  * an endpoint with a query string is not mistaken for a field.
  */
 const isApiField = (word: string) => /^[A-Za-z_][\w.[\]-]*=/.test(word);
-
-/**
- * Whether a GraphQL query is written by the shell instead of the command: `$(cat q.graphql)`
- * or a `$VAR` anywhere in the text cannot be read before the shell expands it, so a
- * mutation may hide in it (#865).
- */
-const isShellExpanded = (text: string) => /\$|`/.test(text);
 
 /**
  * The text of a GraphQL query, or null when the guard cannot read it: a value that names

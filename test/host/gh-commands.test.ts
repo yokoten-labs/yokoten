@@ -163,6 +163,9 @@ test('repo settings: a graphql mutation is a settings write, a query passes (#82
     // A document the shell builds, so the guard cannot see it.
     'gh api graphql -f query=$(cat mutation.graphql)',
     'gh api graphql -f query="$DOC"',
+    // A variable after other text, and a GraphQL variable: the guard cannot tell them apart.
+    'gh api graphql -f query="query { viewer { login } } $DOC"',
+    "gh api graphql -f query='query($id: ID!) { node(id: $id) { id } }'",
     // A method and no document at all.
     'gh api -X POST graphql',
     // Behind `yokoten bot`.
@@ -180,13 +183,17 @@ test('repo settings: a graphql mutation is a settings write, a query passes (#82
     'gh api -X POST graphql -f query={ viewer { login } }',
     // The word only inside a string, in an operation that reads.
     'gh api graphql -f query=query { search(query: "mutation") { issueCount } }',
-    // A comment that names a mutation, and a fragment with a read after it.
-    "gh api graphql -f query='# mutation { changeVisibility }\nquery { viewer { login } }'",
+    // A fragment with a read after it.
     "gh api graphql -f query='fragment F on Repository { id } query Q { viewer { login } ...F }'",
-    // A comment is the one mutation the bot needs, and text with a brace is still text.
-    "gh api graphql -f query='mutation { addComment(input: {body: \"a } brace\"}) { clientMutationId } }'",
   ];
   for (const command of reads) assert.equal(checkCommand(command, { cwd: process.cwd(), env: lead }), null, command);
+  // Not a settings write: a comment that names a mutation, and a comment, the one mutation the
+  // bot needs (text with a brace is still text). The release check (#865) still refuses any
+  // `mutation` word, so this check adds no second refusal of its own.
+  for (const command of [
+    "gh api graphql -f query='# mutation { changeVisibility }\nquery { viewer { login } }'",
+    "gh api graphql -f query='mutation { addComment(input: {body: \"a } brace\"}) { clientMutationId } }'",
+  ]) assert.equal(checkCommand(command, { cwd: process.cwd(), env: lead })?.id, 'release', command);
 });
 
 test('host samples: doctor hears a miss, and a catch is quiet (#650)', () => {
