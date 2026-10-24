@@ -69,7 +69,7 @@ npx yokoten doctor      # where you are, and the one next step
 - **Versions**: Stable (the default), Beta or Dev. See [which version to install](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install).
 - **CI only**: [use it as a GitHub Action](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action).
 - **Node**: 22.23.4 or later, 24.22.1 or later on Node 24, 26.12.1 or later on Node 26.
-- **UTC**: the commit check asks for UTC commit times. Add `export TZ=UTC` to your shell profile once.
+- **UTC**: the commit check asks for UTC commit times. Set it once: `export TZ=UTC` in your shell profile, or `$env:TZ = "UTC"` in `$PROFILE` in PowerShell. `npx yokoten doctor` names the line for your shell.
 - `npx skills add yokoten-labs/yokoten` copies the skills only. Run `npx yokoten install` too, or nothing is guarded.
 
 ## On the road

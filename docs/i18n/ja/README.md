@@ -66,7 +66,7 @@ npx yokoten doctor      # いまどこにいて、次に何をするか
 - **バージョン**：Stable（既定）、Beta、Dev。[どのバージョンを入れるか](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英語）を見てください。
 - **CI だけで使う**：[GitHub Action として使う](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英語）。
 - **Node**：22.23.4 以降。Node 24 なら 24.22.1 以降、Node 26 なら 26.12.1 以降。
-- **UTC**：コミットチェックは UTC のコミット時刻を求めます。シェルの設定ファイルに `export TZ=UTC` を一度だけ加えます。
+- **UTC**：コミットチェックは UTC のコミット時刻を求めます。一度だけ設定します：シェルの設定ファイルに `export TZ=UTC`、PowerShell では `$PROFILE` に `$env:TZ = "UTC"` を加えます。`npx yokoten doctor` が、あなたのシェル用の行を教えてくれます。
 - `npx skills add yokoten-labs/yokoten` はスキルだけをコピーします。`npx yokoten install` も実行しないと、何も守られません。
 
 ## これからの道

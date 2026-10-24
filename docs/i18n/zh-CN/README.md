@@ -66,7 +66,7 @@ npx yokoten doctor      # 走到了第几关，下一步做什么
 - **版本**：Stable（默认）、Beta 或 Dev。见[要安装哪个版本](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英文）。
 - **只在 CI 里用**：[当成 GitHub Action 用](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英文）。
 - **Node**：22.23.4 或更高；用 Node 24 要 24.22.1 起，用 Node 26 要 26.12.1 起。
-- **UTC**：提交检查只认 UTC 时间。在 shell 的配置文件里加一行 `export TZ=UTC`，加一次就行。
+- **UTC**：提交检查只认 UTC 时间。设一次就行：在 shell 的配置文件里加 `export TZ=UTC`；PowerShell 是在 `$PROFILE` 里加 `$env:TZ = "UTC"`。`npx yokoten doctor` 会告诉你自己的 shell 该加哪一行。
 - `npx skills add yokoten-labs/yokoten` 只复制 skills。还要运行 `npx yokoten install`，否则什么都没有守住。
 
 ## 往哪里去
