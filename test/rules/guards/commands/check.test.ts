@@ -244,7 +244,8 @@ test('redteam #865: the host API routes that create a repo or change one are ref
     'gh repo create demo --public=true',
   ]);
   const sandbox = makeSandbox();
-  for (const command of ['gh api orgs/acme/repos', 'gh api -X GET user/repos', 'gh api -X POST repos/$OWNER/$REPO']) {
+  // A method on the repo itself is a settings write (#825), so the variable repo is read with GET.
+  for (const command of ['gh api orgs/acme/repos', 'gh api -X GET user/repos', 'gh api -X GET repos/$OWNER/$REPO']) {
     assert.equal((await askHook(sandbox, command)).status, 0, `the hook refused a read: ${command}`);
   }
 });
