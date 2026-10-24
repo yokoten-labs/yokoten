@@ -40,8 +40,10 @@ yokoten 攔住一件事時，不寫程式的人也能照著做。
 它會說出攔住了什麼、為什麼、該怎麼做，然後給出指南的連結。
 
 ```
-yokoten: git push origin v1.2.0 pushes a release tag. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
+Why: Only the owner decides when to release.
+Do instead: If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
 ## 安裝
@@ -90,7 +92,7 @@ yokoten 在 PR 之前工作，也和 [PR 審查機器人](https://github.com/yok
 
 ## 支援範圍
 
-**Agent。** yokoten 用同一套規則守著九個 AI 寫程式 agent：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI 和 OpenCode。其中七個做了端對端驗證。Gemini CLI 和 OpenCode 已經寫進程式，但還沒有做端對端執行。
+**Agent。** yokoten 用同一套規則守著九個 AI 寫程式 agent：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI 和 OpenCode。其中八個做了端對端驗證。Gemini CLI 已經寫進程式，但還沒有做端對端執行。
 [agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)寫著每一種是怎麼測的。
 
 **語言。** 專案用哪種語言都可以。守衛、隱私和密鑰檢查、CI，以及 issue 和 PR 檢查，在每種語言裡都一樣。`doctor` 找得到測試指令的有 JavaScript 和 TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart，還有任何提供 `make test` 的專案。其中 Go、Python、Rust、.NET、Ruby 和 PHP，`init` 會寫好執行測試的 CI 工作。

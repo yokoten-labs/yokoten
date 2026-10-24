@@ -44,8 +44,10 @@ When yokoten stops an action, a non-coder can act on the answer.
 It says what was stopped, why, and what to do instead, then links the guide.
 
 ```
-yokoten: git push origin v1.2.0 pushes a release tag. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
+Why: Only the owner decides when to release.
+Do instead: If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
 ## One engine, many safeguards
@@ -120,8 +122,8 @@ It is not part of the 0.1 releases.
 
 **Agents.** yokoten guards nine AI coding agents with the same rules: Claude Code, GitHub
 Copilot CLI, Antigravity CLI, Codex CLI, Muse Code, DeepSeek Harness, Grok CLI, Gemini
-CLI, and OpenCode. Seven are verified end to end. Gemini CLI and OpenCode are in the code
-but not run end to end.
+CLI, and OpenCode. Eight are verified end to end. Gemini CLI is in the code but not
+run end to end.
 The [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)
 says how each one was tested.
 

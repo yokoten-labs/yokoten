@@ -40,8 +40,10 @@ yokoten が止めたとき、コードを書かない人でも、その答えで
 止めたこと、理由、どうすればよいかを伝え、ガイドへのリンクを示します。
 
 ```
-yokoten: git push origin v1.2.0 pushes a release tag. Only the owner decides when to release. If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
+Why: Only the owner decides when to release.
+Do instead: If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
 ```
 
 ## インストール
@@ -90,7 +92,7 @@ yokoten はプルリクエストの前に動き、[PR レビューボット](htt
 
 ## 対応しているもの
 
-**エージェント。** yokoten は九つの AI コーディングエージェントを同じルールで守ります。Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI、OpenCode です。そのうち七つはエンドツーエンドで検証済みです。Gemini CLI と OpenCode はコードにありますが、エンドツーエンドではまだ実行していません。
+**エージェント。** yokoten は九つの AI コーディングエージェントを同じルールで守ります。Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI、Gemini CLI、OpenCode です。そのうち八つはエンドツーエンドで検証済みです。Gemini CLI はコードにありますが、エンドツーエンドではまだ実行していません。
 [エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)に、それぞれの試し方が書いてあります。
 
 **言語。** プロジェクトの言語は問いません。番人、個人情報と秘密情報のチェック、CI、issue とプルリクエストのチェックは、どの言語でも同じように動きます。`doctor` は、JavaScript と TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、そして `make test` があるプロジェクトについて、テストのコマンドを見つけます。Go、Python、Rust、.NET、Ruby、PHP では、`init` がテストを走らせる CI のジョブを書きます。
