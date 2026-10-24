@@ -578,9 +578,10 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'board',
-    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page',
+    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page (preview)',
     usage: '[--text] [--no-open] [--role name] [--vendor name]',
     text: [
+      'Preview: it may change, and team commands come in v0.1.2 (#823).',
       'Serves a live page on this machine only, at http://<repo>.localhost:<port>/.',
       'The folder name is the host. The port stays with this repo. The first visit',
       'sets a cookie and opens the page without the token. Agents sit on the left.',
