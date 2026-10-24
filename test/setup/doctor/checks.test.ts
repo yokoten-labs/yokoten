@@ -235,7 +235,7 @@ test("doctor --session: a user's own hook that runs the runtime keeps it (#935)"
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   settings.enabledPlugins = { 'yokoten@yokoten': true };
-  for (const command of ['node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check', '"$HOME/.local/bin/yokoten" check', 'yokoten check']) {
+  for (const command of ['node "$HOME/.local/share/yokoten/bin/yokoten.mjs" check', '"$HOME/.local/bin/yokoten" check', 'yokoten check', '$(yokoten check)', 'echo hi;yokoten check']) {
     settings.hooks.Stop = [{ hooks: [{ type: 'command', command }] }];
     writeFileSync(settingsFile, JSON.stringify(settings));
     await sandbox.call(['doctor', '--session']);
