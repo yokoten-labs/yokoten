@@ -556,6 +556,46 @@ function removeManaged(path: string, { folder = false }: { folder?: boolean } = 
   return 'removed';
 }
 
+/** What a session start took back from an older install (#935): the files removed, and the edits that stay. */
+export type OlderInstallCleanup = { files: number; edits: string[] };
+
+/**
+ * Take back what v0.1.0's install left beside the plugin (#935): the global skills in both
+ * folders, the agents, the Claude Code user hooks, the launcher and the runtime. Each goes
+ * by the rules install uses (#904): only a file with yokoten's mark that the user did not
+ * edit, and only an empty folder. A user hook stays, and an edited copy stays and is named.
+ * Nothing happens without the plugin. Another tool's hook still needs the runtime, so the
+ * runtime and the launcher stay then.
+ */
+export function cleanOlderInstall(env: Env, { platform = process.platform }: { platform?: NodeJS.Platform } = {}): OlderInstallCleanup {
+  const cleanup: OlderInstallCleanup = { files: 0, edits: [] };
+  if (!hasPlugin(env) || homeOf(env) === null) return cleanup;
+  const count = (what: string, outcome: ReturnType<typeof removeManaged>): void => {
+    if (outcome === 'removed') cleanup.files += 1;
+    else if (outcome === 'kept (your edit)') cleanup.edits.push(what);
+  };
+  for (const name of kitSkills()) {
+    const [claudeFile, sharedFile] = skillFiles(env, name);
+    count(`skill ${name}`, removeManaged(claudeFile, { folder: true }));
+    count(`skill ${name}`, removeSharedSkill(sharedFile));
+  }
+  for (const file of kitAgents()) count(`agent ${file.replace(/\.md$/, '')}`, removeManaged(agentFile(env, file)));
+  // An unreadable hooks file stays as it is: a session never rewrites a setting.
+  const hooks = removeUserHooks(env);
+  if (hooks) cleanup.files += Number(hooks.doctor === 'removed') + Number(hooks.guard === 'removed');
+  const otherTool = codex.hasUserDir(env) || gemini.hasUserDir(env) || antigravity.hasUserDir(env) || copilot.hasUserDir(env) || grok.hasUserDir(env) || muse.hasUserDir(env) || opencode.hasUserDir(env);
+  if (otherTool) return cleanup;
+  const target = paths(env);
+  if (existsSync(target.runtime)) {
+    rmSync(target.runtime, { recursive: true, force: true });
+    cleanup.files += 1;
+  }
+  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform))) {
+    if (line.startsWith('removed the launcher')) cleanup.files += 1;
+  }
+  return cleanup;
+}
+
 /**
  * A managed file the user edited while the kit's copy has changed since (#477). `file` is
  * the user's copy; `kitFile` is the newer copy to compare it with.
