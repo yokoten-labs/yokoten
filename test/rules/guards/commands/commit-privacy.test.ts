@@ -75,13 +75,50 @@ test('commit: a change the guard cannot read is refused, not let through (#824)'
   const binary = run('git commit -m x');
   assert.equal(binary?.id, 'secret');
   assert.equal(binary?.file, 'blob.bin');
-  // A commit that reads the paths to commit from a file is one the guard cannot follow.
-  assert.equal(run('git commit -m x --pathspec-from-file=names.txt')?.id, 'unreadable-command');
+  // A commit that reads the paths to commit from a file is one the guard cannot follow,
+  // whether the option is spelled out or shortened the way git allows (#824 review).
+  for (const option of ['--pathspec-from-file=names.txt', '--pathspec-from-file', '--pathspec-from-f=names.txt', '--pathspec-from-f', '--pathspec-from-fil=names.txt']) {
+    const command = option.includes('=') ? `git commit -m x ${option}` : `git commit -m x ${option} names.txt`;
+    assert.equal(run(command)?.id, 'unreadable-command', command);
+  }
   // A staged change git itself cannot read is refused, never allowed.
   writeFileSync(join(sandbox.repo, '.git', 'index'), 'not an index');
   const broken = run('git commit -m x');
   assert.equal(broken?.id, 'unreadable-command');
   assert.match(broken?.what ?? '', /could not read the change/);
+});
+
+test('commit: an added line that starts with ++ is text, not a file header (#824 review)', () => {
+  const sandbox = makeSandbox();
+  const key = `ghp_${'a1B2c3D4e5'.repeat(4).slice(0, 36)}`;
+  sandbox.write('README.md', 'hello\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'start');
+  const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: sandbox.repo });
+  // `-U0` prints this added line as `+++ <key>`, the same shape as a file header.
+  sandbox.write('src.ts', `++ ${key}\n`);
+  sandbox.git('add', 'src.ts');
+  const found = run('git commit -m x');
+  assert.equal(found?.id, 'secret', 'the added line is scanned');
+  assert.equal(found?.file, 'src.ts');
+  assert.equal(found?.line, 1);
+  assert.ok(!JSON.stringify(found).includes(key), 'the secret is never in the finding');
+});
+
+test('commit: a big change beside the named paths does not refuse the commit (#824 review)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('README.md', 'hello\n');
+  sandbox.write('big.txt', 'start\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'start');
+  const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: sandbox.repo });
+  sandbox.write('README.md', 'hello again\n');
+  sandbox.git('add', 'README.md');
+  // Unstaged and not named: this commit leaves it out, so its size is not the guard's cost.
+  sandbox.write('big.txt', `${'x'.repeat((16 << 20) + 1024)}\n`);
+  assert.equal(run('git commit -m x README.md'), null, 'the named change alone is small');
+  // A positive control: -a does take the big file, and the guard still refuses that.
+  assert.equal(run('git commit -am x')?.id, 'unreadable-command', 'the cap still holds for -a');
 });
 
 test('commit: a small diff is scanned in under 100 ms (#824, record 0035)', () => {

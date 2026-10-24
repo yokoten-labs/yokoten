@@ -370,7 +370,16 @@ function patchFiles(patch: string): string[] {
 }
 
 // `git commit` options whose value is the next word.
-const COMMIT_VALUES = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--author', '--date', '--cleanup', '--template', '--trailer', '--pathspec-from-file']);
+const COMMIT_VALUES = new Set(['--message', '--file', '--reuse-message', '--reedit-message', '--fixup', '--squash', '--author', '--date', '--cleanup', '--template', '--trailer']);
+
+/**
+ * True when a long option name makes git read the paths to commit from a file. Git
+ * accepts any unique prefix of a long option, so `--pathspec-from-f` counts too. A prefix
+ * that also fits `--pathspec-file-nul` is ambiguous, and git itself refuses it.
+ */
+function isNamesFromFile(name: string): boolean {
+  return '--pathspec-from-file'.startsWith(name) && !'--pathspec-file-nul'.startsWith(name);
+}
 
 /** What a `git commit` asks for: the paths it names, and whether -a, -i or a pathspec file is set. */
 export type CommitOptions = { named: string[]; isAll: boolean; isInclude: boolean; namesFromFile: boolean };
@@ -391,10 +400,13 @@ export function parseCommitOptions(args: string[]): CommitOptions {
       break;
     }
     if (word.startsWith('--')) {
+      const name = word.split('=', 1)[0];
       if (word === '--all') isAll = true;
       if (word === '--include') isInclude = true;
-      if (/^--pathspec-from-file(?:=|$)/.test(word)) namesFromFile = true;
-      if (COMMIT_VALUES.has(word)) index++;
+      if (isNamesFromFile(name)) {
+        namesFromFile = true;
+        if (word === name) index++;
+      } else if (COMMIT_VALUES.has(word)) index++;
     } else if (word.startsWith('-') && word !== '-') {
       for (const [at, letter] of [...word].entries()) {
         if (at === 0) continue;

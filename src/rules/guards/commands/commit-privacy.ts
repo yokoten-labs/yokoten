@@ -41,6 +41,9 @@ function parsePatchAdditions(patch: string): AddedBlock[] {
   let file = '';
   let block: AddedBlock | null = null;
   let line = 0;
+  // Only the lines between `diff --git` and the first hunk are a file header. An added
+  // line that itself starts with `++ ` prints as `+++ `, and is text (#824 review).
+  let isHeader = false;
   const close = () => {
     if (block && block.lines.length > 0) blocks.push(block);
     block = null;
@@ -49,17 +52,20 @@ function parsePatchAdditions(patch: string): AddedBlock[] {
     if (text.startsWith('diff --git ')) {
       close();
       file = '';
+      isHeader = true;
       continue;
     }
-    if (text.startsWith('+++ ')) {
+    if (isHeader && text.startsWith('+++ ')) {
       close();
       const name = text.slice(4);
       file = name === '/dev/null' ? '' : name.replace(/^b\//, '');
+      isHeader = false;
       continue;
     }
     const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
     if (hunk) {
       close();
+      isHeader = false;
       line = Number(hunk[1]);
       block = { file, line, lines: [] };
       continue;
@@ -86,12 +92,15 @@ function readCommitChange(words: string[], folder: string | null, env: Env): Com
   // git names files from the repo's root. The root is found by a walk, not a second git.
   const root = gitRootAbove(dir, new Map());
   if (root === null) return null;
-  const staged = readGitPatch(dir, ['--cached'], env);
+  // A commit that names paths commits only those, so each diff is asked for those alone:
+  // a large change beside them cannot make the guard refuse a commit that leaves it out.
+  const paths = named.length > 0 && !isInclude ? named : [];
+  const staged = readGitPatch(dir, ['--cached'], paths, env);
   if (staged === null) return null;
   if (staged === 'too large' || staged === 'error') return { problem: staged === 'error' ? 'unreadable' : 'too large' };
   // Without -a, only a named path brings its work tree version; the rest of the index stays.
   if (!isAll && named.length === 0) return { root, dir, staged, changed: '', named, isInclude };
-  const changed = readGitPatch(dir, [], env);
+  const changed = readGitPatch(dir, [], paths, env);
   if (changed === null) return null;
   if (changed === 'too large' || changed === 'error') return { problem: changed === 'error' ? 'unreadable' : 'too large' };
   return { root, dir, staged, changed, named, isInclude };
@@ -129,11 +138,11 @@ function readNamedFileBlocks(named: string[]): AddedBlock[] | 'too large' | null
 /**
  * The patch `git diff` prints in `dir`: 'too large' past the limit, 'error' when git cannot
  * read the change, so the caller refuses, and null when the folder is no repository at all
- * (the commit fails by itself). `--text` shows a binary file's bytes as lines: a key beside
- * a NUL byte is still a key.
+ * (the commit fails by itself). `paths` limits the diff to what a commit names. `--text`
+ * shows a binary file's bytes as lines: a key beside a NUL byte is still a key.
  */
-function readGitPatch(dir: string, extra: string[], env: Env): string | 'too large' | 'error' | null {
-  const result = spawnSync('git', ['--no-optional-locks', 'diff', ...extra, '-U0', '--text', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames'], {
+function readGitPatch(dir: string, extra: string[], paths: string[], env: Env): string | 'too large' | 'error' | null {
+  const result = spawnSync('git', ['--no-optional-locks', 'diff', ...extra, '-U0', '--text', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', ...(paths.length > 0 ? ['--', ...paths] : [])], {
     cwd: dir,
     env,
     encoding: 'utf8',
