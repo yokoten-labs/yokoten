@@ -66,8 +66,8 @@ export const RULES = {
   release: {
     rule: 'only the owner creates tags and releases (core rule 3)',
     why: RELEASE_WHY,
-    check: 'the tool-call guard stops a tag push (`--tags`, `--follow-tags`, `--mirror`, a `v*` or `refs/tags/` ref), `gh release` and `npm publish`, unless the session started with YOKOTEN_RELEASE_APPROVAL; a tag ruleset on the server is the lock',
-    docs: guide('the-core-rules'),
+    check: 'the tool-call guard stops a tag push (`--tags`, `--follow-tags`, `--mirror`, a `v*`, a local tag or a `refs/tags/` ref), `git update-ref` on a tag, `npm version`, `push.followTags`, `gh release`, API calls that write through the host, `gh workflow run`, `glab` and `tea` releases, package and image tools, and release scripts, unless the session started with YOKOTEN_RELEASE_APPROVAL; a tag ruleset on the server is the lock',
+    docs: guide('how-to-release'),
   },
   'force-push': {
     rule: 'no plain force push (core rule 7)',
@@ -575,6 +575,12 @@ export const RULES = {
     why: 'the agent then hears the next step on the road, and a drifted setup shows at once',
     check: '`doctor` reads ~/.claude/settings.json for a SessionStart hook that runs doctor',
     docs: guide('what-a-session-sees'),
+  },
+  'user-guard': {
+    rule: 'every session on this machine meets the tool-call guard',
+    why: 'with no guard, an agent pushes a tag, forces a push or reads a token with nothing in the way',
+    check: '`doctor` reads ~/.claude/settings.json for a PreToolUse hook that runs `yokoten hook`; the Claude Code plugin brings the same guard, so while the plugin is on the check passes and `install` writes no guard of its own. Turn the plugin off or remove it and the guard goes too: doctor then fails, and `yokoten install` writes install\'s own',
+    docs: guide('the-claude-code-plugin'),
   },
   'machine-runtime': {
     rule: 'the installed runtime is this version of yokoten',

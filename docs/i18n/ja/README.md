@@ -29,8 +29,8 @@ npx yokoten
 ```
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 Why: Only the owner decides when to release.
-Do instead: If the owner asked for this, they start a new session with `YOKOTEN_RELEASE_APPROVAL=1 claude` (or your agent's command); do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules
+Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 ## 何を止めるか

@@ -33,8 +33,12 @@ import {
 import { invoke } from '../repo/invoke.ts';
 import {
   closestWord,
+  commandHelp,
+  commandList,
+  COMMAND_GROUPS,
   COMMANDS,
   editDistance,
+  findCommand,
   guardCommand,
   HELP_OPTIONS,
   PLUGIN_COPY_GONE,
@@ -191,6 +195,15 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
     for (const command of COMMANDS) assert.match(r.stdout, new RegExp(`^ {2}${command.name} `, 'm'), `${args.join(' ')}: lists ${command.name}`);
   }
   assert.equal((await run(['-v'])).stdout, (await run(['--version'])).stdout);
+});
+
+// #933: the board is a preview, and `yokoten help` and `yokoten board --help` say so.
+test('help: the board row and `board --help` say preview (#933)', () => {
+  const board = findCommand('board');
+  assert.ok(board !== undefined, 'board is a command');
+  const row = commandList().find((line) => line.trimStart().startsWith('board '));
+  assert.match(row ?? '', /\(preview\)/);
+  assert.match(commandHelp(board).join('\n'), /preview: it may change, and team commands come in v0\.1\.2 \(#823\)/i);
 });
 
 test('compile cache: a cache folder that cannot be made does not stop the command (#286)', () => {
@@ -733,4 +746,13 @@ test('sandbox: call runs a command in this process with the same result as run (
 test('main: an error names its command, and bare yokoten when there is none (#548)', () => {
   assert.equal(errorLabel(undefined), 'yokoten', 'the one-command start has no name: never "undefined"');
   assert.equal(errorLabel('doctor'), 'yokoten doctor');
+});
+
+test('help: every command is in exactly one group, and the first step comes first (#944)', async () => {
+  const grouped = COMMAND_GROUPS.flatMap((group) => group.names);
+  assert.deepEqual([...grouped].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once, and no name without a command');
+  assert.equal(new Set(grouped).size, grouped.length, 'no command in two groups');
+  const help = (await makeSandbox().call(['help'])).stdout;
+  assert.ok(help.indexOf('Start here:') < help.indexOf('Usage:'), 'the first step comes before the list');
+  for (const { title } of COMMAND_GROUPS) assert.match(help, new RegExp(`^${title}:$`, 'm'), `${title} has a heading`);
 });

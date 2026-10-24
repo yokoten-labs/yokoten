@@ -13,11 +13,10 @@
 import { statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { releaseFix } from '../../rules/guards/index.ts';
 import { homeIn } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import type { Action } from '../../run/hook.ts';
-import { type Added, addHook, checkHooks, hasHook, type HookArgs, type HookState, hookState, isObject, type Problem, readTable, type ReadOptions, type Settings, writeSettings } from '../hooks-file.ts';
+import { type Added, addHook, checkHooks, hasHook, type HookArgs, type HookState, hookState, isObject, type Problem, readTable, type ReadOptions, removeHook, type Settings, writeSettings } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import { readStop } from './claude-code.ts';
 import type { AgentAdapter } from './runtime.ts';
@@ -122,6 +121,16 @@ export function hasUserDir(env: Env): boolean {
   }
 }
 
+/** Take out the two user hooks, and the file when they were all it held; null when it is not JSON and stays as it is. */
+export function removeUserHooks(env: Env): { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' } | null {
+  try {
+    const file = userSettings(env);
+    return { doctor: removeHook(file, 'SessionStart', 'doctor'), guard: removeHook(file, 'BeforeTool', 'hook') };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The user's hooks against what `addUserHooks` would write with the same `cli` and
  * `missing`, read-only (see `hookState`): a hook with another command, matcher or runtime
@@ -202,8 +211,6 @@ export function sandboxProblem(root: string): { what: string; fix: string } | nu
 /** The names this runtime's agent gets on top of the shared ones (#613). Gemini CLI: only its own key. GOOGLE_API_KEY and GOOGLE_APPLICATION_CREDENTIALS open all of Google Cloud, so a Vertex AI setup needs the lead to pass them on purpose. */
 export const AGENT_ENV: RuntimeEnv = { login: ['GEMINI_API_KEY'], config: ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION', 'GOOGLE_GENAI_USE_VERTEXAI'] };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'gemini',
@@ -214,7 +221,6 @@ export const ADAPTER: AgentAdapter = {
   capabilities: { canRewrite: false, hasStopHook: true, needsTrust: true, failsOpen: false, passesRole: false },
   readToolCall,
   readStop,
-  releaseFix: releaseFix(`${approve('gemini')} (if its strict environment sanitization is on, the variable is dropped: the owner releases outside Gemini CLI)`),
   agentEnv: AGENT_ENV,
   call: (command) => ({ cwd: '/repo', tool_name: 'run_shell_command', tool_input: { command } }),
 };

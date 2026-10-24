@@ -578,9 +578,10 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'board',
-    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page',
+    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page (preview)',
     usage: '[--text] [--no-open] [--role name] [--vendor name]',
     text: [
+      'Preview: it may change, and team commands come in v0.1.2 (#823).',
       'Serves a live page on this machine only, at http://<repo>.localhost:<port>/.',
       'The folder name is the host. The port stays with this repo. The first visit',
       'sets a cookie and opens the page without the token. Agents sit on the left.',
@@ -669,10 +670,25 @@ export function commandHelp(command: Command): string[] {
   ];
 }
 
-/** The command list, for `yokoten help`. */
+/**
+ * The groups `yokoten help` shows, in order (#944): a beginner needs the first group and can
+ * leave the rest. Every command is in exactly one group; a test keeps it that way.
+ */
+export const COMMAND_GROUPS: readonly { title: string; names: readonly string[] }[] = [
+  { title: 'Start', names: ['install', 'init', 'doctor', 'trust', 'uninstall'] },
+  { title: 'Every day', names: ['check', 'conflicts', 'train', 'pr', 'changelog', 'explain', 'stops', 'marks', 'redact', 'test'] },
+  { title: 'A team of agents', names: ['worker', 'desk', 'msg', 'board', 'bot', 'anchor', 'provenance', 'mcp'] },
+  { title: 'Keep the project healthy', names: ['update', 'adopt', 'ci-health', 'borrowed', 'learn', 'hook', 'help', 'version'] },
+];
+
+/** The command list, for `yokoten help`: one block per group, a blank line between. */
 export function commandList(): string[] {
   const width = Math.max(...COMMANDS.map((command) => command.name.length)) + 2;
-  return COMMANDS.map((command) => `  ${command.name.padEnd(width)}${command.summary}`);
+  return COMMAND_GROUPS.flatMap(({ title, names }, at) => [
+    ...(at ? [''] : []),
+    `${title}:`,
+    ...names.map((name) => findCommand(name)).filter((command) => command !== undefined).map((command) => `  ${command.name.padEnd(width)}${command.summary}`),
+  ]);
 }
 
 /** How many single-letter edits turn one word into the other (Levenshtein). */

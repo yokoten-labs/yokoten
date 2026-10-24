@@ -24,12 +24,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { releaseFix } from '../../rules/guards/index.ts';
 import { homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
 import { blankedToml, hasTomlArray, hasTomlHeader, hasTomlKey, hasTomlTable, isInsideProject, parseToml, readTomlTables, type TrustChange, type TrustPlan } from './codex.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
@@ -160,6 +159,15 @@ export const userHooksState = (env: Env, cli: string, missing: string): { guard:
 
 /** Whether Grok CLI looks used on this machine: its home folder is there. */
 export const hasUserDir = (env: Env): boolean => isFolder(homeDir(env));
+
+/** Take out the user guard, and the file when it was all it held; null when it is not JSON and stays as it is. */
+export function removeUserHooks(env: Env): 'removed' | 'not there' | null {
+  try {
+    return removeHook(userHooks(env), 'PreToolUse', 'hook');
+  } catch {
+    return null;
+  }
+}
 
 // ---- Trust ----
 //
@@ -352,8 +360,6 @@ export const DESK: RuntimeDesk = {
   hosts: ['api.x.ai'],
 };
 
-const approve = (start: string) => `\`YOKOTEN_RELEASE_APPROVAL=1 ${start}\``;
-
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
   name: 'grok',
@@ -367,7 +373,6 @@ export const ADAPTER: AgentAdapter = {
   formatDenial,
   formatContext,
   formatRewrite,
-  releaseFix: releaseFix(approve('grok')),
   agentEnv: AGENT_ENV,
   desk: DESK,
   call: (command) => ({ cwd: '/repo', toolName: 'Bash', toolInput: { command } }),

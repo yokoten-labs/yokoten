@@ -59,8 +59,6 @@ export interface AgentAdapter {
   formatAsk?: (reason: string) => string;
   /** The same command with its output wrapped for `yokoten redact`, when the runtime takes it. */
   formatRewrite?: (input: unknown, command: string, reason: string) => string;
-  /** The fix a release refusal names for this runtime. */
-  releaseFix: string;
   /** The environment names this runtime needs. */
   agentEnv: RuntimeEnv;
   /** The desk this runtime can start in, when it can. */
@@ -107,9 +105,6 @@ export function contextOf(name: string, text: string): string | null {
 export function askOf(name: string): ((reason: string) => string) | null {
   return adapterFor(name)?.formatAsk ?? null;
 }
-
-/** The release fix for a runtime, or undefined when the table does not know it. */
-export const releaseFixOf = (name: string): string | undefined => adapterFor(name)?.releaseFix;
 
 /** The stop reader for a runtime, or undefined when it has no stop hook. */
 export const stopReaderOf = (name: string): ((input: unknown) => StopEvent | null) | undefined => adapterFor(name)?.readStop;

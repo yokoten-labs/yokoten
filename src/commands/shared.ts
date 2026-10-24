@@ -162,10 +162,14 @@ export const paint = (text: string, code: string, isColour: boolean): string => 
 export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean => stream.isTTY === true && env.NO_COLOR === undefined && env.TERM !== 'dumb';
 
 // A mark at the start of a line, padded to the column the next word starts in.
-const MARK = /^(\s*)(ok|done|MISSING|note|next|to do|not now|can't check)(\s+)(.*)$/;
-const HEADING = /^(?:yokoten \d|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:)/;
+const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
+const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
+const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
+// The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
 const COMMAND = /`[^`\n]+`/g;
+// One row of `yokoten help`: two spaces, the command's name, then its summary.
+const COMMAND_ROW = /^(\s{2})([a-z][a-z-]*)(\s{2,})(.*)$/;
 
 /**
  * One line of a person's output: a mark in its colour, a heading in bold, a refusal in
@@ -182,10 +186,19 @@ export function styleLine(line: string, isColour: boolean): string {
   if (line.startsWith('yokoten stopped this: ')) {
     outer = `${BOLD};${RED}`;
   } else if (mark) {
-    const colour = mark[2] === 'ok' || mark[2] === 'done' ? GREEN : mark[2] === 'MISSING' ? RED : YELLOW;
+    const colour = GREEN_MARKS.has(mark[2] ?? '') ? GREEN : mark[2] === 'MISSING' ? RED : YELLOW;
     styled = `${mark[1] ?? ''}${paint(mark[2] ?? '', colour, true)}${mark[3] ?? ''}${mark[4] ?? ''}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;
+  } else {
+    const row = COMMAND_ROW.exec(line);
+    if (row && findCommand(row[2] ?? '') !== undefined) styled = `${row[1] ?? ''}${paint(row[2] ?? '', CYAN, true)}${row[3] ?? ''}${row[4] ?? ''}`;
+  }
+  // A command's own help names it in the usage line, which is bold: the name goes cyan and
+  // the bold is opened again after it, as for a command at the start of a line (#929).
+  const usage = /^(Usage: yokoten )([a-z][a-z-]*)(.*)$/.exec(styled);
+  if (usage && findCommand(usage[2] ?? '') !== undefined) {
+    styled = `${usage[1] ?? ''}${paint(usage[2] ?? '', CYAN, true)}${usage[3] ? `\u001b[${BOLD}m` : ''}${usage[3] ?? ''}`;
   }
   const painted = styled.replace(COMMAND, (command, offset: number) =>
     `${paint(command, CYAN, true)}${outer !== undefined && offset + command.length < styled.length ? `\u001b[${outer}m` : ''}`,

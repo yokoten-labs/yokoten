@@ -5,7 +5,7 @@ import { basename, dirname, join, resolve, sep } from 'node:path';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
-import { ADAPTERS, adapterFor, askOf, contextOf, releaseFixOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
+import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/message.ts';
@@ -612,9 +612,7 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   const sessionKey = repeatKeyOf(sessionIdOf(input));
   const shape = commandShape(action.command, action.paths);
   return judged.then((judgedFinding) => {
-    // The guard names no agent; the hook knows which one it runs for.
-    const fix = releaseFixOf(agent);
-    let found = judgedFinding?.id === 'release' && fix !== undefined ? { ...judgedFinding, fix } : judgedFinding;
+    let found = judgedFinding;
     // A command that may print the owner's details runs through `yokoten redact` (#390).
     const printed = !found && action.command !== undefined ? printsAccount(action.command) : null;
     if (printed && action.command !== undefined) {
