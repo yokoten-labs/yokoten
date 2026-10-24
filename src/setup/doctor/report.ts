@@ -427,10 +427,15 @@ function doctorRun(
     lines.push('');
     lines.push(`  ${i + 1}. ${name}`);
     const walked = where.steps.filter((w) => w.step.stage === i + 1);
-    // The done steps of a stage share one line; a step not done keeps its own.
-    const doneNames = walked
-      .filter(({ mark }) => mark === 'done')
-      .map(({ step }) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`);
+    // The done steps of every stage except the one holding the next step share one line:
+    // that stage is the reader's checklist, and a step named alone there still answers
+    // "is this done?" at a glance (#946).
+    const isCurrent = where.stage === i + 1;
+    const doneNames = isCurrent
+      ? []
+      : walked
+        .filter(({ mark }) => mark === 'done')
+        .map(({ step }) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`);
     if (doneNames.length) lines.push(`    ${'done'.padEnd(11)} ${doneNames.join(', ')}`);
     // The "can't check" steps of a stage that share one reason share one line too.
     const unchecked = new Map<string, string[]>();
@@ -439,6 +444,7 @@ function doctorRun(
       if (step.standard) state.standard = step.standard;
       if (mark === 'done') {
         steps.push(state);
+        if (isCurrent) lines.push(`    ${mark.padEnd(11)} ${step.key}${step.standard ? ` (${step.standard})` : ''}`);
         continue;
       }
       let note = '';
