@@ -934,13 +934,16 @@ test('docs: README images and links use full URLs, so the npm page can show them
   assert.deepEqual(found, [], found.join('\n'));
 });
 
-/** The lines of `text` outside code fences that hold an HTML tag. A comment is not a tag. */
+/**
+ * The lines of `text` outside code fences that hold an HTML tag. A comment is not a tag,
+ * and neither is a Markdown autolink such as `<https://example.com>` (#966).
+ */
 function htmlTagLines(text: string): number[] {
   const lines: number[] = [];
   let isFenced = false;
   for (const [index, line] of text.split('\n').entries()) {
     if (line.startsWith('```')) isFenced = !isFenced;
-    else if (!isFenced && /<\/?[A-Za-z][^>]*>/.test(line.replace(/`[^`]*`/g, ''))) lines.push(index + 1);
+    else if (!isFenced && /<\/?[A-Za-z][^>]*>/.test(line.replace(/`[^`]*`|<!--.*?-->|<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>|<[^\s<>@]+@[^\s<>@]+>/g, ''))) lines.push(index + 1);
   }
   return lines;
 }
@@ -949,6 +952,8 @@ test('docs: the READMEs are plain Markdown, so npm and GitHub show the same page
   // npm, GitHub and agents render HTML differently, and npm showed a broken banner for
   // v0.1.0. Plain Markdown reads the same everywhere; the website carries the design.
   assert.deepEqual(htmlTagLines('# a\n<div align="center">\n`<b>` is code\n```\n<b>\n```\n<!-- note -->'), [2]);
+  // An autolink and a comment holding a tag are not HTML; a real tag beside them still is (#966).
+  assert.deepEqual(htmlTagLines('see <https://example.com>\n<!-- <b> -->\nmail <a@example.com>\n<b>bold</b> <https://x.dev>'), [4]);
   const found: string[] = [];
   for (const file of ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md']) {
     for (const line of htmlTagLines(readFileSync(join(ROOT, file), 'utf8'))) found.push(`${file}:${line}`);
