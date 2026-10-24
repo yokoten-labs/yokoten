@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, formatFinding } from '../../rules/message.ts';
-import { homeOf } from '../../rules/privacy.ts';
+import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
 import { countNotes, waitingLine } from '../../run/learn.ts';
@@ -557,6 +557,10 @@ function doctorRun(
     lines.push(...OWNER_STEPS.map((s) => `  not checked ${s}`));
   }
   lines.push(...listBoardSteps(server));
+  // A shell that is not UTC makes each new commit carry its zone (#932). Say the one line
+  // for this shell at the end, where a person looks for the next step. A session never
+  // needs it: init already sets TZ=UTC for agent sessions.
+  if (!session && config.privacy.utc && !isUtcTimeZone(env)) lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
   // The road has no failed mark: a step is done, to do, not now or can't check. Steps
   // left are the way ahead, not problems, so they never fail doctor (#208).
   const ok = !failed.length && !isCoreBehind && !problems.length && machine.every((c) => c.ok);

@@ -33,6 +33,16 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   assert.match(again.stdout, /the road: stage 1 of 5/);
 });
 
+test('start: a shell that is not UTC ends on the line for that shell (#932)', async () => {
+  const sandbox = makeSandbox();
+  const result = await sandbox.call([], { extra: { TZ: 'America/New_York', SHELL: '/bin/zsh' } });
+  const last = result.stdout.trimEnd().split('\n').at(-1) ?? '';
+  assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
+  assert.match(last, /`export TZ=UTC`/);
+  assert.match(last, /~\/\.zshrc/);
+  assert.equal(result.stdout.match(/time zone is not UTC/g)?.length, 1, 'said once');
+});
+
 test('start: outside a git repo it writes nothing and names git first (#548)', async () => {
   const sandbox = makeSandbox();
   const outside = join(sandbox.home, 'outside');
