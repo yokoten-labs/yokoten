@@ -412,13 +412,27 @@ function hostTokenReveal(words: string[]): Finding | undefined {
   return undefined;
 }
 
-/** `gh workflow disable`, for every agent (#668). */
+const WORKFLOW_FIX = 'leave the workflow on; if a run must stop, tell the owner';
+// `Actions/workflows/<id or file name>/disable` on the repo, or its `repositories/<id>` or
+// shell-variable form. The enable route and every read stay allowed (#956).
+const WORKFLOW_OFF = new RegExp(`^${REPO}/actions/workflows/[^/]+/disable$`, 'i');
+
+/** `gh workflow disable`, or the `gh api` call that does the same, for every agent (#668, #956). */
 function hostWorkflowOff(words: string[]): Finding | undefined {
   const at = ghIndex(words, findProgramPlaces(words));
   if (at === -1) return undefined;
-  const [group, sub] = plainArgs(withoutShellRedirects(words, at + 1), ['-R', '--repo', '--hostname']);
-  if (group !== 'workflow' || sub !== 'disable') return undefined;
-  return finding('workflow-disable', '`gh workflow disable` turns a workflow off, so its checks stop running on every pull request', 'leave the workflow on; if a run must stop, tell the owner');
+  const args = withoutShellRedirects(words, at + 1);
+  const [group, sub] = plainArgs(args, ['-R', '--repo', '--hostname']);
+  if (group === 'workflow' && sub === 'disable') return finding('workflow-disable', '`gh workflow disable` turns a workflow off, so its checks stop running on every pull request', WORKFLOW_FIX);
+  if (group !== 'api') return undefined;
+  const call = readApi(args.slice(args.indexOf('api') + 1));
+  // A short-option cluster is refused before this check, by hostRunRemoval.
+  if (call.cluster) return undefined;
+  // No method and a field or `--input`: gh sends POST. A named GET is a read, even with fields.
+  const method = call.method || (call.hasFields ? 'POST' : 'GET');
+  if (method === 'GET') return undefined;
+  if (WORKFLOW_OFF.test(call.path)) return finding('workflow-disable', 'this `gh api` call turns a workflow off, so its checks stop running on every pull request', WORKFLOW_FIX);
+  return undefined;
 }
 
 // ---- A call to the API that publishes (#829) ----
@@ -553,6 +567,7 @@ const GUARD_SAMPLES: { command: string; name: string }[] = [
   { command: 'gh extension exec demo', name: 'gh command guard' },
   { command: 'gh extension browse', name: 'gh command guard' },
   { command: 'gh api -X PATCH repos/o/r -f visibility=public', name: 'settings guard' },
+  { command: 'gh api -X PUT repos/o/r/actions/workflows/ci.yml/disable', name: 'workflow-disable guard' },
 ];
 
 /** The names of the samples `check` did not catch. A finding counts as a catch. Each name is listed once. */
