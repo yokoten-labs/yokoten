@@ -10,7 +10,7 @@ import { formatFinding } from '../rules/message.ts';
 import { init, trust, undoTrust, updateCoreRules } from '../setup/init.ts';
 import { type Ask, install, isMachineSetUp, uninstall } from '../setup/install.ts';
 import { readOriginUrl, setUpPlanning } from '../setup/plan.ts';
-import { enabledPlugin, HTTPS_ADDRESS, readPluginMarketplace } from '../setup/advice/marketplace.ts';
+import { enabledPlugin } from '../setup/advice/marketplace.ts';
 import { type Invocation, noRootFinding, type Output, parse, print, requireRoot, rootOf, usage } from './shared.ts';
 
 /**
@@ -192,10 +192,11 @@ export function runUninstall(invocation: Invocation): number {
   return done.ok ? 0 : 1;
 }
 
-/** The name Claude Code gives the marketplace when it is added by its address: the manifest's name. */
-const MARKETPLACE_NAME = 'yokoten';
-/** The short form a `github` marketplace is added by. */
-const GITHUB_REPO = 'yokoten-labs/yokoten';
+/**
+ * A marketplace name as Claude Code writes it. The name comes from the user's own files and,
+ * on Windows, reaches a `cmd` line, so anything else is refused, not quoted.
+ */
+const PLAIN_NAME = /^[A-Za-z0-9._-]+$/;
 
 /** A clone over a slow line takes minutes; ten is a hang. */
 const CLAUDE_TIMEOUT = 600_000;
@@ -204,9 +205,12 @@ const CLAUDE_TIMEOUT = 600_000;
  * A per-process git config for each `claude` call: `insteadOf` sends a `git@github.com:`
  * address over HTTPS. Nothing in the user's own git config changes (#950). The entry goes
  * after the ones the user already set this way (a proxy, a credential helper), so theirs stay.
+ * A count that is set but is not a small number is one yokoten can't add to safely: null.
  */
-function withHttpsGit(env: Env): Env {
-  const count = /^\d+$/.test(env.GIT_CONFIG_COUNT ?? '') ? Number(env.GIT_CONFIG_COUNT) : 0;
+function withHttpsGit(env: Env): Env | null {
+  const set = env.GIT_CONFIG_COUNT ?? '';
+  if (set !== '' && !/^\d{1,3}$/.test(set)) return null;
+  const count = set === '' ? 0 : Number(set);
   return {
     ...env,
     GIT_CONFIG_COUNT: String(count + 1),
@@ -230,7 +234,8 @@ const claudeFile = (): string => (process.platform === 'win32' ? 'claude.cmd' : 
 
 /**
  * Runs `claude <args>` with `env`. A failure keeps the last line it said, so the user reads
- * Claude Code's own words, and the command to run by hand for the rest.
+ * Claude Code's own words, and the command to run by hand for the rest. Every word is a fixed
+ * one or a name PLAIN_NAME passed, so the Windows shell line holds nothing it reads.
  */
 function runClaude(args: string[], env: Env): { ok: boolean; said: string } {
   const result = spawnSync(claudeFile(), args, { env, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32', timeout: CLAUDE_TIMEOUT });
@@ -241,9 +246,10 @@ function runClaude(args: string[], env: Env): { ok: boolean; said: string } {
 }
 
 /**
- * Brings the yokoten plugin to the newest version: the marketplace, then the plugin, over
- * HTTPS. Without the plugin it names the one command that installs the newest yokoten and
- * runs nothing: there is nothing of yokoten's to update in Claude Code then.
+ * Brings the yokoten plugin to the newest version: the marketplace, then the plugin, with git
+ * told to fetch github.com over HTTPS for these calls. It adds and removes nothing, so a
+ * failed step leaves the plugin as it was (#950). Without the plugin it names the one command
+ * that installs the newest yokoten and runs nothing.
  */
 export function upgrade(env: Env): UpgradeDone {
   const plugin = enabledPlugin(env);
@@ -256,9 +262,16 @@ export function upgrade(env: Env): UpgradeDone {
       ],
     };
   }
-  const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
-  // Every call fetches over HTTPS: an add or an install clones too, and so does the way back.
+  const name = plugin.marketplace;
+  // Both checks come before the first call: a refusal changes nothing.
+  if (!PLAIN_NAME.test(name)) {
+    return { ok: false, lines: [`yokoten upgrade: the marketplace name in your settings is not a plain name, so yokoten runs nothing. Update by hand: claude plugin update ${plugin.id}`] };
+  }
   const httpsEnv = withHttpsGit(env);
+  if (httpsEnv === null) {
+    return { ok: false, lines: ['yokoten upgrade: GIT_CONFIG_COUNT is set, but not to a small number, so yokoten can\'t add its HTTPS setting after yours. It runs nothing. Unset GIT_CONFIG_COUNT, or fix it, and run it again.'] };
+  }
+  const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
   // Each step says one line. A failed step stops the rest: the next one needs it.
   const step = (label: string, args: string[]): boolean => {
     const done = runClaude(args, httpsEnv);
@@ -268,23 +281,8 @@ export function upgrade(env: Env): UpgradeDone {
     lines.push(`To see the whole message, run this by hand: claude ${args.join(' ')}`);
     return false;
   };
-  const marketplace = readPluginMarketplace(env);
-  let name = marketplace?.name ?? plugin.marketplace;
-  // A github source is cloned over SSH, so it fails on a machine with no GitHub SSH key:
-  // the marketplace moves to the HTTPS address first, and the same channel is installed again.
-  if (marketplace?.source === 'github') {
-    lines.push('The marketplace fetches over SSH; this moves it to the HTTPS address, which needs no SSH key.');
-    if (!step(`removed the marketplace ${name}`, ['plugin', 'marketplace', 'remove', name])) return { ok: false, lines };
-    if (!step(`added the marketplace by its HTTPS address: ${HTTPS_ADDRESS}`, ['plugin', 'marketplace', 'add', HTTPS_ADDRESS])) {
-      // The old one is gone by now: put it back, so a failed move never leaves no marketplace.
-      step(`put the marketplace back as it was: ${GITHUB_REPO}`, ['plugin', 'marketplace', 'add', GITHUB_REPO]);
-      return { ok: false, lines };
-    }
-    name = MARKETPLACE_NAME;
-    if (!step(`installed ${plugin.name}@${name} again`, ['plugin', 'install', `${plugin.name}@${name}`])) return { ok: false, lines };
-  }
   if (!step(`updated the marketplace ${name}`, ['plugin', 'marketplace', 'update', name])) return { ok: false, lines };
-  if (!step(`updated the plugin ${plugin.name}@${name}`, ['plugin', 'update', `${plugin.name}@${name}`])) return { ok: false, lines };
+  if (!step(`updated the plugin ${plugin.id}`, ['plugin', 'update', plugin.id])) return { ok: false, lines };
   lines.push('Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts.');
   return { ok: true, lines };
 }

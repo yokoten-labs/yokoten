@@ -232,9 +232,9 @@ export const COMMANDS: Command[] = [
     text: [
       'Brings yokoten itself to the newest version. With the Claude Code plugin on, it',
       'updates the marketplace, then the plugin, with git told to fetch github.com over',
-      'HTTPS for those two calls only. A marketplace that fetches over SSH moves to the',
-      'HTTPS address first, so no GitHub SSH key is needed. Without the plugin, it names',
-      'the command that installs the newest yokoten and runs nothing.',
+      'HTTPS for those calls only, so no GitHub SSH key is needed. It adds and removes',
+      'nothing. Without the plugin, it names the command that installs the newest yokoten',
+      'and runs nothing.',
     ],
     options: [],
     example: 'yokoten upgrade',

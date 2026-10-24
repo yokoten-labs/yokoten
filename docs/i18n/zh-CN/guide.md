@@ -741,7 +741,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `init --no-ci` | 不用 CI：在 `yokoten.json` 的 `"notNow"` 里记下 `"ci"`，不写 workflow，也不写 Dependabot 配置；这些文件如果还是 kit 原样，就删掉。私有仓库的 Actions 按分钟收费，用这个省下来 |
 | `trust [dir] [--undo]` | 给这台电脑上装了的 agent 打开 yokoten 的守卫：按它们各自的写法，只写 yokoten 自己的钩子需要的信任，支持 Codex、Grok CLI、Copilot CLI 和 Muse Code。这条命令由人在终端里跑；管道里什么都不写。只有 yokoten 自己的钩子在、而且项目的 Codex 沙箱是安全的，它才信任这个文件夹，因为信任文件夹会让项目自己的沙箱设置生效。在终端里跑 `init` 时会问一次；没有终端就什么都不写，只告诉你这条命令。`--undo` 只删 yokoten 写进去的条目，你后来改过的会留着 |
 | `update [dir] [--write]` | 看看这个版本的 yokoten 会怎么改项目 `AGENTS.md` 里的核心规则。加上 `--write` 才真的替换；「This project」那部分原样保留。见[更新规则](#更新规则) |
-| `upgrade` | 把 yokoten 本身升到最新版。装了 Claude Code 插件时，先更新 marketplace，再更新插件，都走 HTTPS，不用 SSH 密钥。原来走 SSH 的 marketplace 会先换成 HTTPS 地址。没装插件时，只告诉你运行 `npx yokoten@latest` |
+| `upgrade` | 把 yokoten 本身升到最新版。装了 Claude Code 插件时，先更新 marketplace，再更新插件，都走 HTTPS，不用 SSH 密钥。不会添加或删除任何东西。没装插件时，只告诉你运行 `npx yokoten@latest` |
 | `doctor [--session] [--json]` | 整条路：每一关、每一步，加上这台电脑还缺什么。`--session` 只说下一步，会话开头用。完整的 doctor 还会拿一条无关紧要的命令把守卫跑一次，报告 `guard: 90 ms per command (60 ms CPU)`：一次调用的墙钟时间和 CPU 时间（用户态加内核态）；会话开头不跑。再加 `--agent gemini`，就按 Gemini CLI 读得懂的 JSON 输出 |
 | `adopt [--json]` | 给老项目的采用表出一份草稿：项目现在做到了哪些，每一步建议怎么定。`--json` 输出每一行的数据。不改任何文件 |
 | `check [--staged] [--json]` | 检查目录层级、隐私和只有 lead 能改的文件；`--staged` 只查下一次提交。提交里不能有构建产物和二进制文件。`changes/` 里的文件按 `changelog` 的读法检查，格式不对，提交时就拦下。什么都没暂存时，`--staged` 提醒一句，算通过。查整个目录时，落后于英文的译文会给一条提醒，见[翻译](#翻译) |

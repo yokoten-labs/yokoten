@@ -123,45 +123,32 @@ function fakeClaude(sandbox: ReturnType<typeof makeSandbox>, failsOn = 'none') {
   return { extra, calls };
 }
 
-/** The sandbox home with the plugin on, and the marketplace recorded the way given. */
-function withPlugin(sandbox: ReturnType<typeof makeSandbox>, source: unknown) {
+/** The sandbox home with the plugin on under `id`, and the marketplace recorded the way given. */
+function withPlugin(sandbox: ReturnType<typeof makeSandbox>, source: unknown, id = 'yokoten-beta@yokoten') {
   const claude = join(sandbox.home, '.claude');
   mkdirSync(join(claude, 'plugins'), { recursive: true });
-  writeFileSync(join(claude, 'settings.json'), JSON.stringify({ enabledPlugins: { 'yokoten-beta@yokoten': true } }));
+  writeFileSync(join(claude, 'settings.json'), JSON.stringify({ enabledPlugins: { [id]: true } }));
   writeFileSync(join(claude, 'plugins', 'known_marketplaces.json'), JSON.stringify({ yokoten: { source } }));
 }
 
 // The sandbox sets two git entries of its own (test/repo/helpers.ts), so the override is the third.
 const HTTPS_GIT = { count: '3', key: 'url.https://github.com/.insteadOf', value: 'git@github.com:' };
+const SSH_SOURCE = { source: 'github', repo: 'yokoten-labs/yokoten' };
+const HTTPS_SOURCE = { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' };
 
-test('upgrade: a github marketplace moves to HTTPS, then the two updates carry the override', async () => {
-  const sandbox = makeSandbox();
-  withPlugin(sandbox, { source: 'github', repo: 'yokoten-labs/yokoten' });
-  const fake = fakeClaude(sandbox);
-  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
-  assert.equal(result.status, 0, result.stderr);
-  const calls = fake.calls();
-  assert.deepEqual(calls.map((call) => call.args), [
-    'plugin marketplace remove yokoten',
-    'plugin marketplace add https://github.com/yokoten-labs/yokoten.git',
-    'plugin install yokoten-beta@yokoten',
-    'plugin marketplace update yokoten',
-    'plugin update yokoten-beta@yokoten',
-  ]);
-  // Every call clones or fetches, so every call tells git to use HTTPS.
-  for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
-  assert.match(result.stdout, /^ok {6}removed the marketplace yokoten$/m);
-  assert.match(result.stdout, /^Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts\.$/m);
-});
-
-test('upgrade: an HTTPS marketplace is not moved, and only the two updates run', async () => {
-  const sandbox = makeSandbox();
-  withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
-  const fake = fakeClaude(sandbox);
-  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(fake.calls().map((call) => call.args), ['plugin marketplace update yokoten', 'plugin update yokoten-beta@yokoten']);
-  assert.doesNotMatch(result.stdout, /removed the marketplace/);
+test('upgrade: the two updates carry the HTTPS override, and nothing is removed or added', async () => {
+  for (const source of [SSH_SOURCE, HTTPS_SOURCE]) {
+    const sandbox = makeSandbox();
+    withPlugin(sandbox, source);
+    const fake = fakeClaude(sandbox);
+    const result = await sandbox.call(['upgrade'], { extra: fake.extra });
+    assert.equal(result.status, 0, result.stderr);
+    const calls = fake.calls();
+    // A remove would leave no marketplace when the next clone fails, so there is none.
+    assert.deepEqual(calls.map((call) => call.args), ['plugin marketplace update yokoten', 'plugin update yokoten-beta@yokoten'], JSON.stringify(source));
+    for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
+    assert.match(result.stdout, /^Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts\.$/m);
+  }
 });
 
 test('upgrade: without the plugin it names npx and runs nothing', async () => {
@@ -175,7 +162,7 @@ test('upgrade: without the plugin it names npx and runs nothing', async () => {
 
 test('upgrade: a failing step stops the rest and gives the command to run by hand', async () => {
   const sandbox = makeSandbox();
-  withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
+  withPlugin(sandbox, HTTPS_SOURCE);
   const fake = fakeClaude(sandbox, 'plugin');
   const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 1);
@@ -184,31 +171,39 @@ test('upgrade: a failing step stops the rest and gives the command to run by han
   assert.match(result.stderr, /^To see the whole message, run this by hand: claude plugin marketplace update yokoten$/m);
 });
 
-test('upgrade: a failed move puts the old marketplace back, so the user is never left with none', async () => {
-  const sandbox = makeSandbox();
-  withPlugin(sandbox, { source: 'github', repo: 'yokoten-labs/yokoten' });
-  const fake = fakeClaude(sandbox, 'plugin marketplace add https://');
-  const result = await sandbox.call(['upgrade'], { extra: fake.extra });
-  assert.equal(result.status, 1);
-  assert.deepEqual(fake.calls().map((call) => call.args), [
-    'plugin marketplace remove yokoten',
-    'plugin marketplace add https://github.com/yokoten-labs/yokoten.git',
-    'plugin marketplace add yokoten-labs/yokoten',
-  ]);
-  // The way back clones a github source too, so it fetches over HTTPS as well.
-  assert.equal(fake.calls()[2].key, HTTPS_GIT.key);
-  assert.match(result.stderr, /^ok {6}put the marketplace back as it was: yokoten-labs\/yokoten$/m);
-});
-
 test('upgrade: a git config the user set the same way is kept, and the override comes after it', async () => {
   const sandbox = makeSandbox();
-  withPlugin(sandbox, { source: 'git', url: 'https://github.com/yokoten-labs/yokoten.git' });
+  withPlugin(sandbox, HTTPS_SOURCE);
   const fake = fakeClaude(sandbox);
   const own = { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.proxy', GIT_CONFIG_VALUE_0: 'http://proxy.example.com:8080' };
   const result = await sandbox.call(['upgrade'], { extra: { ...fake.extra, ...own } });
   assert.equal(result.status, 0, result.stderr);
   for (const call of fake.calls()) {
     assert.deepEqual({ count: call.count, key: call.key, value: call.value, first: call.first }, { ...HTTPS_GIT, count: '2', first: 'http.proxy' }, call.args);
+  }
+});
+
+test('upgrade: a GIT_CONFIG_COUNT that is set but not a small number runs nothing', async () => {
+  for (const count of ['abc', '1.5', '+2', '-1', '2 ', '1000', '9007199254740993']) {
+    const sandbox = makeSandbox();
+    withPlugin(sandbox, HTTPS_SOURCE);
+    const fake = fakeClaude(sandbox);
+    const result = await sandbox.call(['upgrade'], { extra: { ...fake.extra, GIT_CONFIG_COUNT: count } });
+    assert.equal(result.status, 1, count);
+    assert.deepEqual(fake.calls(), [], `${count}: no call`);
+    assert.match(result.stderr, /GIT_CONFIG_COUNT is set, but not to a small number/, count);
+  }
+});
+
+test('upgrade: a marketplace name that is not plain runs nothing, so it never reaches a shell line', async () => {
+  for (const name of ['x&calc', 'x%PATH%', 'a b', 'x"y']) {
+    const sandbox = makeSandbox();
+    withPlugin(sandbox, HTTPS_SOURCE, `yokoten-beta@${name}`);
+    const fake = fakeClaude(sandbox);
+    const result = await sandbox.call(['upgrade'], { extra: fake.extra });
+    assert.equal(result.status, 1, name);
+    assert.deepEqual(fake.calls(), [], `${name}: no call`);
+    assert.match(result.stderr, /the marketplace name in your settings is not a plain name/, name);
   }
 });
 

@@ -1,7 +1,7 @@
 // The yokoten plugin as Claude Code records it: the channel that is on, and how Claude Code
-// fetches the marketplace it came from. A `github` source is cloned over SSH, which fails on a
-// machine with no GitHub SSH key, so `yokoten upgrade` moves it to the HTTPS address (#950), and
-// doctor says so once. The state and the note about it sit in one module.
+// fetches the marketplace it came from. A `github` source, or a git address over SSH, fails on a
+// machine with no GitHub SSH key. `yokoten upgrade` fetches over HTTPS for its own calls and
+// changes nothing on disk (#950); doctor names it once. The state and the note sit in one module.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,15 +10,12 @@ import { type Finding, finding } from '../../rules/message.ts';
 import { homeOf } from '../../rules/privacy.ts';
 import { type PluginChannel, readPluginChannel, userDir } from '../../agents/runtimes/claude-code.ts';
 
-/** The marketplace address that needs no SSH key, and the one `upgrade` moves to (#950). */
-export const HTTPS_ADDRESS = 'https://github.com/yokoten-labs/yokoten.git';
-
-/** How Claude Code fetches a marketplace: over SSH (`github`), over HTTPS (`https`), or another way. */
-export type MarketplaceSource = 'github' | 'https' | 'other';
+/** How Claude Code fetches a marketplace: over SSH (a `github` source or an SSH address), over HTTPS, or another way. */
+export type MarketplaceSource = 'ssh' | 'https' | 'other';
 
 /** The yokoten marketplace Claude Code knows: its name, and how it fetches it. */
 export interface PluginMarketplace {
-  /** The name `claude plugin marketplace remove` takes, from known_marketplaces.json. */
+  /** The name `claude plugin marketplace update` takes, from known_marketplaces.json. */
   name: string;
   source: MarketplaceSource;
   /** The address it fetches, when the file records one. */
@@ -47,7 +44,11 @@ function readJsonFile(path: string): unknown {
   }
 }
 
-const namesYokoten = (value: string | null): boolean => value !== null && value.includes('yokoten-labs/yokoten');
+// The yokoten repo exactly: `owner/repo` for a github source, or its address over HTTPS or SSH.
+// A repo whose name only contains these words is not yokoten.
+const YOKOTEN_REPO = /^yokoten-labs\/yokoten$/i;
+const YOKOTEN_ADDRESS = /^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[:/]yokoten-labs\/yokoten(?:\.git)?\/?$/i;
+const SSH_ADDRESS = /^(?:ssh:\/\/|git@)/i;
 
 /**
  * The yokoten plugin on in ~/.claude/settings.json, or null when none is on. `enabledPlugins`
@@ -84,26 +85,27 @@ export function readPluginMarketplace(env: Env): PluginMarketplace | null {
     const { source } = entry;
     const url = typeof source.url === 'string' ? source.url : null;
     const repo = typeof source.repo === 'string' ? source.repo : null;
-    if (!namesYokoten(repo) && !namesYokoten(url)) continue;
-    if (source.source === 'github') return { name, source: 'github', url };
+    if (!(repo !== null && YOKOTEN_REPO.test(repo)) && !(url !== null && YOKOTEN_ADDRESS.test(url))) continue;
+    if (source.source === 'github') return { name, source: 'ssh', url };
     if (source.source === 'git' && url !== null && /^https:\/\//i.test(url)) return { name, source: 'https', url };
+    if (source.source === 'git' && url !== null && SSH_ADDRESS.test(url)) return { name, source: 'ssh', url };
     return { name, source: 'other', url };
   }
   return null;
 }
 
 /**
- * A note when the yokoten marketplace is a `github` source, so every update goes over SSH.
+ * A note when Claude Code fetches the yokoten marketplace over SSH, so its own updates need a key.
  * Null when the source is the HTTPS address, when Claude Code knows no yokoten marketplace,
  * or when there is no home folder. A note, never a failure: the plugin works until it updates.
  */
 export function pluginSourceNote(env: Env): Finding | null {
   const marketplace = readPluginMarketplace(env);
-  if (marketplace === null || marketplace.source !== 'github') return null;
+  if (marketplace === null || marketplace.source !== 'ssh') return null;
   return finding(
     'plugin-version',
-    'the yokoten marketplace is a github source, so Claude Code clones it over SSH',
-    'run `npx yokoten@latest upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key',
+    'Claude Code fetches the yokoten marketplace over SSH',
+    'update with `npx yokoten@latest upgrade`: it fetches over HTTPS, so it needs no SSH key',
     { why: 'without a GitHub SSH key the clone fails, so the plugin never updates and you stay on an old yokoten' },
   );
 }

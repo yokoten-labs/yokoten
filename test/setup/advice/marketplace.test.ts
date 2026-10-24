@@ -46,25 +46,31 @@ test('plugin: an off plugin, another plugin, or no settings file enables nothing
   assert.equal(enabledPlugin({}), null);
 });
 
-test('marketplace: a github source is told apart from the HTTPS address', () => {
-  assert.equal(readPluginMarketplace({ HOME: pluginHome(githubSource) })?.source, 'github');
+test('marketplace: a github source and an SSH address are told apart from the HTTPS address', () => {
+  assert.equal(readPluginMarketplace({ HOME: pluginHome(githubSource) })?.source, 'ssh');
   assert.equal(readPluginMarketplace({ HOME: pluginHome(httpsSource) })?.source, 'https');
+  for (const url of ['git@github.com:yokoten-labs/yokoten.git', 'ssh://git@github.com/yokoten-labs/yokoten.git']) {
+    assert.equal(readPluginMarketplace({ HOME: pluginHome({ yokoten: { source: { source: 'git', url } } }) })?.source, 'ssh', url);
+  }
   // Nothing known, or another repo: no yokoten marketplace to report.
   assert.equal(readPluginMarketplace({ HOME: pluginHome(undefined) }), null);
   assert.equal(readPluginMarketplace({ HOME: pluginHome({ other: { source: { source: 'github', repo: 'octo/demo' } } }) }), null);
+  // A repo or address that only holds the words is not yokoten.
+  assert.equal(readPluginMarketplace({ HOME: pluginHome({ x: { source: { source: 'github', repo: 'octo/yokoten-labs/yokoten-fork' } } }) }), null);
+  assert.equal(readPluginMarketplace({ HOME: pluginHome({ x: { source: { source: 'git', url: 'https://example.com/yokoten-labs/yokoten.git' } } }) }), null);
 });
 
 test('marketplace: the entry is found by its repo when the user named it otherwise', () => {
   const home = pluginHome({ mine: { source: { source: 'github', repo: 'yokoten-labs/yokoten' } } }, {});
-  assert.deepEqual(readPluginMarketplace({ HOME: home }), { name: 'mine', source: 'github', url: null });
+  assert.deepEqual(readPluginMarketplace({ HOME: home }), { name: 'mine', source: 'ssh', url: null });
 });
 
-test('marketplace: a github source gets one note, naming the one command that moves it', () => {
+test('marketplace: an SSH source gets one note, naming the command that updates over HTTPS', () => {
   const note = pluginSourceNote({ HOME: pluginHome(githubSource) });
   assert.ok(note, 'a github source is a note');
   const text = formatFinding(note);
-  assert.match(text, /the yokoten marketplace is a github source, so Claude Code clones it over SSH\./);
-  assert.match(text, /Run `npx yokoten@latest upgrade` once: it moves the marketplace to the HTTPS address, which needs no SSH key\./);
+  assert.match(text, /Claude Code fetches the yokoten marketplace over SSH\./);
+  assert.match(text, /Update with `npx yokoten@latest upgrade`: it fetches over HTTPS, so it needs no SSH key\./);
   assert.match(text, /Without a GitHub SSH key the clone fails/, 'the note says what goes wrong');
 });
 
@@ -72,11 +78,11 @@ test('marketplace: the HTTPS address says nothing', () => {
   assert.equal(pluginSourceNote({ HOME: pluginHome(httpsSource) }), null);
 });
 
-test('doctor: the note reaches a session for a github source, and not for the HTTPS address', () => {
-  assert.match(sandboxWith(githubSource).run(['doctor', '--session']).stdout, /^yokoten: the yokoten marketplace is a github source/m);
-  assert.doesNotMatch(sandboxWith(httpsSource).run(['doctor', '--session']).stdout, /marketplace is a github source/);
+test('doctor: the note reaches a session for an SSH source, and not for the HTTPS address', () => {
+  assert.match(sandboxWith(githubSource).run(['doctor', '--session']).stdout, /^yokoten: Claude Code fetches the yokoten marketplace over SSH/m);
+  assert.doesNotMatch(sandboxWith(httpsSource).run(['doctor', '--session']).stdout, /marketplace over SSH/);
 });
 
 test('doctor: the full report names the note as plugin-source', () => {
-  assert.match(sandboxWith(githubSource).run(['doctor']).stdout, /^ {2}note {4}plugin-source: the yokoten marketplace is a github source, so Claude Code clones it over SSH; run/m);
+  assert.match(sandboxWith(githubSource).run(['doctor']).stdout, /^ {2}note {4}plugin-source: Claude Code fetches the yokoten marketplace over SSH; update with/m);
 });
