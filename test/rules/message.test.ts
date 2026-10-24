@@ -25,9 +25,10 @@ import {
   checkCommand,
   checkEdit,
   privateOutput,
-} from '../../src/rules/guards.ts';
+} from '../../src/rules/guards/index.ts';
 import {
   checkBuildOutput,
+  checkCodeOwners,
   checkLayout,
 } from '../../src/rules/layout.ts';
 import {
@@ -77,8 +78,8 @@ import {
   lintStdout,
   lintTools,
 } from '../../src/commands/advice/mcp.ts';
-import { nameNotes } from '../../src/run/names.ts';
-import { translationNotes } from '../../src/run/translations.ts';
+import { nameNotes } from '../../src/run/notes/names.ts';
+import { translationNotes } from '../../src/run/notes/translations.ts';
 import { readCurrentPullRequest } from '../../src/host/current-pr.ts';
 import {
   readIssue,
@@ -109,7 +110,8 @@ import {
   upstreamNote,
   userAgentHooks,
 } from '../../src/setup/doctor/index.ts';
-import { openCodePluginNote } from '../../src/setup/doctor/checks.ts';
+import { editedKitCheck, openCodePluginNote } from '../../src/setup/doctor/checks.ts';
+import { KIT, sealManaged } from '../../src/setup/files.ts';
 import { workflowNotes } from '../../src/setup/init.ts';
 import {
   ROAD,
@@ -143,7 +145,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     found.push(f);
   };
   const env = { YOKOTEN_FIX_TASK: '1', YOKOTEN_ROLE: 'worker' };
-  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git tag v1.2.3', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1', 'gh api -X PATCH repos/o/r -f visibility=public']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
+  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git tag v1.2.3', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git reset --hard', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1', 'gh api -X PATCH repos/o/r -f visibility=public']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
   add(checkCommand('python3 --version', { cwd: process.cwd(), env: {}, config: { commands: { block: { python3: 'this project is TypeScript only' } } } }));
   add(checkCommand(`bash -c "${':;'.repeat(300000)}"`, { cwd: process.cwd(), env: {} })); // too many commands to read
   add(checkCommand('alias x=y', { cwd: process.cwd(), env: {} }));
@@ -156,6 +158,11 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   const mainRepo = makeTempDir('yokoten-default-main-');
   execFileSync('git', ['init', '-q', '-b', 'main', mainRepo]);
   add(checkCommand('git branch -D main', { cwd: mainRepo, env: {} }));
+  // The other ways to lose work or history (#828).
+  add(checkCommand('rm -rf .', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git clean -fdx', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git gc --prune=now', { cwd: process.cwd(), env: {} }));
+  add(checkCommand('git branch -f main HEAD~1', { cwd: mainRepo, env: {} }));
   add(checkEdit('test/a.test.ts', { config: DEFAULTS, env }));
   add(checkEdit('AGENTS.md', { config: DEFAULTS, env }));
   add(checkCommand('git push', { cwd: process.cwd(), env }));
@@ -169,6 +176,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   add(addedIgnores('a.ts', `// ${['yokoten', 'ignore'].join('-')} secret: a fixture`, new Set([1]), {})[0]);
   found.push(...checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS));
   found.push(...checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS));
+  found.push(...checkCodeOwners(['src/app.ts'], 'src/gone.ts @lead\n'));
   found.push(...checkPullRequest({ title: `Bad title (#1) ${'x'.repeat(70)}.`, body: '## Why\n\n', files: ['src/a.ts', 'kit/x'], labels: [], milestone: null }, DEFAULTS));
   add(checkOwnedTier({ body: 'tier: B\n', files: ['kit/x'] }, { text: '/kit/ @owner\n', from: 'the base branch' }));
   // An Approve on an older commit, with code changes after it (#612).
@@ -288,6 +296,13 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     writeFileSync(join(dir, 'AGENTS.md'), rules);
     add(coreRulesCheck(dir)?.finding);
   }
+  // A kit skill the user edited, with a newer kit copy waiting (#477): a note, never a failure.
+  const editedHome = makeTempDir();
+  const kitSkill = readFileSync(join(KIT, 'user', 'skills', 'dispatch', 'SKILL.md'), 'utf8');
+  const olderSkill = sealManaged(kitSkill.replace('Hand one task', 'Hand one job'));
+  mkdirSync(join(editedHome, '.claude', 'skills', 'dispatch'), { recursive: true });
+  writeFileSync(join(editedHome, '.claude', 'skills', 'dispatch', 'SKILL.md'), `${olderSkill}\nAsk the owner before a release.\n`);
+  add(editedKitCheck({ HOME: editedHome }));
   // A kit workflow with the project's changes (#456).
   mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
   writeFileSync(join(dir, '.github', 'workflows', 'yokoten.yml'), 'on: push\n');
@@ -317,6 +332,9 @@ test('messages: every check and guard says what, why and the fix, in text and JS
 
   // The event log's daily anchor check (#768): one finding of each shape, so the rule is reached.
   found.push(finding('anchor', '2026-10-20 no longer matches its anchor: Rekor holds no entry for this hash', 'restore the line the chain names, or keep this log and start a new one'));
+  // The collision stops (#910, #911) need a conflict map of open changes; their own tests build one.
+  found.push(finding('structural-change', 'PR #12 moves src/a.ts too', 'wait for PR #12 to go in, then move src/a.ts', { file: 'src/a.ts' }));
+  found.push(finding('file-lease', 'PR #12 is moving src/a.ts. An edit here now will conflict when it merges', 'work on something else until PR #12 merges, or ask the lead to put this task after it'));
 
   const known = new Set(ids());
   for (const f of found) {

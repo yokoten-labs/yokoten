@@ -9,8 +9,8 @@
     {
       "name": "yokoten",
       "source": {
-        "source": "github",
-        "repo": "yokoten-labs/yokoten",
+        "source": "url",
+        "url": "https://github.com/yokoten-labs/yokoten.git",
         "ref": "v0.1.0"
       },
       "description": "Stable: the latest release, with a changelog. Rules, guards and skills for AI coding agents."
@@ -18,8 +18,8 @@
     {
       "name": "yokoten-beta",
       "source": {
-        "source": "github",
-        "repo": "yokoten-labs/yokoten",
+        "source": "url",
+        "url": "https://github.com/yokoten-labs/yokoten.git",
         "ref": "v0.1.0"
       },
       "description": "Beta: the latest pre-release, for people who want new features early and can report problems."
@@ -27,8 +27,8 @@
     {
       "name": "yokoten-dev",
       "source": {
-        "source": "github",
-        "repo": "yokoten-labs/yokoten",
+        "source": "url",
+        "url": "https://github.com/yokoten-labs/yokoten.git",
         "ref": "main"
       },
       "description": "Dev: the default branch, every merged pull request, for contributors and yokoten's own tests."

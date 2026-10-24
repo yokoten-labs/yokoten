@@ -66,7 +66,7 @@ export const RULES = {
   release: {
     rule: 'only the owner creates tags and releases (core rule 3)',
     why: RELEASE_WHY,
-    check: 'the tool-call guard stops a tag push (`--tags`, `--follow-tags`, `--mirror`, a `v*` or `refs/tags/` ref), `gh release` and `npm publish`, unless the session started with YOKOTEN_RELEASE_APPROVAL; a tag ruleset on the server is the lock',
+    check: 'the tool-call guard stops a tag push (`--tags`, `--follow-tags`, `--mirror`, a `v*`, a local tag or a `refs/tags/` ref), `git update-ref` on a tag, `npm version`, `push.followTags`, `gh release`, API calls that write through the host, `gh workflow run`, `glab` and `tea` releases, package and image tools, and release scripts, unless the session started with YOKOTEN_RELEASE_APPROVAL; a tag ruleset on the server is the lock',
     docs: guide('the-core-rules'),
   },
   'force-push': {
@@ -74,6 +74,12 @@ export const RULES = {
     why: 'a plain force push can throw away work that someone else pushed',
     check: 'the tool-call guard stops `git push --force`, `-f` and a `+ref`; `--force-with-lease` passes; a branch ruleset on the server is the lock',
     docs: guide('the-core-rules'),
+  },
+  'hard-reset': {
+    rule: 'no hard reset: it throws away work (record 0034)',
+    why: 'a hard reset drops every change you have not committed, and git cannot bring it back',
+    check: 'the tool-call guard stops `git reset --hard`, and reads a shortened option as git does (`--har` means `--hard`); `git reset` without `--hard` and `git revert` pass',
+    docs: guide('the-safeguard'),
   },
   'skip-check': {
     rule: 'never skip the commit check (core rule 6)',
@@ -100,12 +106,36 @@ export const RULES = {
   'delete-default-branch': {
     rule: 'no deleting the default branch',
     why: 'the default branch holds the work every branch builds on, so deleting it throws that work away',
-    check: 'the tool-call guard stops `git branch -d`, `-D` and `--delete`, `git update-ref -d` and `git push --delete` (or `:<branch>`) on the default branch: refs/remotes/origin/HEAD when git names it, else main and master; delete only the branch you mean',
+    check: 'the tool-call guard stops `git branch -d`, `-D` and `--delete`, `git update-ref -d` and `git push --delete` (or `:<branch>`) on the default branch: refs/remotes/origin/HEAD when git names it, else main and master; git reads a shortened long option too (`--del` means `--delete`); delete only the branch you mean',
+  },
+  'delete-checkout': {
+    rule: 'no deleting the whole checkout, or the folder that holds it (record 0034)',
+    why: 'the checkout holds every file and every commit, and deleting it leaves no copy anywhere',
+    check: 'the tool-call guard stops `rm`, `rmdir`, `unlink` and `shred` on `.`, `..`, or a path that ends at one of them; delete only the files you mean',
+    docs: guide('the-safeguard'),
+  },
+  'discard-work': {
+    rule: 'no throwing away work that exists in one place only (record 0034)',
+    why: 'untracked files, uncommitted edits and a saved stash have no other copy, so git cannot bring them back',
+    check: 'the tool-call guard stops `git clean` (except `-n` or `--dry-run`), `git checkout .` and `git restore .` of the whole tree, a forced checkout or switch (`-f`, `--force`, `--discard-changes`), and `git stash clear` or `git stash drop`; `git restore --staged` or `-S` alone passes',
+    docs: guide('the-safeguard'),
+  },
+  'erase-history': {
+    rule: 'no erasing the history at once (record 0034)',
+    why: 'unreachable commits and the reflog are the usual way back after a mistake, and erasing them takes that way back away',
+    check: 'the tool-call guard stops `git gc --prune=now` or `--prune=all`, `git prune --expire=now` or `--expire=all`, `git reflog expire`, `git reflog delete`, `git filter-branch` and `git filter-repo`; git reads a repeated option by its last value, so `--prune=2.weeks.ago --prune=now` counts as `now`',
+    docs: guide('the-safeguard'),
+  },
+  'move-default-branch': {
+    rule: 'no moving the default branch backwards (record 0034)',
+    why: 'the default branch holds the work every branch builds on, so moving it back loses those commits',
+    check: 'the tool-call guard stops `git update-ref` of the default branch (a read with `--verify` or `--list` passes), `git branch -f` on it, and `git checkout -B` or `git switch -C` on it',
+    docs: guide('the-safeguard'),
   },
   'pipe-to-shell': {
-    rule: 'no piping a download into a shell or a program named by a variable',
-    why: 'a download piped into a shell runs code nobody read, so the guard cannot check what it runs',
-    check: 'the tool-call guard stops a pipeline that feeds a download into a shell, into `eval`, into a substitution that can run it, or into a program word that is not plain text, including a name that starts with `$`. A `$` argument of a plain program passes. Save the file first, read it, then run it',
+    rule: 'no running a download you have not read',
+    why: 'a download that a program runs as code does things nobody read, so the guard cannot check what it does',
+    check: 'the tool-call guard stops a download that a program would run: in a pipeline into a shell, `eval` or a program named by a variable or not by plain text; in a substitution or a process substitution given to a shell, `eval`, `source` or an interpreter (`bash -c "$(curl …)"`, `bash <(curl …)`); in a substitution where a command goes (`$(curl …)` or a backtick), which runs the download\'s answer as a command; in a here-string into a shell; piped into an interpreter that reads its program from input (`python3 -`, `node`, `perl`, `ruby`, `php`, `lua`, `Rscript -`); piped into `make -f -`, `make -f /dev/stdin` or `make -f <(…)`; and piped into any shell, including `ash`, `mksh`, `pdksh`, `yash`, `posh`, `oksh`, `rbash` and `toybox sh`. The guard matches option names the way git does, by a unique prefix. A `$` argument of a plain program passes. Save the file first, read it, then run it',
   },
   'gh-token': {
     rule: "an agent does not see or send gh's token",
@@ -172,22 +202,28 @@ export const RULES = {
     check: 'for a worker, the tool-call guard stops a command that writes, moves, removes, links or changes the mode of a file in a git folder (a glob that can match .git or the mark counts) or redirects into one, git with GIT_DIR or --git-dir, `git worktree` other than `list`, `yokoten worker unmark`, and an edit inside a git folder, by real path. The same holds for the yokoten config folder (~/.config/yokoten), which keeps the worker list and the bot keys: for a worker, any program that does more than read is refused when it names a path that is, is in or holds that folder, by real path (a symlink, `~+` and globs such as `~/.c*/yokoten` count). A read that names .git passes. A .git link it cannot read makes the session a worker. These are the plain ways; the server and keeping credentials away from the worker are the lock',
     docs: guide('managing-agents-like-a-team'),
   },
+  'file-lease': {
+    rule: 'the guard stops an edit to a file that an open change is moving or deleting (#911)',
+    why: 'two changes to a file that is being moved cannot both go in cleanly',
+    check: 'when an open change moves or deletes a file, the conflict map leases that path. The tool-call guard reads the map once per call and stops an edit to a leased path from another branch; the commit check stops a staged change in place to that path, whatever tool made it. Both allow when the map is missing, old or dated ahead of the clock, and on a detached HEAD (a rebase)',
+    docs: guide('blocked-commands'),
+  },
   email: {
     rule: 'no personal email address in the repo (core rule 11)',
     why: 'an email address points at a person, and git keeps it after the file is gone',
-    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   ip: {
     rule: 'no IP address in the repo (core rule 11)',
     why: 'an IP address can lead to your server or your home network',
-    check: 'the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'private-mark': {
     rule: 'nothing in the repo points at you: your name, city, domain or servers (core rule 11)',
     why: 'a line of your private-marks file names something that points at you',
-    check: 'the commit check reads ~/.config/yokoten/private-marks, outside the repo, and looks for each line; CI does not have the file; a hit is `sure`, and only a `private-mark: reason` line in `.yokotenignore`, which is lead-only, keeps it in the output but does not fail it; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check reads ~/.config/yokoten/private-marks, outside the repo, and looks for each line; CI does not have the file; a hit is `sure`, and only a `private-mark: reason` line in `.yokotenignore`, which is lead-only, keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   ignore: {
@@ -211,7 +247,7 @@ export const RULES = {
   secret: {
     rule: 'no secret in the repo: no token and no private key (core rule 11)',
     why: 'a secret opens your accounts to anyone who can read the repo, and git keeps it after the file is gone',
-    check: 'the commit check, CI and `check --history` look for the real shape of tokens (GitHub, npm, AWS, Slack, Stripe, Google, Anthropic, OpenAI), private keys, and the real values of secret-like variables in the environment; a hit is `sure` and fails, while `likely` and `unknown` warn; `.yokotenignore` or a `yokoten-ignore secret: reason` line keeps a hit in the output but does not fail it, and a `sure` hit only through `.yokotenignore`, which is lead-only; an ignore with no reason fails; the tool-call guard also checks the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for the real shape of tokens (GitHub, npm, AWS, Slack, Stripe, Google, Anthropic, OpenAI), private keys, and the real values of secret-like variables in the environment; a hit is `sure` and fails, while `likely` and `unknown` warn; `.yokotenignore` or a `yokoten-ignore secret: reason` line keeps a hit in the output but does not fail it, and a `sure` hit only through `.yokotenignore`, which is lead-only; an ignore with no reason fails; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'shallow-history': {
@@ -230,6 +266,18 @@ export const RULES = {
     rule: 'no folder holds more than 7 entries; the root is not counted (core rule 10)',
     why: 'a flat folder grows until nobody can find anything',
     check: 'the commit check and CI count the entries of each folder below the root; changes/ and the folders in yokoten.json "layout.exempt" (paths, or globs with `*` and `**`) may grow',
+    docs: guide('the-core-rules'),
+  },
+  'structural-change': {
+    rule: 'a change that moves, renames, splits or deletes files goes in alone (#910)',
+    why: 'two changes that restructure the same files collide, and each merge makes the next conflict worse',
+    check: 'the commit check reads the paths the staged diff moves away (`git diff --cached --name-status -M`) and the conflict map at `.git/yokoten/conflicts.json`; a path an open change also moves stops the commit and names that change. A missing or stale map allows',
+    docs: guide('the-core-rules'),
+  },
+  'stale-codeowners': {
+    rule: 'every CODEOWNERS line names a path that exists',
+    why: 'a moved or renamed file leaves its line behind, so the new path has no owner review',
+    check: '`yokoten check` and full `doctor` read the first CODEOWNERS file GitHub reads and report each rule line whose path matches no file in the tree; a pattern with `*` matches when any file does',
     docs: guide('the-core-rules'),
   },
   'build-output': {
@@ -516,6 +564,12 @@ export const RULES = {
     check: '`doctor` compares everything above `## This project` in AGENTS.md with the kit\'s core rules, and a session hears when they differ; without that heading it can\'t compare, as a note; a `<!-- yokoten kit X.Y.Z -->` mark newer than the yokoten you run is a note to update yokoten itself, and `update` refuses it; `yokoten update` shows the change, and `--write` makes it',
     docs: guide('updating-the-rules'),
   },
+  'edited-kit': {
+    rule: 'a managed file you edited is kept, and a newer kit copy arrives only when you take it',
+    why: "an edit stays the user's, and a kit fix still reaches the parts they did not change (record 0015)",
+    check: '`install` writes the hash of the file it wrote into the mark, and keeps a file whose hash no longer matches. `doctor` compares that recorded hash with the kit\'s copy and names each edited file whose copy changed, with the `diff` command; a note, never a failure',
+    docs: guide('updating-the-rules'),
+  },
   'kit-workflows': {
     rule: "the project's CI workflows from the kit are the kit's newest, or the project's own on purpose",
     why: 'a fix to the kit\'s CI reaches a project only when its workflow file gets the new text',
@@ -527,6 +581,12 @@ export const RULES = {
     why: 'the agent then hears the next step on the road, and a drifted setup shows at once',
     check: '`doctor` reads ~/.claude/settings.json for a SessionStart hook that runs doctor',
     docs: guide('what-a-session-sees'),
+  },
+  'user-guard': {
+    rule: 'every session on this machine meets the tool-call guard',
+    why: 'with no guard, an agent pushes a tag, forces a push or reads a token with nothing in the way',
+    check: '`doctor` reads ~/.claude/settings.json for a PreToolUse hook that runs `yokoten hook`; the Claude Code plugin brings the same guard, so while the plugin is on the check passes and `install` writes no guard of its own. Turn the plugin off or remove it and the guard goes too: doctor then fails, and `yokoten install` writes install\'s own',
+    docs: guide('the-claude-code-plugin'),
   },
   'machine-runtime': {
     rule: 'the installed runtime is this version of yokoten',

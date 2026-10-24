@@ -15,6 +15,7 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
+import { useRealHome } from '../../src/rules/privacy/home.ts';
 import { SECRET } from '../../src/rules/privacy/secrets.ts';
 import {
   AGENT_STATUS_FILE,
@@ -78,9 +79,9 @@ test('hook: blocks with exit 2 and a reason, allows with exit 0', async () => {
   // A worker subagent is a worker even in a lead session.
   result = await sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'worker', tool_input: { file_path: 'CLAUDE.md' } }) });
   assert.equal(result.status, 2);
-  // The user-level guard leaves files to the project.
+  // The user-level guard applies the safeguard's defaults in a repo without yokoten.json (#816).
   result = await sandbox.call(['hook', '--commands-only'], { input: tool({ file_path: 'CLAUDE.md' }), extra: { YOKOTEN_ROLE: 'worker' } });
-  assert.equal(result.status, 0);
+  assert.equal(result.status, 2);
   assert.equal((await sandbox.call(['hook'], { input: 'not json' })).status, 0);
 });
 
@@ -271,6 +272,30 @@ test('hook: a guard started before the call judges it as judge does; one never u
   writeFileSync(script, `(await import(${JSON.stringify(new URL('../../src/run/hook.ts', import.meta.url).href)})).startGuard();\n`);
   const result = runChild(process.execPath, [script]);
   assert.deepEqual([result.status, result.signal, result.stderr], [0, null, '']);
+});
+
+// #824: a worker thread has its own globals. The guard passes the real home the main
+// thread resolved into the worker, so both read the same private-marks file.
+test('hook: the guard worker reads the real home the main thread resolved (#824)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('README.md', 'hello\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'start');
+  sandbox.write('notes.md', 'Project Bluebird\n');
+  sandbox.git('add', 'notes.md');
+  const markHome = makeTempDir();
+  mkdirSync(join(markHome, '.config', 'yokoten'), { recursive: true });
+  writeFileSync(join(markHome, '.config', 'yokoten', 'private-marks'), 'Project Bluebird\n');
+  const restore = useRealHome(() => markHome);
+  try {
+    const action = { command: 'git commit -m x', paths: [], worker: false };
+    const options = { root: sandbox.repo, config: DEFAULTS, env: sandbox.env, cwd: sandbox.repo };
+    const found = await startGuard().judge(action, options, 5000);
+    assert.equal(found?.id, 'private-mark');
+    assert.equal(found?.file, 'notes.md');
+  } finally {
+    restore();
+  }
 });
 
 // The runtimes let a tool call through when the hook runs past their timeout, so a guard

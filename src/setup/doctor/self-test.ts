@@ -4,21 +4,22 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, parse } from 'node:path';
-import { checkCommand, checkEdit } from '../../rules/guards.ts';
+import { checkCommand, checkEdit } from '../../rules/guards/index.ts';
 import { DEFAULTS } from '../../rules/config.ts';
-import { checkBuildOutput, checkLayout } from '../../rules/layout.ts';
+import { checkBuildOutput, checkCodeOwners, checkLayout } from '../../rules/layout.ts';
 import { notUtc, POSITIVE_CONTROL, scanText } from '../../rules/privacy.ts';
 import { SECRET_CONTROL } from '../../rules/privacy/secrets.ts';
 import { judge } from '../../run/hook.ts';
-import { readToolCall, sandboxProblem as claudeSandboxProblem } from '../../agents/runtimes/claude-code.ts';
+import { readToolCall, sandboxProblem as claudeSandboxProblem, addUserHooks } from '../../agents/runtimes/claude-code.ts';
 import { addProjectPlugin } from '../../agents/runtimes/small/opencode.ts';
-import { openCodePluginNote } from './checks.ts';
+import { machineChecks, openCodePluginNote, type Practice } from './checks.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
 import * as gemini from '../../agents/runtimes/gemini.ts';
 import * as grok from '../../agents/runtimes/grok.ts';
 import { hostGuardMisses } from '../../host/gh-commands.ts';
 import { UNSAVED_CONTROL, unsavedNotes } from '../advice/unsaved.ts';
-import { HOME_DIR } from '../files.ts';
+import { HOME_DIR, isNewerKitCopy, sealManaged } from '../files.ts';
+import { USER_CLI, USER_MISSING } from '../install.ts';
 import { compareCoreRules } from '../init.ts';
 import { coreRulesControl, roadControl } from './lessons.ts';
 import { leftoverControl, machineControl } from './machine.ts';
@@ -36,13 +37,19 @@ export function selfTest(): string[] {
   if (scanText(SECRET_CONTROL, { file: 'control' }).length < 2) failed.push('secret check');
   if (!notUtc('A <a@example.com> 1760745600 +0700') || notUtc('A <a@example.com> 1760745600 +0000')) failed.push('time zone check');
   if (checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS).length !== 1) failed.push('layout check');
+  if (checkCodeOwners(['src/a.ts'], 'src/gone.ts @lead\n').length !== 1) failed.push('CODEOWNERS check');
   if (checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS).length !== 2) failed.push('build output check');
   if (!isUnsavedControlCaught()) failed.push('unsaved work check');
   failed.push(...roadControl());
   const kit = '# rules\n\n## This project\n';
   if (compareCoreRules('# old rules\n\n## This project\n', kit).state !== 'behind' || compareCoreRules('# rules\n', kit).state !== "can't compare") failed.push('core rules check');
+  // A note must catch an edited file behind an older kit copy, and stay quiet on the same copy.
+  const kitMark = '<!-- managed by yokoten; a test mark -->\n';
+  const olderCopy = sealManaged(`${kitMark}old body\n`);
+  if (!isNewerKitCopy(olderCopy, `${kitMark}new body\n`) || isNewerKitCopy(olderCopy, `${kitMark}old body\n`)) failed.push('edited kit note');
   failed.push(...coreRulesControl());
   failed.push(...machineControl());
+  failed.push(...guardControl());
   failed.push(...leftoverControl());
   failed.push(...sandboxControl());
   failed.push(...openCodeControl());
@@ -72,6 +79,33 @@ function openCodeControl(): string[] {
   } finally {
     if (quiet) rmSync(quiet, { recursive: true, force: true });
     if (marked) rmSync(marked, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A machine whose Claude Code settings hold no guard, and whose plugin is off, must fail
+ * the guard check. Install's own hook must pass it, and so must the plugin, which brings
+ * the same guard (#904).
+ */
+export function guardControl(): string[] {
+  let dir = '';
+  try {
+    dir = mkdtempSync(join(tmpdir(), 'yokoten-guard-'));
+    const env = { HOME: dir };
+    const file = join(dir, '.claude', 'settings.json');
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, '{}\n');
+    const guard = (): Practice | undefined => machineChecks(env).find((check) => check.name === 'user-guard');
+    if (guard()?.ok !== false || guard()?.finding.id !== 'user-guard') return ['user guard check'];
+    addUserHooks(env, USER_CLI, USER_MISSING);
+    if (guard()?.ok !== true) return ['user guard check (install\'s own hook passes)'];
+    writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true } }));
+    if (guard()?.ok !== true) return ['user guard check (the plugin passes)'];
+    return [];
+  } catch {
+    return ['user guard check'];
+  } finally {
+    if (dir) rmSync(dir, { recursive: true, force: true });
   }
 }
 

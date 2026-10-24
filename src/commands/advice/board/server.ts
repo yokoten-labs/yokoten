@@ -484,7 +484,7 @@ export function runBoard(invocation: Invocation, options: BoardServerOptions = {
   return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), { controls }).then(
     ({ url }) => {
       const isOpening = !parsed.flags.has('--no-open');
-      print(invocation, [`yokoten board: the team is live at ${url}`, `${isOpening ? 'It opens in your browser now. ' : ''}The page refreshes every ${BOARD_REFRESH_SECONDS} seconds. Stop it with Ctrl-C.`]);
+      print(invocation, [`yokoten board: preview. It may change, and team commands come in v0.1.2 (#823).`, `The team is live at ${url}`, `${isOpening ? 'It opens in your browser now. ' : ''}The page refreshes every ${BOARD_REFRESH_SECONDS} seconds. Stop it with Ctrl-C.`]);
       if (isOpening) openInBrowser(url, invocation.env);
       return new Promise<number>(() => {});
     },

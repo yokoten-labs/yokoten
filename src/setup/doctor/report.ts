@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, formatFinding } from '../../rules/message.ts';
-import { homeOf } from '../../rules/privacy.ts';
+import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
 import { countNotes, waitingLine } from '../../run/learn.ts';
@@ -15,7 +15,8 @@ import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
 import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
-import { agentHooks, allowedMarkCount, commandWording, coreRulesCheck, doubleInstallCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
+import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
+import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { selfTest } from './self-test.ts';
@@ -58,7 +59,10 @@ const NO_REMOTE_FIX = 'make the repo on your code host, add it as origin with `g
 /** The server settings of the origin's host, or why they can't be read. A host with no adapter is read without the network (#504). */
 function readOrigin(host: Host, gh: Gh): ServerSettings | Unread {
   if (host.kind === 'none') return { unread: NO_REMOTE, fix: NO_REMOTE_FIX };
-  return host.kind === 'github' ? readServer(gh, host.repo) : noAdapter(host);
+  if (host.kind === 'github') return readServer(gh, host.repo);
+  // Gitea is read by the command, which can wait for the network (#505).
+  if (host.kind === 'gitea') return { unread: 'the Gitea settings were not read', fix: 'run `yokoten doctor`' };
+  return noAdapter(host);
 }
 
 /**
@@ -289,7 +293,7 @@ export function guardCostCheck(root: string, probe: MachineProbe, env: Env): Pra
 
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; fillMarks?: boolean; machine?: MachineProbe },
+  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe },
 ): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
   const lines: string[] = [];
   const failed = selfTest();
@@ -303,8 +307,17 @@ function doctorRun(
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).
   // A host with no adapter needs no network, so a session knows it too (#504).
-  const host = hostOf(gitConfig(root, 'remote.origin.url', env));
-  const server: ServerRead = host.kind === 'other' ? noAdapter(host) : session ? undefined : gh ? readOrigin(host, gh) : { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' };
+  // The Gitea read is async, so the command makes it and passes it in (#505).
+  const host = givenHost ?? hostOf(gitConfig(root, 'remote.origin.url', env), config.host);
+  const server: ServerRead = givenServer !== undefined
+    ? givenServer
+    : host.kind === 'other'
+      ? noAdapter(host)
+      : session
+        ? undefined
+        : gh
+          ? readOrigin(host, gh)
+          : { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' };
   const where = walk(road(root, env, ROAD, server, config), config.notNow);
   // Full doctor from the command line adds the obvious marks first (#390); a session writes nothing.
   // With no home folder, the checks that read or keep settings there are skipped, never crash (#404).
@@ -334,6 +347,14 @@ function doctorRun(
       blocks.push([`yokoten: ${formatFinding(marks.finding)}`]);
       findings.push(marks.finding);
     }
+    // No guard at all is unsafe at once, so a session hears it too (#904). Only where
+    // Claude Code has its own settings: a machine without them has no such session to
+    // guard, and full doctor names the missing guard for the user who wants one.
+    const guard = hasUserSettings(env) ? machine.find((c) => c.name === 'user-guard' && !c.ok) : undefined;
+    if (guard) {
+      blocks.push([`yokoten: ${formatFinding(guard.finding)}`]);
+      findings.push(guard.finding);
+    }
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
     if (stale) blocks.push([`yokoten: ${formatFinding(stale)}`]);
@@ -343,6 +364,9 @@ function doctorRun(
     if (claudeRules) blocks.push([`yokoten: ${formatFinding(claudeRules.finding)}`]);
     const double = hasHome ? doubleInstallCheck(root, env) : null;
     if (double) blocks.push([`yokoten: ${formatFinding(double)}`]);
+    // An edit stays, and a kit fix that waits behind it is named here, not after a surprise (#477).
+    const edited = hasHome ? editedKitCheck(env) : null;
+    if (edited) blocks.push([`yokoten: ${formatFinding(edited)}`]);
     // A full disk stops every session unseen (record 0012): statfs and one small file, no child process.
     for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) blocks.push([`yokoten: ${formatFinding(c.finding)}`]);
     const unsaved = sessionUnsaved(root, env);
@@ -362,7 +386,8 @@ function doctorRun(
     const lesson = sessionLessonNote(root, config.notNow, stateFile, env.CLAUDE_PLUGIN_ROOT ? '/yokoten:doctor' : '`yokoten doctor`');
     if (lesson.line) blocks.push([lesson.line]);
     const notes = [...unsaved.notes, ...lesson.findings, ...(claudeRules ? [claudeRules.finding] : [])];
-    const ok = !failed.length && !isCoreBehind;
+    // A machine with no guard fails the run as full doctor does; a session still starts.
+    const ok = !failed.length && !isCoreBehind && !guard;
     return { ok, lines: blocks.flat(), blocks, report: { ...base, ok, repo: true, stage, next, findings, ...(notes.length ? { notes } : {}) } };
   }
 
@@ -433,6 +458,9 @@ function doctorRun(
     lines.push(`  note    time-zone: ${stepText(zones)}`);
     notes.push(zones);
   }
+  // Open changes that collide (#909): read from the kept map, no git call for each change.
+  const conflicts = conflictNote(root, env, Date.now(), unsaved?.commonDir ?? null);
+  if (conflicts) lines.push(`  note    conflicts: ${conflicts}`);
   const noCi = noCiNote(config.notNow, where.stage, server);
   if (noCi) {
     lines.push(`  note    no-ci: ${stepText(noCi)}`);
@@ -516,6 +544,11 @@ function doctorRun(
     lines.push(`  note    command: ${stepText(launcher)}`);
     notes.push(launcher);
   }
+  const edited = hasHome ? editedKitCheck(env) : null;
+  if (edited) {
+    lines.push(`  note    edited-kit: ${stepText(edited)}`);
+    notes.push(edited);
+  }
   const waiting = upstreamNote(root, env);
   if (waiting) {
     lines.push(`  note    upstream-inbox: ${waiting.what}`);
@@ -534,6 +567,10 @@ function doctorRun(
     lines.push(...OWNER_STEPS.map((s) => `  not checked ${s}`));
   }
   lines.push(...listBoardSteps(server));
+  // A shell that is not UTC makes each new commit carry its zone (#932). Say the one line
+  // for this shell at the end, where a person looks for the next step. A session never
+  // needs it: init already sets TZ=UTC for agent sessions.
+  if (!session && config.privacy.utc && !isUtcTimeZone(env)) lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
   // The road has no failed mark: a step is done, to do, not now or can't check. Steps
   // left are the way ahead, not problems, so they never fail doctor (#208).
   const ok = !failed.length && !isCoreBehind && !problems.length && machine.every((c) => c.ok);

@@ -199,6 +199,21 @@ export const COMMANDS: Command[] = [
     example: 'yokoten init --github --yes',
   },
   {
+    name: 'trust',
+    summary: "turn on yokoten's guard in the agents installed here",
+    usage: '[dir] [--undo]',
+    text: [
+      'Writes the trust that makes Codex, Grok CLI, Copilot CLI and Muse Code run',
+      "yokoten's hooks in the project at [dir] (default: here). A person runs it at a",
+      'terminal: in a pipe it writes nothing. It writes only yokoten\'s entries, and says',
+      'what it wrote and how to undo it. With --undo it removes only what it wrote, and',
+      'leaves a setting you changed since.',
+    ],
+    options: [{ name: '--undo', text: 'remove only the entries yokoten trust wrote for this project' }],
+    argument: 'dir',
+    example: 'yokoten trust',
+  },
+  {
     name: 'update',
     summary: "the core rules in a project's AGENTS.md: preview, or replace with --write",
     usage: '[dir] [--write]',
@@ -398,12 +413,13 @@ export const COMMANDS: Command[] = [
   {
     name: 'hook',
     summary: 'the tool-call guard, or the stop check with --stop',
-    usage: '[--agent <name>] [--commands-only] [--stop] [--json] [--denial <mode>]',
+    usage: '[--agent <name>] [--commands-only] [--stop] [--json] [--denial <mode>] [--protocol]',
     text: [
       'Reads one tool call on stdin. It exits 2, with the reason on stderr, when it blocks the call.',
       "With --agent claude-code, it answers as Claude Code's PreToolUse hook: a deny in JSON on stdout, exit 0. YOKOTEN_HOOK_DENIAL=exit2 keeps exit 2.",
       'With --denial exit2, it keeps the reason on stderr and exit 2, for a host that reads the exit code alone.',
       'With --agent antigravity, it says deny on stdout and exits 0, as Antigravity CLI asks.',
+      'With --protocol, it reads the guard protocol (version yokoten-guard/1) and answers in it, so any tool can call the guard.',
     ],
     options: [
       { name: '--agent', value: 'name', text: 'the runtime that sends the call: claude-code (the default), codex, gemini, antigravity, muse, deepseek-harness, grok or opencode' },
@@ -411,6 +427,7 @@ export const COMMANDS: Command[] = [
       { name: '--stop', text: 'read the end-of-turn event (Claude Code Stop or SubagentStop, Codex, Muse Code or Grok CLI Stop, Gemini AfterAgent) and check the changed files; a worker also runs the done-when command' },
       { name: '--json', text: 'the result as JSON on stdout' },
       { name: '--denial', value: 'mode', text: 'the answer a refusal gets: exit2 puts the reason on stderr and exits 2, for a host that ignores a JSON deny' },
+      { name: '--protocol', text: 'read one yokoten-guard/1 call on stdin and answer in the same protocol on stdout; any agent tool can send it (https://github.com/yokoten-labs/yokoten/blob/main/docs/records/0039-the-guard-protocol.md)' },
     ],
     example: `echo '{"tool_input":{"command":"git status"}}' | yokoten hook`,
   },
@@ -538,10 +555,11 @@ export const COMMANDS: Command[] = [
   {
     name: 'train',
     summary: 'merge an approved queue one pull request at a time, with a gate between each',
-    usage: '<pr>... [--wait <seconds>]',
+    usage: '[<pr>...] [--wait <seconds>] [--next]',
     text: [
-      'Merges each pull request in the order given, as the bot, and stops at the first one',
-      'that needs a person. Only the lead runs it.',
+      'Merges each pull request in the given order, as the bot, and stops at the first one',
+      'that needs a person. Only the lead runs it. With no numbers it takes the queue from',
+      'the conflict map, in the order that map gives.',
       'Before the first merge it records every base branch, because GitHub forgets a base',
       'when it deletes the branch. A pull request stacked on a squash-merged branch then',
       'merges from the base it really shares with its old branch, not an older one.',
@@ -549,16 +567,21 @@ export const COMMANDS: Command[] = [
       'conflict, a failing test or a missing approval stops the train.',
       'Each merged tree runs the project\'s tests and `check` before it is pushed, and CI',
       'must pass on the pushed merge before the squash.',
+      'With --next it says which pull request is next and why, and merges nothing.',
     ],
-    options: [{ name: '--wait', value: 'seconds', text: 'how long to wait for CI after a push (default 1800)' }],
+    options: [
+      { name: '--wait', value: 'seconds', text: 'how long to wait for CI after a push (default 1800)' },
+      { name: '--next', text: 'print the next pull request to merge and why, and merge nothing' },
+    ],
     many: true,
     example: 'yokoten train 1207 1209 1211',
   },
   {
     name: 'board',
-    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page',
+    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page (preview)',
     usage: '[--text] [--no-open] [--role name] [--vendor name]',
     text: [
+      'Preview: it may change, and team commands come in v0.1.2 (#823).',
       'Serves a live page on this machine only, at http://<repo>.localhost:<port>/.',
       'The folder name is the host. The port stays with this repo. The first visit',
       'sets a cookie and opens the page without the token. Agents sit on the left.',
@@ -575,6 +598,23 @@ export const COMMANDS: Command[] = [
       { name: '--vendor', value: 'name', text: 'with --text: only this vendor in the usage view, such as claude or muse' },
     ],
     example: 'yokoten board --text',
+  },
+  {
+    name: 'conflicts',
+    summary: 'which open changes collide, and what to merge first',
+    usage: '[--json] [--rebuild <id>]',
+    text: [
+      'Reads every open pull request, or every local branch when there is no host, and',
+      'says which changes collide with main and with each other. It names the pairs that',
+      'touch one file, and which of the two to merge first. It checks nothing out and',
+      'merges nothing. The answer is kept in the git folder, so the guard reads it',
+      'without running git.',
+    ],
+    options: [
+      { name: '--json', text: 'the whole map as data on stdout, for an agent or a script' },
+      { name: '--rebuild', value: 'id', text: 'print a prompt that rebuilds one change on the current main instead of merging it' },
+    ],
+    example: 'yokoten conflicts',
   },
   {
     name: 'uninstall',

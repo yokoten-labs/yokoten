@@ -13,6 +13,7 @@ import { test } from 'node:test';
 import {
   at,
   makeSandbox,
+  stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { canColour, isColourTerminal, paint, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
@@ -20,7 +21,9 @@ import type { Env } from '../../src/rules/config.ts';
 
 test('outside a git repo: every command that needs one says so plainly, exits 1 and writes nothing (#205)', async () => {
   const sandbox = makeSandbox();
-  // Inside the sandbox home, so the folder shows as ~.
+  // Inside the sandbox home, so the folder shows as ~. Home is a temp folder, which can sit
+  // inside this checkout when TMPDIR does; the marker stops git's walk there (#712).
+  stopCheckoutWalk(sandbox.home);
   const away = join(sandbox.home, 'away');
   mkdirSync(away);
   const said = (command: string) => new RegExp(`^yokoten ${command}: ~/away is not inside a git repo\\. The checks read commits, so yokoten needs git history\\. Run it inside your project, or \`git init\` first\\.\\n  docs: \\S+#commands\\n$`);
@@ -236,3 +239,48 @@ test('output colour: doctor colours a terminal report and never a pipe or NO_COL
     assert.ok(result.stdout.includes('yokoten '), `${name}: the report still reads`);
   }
 });
+
+// #929: every command a person runs shows colour on a terminal, and none in a pipe or
+// under NO_COLOR. `trust --undo` is the subcommand a sandbox can reach: plain `trust` finds
+// no agent installed there, so it has no mark, heading, refusal or command to colour.
+const PERSON_COMMANDS: { name: string; args: string[] }[] = [
+  { name: 'start', args: [] },
+  { name: 'help', args: ['help'] },
+  { name: 'install', args: ['install'] },
+  { name: 'init', args: ['init'] },
+  { name: 'doctor', args: ['doctor'] },
+  { name: 'conflicts', args: ['conflicts'] },
+  { name: 'train', args: ['train', '--next'] },
+  { name: 'check', args: ['check'] },
+  { name: 'trust', args: ['trust', '--undo'] },
+  { name: 'desk', args: ['desk'] },
+  { name: 'msg', args: ['msg', 'inbox'] },
+];
+for (const { name, args } of PERSON_COMMANDS) {
+  test(`output colour: ${name} colours a terminal report and never NO_COLOR or a pipe (#929)`, async () => {
+    const sandbox = makeSandbox();
+    const colour = await sandbox.call(args, { isTTY: true });
+    assert.match(colour.stdout + colour.stderr, /\u001b\[/, `${name}: a colour code on a terminal`);
+    const plain = await sandbox.call(args, { isTTY: true, extra: { NO_COLOR: '1' } });
+    const piped = await sandbox.call(args, {});
+    for (const [kind, result] of [['NO_COLOR', plain], ['a pipe', piped]] as const) {
+      assert.ok(!`${result.stdout}${result.stderr}`.includes('\u001b'), `${name}: no ANSI code with ${kind}`);
+    }
+  });
+}
+
+// #929: help reads at a glance: the usage line and the section titles in bold, each
+// command's name in cyan.
+test('output colour: help bolds the usage and sections, and names each command in cyan (#929)', async () => {
+  const sandbox = makeSandbox();
+  const list = await sandbox.call(['help'], { isTTY: true });
+  assert.match(list.stdout, /\u001b\[1mUsage: yokoten <command> \[options\]\u001b\[0m/, 'the usage line is bold');
+  assert.match(list.stdout, /\u001b\[36mcheck\u001b\[0m/, 'a command name is cyan');
+  assert.match(list.stdout, /\u001b\[1mStart: /, 'a section title is bold');
+  assert.match(list.stdout, /\u001b\[1mExit codes: /, 'the last section title is bold');
+  const one = await sandbox.call(['help', 'check'], { isTTY: true });
+  assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
+  assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
+  assert.match(one.stdout, /\u001b\[1mExample:\u001b\[0m/, 'the example title is bold');
+});
+

@@ -2,13 +2,14 @@
 // the launcher, and the wording of a command. Practice is shared with the other parts.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, type RuleId } from '../../rules/message.ts';
 import { homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
+import { readGit } from '../../run/check.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
-import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, type PluginChannel, readInstalledPlugin, userDir, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
+import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
 import * as copilot from '../../agents/copilot.ts';
 import * as dsh from '../../agents/runtimes/small/deepseek-harness.ts';
@@ -16,11 +17,11 @@ import * as gemini from '../../agents/runtimes/gemini.ts';
 import * as grok from '../../agents/runtimes/grok.ts';
 import * as muse from '../../agents/runtimes/muse.ts';
 import * as opencode from '../../agents/runtimes/small/opencode.ts';
-import type { FolderTrust } from '../../agents/folder-trust.ts';
+import { TRUST_COMMAND, type FolderTrust } from '../../agents/folder-trust.ts';
 import { commentedFile, HAND_ADD, handAddJson, type HookState, mergeHandAdds } from '../../agents/hooks-file.ts';
 import { runtimeVersion, VERSION } from '../files.ts';
 import { compareVersions, hookCliPath, isSelf, readCoreRules, summarizeUpdate } from '../init.ts';
-import { EMPTY_MARKS_FIX, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, OFFER_MARKS_FIX, offerMarkKinds, launcherFile, PROFILE_LINE, installedPieces, installedSkillDirs, projectSkillDirs, isOnPath, launcherDir, machineMarks, mailmapState, MAILMAP_SETTING, missingMarkKinds, paths, USER_CLI, USER_MISSING } from '../install.ts';
+import { EMPTY_MARKS_FIX, editedKitCopies, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, OFFER_MARKS_FIX, offerMarkKinds, launcherFile, PROFILE_LINE, installedPieces, installedSkillDirs, projectSkillDirs, isOnPath, launcherDir, machineMarks, mailmapState, MAILMAP_SETTING, missingMarkKinds, paths, USER_CLI, USER_MISSING } from '../install.ts';
 
 export interface Practice {
   name: string;
@@ -58,11 +59,13 @@ function trustPractice(id: RuleId, agent: string, file: string, trust: FolderTru
     case 'unreadable':
       return note(`can't check whether ${agent} trusts this folder: can't read ${trust.store}`, `if you use ${agent}: ${step}`);
     case 'hooks untrusted':
-      return note(`${agent} trusts this folder, but not yokoten's hooks in ${file}, so it skips them`, 'in a Codex session here, trust both in `/hooks`');
+      return note(`${agent} trusts this folder, but not yokoten's hooks in ${file}, so it skips them`, TRUST_COMMAND);
     case 'hooks changed':
-      return note(`yokoten's hooks in ${file} changed after you trusted them, so ${agent} skips them`, 'in a Codex session here, trust both again in `/hooks`');
+      return note(`yokoten's hooks in ${file} changed after you trusted them, so ${agent} skips them`, TRUST_COMMAND);
+    case 'hooks edited':
+      return note(`a hook in ${file} runs yokoten's guard, but it is not the one yokoten writes, so ${agent} skips it`, 'run `yokoten init` to put yokoten\'s hook back, then `yokoten trust`');
     case 'hooks off':
-      return note(`a yokoten hook in ${file} is turned off in ${agent}`, 'in a Codex session here, turn it on in `/hooks`');
+      return note(`a yokoten hook in ${file} is turned off in ${agent}`, TRUST_COMMAND);
   }
 }
 
@@ -183,9 +186,11 @@ function dshPractice(states: { guard: HookState; patch: string }, profiles: { fo
 
 /**
  * Machine checks: the user-level hooks, the runtime, the private marks. The skills are a
- * step on the road. The Claude Code plugin brings its own hooks and runtime, so with it
- * on, those two checks pass; an old runtime that install left is still reported, with
- * the advice to remove it: installing again would keep both (#300).
+ * step on the road. The Claude Code plugin brings its own hooks, guard and runtime, so with
+ * it on, those three checks pass; an old runtime that install left is still reported, with
+ * the advice to remove it: installing again would keep both (#300). When the plugin goes
+ * away, the guard it brought goes with it, and doctor says so until `install` writes one
+ * of its own (#904).
  */
 export function machineChecks(env: Env): Practice[] {
   const target = paths(env);
@@ -201,8 +206,14 @@ export function machineChecks(env: Env): Practice[] {
       : problem?.kind === 'shape'
         ? practice('session-doctor', 'session-doctor', false, '~/.claude/settings.json has an unexpected shape', `${problem.hint}; fix it, then run \`yokoten install\``)
         : practice('session-doctor', 'session-doctor', plugin || hasSessionDoctor(env), 'sessions do not start with doctor', 'run `yokoten install`, or install the Claude Code plugin');
+  // The guard of every session on this machine (#904). While the plugin is on it brings the
+  // guard, and install writes none; when the plugin goes away, nothing is left to stop a
+  // risky command, so this is a failure with one fix, never a note. A settings file doctor
+  // can't use is already the session-doctor line, so the guard stays quiet then.
+  const guard = problem ? null : practice('user-guard', 'user-guard', plugin || hasUserGuard(env), 'no guard for Claude Code', 'run `yokoten install`');
   return [
     session,
+    ...(guard ? [guard] : []),
     // 'runtime' in the text, as before; the id differs from the road's runtime step.
     practice('runtime', 'machine-runtime', runtime === VERSION || (plugin && runtime === null), runtime ? `the installed runtime is ${runtime}, this yokoten is ${VERSION}` : 'no runtime installed', plugin ? 'remove it with `yokoten uninstall`; the plugin brings its own' : 'run `yokoten install` from this copy of yokoten'),
     // Any mark counts, the ones install found too: only a file with none is missing (#522).
@@ -454,6 +465,25 @@ export function pluginAgeCheck(root: string | null, env: Env): Finding | null {
 }
 
 /**
+ * A note when the user edited a managed skill or agent and the kit's copy has changed
+ * since install wrote it (#477, record 0015). The edit stays; the newer copy waits until
+ * the user compares the two. A note, never a failure: the file is theirs.
+ */
+export function editedKitCheck(env: Env): Finding | null {
+  if (homeOf(env) === null) return null;
+  const copies = editedKitCopies(env);
+  if (!copies.length) return null;
+  const home = homeIn(env);
+  const shown = (file: string): string => file.replace(home, '~');
+  const here = copies.map((copy) => `${copy.name} (${shown(copy.file)})`);
+  const which = here.length === 1 ? `the ${here[0]} you edited` : `${here.length} files you edited: ${here.join(', ')}`;
+  const diffs = copies.map((copy) => `\`diff ${shown(copy.file)} ${shown(copy.kitFile)}\``);
+  return finding('edited-kit', `a newer kit copy is waiting for ${which}`, `${diffs.join('; ')}; to take the new copy, save your edit elsewhere, delete the managed file, then run \`yokoten install\``, {
+    why: 'your edit stays, and a kit fix reaches the files you did not change (record 0015)',
+  });
+}
+
+/**
  * A note when the plugin is on and install's pieces, or a skills-only copy, are here too
  * (#300, #540): then the guard and the session doctor run twice, and every skill shows up
  * twice. It names what to remove, and the one command that does it.
@@ -528,5 +558,62 @@ export function commandWording(env: Env): ((text: string) => string) | null {
   if (!isNpx && (!existsSync(runtime) || isOnPath(env, runtime))) return null;
   if (isNpx && isOnPath(env, runtime)) return null;
   return (text) => text.replace(/(?<!\\)`yokoten((?: [^`]*)?)`/g, '`npx yokoten$1`');
+}
+
+/**
+ * Where a clone keeps the conflict map (#909): MAP_FILE in
+ * src/commands/merge/conflicts/types.ts. This layer sits below `commands`, so it reads the
+ * file itself and never imports the builder; map.test.ts holds the two names together.
+ */
+export const CONFLICT_MAP_PATH = 'yokoten/conflicts.json';
+
+/** How old a map may be before the doctor calls it stale. MAP_MAX_AGE_MS, kept in step by map.test.ts. */
+export const CONFLICT_MAP_AGE_MS = 60 * 60 * 1000;
+
+/**
+ * One line at session start, when open changes collide or the map is old (#909). It reads
+ * the map the `conflicts` command wrote, and nothing else: building a map runs git for
+ * every open change, and a session start has a time budget. Null when there is nothing to
+ * say, and null for a map this yokoten does not know.
+ */
+export function conflictNote(root: string, env: Env, now: number = Date.now(), commonDir: string | null = null): string | null {
+  let file: string;
+  try {
+    // Doctor has read the git folder already; pass it, so this note starts no process (#453).
+    const common = commonDir ?? readGit(root, ['rev-parse', '--git-common-dir'], { env }).toString('utf8').trim();
+    if (!common) return null;
+    file = resolve(root, common, CONFLICT_MAP_PATH);
+  } catch {
+    return null;
+  }
+  if (!existsSync(file)) return null;
+  let map: unknown;
+  try {
+    map = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
+  if (typeof map !== 'object' || map === null) return null;
+  const { version, builtAt, changes, collisions } = map as Record<string, unknown>;
+  if (version !== 1 || typeof builtAt !== 'string') return null;
+  const built = Date.parse(builtAt);
+  if (Number.isNaN(built)) return null;
+  const fix = 'run `yokoten conflicts` to see what to merge first';
+  const age = now - built;
+  if (age > CONFLICT_MAP_AGE_MS || age < -60_000) {
+    const hours = Math.max(1, Math.round(Math.abs(age) / (60 * 60 * 1000)));
+    return `the conflict map is ${hours} hour${hours === 1 ? '' : 's'} old, so it may be wrong: ${fix}`;
+  }
+  const colliding = (Array.isArray(changes) ? changes : []).filter((change) => {
+    const conflicts = (change as Record<string, unknown> | null)?.mainConflicts;
+    return Array.isArray(conflicts) && conflicts.length > 0;
+  }).length;
+  const pairs = Array.isArray(collisions) ? collisions.length : 0;
+  if (!colliding && !pairs) return null;
+  const said = [
+    colliding ? `${colliding} open change${colliding === 1 ? '' : 's'} collide${colliding === 1 ? 's' : ''} with main` : '',
+    pairs ? `${pairs} pair${pairs === 1 ? '' : 's'} of open changes collide` : '',
+  ].filter(Boolean);
+  return `${said.join(', and ')}: ${fix}`;
 }
 

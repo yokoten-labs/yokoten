@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { syncBuiltinESMExports } from 'node:module';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, stepMark, withPlanning } from '../../repo/helpers.ts';
+import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
 import { blocksToSay, doctor, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
@@ -85,7 +85,7 @@ test("server: gh missing, signed out or refused is \"can't check\" with the fix,
     assert.equal(checks.find((c) => c.id === id)?.mark, "can't check", id);
   }
   assert.match(checks.find((c) => c.id === 'tag-rules')?.finding.fix ?? '', /GitHub Pro/);
-  assert.match(checks.find((c) => c.id === 'delete-branch')?.finding.what ?? '', /only a repo admin/);
+  assert.match(checks.find((c) => c.id === 'delete-branch')?.finding.what ?? '', /code host did not say/);
 });
 
 test('road: the server steps are stage 5, and pass a repo with every setting on (#7)', () => {
@@ -526,7 +526,9 @@ test('doctor --session: exactly three lines, about the first step of the first s
     'Why: an agent follows the rules it can read, and only those.',
     'Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).',
   ]);
-  // Outside a repo it says nothing (unless yokoten itself is broken).
+  // Outside a repo it says nothing (unless yokoten itself is broken). A stop marker keeps
+  // the walk from finding the repo around this folder when TMPDIR lives inside one.
+  stopCheckoutWalk(sandbox.home);
   assert.equal((await sandbox.call(['doctor', '--session'], { cwd: sandbox.home })).stdout, '');
 });
 
@@ -1134,6 +1136,33 @@ test('doctor: the sandbox step is to do, then done after init, then names a too-
   assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
   const doctor = (await sandbox.call(['doctor'])).stdout;
   assert.match(doctor, /^ {4}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
+});
+
+// #667: full doctor runs check, so a CODEOWNERS line that protects nothing is a finding.
+test('doctor: a CODEOWNERS line that matches no file is a finding (#667)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('src/a.ts', 'a\n');
+  sandbox.write('.github/CODEOWNERS', 'src/gone.ts @lead\n');
+  sandbox.git('add', '.');
+  const full = doctor(sandbox.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: () => { throw new Error('no gh in this test'); } });
+  const found = full.report.findings.find((f) => f.id === 'stale-codeowners');
+  assert.equal(found?.line, 1);
+  assert.match(found?.what ?? '', /protects nothing; point it at the new path/);
+});
+
+test('doctor: a shell that is not UTC gets the line for that shell, once, at the end (#932)', async () => {
+  const sandbox = makeSandbox();
+  const extra = { TZ: 'America/New_York', SHELL: '/usr/bin/fish' };
+  const full = (await sandbox.call(['doctor'], { extra })).stdout.trimEnd().split('\n');
+  const last = full.at(-1) ?? '';
+  assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
+  assert.match(last, /`set -gx TZ UTC`/);
+  assert.match(last, /~\/\.config\/fish\/config\.fish/);
+  assert.equal(full.filter((line) => line.includes('time zone is not UTC')).length, 1, 'said once');
+  // A session never needs it: init already sets TZ=UTC for agent sessions.
+  assert.doesNotMatch((await sandbox.call(['doctor', '--session'], { extra })).stdout, /time zone is not UTC/);
+  // A shell already in UTC hears nothing.
+  assert.doesNotMatch((await sandbox.call(['doctor'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
 });
 
 // #500: after a fresh install, every line that names a command uses one way to run yokoten.
