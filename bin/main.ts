@@ -180,7 +180,7 @@ export function runFromProcess(): Promise<void> {
       return process.stdin;
     },
   };
-  const invocation: Invocation = { command, args, env: withHome(process.env), cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr, stdin, script: process.argv[1] ?? 'yokoten' };
+  const invocation: Invocation = { command, args, env: withHome(process.env), cwd: process.cwd(), stdout: process.stdout, stderr: process.stderr, stdin, script: process.argv[1] ?? 'yokoten', platform: process.platform };
   return main(invocation).then((code) => {
     process.exitCode = code;
   });

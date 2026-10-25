@@ -118,3 +118,26 @@ test('conformance: the OpenCode plugin sends the protocol, and reads its answer'
   assert.ok(source.includes("answer.decision === 'refuse'"), 'the plugin does not read the decision');
   assert.ok(source.includes('answer.reason'), 'the plugin does not read the reason');
 });
+
+test('protocol: the project must be an absolute folder on the caller\'s system (#1016)', () => {
+  const table: [NodeJS.Platform, string, boolean][] = [
+    ['win32', 'C:\\work\\app', true],
+    ['win32', 'C:/work/app', true],
+    ['win32', '\\\\server\\share\\app', true], // a network share is an absolute folder
+    ['win32', '/c/work/app', false], // Git Bash path: refused until the shared helper of #1015
+    ['win32', '/work/app', false],
+    ['win32', 'C:work', false],
+    ['win32', 'relative', false],
+    ['win32', '', false],
+    ['linux', '/work/app', true],
+    ['linux', 'C:\\work', false],
+    ['linux', 'relative', false],
+    ['linux', '', false],
+  ];
+  for (const [platform, project, accepted] of table) {
+    const read = readGuardInput(call({ project }), platform);
+    assert.equal(typeof read === 'string', !accepted, `${platform} ${JSON.stringify(project)}: ${JSON.stringify(read)}`);
+    assert.equal(typeof parseGuardInput(JSON.stringify(call({ project })), platform) === 'string', !accepted, `${platform} ${project} (parse)`);
+  }
+  assert.equal(typeof readGuardInput({ ...call(), project: 3 }, 'win32'), 'string');
+});
