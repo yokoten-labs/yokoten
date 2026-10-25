@@ -186,7 +186,7 @@ export const GUIDE_AGENTS: readonly GuideEntry[] = [
   {
     label: 'OpenCode',
     adapter: 'opencode',
-    verified: 'yes, 2026-10-23: OpenCode 2.1.4, `opencode-go/deepseek-v4.1-flash`, the plugin as `init` writes it',
+    verified: 'yes, 2026-10-23: OpenCode 2.1.4, `opencode-go/deepseek-v4.1-flash`, the plugin as `init` writes it; 2026-10-25: the guard stopped a command from `opencode-go/glm-5.3-flash` (GLM-5.3 Flash, by Z.ai)',
     caveats: 'No stop check. A guard that fails or times out refuses the call. So does a call that is not read-only, when no command or path can be read. A subagent call was not part of that run',
   },
 ];
