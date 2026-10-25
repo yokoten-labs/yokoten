@@ -11,18 +11,31 @@
 //   node scripts/time/windows-known.ts                     run, compare with the list
 //   node scripts/time/windows-known.ts --out <file>        also write this run's failures
 //   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file, files at once
+//   node scripts/time/windows-known.ts --shard 2/3         this machine's third of the files
+//
+// Speed (owner 2026-10-25: a fast answer is worth more, even a failing one): the job runs on
+// several machines at once, each with a share of the files by the seconds they took last time
+// (scripts/time/windows-times.txt), and each machine starts with its longest files, so no long
+// file is left to run alone at the end. `--times <file>` writes this run's seconds; copy the
+// shards' files together over windows-times.txt when the shards drift apart.
+//
+// Each entry in the --out file has its reason above it, as a `# why:` comment: the first
+// line of the test's error, with the home and the repo folders hidden. The job's summary counts
+// the failures by reason, so a cause shared by many tests shows at the top (owner 2026-10-25).
 //
 // An entry is `<test file> :: <test name>`, the file from `test/` on with `/`. A file that
-// passed its cap is `<test file> :: (timed out)`. To write the list from a run, copy its
-// `--out` file over scripts/time/windows-known.txt.
+// passed its cap is `<test file> :: (timed out)`. To write the list from a run, join the shards'
+// `--out` files (the `windows-failures-N` artifacts) into scripts/time/windows-known.txt.
 import { spawn } from 'node:child_process';
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const KNOWN_FILE = join(ROOT, 'scripts', 'time', 'windows-known.txt');
+export const TIMES_FILE = join(ROOT, 'scripts', 'time', 'windows-times.txt');
 export const TIMED_OUT = '(timed out)';
 
 const HEADER = [
@@ -39,6 +52,60 @@ export function readFailures(tap: string): string[] {
     if (failed) names.add(failed[1].replace(/\\#/g, '#'));
   }
   return [...names];
+}
+
+/**
+ * Each failed top-level test's reason: the first line of its error in the TAP YAML block
+ * (`error: 'text'` or `error: |-` and the next line). A test with no error line has none.
+ */
+export function readReasons(tap: string): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const lines = tap.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const failed = /^not ok \d+ - (.*?)(?: # .*)?$/.exec(lines[i]);
+    if (!failed) continue;
+    const name = failed[1].replace(/\\#/g, '#');
+    for (let j = i + 1; j < lines.length && /^\s/.test(lines[j]); j++) {
+      const error = /^ {2}error: (.*)$/.exec(lines[j]);
+      if (!error) continue;
+      const value = /^[|>][-+]?$/.test(error[1].trim()) ? (lines[j + 1] ?? '').trim() : error[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+      if (value && !reasons.has(name)) reasons.set(name, value);
+      break;
+    }
+  }
+  return reasons;
+}
+
+/**
+ * A reason as it may be shown in a public CI log: the repo folder as `.`, the home folder
+ * and any `Users\<name>` or `/home/<name>` as `~`, and at most 200 characters.
+ */
+export function maskReason(reason: string, folders: { root: string; home: string }): string {
+  let text = reason;
+  for (const [folder, mark] of [[folders.root, '.'], [folders.home, '~']] as const) {
+    if (folder.length < 2) continue;
+    for (const form of new Set([folder, folder.replace(/\\/g, '/'), folder.replace(/\\/g, '\\\\')])) text = text.split(form).join(mark);
+  }
+  text = text.replace(/([\\/])Users([\\/]+)[^\\/\s'"`]+/gi, '$1Users$2~').replace(/\/home\/[^/\s'"`]+/g, '~');
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+}
+
+/** A reason's kind, for counting: numbers and quoted text taken out, so the same cause groups. */
+export function reasonKind(reason: string): string {
+  return reason.replace(/(['"`]).*?\1/g, '…').replace(/\d+/g, 'N').slice(0, 120);
+}
+
+/** The --out file's text: each entry with its reason above it as a `# why:` comment. */
+export function knownText(entries: string[], reasons: Map<string, string>): string {
+  const body = entries.flatMap((entry) => (reasons.has(entry) ? [`# why: ${reasons.get(entry)}`, entry] : [entry]));
+  return `${[...HEADER, ...body].join('\n')}\n`;
+}
+
+/** The reasons counted by kind, most first, as summary lines. */
+export function reasonCounts(reasons: Iterable<string>, top = 15): string[] {
+  const counts = new Map<string, number>();
+  for (const reason of reasons) counts.set(reasonKind(reason), (counts.get(reasonKind(reason)) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([kind, n]) => `${String(n).padStart(4)}  ${kind}`);
 }
 
 /** One file's entries: each failed test, and the time-out when the file passed its cap. */
@@ -69,6 +136,26 @@ export function judgeKnown(failures: string[], known: { required: string[]; flak
   };
 }
 
+/**
+ * One file's line in the log, so a reader tells a waived failure from a new one at a glance
+ * (owner 2026-10-25: "目前的CI，看不出哪些是waiver"):
+ *   ok      every test passed
+ *   waived  it failed, and every failure is on the list (a waiver)
+ *   NEW     a failure that is not on the list: this fails the job
+ *   FIXED   a listed failure passes now: this fails the job too, until its line goes
+ */
+export function fileLine(file: string, found: string[], known: { required: string[]; flaky: string[] }, seconds: number): string {
+  const name = file.replace(/\\/g, '/');
+  const { added, fixed } = judgeKnown(found, knownFor(known, [name]));
+  const waived = found.length - added.length;
+  const parts = [`${seconds} s`];
+  if (added.length) parts.push(`${added.length} new: ${added.map((entry) => entry.split(' :: ')[1]).join('; ')}`);
+  if (fixed.length) parts.push(`${fixed.length} on the list ${fixed.length === 1 ? 'passes' : 'pass'} now`);
+  if (waived) parts.push(`${waived} waived`);
+  const word = added.length ? 'NEW' : fixed.length ? 'FIXED' : found.length ? 'waived' : 'ok';
+  return `${word.padEnd(7)} ${name} (${parts.join(', ')})`;
+}
+
 /** Every `*.test.ts` under test/, from the repo root, sorted. */
 function testFiles(dir = join(ROOT, 'test')): string[] {
   return readdirSync(dir)
@@ -77,6 +164,46 @@ function testFiles(dir = join(ROOT, 'test')): string[] {
       return statSync(path).isDirectory() ? testFiles(path) : name.endsWith('.test.ts') ? [relative(ROOT, path)] : [];
     })
     .sort();
+}
+
+/**
+ * Shard `index` of `count` (from 1): files dealt by weight (seconds), heaviest first, each
+ * to the shard with the least so far, so the shards take about the same time. Each shard's
+ * files come heaviest first, so the long ones start at once. Every file is in exactly one shard.
+ */
+export function shardOf(files: { name: string; weight: number }[], index: number, count: number): string[] {
+  const shards = Array.from({ length: count }, () => ({ weight: 0, names: [] as string[] }));
+  const byWeight = [...files].sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+  for (const file of byWeight) {
+    const least = shards.reduce((min, shard) => (shard.weight < min.weight ? shard : min));
+    least.weight += file.weight;
+    least.names.push(file.name);
+  }
+  return shards[index - 1]?.names ?? [];
+}
+
+/** The times file: `<seconds> <test file>` per line; `#` lines are comments. */
+export function readTimes(text: string): Map<string, number> {
+  const times = new Map<string, number>();
+  for (const line of text.split(/\r?\n/)) {
+    const entry = /^(\d+(?:\.\d+)?) +(\S+)$/.exec(line.trim());
+    if (entry) times.set(entry[2], Number(entry[1]));
+  }
+  return times;
+}
+
+/** Each file's weight: its last time, or the median of the known times for a new file (1 with none). */
+export function weightsOf(files: string[], times: Map<string, number>): { name: string; weight: number }[] {
+  const known = [...times.values()].sort((a, b) => a - b);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  return files.map((name) => ({ name, weight: times.get(name.replace(/\\/g, '/')) ?? median }));
+}
+
+/** The list's entries whose test file this run covered: a shard judges only its own files. */
+export function knownFor(known: { required: string[]; flaky: string[] }, files: string[]): { required: string[]; flaky: string[] } {
+  const ran = new Set(files.map((file) => file.replace(/\\/g, '/')));
+  const covered = (entry: string) => ran.has(entry.split(' :: ')[0]);
+  return { required: known.required.filter(covered), flaky: known.flaky.filter(covered) };
 }
 
 /** Run one test file with a cap; a file past it is killed with its children. */
@@ -102,9 +229,21 @@ function runFile(file: string, capMs: number): Promise<{ tap: string; timedOut: 
 }
 
 async function main(): Promise<number> {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, cap: { type: 'string', default: '240' }, jobs: { type: 'string', default: '4' } } });
-  const files = testFiles();
+  const { values } = parseArgs({ options: { out: { type: 'string' }, cap: { type: 'string', default: '240' }, jobs: { type: 'string', default: '4' }, shard: { type: 'string', default: '1/1' }, times: { type: 'string' } } });
+  const [index, count] = values.shard.split('/').map(Number);
+  if (!(count >= 1 && index >= 1 && index <= count)) throw new Error(`--shard takes <index>/<count>, such as 2/3, not ${values.shard}`);
+  let times = new Map<string, number>();
+  try {
+    times = readTimes(readFileSync(TIMES_FILE, 'utf8'));
+  } catch {
+    // No times yet: every file weighs the same, and the shards still cover every file once.
+  }
+  const files = shardOf(weightsOf(testFiles(), times), index, count);
+  const took: string[] = [];
   const failures: string[] = [];
+  const reasons = new Map<string, string>();
+  const folders = { root: ROOT, home: homedir() };
+  const known = readKnown(readFileSync(KNOWN_FILE, 'utf8'));
   let next = 0;
   const worker = async () => {
     while (next < files.length) {
@@ -113,15 +252,20 @@ async function main(): Promise<number> {
       const { tap, timedOut } = await runFile(file, Number(values.cap) * 1000);
       const found = entriesOf(file, tap, timedOut);
       failures.push(...found);
-      process.stdout.write(`${found.length ? 'fail' : 'ok  '} ${file.replace(/\\/g, '/')} (${Math.round((Date.now() - started) / 1000)} s${found.length ? `, ${found.length} failing` : ''})\n`);
+      took.push(`${Math.max(1, Math.round((Date.now() - started) / 1000))} ${file.replace(/\\/g, '/')}`);
+      const name = file.replace(/\\/g, '/');
+      for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
+      process.stdout.write(`${fileLine(file, found, known, Math.round((Date.now() - started) / 1000))}\n`);
     }
   };
   await Promise.all(Array.from({ length: Number(values.jobs) }, worker));
   failures.sort();
-  if (values.out) writeFileSync(values.out, `${[...HEADER, ...failures].join('\n')}\n`);
-  const { added, fixed } = judgeKnown(failures, readKnown(readFileSync(KNOWN_FILE, 'utf8')));
-  const lines = [`windows-known: ${files.length} files, ${failures.length} failing, ${added.length} new, ${fixed.length} fixed.`];
-  if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}`));
+  if (values.out) writeFileSync(values.out, knownText(failures, reasons));
+  if (values.times) writeFileSync(values.times, `${took.sort((a, b) => a.split(' ')[1].localeCompare(b.split(' ')[1])).join('\n')}\n`);
+  const { added, fixed } = judgeKnown(failures, knownFor(known, files));
+  const lines = [`windows-known: shard ${index}/${count}, ${files.length} files, ${failures.length} failing (${failures.length - added.length} waived), ${added.length} new, ${fixed.length} fixed.`];
+  if (reasons.size) lines.push('Failures by reason (first line of the error):', ...reasonCounts(reasons.values()));
+  if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}${reasons.has(a) ? `\n      why: ${reasons.get(a)}` : ''}`));
   if (fixed.length) lines.push('These pass now. Remove their lines from scripts/time/windows-known.txt:', ...fixed.map((f) => `  ${f}`));
   process.stdout.write(`${lines.join('\n')}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Windows known failures\n\n${lines.join('\n')}\n`);
