@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 // The Claude Code plugin hook (#706). A cache path is a real file inside the plugin cache, or it is refused.
-// The account home comes from the password file. HOME never moves the lookup; only accountHome, or the test-only YOKOTEN_TEST_ACCOUNT_HOME (#902), does.
+// The account home comes from the password file. HOME never moves the lookup; only a named account home (#902) does.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-
 const heapFlag = '--max-old-space-size=256';
 const toolLine = 'yokoten: the guard cannot run, because no safe plugin copy was found, so the command is refused';
 const sessionLine = 'yokoten: the session check cannot run, because no safe plugin copy was found';
@@ -117,7 +116,9 @@ function readAccountHome(accountHome) {
 // A tool call fails closed (#260, #706). A spawn error, or no exit status, is not a pass. Exit 0 and 2 pass.
 export function runLaunch({ mode, fallback, args, env, input, cwd, accountHome, spawn }) {
   const isTool = mode !== 'session';
-  const binary = resolveBinary(readAccountHome(accountHome ?? env?.YOKOTEN_TEST_ACCOUNT_HOME), fallback);
+  const at = args.indexOf('--account-home');
+  const named = at < 0 ? undefined : args.splice(at, 2)[1]; // a shell sets argv; the child never sees the flag
+  const binary = resolveBinary(readAccountHome(accountHome ?? named), fallback);
   if (!binary) {
     const line = `${isTool ? toolLine : sessionLine}\n`;
     return isTool ? { status: 2, stdout: '', stderr: line } : { status: 0, stdout: line, stderr: '' };
@@ -140,8 +141,7 @@ try {
   isEntry = !!entry && fs.realpathSync(entry) === fs.realpathSync(fileURLToPath(import.meta.url));
 } catch { /* A path that is not there is not this script. */ }
 if (isEntry) {
-  let input = '';
-  try { input = fs.readFileSync(0, 'utf8'); } catch { /* stdin is closed */ }
+  let input = ''; try { input = fs.readFileSync(0, 'utf8'); } catch { /* stdin is closed */ }
   const result = runLaunch({ mode: process.argv[2], fallback: process.argv[3], args: process.argv.slice(4), env: process.env, input });
   if (result.stdout) fs.writeSync(1, result.stdout);
   if (result.stderr) fs.writeSync(2, result.stderr);
