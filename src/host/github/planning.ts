@@ -7,7 +7,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeOf } from '../../rules/privacy.ts';
+import { configHomeOf } from '../../rules/privacy.ts';
 import type { BorrowedHost, UpstreamCommit } from '../../run/check.ts';
 
 export const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -147,8 +147,9 @@ export function readLogin(gh: Gh): string | null {
  * ~/.config/gh, as gh looks. None when the file is missing.
  */
 export function readLocalLogins(env: Env): string[] {
-  const home = homeOf(env);
-  const dir = env.GH_CONFIG_DIR || (env.XDG_CONFIG_HOME ? join(env.XDG_CONFIG_HOME, 'gh') : home ? join(home, '.config', 'gh') : null);
+  // A relative XDG_CONFIG_HOME is ignored, as the XDG spec says (#988).
+  const config = configHomeOf(env);
+  const dir = env.GH_CONFIG_DIR || (config ? join(config, 'gh') : null);
   if (!dir) return [];
   try {
     const text = readFileSync(join(dir, 'hosts.yml'), 'utf8');

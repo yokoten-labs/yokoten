@@ -3,7 +3,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { guardCommand } from '../../../../src/run/cli.ts';
@@ -471,4 +471,17 @@ test('install writes the user plugin when OpenCode is installed, and skips it ot
   assert.equal(hooks.length, 1);
   assert.equal(hooks[0]?.ok, true);
   assert.equal(addUserPlugin(sandbox.env, USER_CLI, USER_MISSING), 'same');
+});
+
+// #988: a relative XDG_CONFIG_HOME is ignored, as the XDG spec says. The positive control:
+// the old code took it, and looked for OpenCode under the folder the command ran in.
+test('opencode: a relative XDG_CONFIG_HOME is ignored; the plugin goes to ~/.config/opencode (#988)', () => {
+  const sandbox = makeSandbox();
+  mkdirSync(join(sandbox.home, '.config', 'opencode'), { recursive: true });
+  const env = { ...sandbox.env, XDG_CONFIG_HOME: 'relative-config' };
+  assert.equal(userPluginFile(env), '~/.config/opencode/plugins/yokoten.ts');
+  assert.equal(hasUserDir(env), true);
+  assert.equal(addUserPlugin(env, USER_CLI, USER_MISSING), 'added');
+  assert.ok(existsSync(join(sandbox.home, '.config', 'opencode', 'plugins', 'yokoten.ts')));
+  assert.ok(!existsSync(join(process.cwd(), 'relative-config')), 'nothing in the current folder');
 });

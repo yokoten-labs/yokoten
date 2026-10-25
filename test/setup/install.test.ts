@@ -39,7 +39,7 @@ import {
 } from '../repo/helpers.ts';
 import { hasHook } from '../../src/agents/hooks-file.ts';
 import { copyRuntime, isEditedManaged, sealManaged, writeManaged } from '../../src/setup/files.ts';
-import { addOwnMark, countMarkKinds, fillMarks, filledLines, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, type UserNameProbe, USER_CLI, writeFileAtomic } from '../../src/setup/install.ts';
+import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
 
 const BAD_USER_SETTINGS: [content: string, reason: (file: string) => string][] = [
@@ -282,6 +282,36 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   assert.match(result.stdout, /no runtime: the yokoten plugin brings its own/);
   assert.doesNotMatch(result.stdout, /nothing to remove/, 'a skill that was never there is not named');
   assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
+});
+
+// #988: Claude Code reads its user folder from CLAUDE_CONFIG_DIR. Install, uninstall and a
+// session's cleanup all use that folder; ~/.claude is never made. The positive control: the
+// old install wrote the hooks to ~/.claude/settings.json, which Claude Code never read.
+test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never ~/.claude (#988)', async () => {
+  const sandbox = makeSandbox();
+  const config = join(sandbox.home, 'claude-elsewhere');
+  const extra = { CLAUDE_CONFIG_DIR: config };
+  const result = await sandbox.call(['install'], { extra });
+  assert.equal(result.status, 0, result.stderr);
+  const settingsFile = join(config, 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  assert.ok(settings.hooks.SessionStart && settings.hooks.PreToolUse, 'the hooks are where Claude Code reads them');
+  assert.ok(existsSync(join(config, 'skills', 'yokoten', 'SKILL.md')), 'the entry skill');
+  assert.ok(existsSync(join(config, 'agents', 'worker.md')), 'the agents');
+  assert.ok(!existsSync(join(sandbox.home, '.claude')), '~/.claude is not made');
+  assert.match((await sandbox.call(['doctor'], { extra })).stdout, /ok +session-doctor/, 'doctor reads the same folder');
+  // A session with the plugin on takes back what install left, in the same folder.
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  const cleaned = cleanOlderInstall({ ...sandbox.env, ...extra });
+  assert.ok(cleaned.files > 0, 'it found the older files');
+  assert.ok(!existsSync(join(config, 'agents', 'worker.md')));
+  assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).hooks, undefined, 'the hooks went from CLAUDE_CONFIG_DIR');
+  assert.ok(!existsSync(join(sandbox.home, '.claude')));
+  // Uninstall reads the same folder, and leaves the user's settings file.
+  assert.equal((await sandbox.call(['uninstall'], { extra })).status, 0);
+  assert.ok(existsSync(settingsFile));
+  assert.ok(!existsSync(join(sandbox.home, '.claude')));
 });
 
 // #904: the upgrade from v0.1.0. An older install added the Claude Code hooks; with the

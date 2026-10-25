@@ -196,10 +196,14 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask): { ok
   // rewritten, when it won't parse or has the wrong shape (#254).
   const claudeHooks = agentHooks('the Claude Code settings', '.claude/settings.json', () => {
     checkProjectSettings(root);
+    const zone = setProjectEnv(root, 'TZ', 'UTC');
     return [
       describeWrite(addProjectHook(root, hookCli), 'the tool-call hook in .claude/settings.json'),
       describeWrite(addProjectStopHook(root, hookCli), "the stop check in .claude/settings.json (changed files, and a worker's done-when check, on Stop and SubagentStop)"),
-      describeWrite(setProjectEnv(root, 'TZ', 'UTC'), 'TZ=UTC for agent sessions in .claude/settings.json (commit times carry no time zone)'),
+      // The user's own TZ stays (#988): a note, never an overwrite. The value is not printed.
+      zone === 'kept (yours)'
+        ? 'kept your TZ in .claude/settings.json; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there'
+        : describeWrite(zone, 'TZ=UTC for agent sessions in .claude/settings.json (commit times carry no time zone)'),
     ];
   });
   // Codex, Gemini CLI, Antigravity CLI, OpenCode, Muse Code, DeepSeek Harness and Grok CLI get the same guard, whether or not they are

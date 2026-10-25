@@ -17,7 +17,7 @@
 // bin/yokoten.ts, the name older hooks and the docs use, loads this file.
 import module from 'node:module';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 /** The user's cache folder for yokoten, or undefined when there is no home folder. */
 function cacheDir(env) {
@@ -31,7 +31,9 @@ function cacheDir(env) {
   if (process.platform === 'win32') return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, 'yokoten', 'cache') : undefined;
   if (!home) return undefined;
   if (process.platform === 'darwin') return join(home, 'Library', 'Caches', 'yokoten');
-  return join(env.XDG_CACHE_HOME || join(home, '.cache'), 'yokoten');
+  // A relative XDG_CACHE_HOME is ignored, as the XDG spec says (#988).
+  const cache = env.XDG_CACHE_HOME && isAbsolute(env.XDG_CACHE_HOME) ? env.XDG_CACHE_HOME : join(home, '.cache');
+  return join(cache, 'yokoten');
 }
 
 try {

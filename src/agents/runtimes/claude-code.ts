@@ -5,7 +5,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { envFolder, folderIn, folderOf, homeIn } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import type { AgentAdapter } from './runtime.ts';
@@ -113,8 +113,15 @@ export function readStop(input: unknown): StopEvent | null {
   return readStopFields(input);
 }
 
-/** Where Claude Code keeps a user's skills, agents and settings. */
-export const userDir = (env: Env): string => join(homeIn(env), '.claude');
+/**
+ * Where Claude Code keeps a user's skills, agents and settings: `$CLAUDE_CONFIG_DIR` when it
+ * is a full path, as Claude Code reads it, else ~/.claude (#988). With neither it throws NO_HOME.
+ */
+export const userDir = (env: Env): string => folderIn(env, 'CLAUDE_CONFIG_DIR', '.claude');
+/** As userDir, but null with neither: then there are no user settings to read. */
+const userDirOf = (env: Env): string | null => folderOf(env, 'CLAUDE_CONFIG_DIR', '.claude');
+/** The user settings file, as the user would type it. */
+export const userSettingsFile = (env: Env): string => (envFolder(env, 'CLAUDE_CONFIG_DIR') ? '$CLAUDE_CONFIG_DIR/settings.json' : '~/.claude/settings.json');
 export const skillFile = (env: Env, name: string): string => join(userDir(env), 'skills', name, 'SKILL.md');
 export const agentFile = (env: Env, file: string): string => join(userDir(env), 'agents', file);
 
@@ -178,19 +185,20 @@ export function addProjectStopHook(root: string, cli: string): Added {
 /**
  * An environment variable for every agent session in the project (settings "env"). Used
  * for TZ=UTC, so the agents' commits record no time zone. A file that won't parse, or whose
- * `env` is the wrong type, throws `UnreadableHooksFile` and stays as it was.
+ * `env` is the wrong type, throws `UnreadableHooksFile` and stays as it was. A value the
+ * user set already stays as it is (#988): 'kept (yours)', and the caller prints a note.
  */
-export function setProjectEnv(root: string, key: string, value: string): Added {
+export function setProjectEnv(root: string, key: string, value: string): Added | 'kept (yours)' {
   const path = projectSettings(root);
   const table = withEnv(readTable(path, []));
   if ('problem' in table) throw new UnreadableHooksFile(path, table.problem);
   const { settings } = table;
   const env = (settings.env ??= {}) as Record<string, unknown>;
   if (env[key] === value) return 'same';
-  const had = key in env;
+  if (key in env) return 'kept (yours)';
   env[key] = value;
   writeSettings(path, settings);
-  return had ? 'updated' : 'added';
+  return 'added';
 }
 
 /**
@@ -210,15 +218,15 @@ export function addUserHooks(env: Env, cli: string, missing: string): { doctor: 
   };
 }
 // With no home folder there are no user settings to read: nothing is on (#356).
-export const hasSessionDoctor = (env: Env): boolean => homeOf(env) !== null && hasHook(userSettings(env), 'SessionStart', 'doctor');
-export const hasUserGuard = (env: Env): boolean => homeOf(env) !== null && hasHook(userSettings(env), 'PreToolUse', 'hook');
+export const hasSessionDoctor = (env: Env): boolean => userDirOf(env) !== null && hasHook(userSettings(env), 'SessionStart', 'doctor');
+export const hasUserGuard = (env: Env): boolean => userDirOf(env) !== null && hasHook(userSettings(env), 'PreToolUse', 'hook');
 
 /**
  * Whether Claude Code keeps its user settings here: the file `install` adds its two hooks
  * to. A machine without it has no Claude Code session to guard, so a session stays quiet
  * about a guard the plugin took with it (#904); full `doctor` still names it with its fix.
  */
-export const hasUserSettings = (env: Env): boolean => homeOf(env) !== null && existsSync(userSettings(env));
+export const hasUserSettings = (env: Env): boolean => userDirOf(env) !== null && existsSync(userSettings(env));
 
 /**
  * Take out the two hooks addUserHooks adds, and nothing else in the file. Null when the
@@ -254,7 +262,7 @@ export function readPluginChannel(id: string): PluginChannel | null {
  */
 export function enabledPluginChannel(env: Env): PluginChannel | null {
   // A settings file yokoten can't read, or none with no home folder, enables nothing.
-  if (!homeOf(env)) return null;
+  if (!userDirOf(env)) return null;
   const table = readTable(userSettings(env), []);
   if ('problem' in table) return null;
   const enabled = table.settings.enabledPlugins;
@@ -292,7 +300,7 @@ export interface InstalledPlugin {
  * there is no install or the file is not the shape we know.
  */
 export function readInstalledPlugin(env: Env, root: string | null): InstalledPlugin | null {
-  if (!homeOf(env)) return null;
+  if (!userDirOf(env)) return null;
   const plugins = join(userDir(env), 'plugins');
   let installs: unknown;
   try {
@@ -425,8 +433,8 @@ export const AGENT_ENV: RuntimeEnv = { login: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE
  * The binary names HTTPS_PROXY and NODE_USE_ENV_PROXY.
  */
 export const DESK: RuntimeDesk = {
-  leadState: (env) => [env.CLAUDE_CONFIG_DIR || join(homeIn(env), '.claude'), join(homeIn(env), '.claude.json')],
-  login: (env) => [{ from: join(env.CLAUDE_CONFIG_DIR || join(homeIn(env), '.claude'), '.credentials.json'), to: '.credentials.json' }],
+  leadState: (env) => [userDir(env), join(homeIn(env), '.claude.json')],
+  login: (env) => [{ from: join(userDir(env), '.credentials.json'), to: '.credentials.json' }],
   starter: { '.claude.json': '{"hasCompletedOnboarding": true}\n' },
   stateEnv: (state) => ({ CLAUDE_CONFIG_DIR: state }),
   hosts: ['api.anthropic.com', 'platform.claude.com'],

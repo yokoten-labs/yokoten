@@ -263,6 +263,22 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   assert.match(result.stdout, /^yokoten: stage 2 of 5, issues and pull requests\. Next: there is no origin remote, so the work is only on this machine; make the repo on your code host, add it as origin \(`git remote add origin <url>`\), and push \(`git push -u origin --all`\)/);
 });
 
+// #988: yokoten wants TZ=UTC for agent commits, but a TZ the user set in
+// .claude/settings.json stays. init says so in one line and never prints the value. The
+// positive control: the old init wrote UTC over it and said "updated".
+test("init: a TZ the user set in .claude/settings.json is kept, with one note (#988)", async () => {
+  const sandbox = makeSandbox();
+  const file = join(sandbox.repo, '.claude', 'settings.json');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ env: { TZ: 'Europe/Paris' } }));
+  const result = await sandbox.call(['init']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).env.TZ, 'Europe/Paris', "the user's value stays");
+  assert.equal(countLines(result.stdout, 'kept your TZ in .claude/settings.json; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there'), 1);
+  assert.doesNotMatch(result.stdout, /Europe\/Paris/, 'the value is not printed');
+  assert.doesNotMatch(result.stdout, /updated TZ=UTC/);
+});
+
 const GUIDE_LINE = 'other agents: see the guide';
 const HOOK_ON_LINE = 'git hook: on (the commit check runs from .githooks)';
 

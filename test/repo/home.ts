@@ -24,6 +24,8 @@ export function clearYokotenEnv(env: NodeJS.ProcessEnv): void {
 
 /** Variables that point into the real home folder, or at a file kept there. */
 export const HOME_VARIABLES = [
+  // Claude Code reads its user folder here, so install writes there too (#988).
+  'CLAUDE_CONFIG_DIR',
   'CODEX_HOME',
   'COPILOT_HOME',
   'DSH_HOME',
