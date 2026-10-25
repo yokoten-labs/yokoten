@@ -21,7 +21,8 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 - OpenCode is guarded too, tested with DeepSeek V4.1 Flash and GLM-5.3 Flash. The README shows every agent in one table.
 - `yokoten doctor` shows your next step first, then one block per stage.
 - yokoten leaves your settings alone: it keeps a choice you made on purpose, saves a copy before it changes a file of yours, and asks before it changes your git config.
-- Windows: the guard reads Windows paths, and every test now runs on Windows in CI. WSL is fully supported; native Windows is in beta.
+- Windows: the guard reads Windows and Git Bash paths, and every test runs on Windows in CI. WSL is fully supported. Native Windows is in beta, in Git Bash and PowerShell 7. Windows PowerShell 5.1 is not supported.
+- The board starts Codex only where its guard really runs. If it cannot tell, it does not start Codex and says what to do.
 
 ### Added
 

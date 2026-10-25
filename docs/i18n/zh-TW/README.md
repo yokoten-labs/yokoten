@@ -9,7 +9,7 @@ AI agent 一秒鐘就能犯大錯。yokoten 在它動手之前攔下。
 - **在你已經在用的工具裡運作**：Claude Code、Codex、Copilot CLI、Muse Code 等等。
 - **預設開啟。** 一條指令開始，不用學新東西。
 - **不亂動你的設定**：你做過的選擇都會保留；改你的檔案之前，先留一份副本。
-- **支援 Linux、Windows 和 macOS。** Windows 上完整支援 WSL；原生 Windows 為測試版。
+- **支援 Linux、Windows 和 macOS。** Windows 上完整支援 WSL；原生 Windows 為測試版，支援 Git Bash 和 PowerShell 7。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · 繁體中文 · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
