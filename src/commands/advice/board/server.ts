@@ -26,7 +26,7 @@ import { feedAnswer, makeBoardMask, makeFeedStreams } from './feed/route.ts';
 import { filterUsage, isKnownRole } from './feed/read/usage.ts';
 import { feedsJson, makeFeedStore, recordFeed } from './feed/steps.ts';
 import { boardManifest, boardPage, BOARD_REFRESH_SECONDS } from './page/page.ts';
-import { renderBoardText } from './page/text.ts';
+import { renderBoardScreen, renderBoardText } from './page/text.ts';
 import { BOARD_NO_REMOTE_ISSUES, BOARD_NO_REMOTE_PULLS, type BoardGitHub, collectBoard, collectBoardWith, createBoardGitHub, issueNumbersOf, refreshBoardGitHub } from './view.ts';
 
 /** How many random bytes the board link's token holds, and each page's script nonce. */
@@ -478,7 +478,10 @@ export function runBoard(invocation: Invocation, options: BoardServerOptions = {
     const waiting = collectBoardWaiting(board, typeof trees === 'string' ? [] : readBoardAttention(trees), controls.runs, controls.seen);
     // A run's worktree hides the home folder here, exactly as /data serves it.
     const runs = controls.runs.map((run) => ({ ...run, worktree: hideHome(run.worktree, invocation.env) }));
-    print(invocation, renderBoardText(board, waiting.length || runs.length ? { waiting, runs } : undefined));
+    const extra = waiting.length || runs.length ? { waiting, runs } : undefined;
+    // One screen by default; `--all` keeps every field of every agent, pull request and worktree (R3).
+    const livePage = `http://${boardHostName(root)}.localhost:${boardPort(root)}/`;
+    print(invocation, parsed.flags.has('--all') ? renderBoardText(board, extra) : renderBoardScreen(board, extra, livePage));
     return 0;
   }
   return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), { controls }).then(

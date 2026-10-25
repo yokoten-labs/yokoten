@@ -610,7 +610,7 @@ export const COMMANDS: Command[] = [
   {
     name: 'board',
     summary: 'the team at a glance, live (preview)',
-    usage: '[--text] [--no-open] [--role name] [--vendor name]',
+    usage: '[--text] [--all] [--no-open] [--role name] [--vendor name]',
     text: [
       'Preview: it may change, and team commands come in v0.1.2 (#823).',
       'Serves a live page on this machine only, at http://<repo>.localhost:<port>/.',
@@ -624,6 +624,7 @@ export const COMMANDS: Command[] = [
     ],
     options: [
       { name: '--text', text: 'print the agents, pull requests and worktrees as plain text and exit' },
+      { name: '--all', text: 'with --text: every field of every agent, pull request and worktree' },
       { name: '--no-open', text: 'only print the link; do not open the browser' },
       { name: '--role', value: 'name', text: 'with --text: only this role in the usage view: engineer, reviewer or checker' },
       { name: '--vendor', value: 'name', text: 'with --text: only this vendor in the usage view, such as claude or muse' },
