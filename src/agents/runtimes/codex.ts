@@ -6,7 +6,7 @@
 // command has to be trusted again.
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
@@ -16,7 +16,7 @@ import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
 import { readStop } from './claude-code.ts';
 import type { AgentAdapter } from './runtime.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
 
@@ -978,8 +978,7 @@ function hasMissedTable(text: string, blanked: string): boolean {
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'unreadable' {
   const path = join(root, SANDBOX_FILE);
   if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, FRESH_SANDBOX);
+    writeSafely(path, FRESH_SANDBOX);
     return 'added';
   }
   let text: string;
@@ -1026,8 +1025,7 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'un
       lines.push('', `[${tablePath.join('.')}]`, `${tableKey} = ${tableValue}`, '');
     } else lines.splice(at + 1, 0, `${tableKey} = ${tableValue}`);
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, lines.join(newline));
+  writeSafely(path, lines.join(newline));
   return 'added';
 }
 
@@ -1403,8 +1401,7 @@ export function writeTrust(plan: TrustPlan): 'written' | 'kept' | 'unreadable' {
     text = `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`;
   }
   if (!written) return 'kept';
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, text);
+  writeSafely(file, text);
   return 'written';
 }
 
@@ -1421,12 +1418,12 @@ export function revertTrust(change: TrustChange): 'reverted' | 'kept' | 'unreada
     if (tomlValue(text, change.path, change.key) !== change.value) return 'kept';
     const next = setTomlField(text, change.path, change.key, change.before, change.kind === 'boolean' ? 'boolean' : undefined);
     if (next === text) return 'kept';
-    writeFileSync(change.file, next);
+    writeSafely(change.file, next);
     return 'reverted';
   }
   const parsed = readJson(text);
   if (!parsed) return 'unreadable';
   if (!setJsonField(parsed.data as Record<string, unknown>, change, true)) return 'kept';
-  writeFileSync(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
+  writeSafely(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
   return 'reverted';
 }

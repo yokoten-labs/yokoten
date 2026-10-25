@@ -33,8 +33,8 @@
 // `allow` and `ask` let it go on. Exit 0 and exit 1 also let it go on. A crash, a signal,
 // a timeout, or an answer it cannot read denies.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn, homeOf } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
@@ -43,7 +43,7 @@ import { GUARD_PROTOCOL_ID } from '../../../run/protocol.ts';
 import type { RuntimeEnv } from '../../desk/agent-env.ts';
 import { isFolder } from '../../folder-trust.ts';
 import type { AgentAdapter } from '../runtime.ts';
-import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile } from '../../hooks-file.ts';
+import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile, writeSafely } from '../../hooks-file.ts';
 
 /** The project plugin `init` writes. OpenCode loads every file in this folder at startup. */
 export const PLUGIN_FILE = '.opencode/plugins/yokoten.ts';
@@ -431,8 +431,7 @@ function writePlugin(path: string, source: string): Added {
   const state = pluginState(path, source);
   if (typeof state === 'object') throw new UnreadableHooksFile(path, state);
   if (state === 'same') return state;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, source);
+  writeSafely(path, source, { isOurs: (old) => /yokoten\.(?:ts|mjs)/.test(old) });
   return state;
 }
 

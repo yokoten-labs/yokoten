@@ -8,13 +8,13 @@
 //   runtime. Empty stdout with exit 0 lets the call go on.
 // - `--dangerously-skip-permissions` skips the hooks altogether.
 
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
-import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile } from '../../hooks-file.ts';
+import { type Added, type HookState, isObject, type Problem, removeEmptied, UnreadableHooksFile, writeSafely } from '../../hooks-file.ts';
 import type { RuntimeEnv } from '../../desk/agent-env.ts';
 import type { AgentAdapter } from '../runtime.ts';
 
@@ -74,6 +74,16 @@ function readEntries(path: string): { entries: Record<string, unknown> } | { pro
   return { entries };
 }
 
+/** Whether the file's text holds only the `yokoten` entry: yokoten wrote all of it, so it needs no `.before-yokoten` copy (#984). */
+function onlyOurEntry(text: string): boolean {
+  try {
+    const entries: unknown = JSON.parse(text);
+    return isObject(entries) && Object.keys(entries).every((key) => key === NAME);
+  } catch {
+    return false;
+  }
+}
+
 /** The entry's PreToolUse against `group`, or why the file won't be edited. */
 function entryState(path: string, group: object): HookState {
   const read = readEntries(path);
@@ -96,8 +106,7 @@ function writeEntry(path: string, group: object): Added {
   const entry = (read.entries[NAME] ?? {}) as Record<string, unknown>;
   delete entry.enabled;
   read.entries[NAME] = { ...entry, [EVENT]: [group] };
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(read.entries, null, 2)}\n`);
+  writeSafely(path, `${JSON.stringify(read.entries, null, 2)}\n`, { isOurs: onlyOurEntry });
   return state as Added;
 }
 
@@ -154,8 +163,8 @@ export function removeUserHooks(env: Env): 'removed' | 'not there' | null {
   if ('problem' in read) return null;
   if (!(NAME in read.entries)) return 'not there';
   delete read.entries[NAME];
-  if (Object.keys(read.entries).length) writeFileSync(path, `${JSON.stringify(read.entries, null, 2)}\n`);
-  else rmSync(path, { force: true });
+  if (Object.keys(read.entries).length) writeSafely(path, `${JSON.stringify(read.entries, null, 2)}\n`, { isOurs: onlyOurEntry });
+  else removeEmptied(path);
   return 'removed';
 }
 
