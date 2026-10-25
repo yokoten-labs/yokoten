@@ -1,4 +1,4 @@
-# 0040 The docs site: Starlight in website/, text in docs/
+# 0042 The docs site: Starlight in website/, text in docs/
 
 Status: proposed; the owner accepts or refuses
 Date: 2026-10-25 (UTC)
@@ -6,15 +6,15 @@ Issue: #631
 
 ## Context
 
-The owner decided on 2026-10-22 to build the docs site with Astro Starlight in a new
-`website/` folder of this repo, with its own `package.json`, merging after the v0.1.1
+The owner decided on 2026-10-22 to build the docs site with Astro Starlight. It lives in a
+new `website/` folder of this repo, with its own `package.json`. It merges after the v0.1.1
 release. The languages are English, 简体中文, 繁體中文 and 日本語 (2026-10-25: exactly the
 same layout, sections, pages and order in every language; only the words differ). This
 record keeps the choices made while building the skeleton, so the next issue about the
 site does not argue them again.
 
-What the site is for: a reader who has never used yokoten finds the command, the four
-sections (Start, Guides, Reference, Ideas) and one answer per question, in their own
+What the site is for: a reader who has never used yokoten finds the command and the four
+sections (Start, Guides, Reference, Ideas). Each question has one answer, in their own
 language. The text stays in `docs/`, so a pull request changes code and docs together.
 
 ## What was chosen
@@ -33,38 +33,38 @@ rules). The alternative, a copy under `website/src/content/docs/`, was dropped: 
 goes stale, and the two trees then disagree about which language is behind.
 
 **One sidebar, in the config, for every language.** Starlight picks the group label by
-`lang` from the `translations` of each group, and rewrites each `slug` with the locale
-prefix itself (`utils/navigation.js` adds `zh-cn/` and friends), so one array holds all
-four languages and cannot drift out of order. No per-locale sidebar objects; that form
-of `sidebar` no longer parses in Starlight 0.42 (it wants an array with
-`translations`).
+`lang` from the `translations` of each group. It also rewrites each `slug` with the locale
+prefix itself (`utils/navigation.js` adds `zh-cn/` and friends). So one array holds all
+four languages and cannot drift out of order. There are no per-locale sidebar objects.
+That form of `sidebar` no longer parses in Starlight 0.42, which wants an array with
+`translations`.
 
 **Search, light and dark, phone layout: the defaults.** Pagefind ships inside
 Starlight, offline, no outside service. The brand is one indigo hue family
 (`--sl-hue: 253`, `--sl-hue-accent: 264` in `website/src/styles/custom.css`) plus the
-favicon, chosen to read in both themes; the exact colour is the owner's to change.
+favicon. It was chosen to read in both themes. The exact colour is the owner's to change.
 
-**The home page is a Starlight splash doc, in content, not in code.** One install
-command (`cd your-project` then `npx yokoten`), the claim, and a placeholder board SVG
-(`website/public/board.svg`) until the real screenshot comes with the copy phase.
+**The home page is a Starlight splash doc, in content, not in code.** It holds one install
+command (`cd your-project` then `npx yokoten`) and the claim. It also holds a placeholder
+board SVG (`website/public/board.svg`). The real screenshot replaces it in the copy phase.
 
 **Translation-behind notices** are not built this far. Starlight's frontmatter holds
-nothing for it, and it matters only once the real pages exist, so the practical shape
-(`updatedAt` or a custom banner component compared with git history of the English
-source) is a decision for the copy issues, not the skeleton issue.
+nothing for it. It matters only once the real pages exist. The practical shape is
+`updatedAt` or a custom banner component, compared with the git history of the English
+source. That is a decision for the copy issues, not the skeleton issue.
 
 ## What is still open
 
 The layout guard caps a folder at 7 entries, and both folders the site touches are
-over it: `docs/` already held exactly 7 entries (assets/, facts.json, guide.md,
-i18n/, records/, server.md, standard.md) and the site adds `docs/site`, which itself
-needs 9 top entries — home and 404 at the root, four section folders, three language
-folders, the shape Starlight's slugs require (a nested `langs/` folder would break
-Starlight's slug-to-locale mapping). The checker's own remedy fits: `layout.exempt`
-takes `docs/site` (an upstream structure the files must keep) and `docs` or — the
-lead's choice — one existing docs file moves into an exempt or grouped folder. The
-skeleton cannot commit until that decision lands, because the commit check fails the
-tree; the work is staged and described below.
+over it. `docs/` already held exactly 7 entries (assets/, facts.json, guide.md,
+i18n/, records/, server.md, standard.md). The site adds `docs/site`, which itself
+needs 9 top entries. These are home and 404 at the root, four section folders and three
+language folders. Starlight's slugs require this shape, because a nested `langs/` folder
+would break Starlight's slug-to-locale mapping. The checker's own remedy fits.
+`layout.exempt` takes `docs/site` (an upstream structure the files must keep) and `docs`.
+Or, as the lead chooses, one existing docs file moves into an exempt or grouped folder.
+The skeleton cannot commit until that decision lands, because the commit check fails the
+tree. The work is staged and described below.
 
 The workflow job that builds the site on each pull request is drafted but not written
 into `.github/workflows/yokoten.yml`: `.github/**` is lead-only, so the lead applies
