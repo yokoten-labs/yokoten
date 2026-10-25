@@ -2219,6 +2219,9 @@ test('init: keeps a sandbox the user set, and still exits 0 (#589)', async () =>
   assert.deepEqual(JSON.parse(readFileSync(join(sandbox.repo, '.gemini', 'settings.json'), 'utf8')).security, { disableYoloMode: false });
   assert.match(readFileSync(join(sandbox.repo, '.codex', 'config.toml'), 'utf8'), /^sandbox_mode = "danger-full-access"$/m);
   assert.match(readFileSync(join(sandbox.repo, '.grok', 'sandbox.toml'), 'utf8'), /^extends = "devbox"$/m);
+  // A sandbox kept because the user set it is a note on a terminal, the same state install prints (#964).
+  const colour = await sandbox.call(['init'], { isTTY: true });
+  assert.match(colour.stdout, /^\u001b\[33m⚠ kept\u001b\[0m +your Claude Code sandbox in \.claude\/settings\.json/m, colour.stdout);
 });
 
 // ---- Trust in the agents: one yes (#661) ----
