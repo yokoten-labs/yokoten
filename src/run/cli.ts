@@ -389,9 +389,12 @@ export const COMMANDS: Command[] = [
   {
     name: 'changelog',
     summary: 'the entries the files in changes/ add under [Unreleased]',
-    usage: '[--write]',
+    usage: '[--write] | --notes <version>',
     text: ['Shows the entries the files in changes/ add under [Unreleased] in CHANGELOG.md.'],
-    options: [{ name: '--write', text: 'put them into CHANGELOG.md and delete the files (before a release)' }],
+    options: [
+      { name: '--write', text: 'put them into CHANGELOG.md and delete the files (before a release)' },
+      { name: '--notes', value: 'version', text: "print the release notes: that version's opening from CHANGELOG.md, and a link to all of it" },
+    ],
     example: 'yokoten changelog',
   },
   {

@@ -23,6 +23,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Added
 
+- `yokoten changelog --notes <version>` prints the release notes from that version's `CHANGELOG.md` section, so they are never written twice. The release skill uses it, and now names the npm trusted publisher as a step before the tag.
 - `yokoten train <pr>...` merges an approved, green queue one pull request at a time (#320). Each merged tree runs the project's tests and `check`. The first pull request that needs a person stops the train.
 - `install` now writes the user-level command guard for Antigravity CLI and Copilot CLI (#342).
   For agy it goes in `~/.gemini/config/hooks.json`, and for Copilot in `~/.copilot/hooks/yokoten.json`.
@@ -210,6 +211,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Changed
 
+- The npm page and search now describe yokoten in the README's own opening words, and a test keeps the two the same.
 - Record 0028 sets the framework above the details: yokoten is a neutral trust layer for AI teams, with three pillars (an open standard, a provenance ledger, a lesson network). The desk becomes the main line of defence and the guard stops mistakes.
 - Record 0029 sets how yokoten runs a team: one event log is the source of truth, control loops do what the lead did by hand, and service levels decide priorities.
 - Record 0030 sets earned autonomy: each agent gets a level per area, from L0 (a person approves each change) to L4, computed from its record. Levels drop fast and rise slowly.

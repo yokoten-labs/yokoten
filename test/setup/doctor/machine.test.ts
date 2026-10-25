@@ -2,14 +2,15 @@
 
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { machineStateFile } from '../../../src/setup/install.ts';
+import { NODE_FIXED } from '../../../src/setup/doctor/machine.ts';
 import { agentTempDirCheck, nodeSecurityCheck, diskSpaceChecks, doctor, findDriveMount, isLowOnSpace, isWsl, leftoverControl, leftoverTempCheck, type MachineProbe, machineControl, parseLxss, quoteForShell, REAL_MACHINE, readHostDisk, saveHostCache, selfTest } from '../../../src/setup/doctor/index.ts';
-import { fakeMachine, GB, makeTempDir, MOUNTS, NOW, WSL } from '../../repo/helpers.ts';
+import { fakeMachine, GB, makeTempDir, MOUNTS, NOW, ROOT, WSL } from '../../repo/helpers.ts';
 
 // Machine notes (record 0012): a fake machine, so no test reads the real disk or runs reg.exe.
 const LXSS = [
@@ -325,3 +326,42 @@ test('saveHostCache: keeps the other keys of machine.json, such as the Windows u
   assert.equal(state.hostDisk.size, 1);
 });
 
+
+// One source for the Node versions (#980): package.json "engines". NODE_FIXED must say the
+// same, and every doc, workflow and kit file names only those versions, or the last
+// release before each fix (the one a sentence warns against). A bump that misses a copy fails here.
+/** The lowest version of each Node line that "engines" allows, as NODE_FIXED holds it. */
+function enginesFloors(engines: string): Record<number, string> {
+  const floors: Record<number, string> = {};
+  for (const part of engines.split('||')) {
+    const version = part.trim().replace(/^(\^|>=)/, '');
+    if (/^\d+\.\d+\.\d+$/.test(version)) floors[Number(version.split('.')[0])] = version;
+  }
+  return floors;
+}
+
+/** Each "file:line version" in `text` that is neither a floor nor the release right before one. */
+function staleNodeVersions(file: string, text: string, floors: Readonly<Record<number, string>>): string[] {
+  const allowed = new Set(Object.values(floors).flatMap((floor) => {
+    const [major, minor, patch] = floor.split('.').map(Number);
+    return patch > 0 ? [floor, `${major}.${minor}.${patch - 1}`] : [floor];
+  }));
+  return text.split('\n').flatMap((line, index) =>
+    [...line.matchAll(/(?<![\d.])(\d+)\.\d+\.\d+(?![\d.])/g)]
+      .filter((match) => String(Number(match[1])) in floors && !allowed.has(match[0]))
+      .map((match) => `${file}:${index + 1} ${match[0]}`));
+}
+
+test('node versions: engines is the one source; NODE_FIXED, docs, workflows and the kit agree (#980)', () => {
+  const floors = enginesFloors(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).engines.node);
+  assert.deepEqual(enginesFloors('^22.23.4 || ^24.22.1 || >=26.12.1'), { 22: '22.23.4', 24: '24.22.1', 26: '26.12.1' });
+  assert.deepEqual(floors, NODE_FIXED, 'package.json "engines" and NODE_FIXED in src/setup/doctor/machine.ts name different versions');
+  // Positive control: an old floor left in a doc is caught; the release before a fix is not.
+  assert.deepEqual(staleNodeVersions('x.md', 'Node 22.20.0 or later\n22.23.3 has holes\nv1.2.3', { 22: '22.23.4' }), ['x.md:1 22.20.0']);
+  const files = ['README.md', 'action.yml', 'docs/guide.md'];
+  for (const folder of ['docs/i18n']) for (const lang of readdirSync(join(ROOT, folder))) for (const name of ['README.md', 'guide.md']) files.push(`${folder}/${lang}/${name}`);
+  for (const folder of ['.github/workflows', 'kit/project/.github/workflows']) for (const name of readdirSync(join(ROOT, folder))) files.push(`${folder}/${name}`);
+  const stale = files.filter((file) => { try { readFileSync(join(ROOT, file)); return true; } catch { return false; } })
+    .flatMap((file) => staleNodeVersions(file, readFileSync(join(ROOT, file), 'utf8'), floors));
+  assert.deepEqual(stale, [], `name the versions in package.json "engines" (${Object.values(floors).join(', ')})`);
+});

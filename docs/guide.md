@@ -994,7 +994,7 @@ It puts three safe defaults in `.github/` too:
 | `redact` | Reads text on stdin and writes it with your details hidden: `<owner>`, `<email>`, `<host>`, `<mark>`. The tool-call guard sends risky commands through it. See [Privacy](#privacy) |
 | `marks allow <mark> --here` | Lets one of your private marks through in this repo only, with no yokoten.json. The allow is kept on this machine, never in the repo. `--remove` takes it back. See [Privacy](#privacy) |
 | `anchor [--json]` | Lists the anchors recorded in this checkout, newest first. A worker records one when its checks pass and its tree is clean. An anchor is a commit: go back with `git switch -c try-2 <commit>`, and nothing is reset or deleted. See [The stop check](#the-stop-check) |
-| `changelog [--write]` | Shows the entries the files in `changes/` add under `[Unreleased]`. `--write` puts them into `CHANGELOG.md` and deletes the files; run it before a release. See [The changelog](#the-changelog) |
+| `changelog [--write]`, `changelog --notes <version>` | Shows the entries the files in `changes/` add under `[Unreleased]`. `--write` puts them into `CHANGELOG.md` and deletes the files; run it before a release. `--notes` prints a version's release notes from its `CHANGELOG.md` section, so they are never written twice. See [The changelog](#the-changelog) |
 | `mcp [dir] [--command "<command>"] [--json]` | Starts each stdio server in `.mcp.json`, `.vscode/mcp.json` or `mcp.json` and checks its tools for every client: schema, names, annotations, count, result shape and stray stdout. `--command` checks a server with no config entry; `--json` prints the findings. A Windows warning does not fail it. See [Shipping an MCP server](#shipping-an-mcp-server-that-works-in-every-agent) |
 | `learn <issue> [--write]` | Drafts a check from an incident issue, for a person to review. `--write` adds the files in `lessons/`. See [Learning from an incident](#learning-from-an-incident) |
 | `learn --ship <id>` | In yokoten: moves a reviewed lesson into a group in `kit/lessons/`, where `doctor` from that yokoten runs it in every project. Refused while a `TODO(reviewer)` is left or its test fails |
@@ -1174,8 +1174,20 @@ flowchart LR
   The environment variable wins when both are set. When the brief has none, the
   changed-file check is the project's check.
 - The command uses the platform shell. That is `sh` on Linux and macOS, and `cmd.exe`
-  on Windows. It may run for two minutes. On a timeout, yokoten stops the command and
-  every program it started. On Windows it stops that tree while the shell is still running.
+  on Windows. It may run for two minutes. When it ends, or the time runs out, yokoten
+  stops the command and the programs it started.
+- On Windows, `cmd.exe` runs in a job when Windows PowerShell is there. Closing the
+  job stops those programs after `cmd.exe` has exited. The command reaches the host
+  with `-EncodedCommand`, so the check's own text and quotes stay as they are. A
+  security policy on the machine can still block `Add-Type`, which compiles the short
+  job script. If PowerShell is missing, blocked, stops before it starts the check, or
+  cannot make the job, the check runs `cmd.exe` alone and says why on stderr. A program
+  left behind can then keep running. A host that stops after it started the check is
+  not detected: its exit code is read as the check's own. The two-minute budget
+  includes starting that host.
+- A program that has already started its own session is not stopped. `setsid` starts
+  one. A new process group in the same session is stopped on Linux. On macOS, `ps` gives no
+  session id, so only the check's own process group is stopped.
 - A failing check sends the worker back, with the output in short and what to fix.
   The worker gets three tries. On the third, the hook says the next stop is let through.
   The worker's final message to the lead must start with `NOT DONE: checks failing`.

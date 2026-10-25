@@ -1,7 +1,7 @@
 {
   "name": "yokoten",
   "version": "0.1.1",
-  "description": "Carry what one project learned into every project: rules, guards and skills for AI coding agents.",
+  "description": "A safety guard for AI coding tools. AI agents can make a big mistake in a second. yokoten stops it before it happens.",
   "keywords": [
     "ai-agents",
     "guardrails",
@@ -13,7 +13,10 @@
     "github-copilot",
     "antigravity",
     "deepseek",
-    "grok"
+    "grok",
+    "opencode",
+    "muse-code",
+    "ai-safety"
   ],
   "license": "MIT",
   "homepage": "https://yokoten.app",

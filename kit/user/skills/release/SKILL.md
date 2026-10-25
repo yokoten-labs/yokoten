@@ -109,10 +109,19 @@ First read `name` in `package.json`, then ask the registry for the latest versio
 
 Say in the first line of the checklist which release docs you read.
 
+- The trusted publisher, before the tag: when the newest version on the registry was
+  published by hand (`npm view <name>@<version> dist.attestations` prints nothing), npm has
+  no trusted publisher yet, and the `publish` job fails with `ENEEDAUTH`. The owner adds it
+  on npmjs.com: the package's **Settings**, **Trusted Publisher**, **GitHub Actions**, with
+  the organization, the repository, the workflow file (`release.yml`) and the environment
+  (`release`), each exactly as in the workflow.
 - The tag: `git tag -a vX.Y.Z -m "<name> X.Y.Z" && git push origin vX.Y.Z`. For a
   pre-release, the tag is `vX.Y.Z-beta.N`. A release goes to npm `latest`; a
   pre-release goes to npm `next`.
 - The checks: wait for the `verify` job to pass.
+- The release notes, after npm has the version: `yokoten changelog --notes vX.Y.Z > notes.md`,
+  then `gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file notes.md`. The notes
+  come from the version's `CHANGELOG.md` section; never write them again by hand.
 
 For a package **already on the registry**, the tag starts the release workflow. The
 `publish` job waits for the owner's approval in the `release` environment. The owner
