@@ -3,7 +3,7 @@
 
 import './home.ts';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -101,7 +101,9 @@ test('merge skill: fetch, then read origin/main, so the feature head cannot pass
 test('merge record: an issue it leaves open is linked with Refs, not Closes (#488)', () => {
   const record = readFileSync(join(repoRoot, 'docs/records/0027-utc-merges.md'), 'utf8');
   const skill = readFileSync(join(repoRoot, 'kit/user/skills/merge/SKILL.md'), 'utf8');
-  const change = readFileSync(join(repoRoot, 'changes/488-merge-utc.md'), 'utf8');
+  // The change file is folded into CHANGELOG.md at a release (`changelog --write`): read whichever holds it.
+  const changeFile = join(repoRoot, 'changes/488-merge-utc.md');
+  const change = readFileSync(existsSync(changeFile) ? changeFile : join(repoRoot, 'CHANGELOG.md'), 'utf8');
   const open = 'That count remains issue #488.';
   assert.match(record, /remains issue #488/);
   assert.match(record, /Refs #488/);
