@@ -48,6 +48,8 @@ export interface Invocation {
   stdin: Input;
   /** The path of the yokoten entry that runs, for a command that runs yokoten again (the redact wrapper). */
   script: string;
+  /** The system, read once in bin/main.ts (record 0040). Missing means a POSIX system. */
+  platform?: NodeJS.Platform;
 }
 
 /** The command line, read strictly: an unknown option is refused, never ignored. */

@@ -10,6 +10,7 @@
 // Version 1 has no rewrite and no runtime name: a tool either runs the action as written
 // or refuses it, and a refusal names no agent.
 
+import { posix, win32 } from 'node:path';
 import { type Finding, formatFinding, formatRefusal, refusalParts } from '../rules/message.ts';
 import type { Action } from './hook.ts';
 
@@ -142,10 +143,23 @@ function readAction(value: unknown): GuardAction | string {
 }
 
 /**
- * The call in the fixed shape, or a line that says what is wrong. A version this yokoten
- * does not read is a problem, never a guess: the answer is `refuse`.
+ * Whether `folder` is an absolute folder on `platform` (#1016). On win32 that is a drive
+ * path (`C:\work`, `C:/work`) or a UNC share (`\\server\share`). A path with a root but no
+ * drive, such as the Git Bash `/c/work/app`, is refused for now: issue #1015 adds the shared
+ * helper that maps it. Anywhere else it is a POSIX absolute path. The platform comes from
+ * the caller; nothing here reads the system.
  */
-export function readGuardInput(value: unknown): GuardInput | string {
+export function isAbsoluteFolder(folder: string, platform: NodeJS.Platform): boolean {
+  if (platform !== 'win32') return posix.isAbsolute(folder);
+  return win32.isAbsolute(folder) && !/^[\\/](?![\\/])/.test(folder);
+}
+
+/**
+ * The call in the fixed shape, or a line that says what is wrong. A version this yokoten
+ * does not read is a problem, never a guess: the answer is `refuse`. `platform` is the
+ * system of the caller; a missing one is a POSIX system.
+ */
+export function readGuardInput(value: unknown, platform: NodeJS.Platform = 'linux'): GuardInput | string {
   if (!isRecord(value)) return 'the input must be one JSON object';
   if (value.protocol !== GUARD_PROTOCOL_ID) {
     const named = textOf(value.protocol) ?? 'nothing';
@@ -156,19 +170,19 @@ export function readGuardInput(value: unknown): GuardInput | string {
   if (value.role !== 'lead' && value.role !== 'worker') return 'role must be "lead" or "worker"';
   const project = textOf(value.project);
   if (project === undefined) return 'project must be the project folder';
-  if (!project.startsWith('/')) return 'project must be an absolute folder';
+  if (!isAbsoluteFolder(project, platform)) return 'project must be an absolute folder';
   return { protocol: GUARD_PROTOCOL_ID, action, role: value.role, project };
 }
 
 /** The call as text, or a line that says why the text is not one. */
-export function parseGuardInput(text: string): GuardInput | string {
+export function parseGuardInput(text: string, platform: NodeJS.Platform = 'linux'): GuardInput | string {
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return 'the input must be JSON';
   }
-  return readGuardInput(value);
+  return readGuardInput(value, platform);
 }
 
 /** The protocol call for an Action an adapter already read. A worker action stays a worker. */

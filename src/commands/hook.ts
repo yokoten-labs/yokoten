@@ -519,7 +519,7 @@ export function askForHeavyJob(command: string, env: Env): Finding | null {
  */
 async function runProtocol(invocation: Invocation, guard: Guard | undefined, commandsOnly: boolean): Promise<number> {
   const { cwd, env: callEnv } = invocation;
-  const parsed = parseGuardInput(readInput(invocation.stdin));
+  const parsed = parseGuardInput(readInput(invocation.stdin), invocation.platform);
   const answer = async (output: GuardOutput): Promise<number> => {
     printJson(invocation, output);
     return output.decision === 'refuse' ? 2 : 0;
