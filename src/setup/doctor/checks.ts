@@ -142,8 +142,9 @@ function museLine(root: string, env: Env): Practice[] {
 }
 
 /** Antigravity CLI's guard in .agents/hooks.json: one hook, no stop check (its Stop event has no `stop_hook_active`). */
-function antigravityPractice(state: HookState): Practice {
+function antigravityPractice(state: antigravity.AgyState): Practice {
   const file = '.agents/hooks.json';
+  if (state === antigravity.KEPT_OFF) return practice('antigravity-hook', 'antigravity-hook', false, `you turned off the tool-call guard in ${file}`, `to turn it on, ${antigravity.TURN_ON_STEP}`);
   if (typeof state === 'object') return practice('antigravity-hook', 'antigravity-hook', false, state.kind === 'json' ? `can't read ${file}` : `${file} has an unexpected shape`, state.kind === 'shape' ? `${state.hint}; fix it, then run \`yokoten init\`` : 'make it valid JSON, then run `yokoten init`');
   if (state === 'updated') return practice('antigravity-hook', 'antigravity-hook', false, `the tool-call guard in ${file} is out of date or off`, '`yokoten init` updates it');
   return practice('antigravity-hook', 'antigravity-hook', state === 'same', `no tool-call guard in ${file}`, '`yokoten init` adds it');
@@ -330,7 +331,13 @@ export function userAgentHooks(env: Env): Practice[] {
     return practice(id, id, !missing.length, `${missing.map((name) => `no ${name}`).join(' and ')} in ${file}`, `\`yokoten install\` adds ${them(missing)}`);
   };
   const checks: Practice[] = [];
-  if (antigravity.hasUserDir(env)) checks.push(report('antigravity-user-hook', antigravity.userHooksState(env, USER_CLI, USER_MISSING), antigravity.userHooksFile(env)));
+  if (antigravity.hasUserDir(env)) {
+    const file = antigravity.userHooksFile(env);
+    const { guard } = antigravity.userHooksState(env, USER_CLI, USER_MISSING);
+    // A guard the user turned off is their choice: named, with the way to turn it on (#984).
+    if (guard === antigravity.KEPT_OFF) checks.push(practice('antigravity-user-hook', 'antigravity-user-hook', false, `you turned off the command guard in ${file}`, `to turn it on, ${antigravity.TURN_ON_STEP}`));
+    else checks.push(report('antigravity-user-hook', { guard }, file));
+  }
   if (codex.hasUserDir(env)) checks.push(report('codex-user-hook', codex.userHooksState(env, USER_CLI, USER_MISSING), '~/.codex/hooks.json'));
   if (copilot.hasUserDir(env)) checks.push(report('copilot-user-hook', copilot.userHooksState(env, USER_CLI, USER_MISSING), copilot.userHooksFile(env)));
   if (gemini.hasUserDir(env)) checks.push(report('gemini-user-hook', gemini.userHooksState(env, USER_CLI, USER_MISSING), '~/.gemini/settings.json'));

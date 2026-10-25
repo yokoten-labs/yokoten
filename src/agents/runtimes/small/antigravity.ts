@@ -74,27 +74,44 @@ function readEntries(path: string): { entries: Record<string, unknown> } | { pro
   return { entries };
 }
 
+/**
+ * The `yokoten` entry has `enabled: false`: the user turned the guard off, so yokoten
+ * leaves the file as it is and says so (#984).
+ */
+export const KEPT_OFF = 'kept off';
+
+/** What writing the guard did: `Added`, or the user's off switch kept. */
+export type AgyAdded = Added | typeof KEPT_OFF;
+/** What writing the guard would do, or why it won't touch the file. */
+export type AgyState = HookState | typeof KEPT_OFF;
+
+/** How the user turns the guard back on, for the lines init, install and doctor print. */
+export const TURN_ON_STEP = 'delete `"enabled": false` from its `"yokoten"` entry';
+
+/** The one line for a guard the user turned off: what yokoten would have done, and how to change it. */
+export const keptOffLine = (file: string): string => `kept your Antigravity CLI guard in ${file} off, as you set it (yokoten would turn it on): to turn it on, ${TURN_ON_STEP}`;
+
 /** The entry's PreToolUse against `group`, or why the file won't be edited. */
-function entryState(path: string, group: object): HookState {
+function entryState(path: string, group: object): AgyState {
   const read = readEntries(path);
   if ('problem' in read) return read.problem;
   const entry = read.entries[NAME] as Record<string, unknown> | undefined;
+  if (entry?.enabled === false) return KEPT_OFF;
   if (entry?.[EVENT] === undefined) return 'added';
-  return JSON.stringify(entry[EVENT]) === JSON.stringify([group]) && entry.enabled !== false ? 'same' : 'updated';
+  return JSON.stringify(entry[EVENT]) === JSON.stringify([group]) ? 'same' : 'updated';
 }
 
 /**
- * Write `group` as the `yokoten` entry's PreToolUse. An older guard, or one turned off with
- * `enabled: false`, is replaced. A file yokoten can't edit throws `UnreadableHooksFile` and
- * stays as it was.
+ * Write `group` as the `yokoten` entry's PreToolUse. An older guard is replaced. A guard
+ * the user turned off with `enabled: false` stays as it is (#984). A file yokoten can't
+ * edit throws `UnreadableHooksFile` and stays as it was.
  */
-function writeEntry(path: string, group: object): Added {
+function writeEntry(path: string, group: object): AgyAdded {
   const read = readEntries(path);
   if ('problem' in read) throw new UnreadableHooksFile(path, read.problem);
   const state = entryState(path, group);
-  if (state === 'same') return state;
+  if (state === 'same' || state === KEPT_OFF) return state;
   const entry = (read.entries[NAME] ?? {}) as Record<string, unknown>;
-  delete entry.enabled;
   read.entries[NAME] = { ...entry, [EVENT]: [group] };
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(read.entries, null, 2)}\n`);
@@ -102,10 +119,10 @@ function writeEntry(path: string, group: object): Added {
 }
 
 /** What `addProjectHook` would do, read-only: 'same', 'updated', 'added', or why it won't touch the file. */
-export const projectHookState = (root: string, cli: string): HookState => entryState(projectHooks(root), projectGroup(cli));
+export const projectHookState = (root: string, cli: string): AgyState => entryState(projectHooks(root), projectGroup(cli));
 
 /** Write the guard into `.agents/hooks.json`, as the `yokoten` entry's PreToolUse. */
-export const addProjectHook = (root: string, cli: string): Added => writeEntry(projectHooks(root), projectGroup(cli));
+export const addProjectHook = (root: string, cli: string): AgyAdded => writeEntry(projectHooks(root), projectGroup(cli));
 
 /** Whether `.agents/hooks.json` has the guard, on, as `addProjectHook` writes it for `cli`. */
 export const hasProjectHook = (root: string, cli: string): boolean => projectHookState(root, cli) === 'same';
@@ -140,10 +157,10 @@ export function hasUserDir(env: Env): boolean {
 }
 
 /** The user's guard against what `addUserHooks` would write, read-only. */
-export const userHooksState = (env: Env, cli: string, missing: string): { guard: HookState } => ({ guard: entryState(userHooks(env), userGroup(cli, missing)) });
+export const userHooksState = (env: Env, cli: string, missing: string): { guard: AgyState } => ({ guard: entryState(userHooks(env), userGroup(cli, missing)) });
 
 /** Write the user's guard; `missing` is what it says when `cli` is gone. */
-export function addUserHooks(env: Env, cli: string, missing: string): { guard: Added } {
+export function addUserHooks(env: Env, cli: string, missing: string): { guard: AgyAdded } {
   return { guard: writeEntry(userHooks(env), userGroup(cli, missing)) };
 }
 

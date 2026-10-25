@@ -426,7 +426,7 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // check: agy's Stop has no `stop_hook_active`, and Copilot lets a timed-out hook go on.
   if (antigravity.hasUserDir(env)) {
     const file = antigravity.userHooksFile(env);
-    const agyHooks = agentHooks('Antigravity CLI', file, () => [`${antigravity.addUserHooks(env, USER_CLI, USER_MISSING).guard} the Antigravity CLI command guard in ${file}`]);
+    const agyHooks = agentHooks('Antigravity CLI', file, () => [((guard) => (guard === antigravity.KEPT_OFF ? antigravity.keptOffLine(file) : `${guard} the Antigravity CLI command guard in ${file}`))(antigravity.addUserHooks(env, USER_CLI, USER_MISSING).guard)]);
     ok &&= agyHooks.ok;
     report.push(...agyHooks.lines);
   } else report.push('skipped Antigravity CLI: ~/.gemini/config not found (run `yokoten install` again after installing Antigravity CLI)');

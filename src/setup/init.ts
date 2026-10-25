@@ -219,9 +219,11 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask): { ok
       describeWrite(gemini.addProjectStopHook(root, hookCli), 'the Gemini CLI stop check in .gemini/settings.json (AfterAgent)'),
     ];
   });
-  const antigravityHooks = agentHooks('the Antigravity CLI hook', '.agents/hooks.json', () => [
-    describeWrite(antigravity.addProjectHook(root, hookCli), 'the Antigravity CLI tool-call hook in .agents/hooks.json'),
-  ]);
+  const antigravityHooks = agentHooks('the Antigravity CLI hook', '.agents/hooks.json', () => {
+    const added = antigravity.addProjectHook(root, hookCli);
+    // A guard the user turned off stays off, and the line says how to turn it on (#984).
+    return [added === antigravity.KEPT_OFF ? antigravity.keptOffLine('.agents/hooks.json') : describeWrite(added, 'the Antigravity CLI tool-call hook in .agents/hooks.json')];
+  });
   // OpenCode has no trust step in the docs we have. The plugin loads when OpenCode starts.
   const openCodePlugin = agentHooks('the OpenCode plugin', opencode.PLUGIN_FILE, () => [
     describeWrite(opencode.addProjectPlugin(root, hookCli), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`),
