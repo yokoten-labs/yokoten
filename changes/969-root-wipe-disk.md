@@ -1,0 +1,3 @@
+Security
+
+The tool-call guard now stops, for every person and every agent, with no setting: a command that asks for root (`sudo`, `doas`, `su`, `pkexec`, `runas`, `Start-Process -Verb RunAs`). It stops a recursive delete or a recursive mode or owner change on `/`, the home folder, a top-level system folder, or a glob over one of them. Those are `rm -r`, `rmdir`, `find -delete`, `Remove-Item -Recurse`, `rd /s`, `chmod -R` and `chown -R`. A target the guard cannot read is refused too. It stops disk commands (`mkfs*`, `wipefs`, `fdisk`, `parted`, `dd` into `/dev`, a redirect into `/dev`, `format`, `diskpart`). Each refusal says: tell the owner, who runs what needs root or touches a disk (#969, by GLM glm-5.3-flash).
