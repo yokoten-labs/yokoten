@@ -285,8 +285,11 @@ test('grok trust: doctor says when Grok skips the hooks; ok only when trusted_fo
   mkdirSync(join(sandbox.home, '.grok'));
   assert.match(await doctor(), /note +grok-hook: can't check whether Grok CLI trusts this folder: no ~\/\.grok\/trusted_folders\.toml; if you use Grok CLI: run `yokoten trust`/);
   // The positive control: a store that trusts another folder, and one that says no to this one.
-  trustFolder(sandbox.home, { '/somewhere/else': true, [root]: false });
+  trustFolder(sandbox.home, { '/somewhere/else': true });
   assert.match(await doctor(), /note +grok-hook: Grok CLI skips \.grok\/hooks\/yokoten\.json until you trust this folder; run `yokoten trust`/);
+  // A `false` the user saved is their choice: trust keeps it, so the fix is in Grok (#984).
+  trustFolder(sandbox.home, { '/somewhere/else': true, [root]: false });
+  assert.match(await doctor(), /note +grok-hook: you set Grok CLI not to trust this folder, so it skips \.grok\/hooks\/yokoten\.json; to change it, set trusted = true for this folder in ~\/\.grok\/trusted_folders\.toml, or run `grok --trust` at the repo root/);
   // A trusted parent folder does not cover a repo inside it, and a trailing slash is another key.
   trustFolder(sandbox.home, { [dirname(root)]: true, [`${root}/`]: true });
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'untrusted');
@@ -294,7 +297,7 @@ test('grok trust: doctor says when Grok skips the hooks; ok only when trusted_fo
   assert.match(await doctor(), /ok +grok-hook\n/);
   // GROK_FOLDER_TRUST=0 turns Grok's trust gate off: every folder runs its hooks.
   trustFolder(sandbox.home, { [root]: false });
-  assert.match(await doctor(), /note +grok-hook: Grok CLI skips/, 'the positive control');
+  assert.match(await doctor(), /note +grok-hook: you set Grok CLI not to trust this folder, so it skips/, 'the positive control');
   for (const value of ['0', 'false']) {
     assert.equal(readTrust(root, { HOME: sandbox.home, GROK_FOLDER_TRUST: value }).state, 'trusted');
     assert.match((await sandbox.call(['doctor'], { extra: { GROK_FOLDER_TRUST: value } })).stdout, /ok +grok-hook\n/);

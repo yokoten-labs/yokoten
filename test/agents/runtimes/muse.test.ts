@@ -132,7 +132,8 @@ test('muse trust (#341): doctor says when Muse skips the hooks; ok only when tru
   // Another decision, a file that won't parse, and a schema doctor does not know: never ok.
   writeFileSync(file, JSON.stringify({ schema_version: 1, projects: { [root]: { decision: 'untrusted' } } }));
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'untrusted');
-  assert.match(await doctor(), off);
+  // The user's own decision: trust keeps it, so the fix is in Muse (#984).
+  assert.match(await doctor(), /(next|to do) +tool-hook: the guard is off in Muse Code: you set it not to trust this folder; to change it, set "decision": "trusted" for this folder in ~\/\.config\/muse\/trust\.json, or pass `--trust-workspace` to `muse exec`/);
   writeFileSync(file, '{ not json');
   // A store doctor can't read is a note, and the note names the headless way to trust (#557).
   assert.match(
