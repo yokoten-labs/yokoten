@@ -39,7 +39,7 @@ import {
 } from '../repo/helpers.ts';
 import { hasHook } from '../../src/agents/hooks-file.ts';
 import { copyRuntime, isEditedManaged, sealManaged, writeManaged } from '../../src/setup/files.ts';
-import { addOwnMark, countMarkKinds, fillMarks, filledLines, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, uninstall, type UserNameProbe, USER_CLI, writeFileAtomic } from '../../src/setup/install.ts';
+import { addOwnMark, countMarkKinds, fillMarks, filledLines, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, type UserNameProbe, USER_CLI, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
 
 const BAD_USER_SETTINGS: [content: string, reason: (file: string) => string][] = [
@@ -747,12 +747,14 @@ test('install: temp folders that an earlier crash left are removed, and only tho
 // #208, #433: a clone install puts a launcher in ~/.local/bin, and with no terminal it edits no shell file.
 test('install: writes the launcher, and with no terminal prints the PATH line and edits no profile (#433)', async () => {
   const sandbox = makeSandbox();
+  // macOS opens a login bash, which reads ~/.bash_profile (#983).
+  const bashProfile = process.platform === 'darwin' ? '.bash_profile' : '.bashrc';
   let result = await sandbox.call(['install'], { extra: { SHELL: '/bin/bash' } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^wrote the launcher ~\/\.local\/bin\/yokoten$/m);
-  assert.ok(result.stdout.trimEnd().endsWith(`~/.local/bin is not on your PATH. Add this line to ~/.bashrc, then open a new shell: ${PROFILE_LINE}`), result.stdout);
+  assert.ok(result.stdout.trimEnd().endsWith(`~/.local/bin is not on your PATH. Add this line to ~/${bashProfile}, then open a new shell: ${PROFILE_LINE}`), result.stdout);
   assert.ok(!result.stdout.includes('alias yokoten'), result.stdout);
-  for (const file of ['.bashrc', '.zshrc', '.profile']) assert.ok(!existsSync(join(sandbox.home, file)), `${file} was written`);
+  for (const file of ['.bashrc', '.bash_profile', '.zshrc', '.profile']) assert.ok(!existsSync(join(sandbox.home, file)), `${file} was written`);
   // The launcher runs the installed copy, with every argument as it was given.
   const launcher = join(sandbox.home, '.local/bin/yokoten');
   assert.equal(statSync(launcher).mode & 0o111, 0o111, 'the launcher can be run');
@@ -903,6 +905,32 @@ test('uninstall: removes the launcher and the marked PATH line, and keeps the re
   assert.match(again.stdout, /^kept the launcher ~\/\.local\/bin\/yokoten \(yours, not yokoten's\)$/m);
   assert.doesNotMatch(again.stdout, /PATH line/);
   assert.equal(readFileSync(launcher, 'utf8'), '#!/bin/sh\necho mine\n');
+});
+
+test('uninstall: a symlinked profile stays a link, and the file it names loses the line (#983)', async () => {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  // A dotfile manager keeps the real file elsewhere and links it into the home folder.
+  const real = join(sandbox.home, 'dotfiles', 'bashrc');
+  mkdirSync(dirname(real), { recursive: true });
+  writeFileSync(real, `export EDITOR=vi\n${PROFILE_LINE}\n`);
+  const link = join(sandbox.home, '.bashrc');
+  symlinkSync(real, link);
+  const result = await sandbox.call(['uninstall']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^removed the PATH line from ~\/\.bashrc$/m);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'the profile is still a link');
+  assert.equal(readlinkSync(link), real);
+  assert.equal(readFileSync(real, 'utf8'), 'export EDITOR=vi\n');
+  // Positive control: the file it names is a plain file, so the edit went through the link.
+  assert.ok(!lstatSync(real).isSymbolicLink());
+});
+
+test('launcher: on macOS, bash reads ~/.bash_profile, so the PATH line goes there (#983)', () => {
+  assert.equal(shellProfile({ SHELL: '/bin/bash' }, '/h', 'darwin'), join('/h', '.bash_profile'));
+  assert.equal(shellProfile({ SHELL: '/bin/bash' }, '/h', 'linux'), join('/h', '.bashrc'));
+  assert.equal(shellProfile({ SHELL: '/bin/zsh' }, '/h', 'darwin'), join('/h', '.zshrc'));
+  assert.equal(shellProfile({ SHELL: '/usr/bin/fish' }, '/h', 'darwin'), null);
 });
 
 test("install: adds the machine's marks and a git mailmap, and never prints a value (#390)", async () => {

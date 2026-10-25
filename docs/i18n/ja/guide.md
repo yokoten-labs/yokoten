@@ -391,7 +391,7 @@ node ~/.local/share/yokoten/bin/yokoten.ts doctor   # 道: どこにいて、次
 
 yokoten のメッセージは `yokoten init` と `yokoten doctor` と言います。だから `install` は、小さな `yokoten` の起動役を `~/.local/bin` に置きます（Windows では `yokoten.cmd`）。そのフォルダはほとんどの環境で PATH にあり、次に開くシェルで `yokoten` が動きます。起動役は `bin/yokoten.mjs` を走らせます。フックが走らせるのと同じ速い入口です。次の `install` は、古い install が書いた起動役を書き直します。
 
-`~/.local/bin` が PATH にないとき、`install` は一度だけ聞きます。`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]` です（zsh なら `~/.zshrc`）。はいなら、そのファイルにこの一行を足します。いいえなら、あなたが足すための行を出力します。
+`~/.local/bin` が PATH にないとき、`install` は一度だけ聞きます。`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]` です（zsh なら `~/.zshrc`、macOS の bash なら `~/.bash_profile`）。はいなら、そのファイルにこの一行を足します。いいえなら、あなたが足すための行を出力します。
 
 ```sh
 export PATH="$HOME/.local/bin:$PATH" # added by yokoten
