@@ -1385,8 +1385,8 @@ test('process: below bin/main.ts, src/ reads no env, folder or stream of the pro
 
 // ---- Which system: one place to ask (record 0040) ----
 //
-// The real Windows bugs before v0.1.1 all came from code that asked `process.platform` in
-// place. Record 0040 moves every such read into src/platform/. Until then, these files may
+// The first native Windows run found real bugs, all in code that asked `process.platform`
+// in place. Record 0040 moves every such read into src/platform/. Until then, these files may
 // keep the reads they have: a new file with a read, or one more read in a listed file,
 // fails. When a read moves out, lower its count here, so the list only gets shorter.
 const PLATFORM_READS: [string, number][] = [
