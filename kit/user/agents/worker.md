@@ -23,8 +23,10 @@ You do one task. The lead reviews your work and decides what happens to it.
   not loop to look busy. Stopping is good work, not failure.
 - If you start in a worktree that already has commits, read `git log --oneline -5` and
   `git status` first. Continue from the last commit; do not undo the earlier work.
-- Your final message to the lead must start with "NOT DONE: checks failing".
-  Quote the failing output. Never say the task is done.
+- If the hook let you stop while a check still fails, your final message to the lead
+  must start with "NOT DONE: checks failing". Quote the failing output.
+- Otherwise, start with what you finished, and quote the check output that shows it.
+  Never say the task is done without that output.
 - The hook writes `checks` in `.yokoten-agent.json` at the worktree root.
   `failing` means the check still fails. `passing` means it passed.
   The lead reads that file. The board will show `checks` later.
