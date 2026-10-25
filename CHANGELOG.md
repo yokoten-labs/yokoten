@@ -20,6 +20,8 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 - `yokoten upgrade` brings yokoten to the newest version in one command, with no SSH key.
 - OpenCode is guarded too, tested with DeepSeek V4.1 Flash and GLM-5.3 Flash. The README shows every agent in one table.
 - `yokoten doctor` shows your next step first, then one block per stage.
+- yokoten leaves your settings alone: it keeps a choice you made on purpose, saves a copy before it changes a file of yours, and asks before it changes your git config.
+- Windows: the guard reads Windows paths, and every test now runs on Windows in CI. WSL is fully supported; native Windows is in beta.
 
 ### Added
 
@@ -326,6 +328,16 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- yokoten keeps a value you set on purpose, and says so in one line with how to change it (#984). `init` and `install` no longer turn the Antigravity CLI guard back on after you set `"enabled": false`. `yokoten trust` no longer trusts a folder you marked untrusted in Codex, Muse Code or Grok CLI. It no longer turns on a Codex hook you turned off. The OpenCode plugin now carries yokoten's mark: a plugin you wrote or edited stays as it is. Doctor names the same choices and the way to change each one.
+- `install`, `init` and `uninstall` are safer with your agent tools' settings files (#984). A settings file that is a link to your dotfiles stays a link. A write that fails half way leaves your file as it was. The first time yokoten changes a file of yours, it keeps a copy next to it as `<file>.before-yokoten`, and it never overwrites that copy. A hook you wrote yourself that runs `npx yokoten`, such as `npx yokoten hook`, now stays: yokoten changes and removes only the hooks it wrote.
+- `yokoten install` now asks before it changes your git config. It lists git's global `mailmap.file` in its plan and sets it only when you say yes; with no terminal, it prints the command to run. `yokoten uninstall` now removes only the folders and git config file that install made, so an empty folder you had before stays. On Windows, the merge train's test step runs again (#985).
+- `install`, `uninstall`, `doctor` and the session cleanup now use the folder Claude Code reads when `CLAUDE_CONFIG_DIR` is set. Codex's hooks follow `CODEX_HOME`, as its trust already did. Before, the hooks went to `~/.claude` or `~/.codex`, where the tool never read them, so the guard was off. A relative `XDG_CONFIG_HOME` or `XDG_CACHE_HOME` is now ignored, as the XDG spec says. `init` keeps a `TZ` you set in `.claude/settings.json`, and says how to set UTC (#988).
+- `yokoten update --write` now keeps the old AGENTS.md as `AGENTS.md.before-yokoten` when git cannot give it back. It never overwrites an existing copy. It refuses an AGENTS.md that is a link, as `yokoten init` does (#989).
+- A subagent worker keeps its own count of refusals. Before, every subagent shared the count of the lead's session. After a few refusals in one worker, another worker was stopped on its first call. The dispatch skill now says to start a subagent worker inside its own worktree, with `isolation: "worktree"` in Claude Code. Put the issue text in its brief (#990).
+- In a linked worktree, where workers run, the guard refuses a `find` that deletes from the top of the worktree. Before, it let that `find` delete the `.git` file that links the worktree to its history, so the worktree broke (#994).
+- `yokoten upgrade` now finds Claude Code on native Windows. Claude Code's own installer puts only `claude.exe` on the PATH, but yokoten looked only for `claude.cmd`, so the upgrade stopped with "'claude.cmd' is not recognized". It now looks for `claude.exe` first, then `claude.cmd` (#1002).
+- `yokoten doctor` now sees a Windows folder that Copilot CLI trusts. Before, it only read folders that start with `/`, so it kept saying Copilot skips the hooks even after `yokoten trust`. It now reads `C:\...` folders, and ignores case and a `\` or `/` at the end (#1003).
+- A worker's report no longer opens with "NOT DONE: checks failing" when its checks passed. Only a worker the stop hook let through with a failing check starts that way (#1009).
 - A session start no longer edits your shell profile. The PATH line an older install added to `~/.bashrc` or `~/.zshrc` stays, and the session tells you to delete it. A profile that is a symlink, as dotfile managers keep it, stays a symlink when `yokoten uninstall` removes the line. On macOS, install adds the PATH line for bash to `~/.bash_profile`, which the login shell reads (#983).
 - On Windows, a done-when check stops programs it left running after `cmd.exe` exits (#735). On Linux, a check that ends also stops a program in a new process group in its session; one that started its own session, such as `setsid`, is still left running. If Windows has no job host, the check runs without one and says why on stderr.
 - The Windows job host is found even when an agent hands the hook an environment with no `SystemRoot`: yokoten falls back to `windir`, then `C:\Windows`. Tested on Windows with Node 24.22.1.
@@ -445,6 +457,8 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Security
 
+- On Windows, the guard now refuses `rm -rf ~` and other wipes of the home folder. It reads `C:\Users\<name>`, `C:\Program Files`, `C:\Program Files (x86)` and `C:\ProgramData` as system folders. Paths with `\` or `/`, any letter case, and Git Bash's `/c/...` now count as the same folder. A POSIX-style project path such as `/app/dist` is no longer refused on Windows (#999).
+- The guard sends `git log`, `git config user.email` and similar reads through `yokoten redact`. When redact cannot start or stops partway, the output is now hidden instead of printed as it is. One line on stderr says so and tells you to run `yokoten doctor`. The exit code is the command's when it failed, and 1 when only redact failed (#1006). `yokoten redact` itself now exits 1 and prints no more of the text when it can't read your private-marks file or can't hide a piece. A missing marks file is still fine. The guard now also catches the plain `git config user.email` form.
 - yokoten now needs Node 22.23.4 or later (24.22.1 on Node 24, 26.12.1 on Node 26). Releases 22.18 to 22.23.3 still run yokoten. But they have the security holes that Node fixed on 2026-10-21, among them TLS hostname checks that the calls to GitHub rely on. npm warns about them at install, and `yokoten doctor` notes an unfixed Node with the version to upgrade to. The kit workflows and the GitHub Action set up `^22.23.4` (#572).
 - The guard refuses `find -delete` and `find -exec rm` when a test can name `.git` (#573).
   It also refuses a null-split `xargs` when one word can be `.git`.
