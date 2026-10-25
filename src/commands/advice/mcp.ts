@@ -11,6 +11,11 @@ import type { Env } from '../../rules/config.ts';
 import { type Finding, finding, isFailingFinding } from '../../rules/message.ts';
 import { bullets, count, type Invocation, parse, print, printJson, requireRoot, row, title, usage } from '../shared.ts';
 
+/** The words of a `--command` value; a part in double quotes is one word, so `"C:\Program Files\nodejs\node.exe"` stays whole. A backslash is kept as it is. */
+export function commandWords(command: string): string[] {
+  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2]);
+}
+
 /** One tool as `tools/list` sends it. Only the fields the rules read are named; the rest stays as it came. */
 export interface McpTool {
   name?: unknown;
@@ -499,7 +504,7 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const command = options.values['--command'];
   let servers: McpServer[] = config.servers;
   if (command) {
-    const [name, ...args] = command.trim().split(/\s+/);
+    const [name, ...args] = commandWords(command);
     servers = name ? [{ name: 'command line', entry: { command: name, args }, file: '--command' }] : [];
   }
   const configFindings = config.problems;

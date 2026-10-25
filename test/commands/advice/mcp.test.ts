@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  commandWords,
   HINTS,
   lintCallResult,
   lintServerEntry,
@@ -207,10 +208,17 @@ test('mcp command: each trap is reported with what, why and fix, and the command
   assert.match(text.stderr, /docs: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#shipping-an-mcp-server-that-works-in-every-agent/);
 });
 
+test('commandWords: a part in double quotes is one word, a backslash is kept (#1027)', () => {
+  assert.deepEqual(commandWords('node server.js --stdio'), ['node', 'server.js', '--stdio']);
+  assert.deepEqual(commandWords('"C:\\Program Files\\nodejs\\node.exe" s.js'), ['C:\\Program Files\\nodejs\\node.exe', 's.js']);
+  assert.deepEqual(commandWords('  '), []);
+});
+
 test('mcp command: --command runs a server that has no config entry', async () => {
   const sandbox = makeSandbox();
   sandbox.write('server.ts', MCP_SAMPLE_SERVER);
-  const command = `${process.execPath} ${join(sandbox.repo, 'server.ts')} clean`;
+  // Quoted: on Windows node is often under `C:\Program Files` (#1027).
+  const command = `"${process.execPath}" "${join(sandbox.repo, 'server.ts')}" clean`;
   const result = await sandbox.call(['mcp', '--command', command]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /command line/);

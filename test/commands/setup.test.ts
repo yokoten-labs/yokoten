@@ -229,7 +229,7 @@ test('install: one screen by default, and --list keeps every file (#1027)', asyn
   fit(result.stdout);
   // The full listing is still there, behind the flag.
   const list = await sandbox.call(['install', '--list']);
-  assert.match(list.stdout, /skill yokoten in ~\/\.claude\/skills$/m);
+  assert.match(list.stdout, /skill yokoten in ~[\\/]\.claude[\\/]skills$/m);
   assert.match(list.stdout, /^skipped Codex CLI: /m);
 });
 
