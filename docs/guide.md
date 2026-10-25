@@ -222,8 +222,8 @@ sanitization is on, the variable is dropped, and the owner releases outside Gemi
 Every refusal has the same four lines. The first line says **what** happened, and ends
 with the rule id in square brackets, as `yokoten stopped this: <what> [<id>]`. The
 **Why:** line says why it matters. The **Do instead:** line is the fix, a command or an
-edit. The **More:** line links to where the rule is explained in full. A problem in a
-file starts its first line with the place, `file:line:`. A hit names the kind of thing
+edit. The **More:** line links to where the rule is explained in full. For a problem in a
+file, the place comes right after the title: `yokoten stopped this: file:line: <what> [<id>]`. A hit names the kind of thing
 it found, never the thing: a secret or a private mark is never printed.
 
 To ask why a rule exists, run `yokoten explain <id>`. The id is the rule or step name,
