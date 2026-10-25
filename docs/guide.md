@@ -738,7 +738,7 @@ PATH on most setups, so `yokoten` works in the next shell you open. The launcher
 launcher that an older install wrote.
 
 When `~/.local/bin` is not on your PATH, `install` asks once:
-`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]` (`~/.zshrc` for zsh). On yes, it adds
+`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]` (`~/.zshrc` for zsh, `~/.bash_profile` for bash on macOS). On yes, it adds
 this one line to that file. On no, it prints the line for you to add:
 
 ```sh

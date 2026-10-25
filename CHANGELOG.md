@@ -326,6 +326,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- A session start no longer edits your shell profile. The PATH line an older install added to `~/.bashrc` or `~/.zshrc` stays, and the session tells you to delete it. A profile that is a symlink, as dotfile managers keep it, stays a symlink when `yokoten uninstall` removes the line. On macOS, install adds the PATH line for bash to `~/.bash_profile`, which the login shell reads (#983).
 - `yokoten init`, `yokoten doctor` and the hooks setup no longer stop with a RangeError on a very long line of package-runner flags, such as `npx -y -y ... yokoten check`. They now read the flags one word at a time (#431).
 - The guard no longer reads a quoted `~` after `cd` as your home folder. Bash keeps `cd "~/x"` as a folder named `~`, so the guard now treats where that `cd` goes as unknown. A worker that writes a lead-only file after such a `cd` is stopped again (#465).
 - `yokoten bot --` runs its command with `TZ=UTC`. Then `gh` sends `Time-Zone: UTC`, and the commits GitHub makes, such as a merge, stay on UTC. The tool-call guard trusts `TZ=UTC` next to a post, as an `export` or a prefix. Any other zone or name is still refused (#488).

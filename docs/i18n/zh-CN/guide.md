@@ -593,7 +593,7 @@ PATH 里本来就有这个文件夹，所以新开一个终端，`yokoten` 就�
 `bin/yokoten.mjs`，跟钩子用的是同一个入口，启动更快。旧版装的启动脚本，下次 `install` 会直接改写。
 
 要是 PATH 里没有 `~/.local/bin`，`install` 会问你一次：
-`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]`（用 zsh 的话是 `~/.zshrc`）。你答应了，
+`Add ~/.local/bin to your PATH in ~/.bashrc? [Y/n]`（用 zsh 的话是 `~/.zshrc`，macOS 上的 bash 是 `~/.bash_profile`）。你答应了，
 它就往这个文件里加下面这一行；不答应，它就把这一行打出来，你自己加：
 
 ```sh

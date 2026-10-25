@@ -214,7 +214,7 @@ export const PROFILE_MARK = '# added by yokoten';
 /** The line install adds to the shell profile, when the user says yes. */
 export const PROFILE_LINE = `export PATH="$HOME/.local/bin:$PATH" ${PROFILE_MARK}`;
 /** The profiles uninstall looks in for the marked line. */
-const PROFILES = ['.bashrc', '.zshrc'];
+const PROFILES = ['.bashrc', '.bash_profile', '.zshrc'];
 
 /** The folder the launcher goes in: ~/.local/bin, on the PATH on most setups. */
 export const launcherDir = (home: string): string => join(home, '.local', 'bin');
@@ -234,10 +234,13 @@ export function launcherText(runtime: string, platform: NodeJS.Platform = proces
   return `#!/bin/sh\n# ${MANAGED}: \`yokoten uninstall\` removes this file.\nexec node '${cli.replaceAll("'", "'\\''")}' "$@"\n`;
 }
 
-/** The profile of the user's shell, from $SHELL: ~/.bashrc for bash, ~/.zshrc for zsh, else null. */
-export function shellProfile(env: Env, home: string): string | null {
+/**
+ * The profile of the user's shell, from $SHELL: ~/.bashrc for bash, ~/.zshrc for zsh, else null.
+ * macOS opens a login bash, which reads ~/.bash_profile and not ~/.bashrc (#983).
+ */
+export function shellProfile(env: Env, home: string, platform: NodeJS.Platform = process.platform): string | null {
   const shell = basename(env.SHELL ?? '');
-  if (shell === 'bash') return join(home, '.bashrc');
+  if (shell === 'bash') return join(home, platform === 'darwin' ? '.bash_profile' : '.bashrc');
   if (shell === 'zsh') return join(home, '.zshrc');
   return null;
 }
@@ -279,7 +282,7 @@ export function setUpLauncher(env: Env, runtime: string, home: string, { ask, pl
   const lines = [describeWrite(written, `the launcher ${file}`)];
   if (isDirOnPath(env, dir, platform)) return lines;
   if (platform === 'win32') return [...lines, `${dir} is not on your PATH. Add it to the Path for your account (search Windows for "environment variables for your account"), then open a new terminal`];
-  const profile = shellProfile(env, home);
+  const profile = shellProfile(env, home, platform);
   if (!profile) return [...lines, `${dir} is not on your PATH. Add this line to your shell profile, then open a new shell: ${PROFILE_LINE}`];
   if (hasProfileLine(profile)) return [...lines, `${profile} already adds ${dir} to the PATH; open a new shell, then run \`yokoten\``];
   const shown = (path: string): string => `~/${relative(home, path).split(sep).join('/')}`;
@@ -291,10 +294,18 @@ export function setUpLauncher(env: Env, runtime: string, home: string, { ask, pl
   return [...lines, `${dir} is not on your PATH. Add this line to ${profile}, then open a new shell: ${PROFILE_LINE}`];
 }
 
-/** Take back the launcher and the marked profile lines: one report line for each thing removed or kept. */
-function removeLauncher(home: string, platform: NodeJS.Platform): string[] {
+/** The shell profiles that still hold the line install added. */
+const profilesWithLine = (home: string): string[] => PROFILES.map((name) => join(home, name)).filter(hasProfileLine);
+
+/**
+ * Take back the launcher and, when `profiles` is true, the marked profile lines: one report
+ * line for each thing removed or kept. Only a command the user ran edits a profile; a session
+ * start passes false (#983).
+ */
+function removeLauncher(home: string, platform: NodeJS.Platform, profiles = true): string[] {
   const file = launcherFile(home, platform);
   const lines = [describeWrite(removeManaged(file), `the launcher ${file}`)];
+  if (!profiles) return lines;
   for (const name of PROFILES) {
     const profile = join(home, name);
     if (!hasProfileLine(profile)) continue;
@@ -591,8 +602,11 @@ function removeManaged(path: string, { folder = false }: { folder?: boolean } = 
   return 'removed';
 }
 
-/** What a session start took back from an older install (#935): the files removed, and the edits that stay. */
-export type OlderInstallCleanup = { files: number; edits: string[] };
+/**
+ * What a session start took back from an older install (#935): the files removed, the edits
+ * that stay, and the shell profiles that still hold install's PATH line (#983).
+ */
+export type OlderInstallCleanup = { files: number; edits: string[]; profiles: string[] };
 
 /**
  * Take back what v0.1.0's install left beside the plugin (#935): the global skills in both
@@ -603,7 +617,7 @@ export type OlderInstallCleanup = { files: number; edits: string[] };
  * runtime and the launcher stay then.
  */
 export function cleanOlderInstall(env: Env, { platform = process.platform }: { platform?: NodeJS.Platform } = {}): OlderInstallCleanup {
-  const cleanup: OlderInstallCleanup = { files: 0, edits: [] };
+  const cleanup: OlderInstallCleanup = { files: 0, edits: [], profiles: [] };
   if (!hasPlugin(env) || homeOf(env) === null) return cleanup;
   const count = (what: string, outcome: ReturnType<typeof removeManaged>): void => {
     if (outcome === 'removed') cleanup.files += 1;
@@ -628,9 +642,11 @@ export function cleanOlderInstall(env: Env, { platform = process.platform }: { p
     rmSync(target.runtime, { recursive: true, force: true });
     cleanup.files += 1;
   }
-  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform))) {
+  // A session never edits a shell profile: the line stays, and the session names it (#983).
+  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform, false))) {
     if (line.startsWith('removed the launcher')) cleanup.files += 1;
   }
+  if (cleanup.files) cleanup.profiles = profilesWithLine(homeIn(env));
   return cleanup;
 }
 
@@ -1096,7 +1112,10 @@ export function migrateMarks(text: string, { logins, hosts }: { logins: string[]
 }
 
 /** Write a file in one step: a temp file next to it, then a rename. It keeps the file's mode. */
-function replaceFile(file: string, text: string): void {
+function replaceFile(link: string, text: string): void {
+  // Through a symlink to the file it names: a profile or marks file a dotfile manager links
+  // stays a link (#983).
+  const file = realPath(link) ?? link;
   const temp = `${file}.${process.pid}.tmp`;
   let mode = 0o600;
   try {
