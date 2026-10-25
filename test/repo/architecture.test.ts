@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, readFailures, readKnown, TIMED_OUT } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, shardOf, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1801,6 +1801,78 @@ test('windows known: a new failure and a fixed entry both fail the job; a flaky 
   for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
     assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
   }
+});
+
+test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {
+  const tap = [
+    'TAP version 13',
+    'not ok 1 - quoted error',
+    '  ---',
+    "  error: 'spawn sh ENOENT'",
+    '  code: ENOENT',
+    '  ...',
+    'not ok 2 - block error',
+    '  ---',
+    '  error: |-',
+    '    Expected values to be strictly equal:',
+    '    + actual - expected',
+    '  ...',
+    'not ok 3 - no error line',
+    'ok 4 - fine',
+    'not ok 5 - another spawn',
+    '  ---',
+    "  error: 'spawn sh ENOENT'",
+    '  ...',
+  ].join('\r\n');
+  assert.deepEqual([...readReasons(tap)], [['quoted error', 'spawn sh ENOENT'], ['block error', 'Expected values to be strictly equal:'], ['another spawn', 'spawn sh ENOENT']]);
+  // The repo, the home and any other user folder never reach the public log.
+  const folders = { root: 'D:\\a\\yokoten', home: 'C:\\Users\\sample' };
+  for (const [raw, shown] of [
+    ['ENOENT D:\\a\\yokoten\\test\\x.ts', 'ENOENT .\\test\\x.ts'],
+    ['open D:/a/yokoten/x', 'open ./x'],
+    ['cannot read C:\\Users\\sample\\AppData\\x', 'cannot read ~\\AppData\\x'],
+    ['cannot read C:\\Users\\other\\x', 'cannot read C:\\Users\\~\\x'],
+    ['cannot read /home/other/x', 'cannot read ~/x'],
+    ['no folder named here', 'no folder named here'],
+  ]) assert.equal(maskReason(raw, folders), shown, raw);
+  assert.equal(maskReason('x'.repeat(300), folders).length, 200);
+  // The out file puts each reason above its entry, as a comment the list reader skips.
+  const text = knownText(['test/a.test.ts :: one', 'test/a.test.ts :: two'], new Map([['test/a.test.ts :: one', 'spawn sh ENOENT']]));
+  assert.match(text, /# why: spawn sh ENOENT\ntest\/a\.test\.ts :: one\ntest\/a\.test\.ts :: two\n$/);
+  assert.deepEqual(readKnown(text).required, ['test/a.test.ts :: one', 'test/a.test.ts :: two']);
+  // Counts group a cause across tests: numbers and quoted parts do not split it.
+  assert.deepEqual(reasonCounts(["spawn sh ENOENT", "spawn sh ENOENT", "timed out after 120 ms", "timed out after 300 ms", "got 'a'"]), ['   2  spawn sh ENOENT', '   2  timed out after N ms', "   1  got …"]);
+});
+
+test('windows known: shards split the files by seconds, longest first, and each judges only its own', () => {
+  const files = [['a', 90], ['b', 50], ['c', 40], ['d', 30], ['e', 20], ['f', 10]].map(([name, weight]) => ({ name: `test/${name}.test.ts`, weight: Number(weight) }));
+  const shards = [1, 2, 3].map((index) => shardOf(files, index, 3));
+  assert.deepEqual(shards, [['test/a.test.ts'], ['test/b.test.ts', 'test/e.test.ts', 'test/f.test.ts'], ['test/c.test.ts', 'test/d.test.ts']]);
+  // Every file runs once, in exactly one shard; one shard is the whole suite.
+  assert.deepEqual(shards.flat().sort(), files.map((file) => file.name).sort());
+  assert.deepEqual(shardOf(files, 1, 1), files.map((file) => file.name));
+  assert.deepEqual(shardOf(files, 4, 3), []);
+  // A shard's list holds only its files' entries, so an entry of another shard is not "fixed".
+  const known = readKnown(['test/a.test.ts :: broken', 'test/c.test.ts :: broken', '? test/b.test.ts :: flaky'].join('\n'));
+  assert.deepEqual(knownFor(known, ['test\\c.test.ts', 'test/d.test.ts']), { required: ['test/c.test.ts :: broken'], flaky: [] });
+  assert.deepEqual(judgeKnown([], knownFor(known, shards[1])), { added: [], fixed: [] });
+  // The times file gives each file its weight; a new file counts as the median, so it still runs.
+  const times = readTimes(['# a comment', '240 test/setup/init.test.ts', '3 test/a.test.ts', '5 test/b.test.ts', 'not a line'].join('\r\n'));
+  assert.deepEqual([...times], [['test/setup/init.test.ts', 240], ['test/a.test.ts', 3], ['test/b.test.ts', 5]]);
+  assert.deepEqual(weightsOf(['test\\setup\\init.test.ts', 'test/new.test.ts'], times), [{ name: 'test\\setup\\init.test.ts', weight: 240 }, { name: 'test/new.test.ts', weight: 5 }]);
+  assert.deepEqual(weightsOf(['test/a.test.ts'], new Map()), [{ name: 'test/a.test.ts', weight: 1 }]);
+});
+
+test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads apart from a new failure', () => {
+  const known = readKnown(['test/a.test.ts :: old', 'test/a.test.ts :: gone', '? test/b.test.ts :: flaky', 'test/c.test.ts :: old'].join('\n'));
+  for (const [file, found, line] of [
+    ['test/d.test.ts', [], 'ok      test/d.test.ts (3 s)'],
+    ['test/c.test.ts', ['test/c.test.ts :: old'], 'waived  test/c.test.ts (3 s, 1 waived)'],
+    ['test/b.test.ts', ['test/b.test.ts :: flaky'], 'waived  test/b.test.ts (3 s, 1 waived)'],
+    ['test/b.test.ts', [], 'ok      test/b.test.ts (3 s)'],
+    ['test/a.test.ts', ['test/a.test.ts :: old'], 'FIXED   test/a.test.ts (3 s, 1 on the list passes now, 1 waived)'],
+    ['test\\c.test.ts', ['test/c.test.ts :: old', 'test/c.test.ts :: brand new'], 'NEW     test/c.test.ts (3 s, 1 new: brand new, 1 waived)'],
+  ] as const) assert.equal(fileLine(file, [...found], known, 3), line, line);
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {
