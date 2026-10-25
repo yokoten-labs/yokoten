@@ -25,6 +25,39 @@ test('host routes: cancel, delete, logs and an open variable, in any case (#650)
   assert.equal(found('gh run list'), undefined);
 });
 
+test('host routes: a workflow turned off through the api, for the lead and the worker (#956)', () => {
+  const lead = {};
+  const worker = { YOKOTEN_ROLE: 'worker' };
+  const off = [
+    'gh workflow disable ci.yml',
+    'gh api -X PUT repos/o/r/actions/workflows/ci.yml/disable',
+    'gh api -X PUT repositories/9/actions/workflows/123/disable',
+    'gh api -X PUT repos/$OWNER/$REPO/actions/workflows/ci.yml/disable',
+    'gh api -X PUT "repos/o/r/actions/workflows/ci.yml/disable"',
+    'gh api -X PUT https://api.github.com/repos/o/r/actions/workflows/ci.yml/disable',
+    'gh api -XPUT Repos/o/r/Actions/Workflows/ci.yml/Disable',
+    'gh api repos/o/r/actions/workflows/ci.yml/disable -f f=v',
+  ];
+  for (const env of [lead, worker]) {
+    for (const command of off) {
+      const found = checkCommand(command, { cwd: process.cwd(), env });
+      assert.equal(found?.id, 'workflow-disable', command);
+      assert.match(found?.what ?? '', /turns a workflow off/, command);
+    }
+    // A read of the workflows and turning one on pass for the lead. For a worker, a read
+    // passes too: the worker's own send rule, not this one, refuses a write such as enable.
+    const allowed = [
+      'gh api repos/o/r/actions/workflows',
+      'gh api -X GET repos/o/r/actions/workflows/ci.yml/disable',
+      'gh workflow list',
+    ];
+    const allowedLead = [...allowed, 'gh api -X PUT repos/o/r/actions/workflows/ci.yml/enable', 'gh api -X PUT repositories/9/actions/workflows/123/enable'];
+    for (const command of env === lead ? allowedLead : allowed) {
+      assert.equal(checkCommand(command, { cwd: process.cwd(), env }), null, command);
+    }
+  }
+});
+
 test('host commands: an open variable path and extension exec or browse are refused (#650)', () => {
   const lead = {};
   const worker = { YOKOTEN_ROLE: 'worker' };
@@ -198,7 +231,7 @@ test('repo settings: a graphql mutation is a settings write, a query passes (#82
 
 test('host samples: doctor hears a miss, and a catch is quiet (#650)', () => {
   assert.deepEqual(hostGuardMisses(() => ({ id: 'x' })), []);
-  assert.deepEqual(hostGuardMisses(() => null), ['run-remove guard', 'gh command guard', 'settings guard']);
+  assert.deepEqual(hostGuardMisses(() => null), ['run-remove guard', 'gh command guard', 'settings guard', 'workflow-disable guard']);
   assert.deepEqual(hostGuardMisses((command) => checkCommand(command, { env: {}, cwd: null })), []);
 });
 
