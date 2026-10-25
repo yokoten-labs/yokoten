@@ -71,7 +71,7 @@ All of this is on from the start, for everyone: you don't answer a question or e
 ## The safeguard
 
 The same five protections are on from the start, for every person and every agent. They
-hold with no `yokoten init` and no setting.
+hold with no `yokoten init` and no setting: a repo that never ran `init` gets them too.
 
 1. **Lose your work**: no force push, no hard reset, no deleting `.git` or its history. No wiping
    the home folder or a system folder, no disk command (`mkfs`, `dd` onto a disk), and no root
@@ -79,21 +79,32 @@ hold with no `yokoten init` and no setting.
 2. **Leak a secret**: no key, token, email address or home path in a commit or a post.
 3. **Publish for you**: no tag, no release, no package publish, no making a repo public.
 4. **Run code from the internet unread**: no download piped into a shell.
-5. **Take the safeguard apart**: no turning off a check or a hook; a worker cannot edit CI or the rules, and you review a lead's change to them.
+5. **Take the safeguard apart**: no turning off a check or a hook. A worker does not
+   edit CI or the rules; it reports to its lead, and the lead brings the change to you.
+   Only the owner makes the changes in the fifth protection; an agent asks the owner.
 
-When it stops something, it shows the same four parts:
+When it stops something, it says what it stopped and shows the same short lines:
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
 Why: Only the owner decides when to release.
 Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
+Tell the AI: "I will publish this release myself."
 More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-The first line names the exact tag, file or branch, and the rule. `Why` says what could go
-wrong. `Do instead` says the safe way, in words a beginner can use without reading code.
-`More` links the rule. Only the owner makes the changes in the fifth protection; an agent
-asks the owner.
+The title names the exact tag, file or branch. `Why` says what is at risk. `Do instead`
+gives the safe road. `Tell the AI` gives a sentence to say back to the agent, in plain
+words, so a beginner can use it without reading code; a worker says it to its lead
+instead, and a tag, a package or a repo made public each have their own sentence. The
+rule id and link come last.
+
+A rule with no words of its own gets one plain sentence: "I did not ask for that; stop and
+explain it to me in plain words." A caller with no sentence leaves the line out, so the
+four lines keep their old shape.
+
+One check runs inside git: the commit check, which `yokoten init` installs. Until then the
+hook reads each command the agent runs, and a commit made by hand is not read.
 
 ## Three checks and a lock
 
@@ -210,6 +221,7 @@ And when an agent tries to push a release tag:
 yokoten stopped this: git push --tags pushes tags [release]
 Why: Only the owner decides when to release.
 Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+Tell the AI: "I will push these tags myself."
 More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
@@ -222,7 +234,9 @@ sanitization is on, the variable is dropped, and the owner releases outside Gemi
 Every refusal has the same four lines. The first line says **what** happened, and ends
 with the rule id in square brackets, as `yokoten stopped this: <what> [<id>]`. The
 **Why:** line says why it matters. The **Do instead:** line is the fix, a command or an
-edit. The **More:** line links to where the rule is explained in full. For a problem in a
+edit. When the rule has a sentence for the person, a **Tell the AI:** line follows it:
+words to say back to the agent, or to its lead when a worker asks. The **More:** line
+links to where the rule is explained in full. For a problem in a
 file, the place comes right after the title: `yokoten stopped this: file:line: <what> [<id>]`. A hit names the kind of thing
 it found, never the thing: a secret or a private mark is never printed.
 

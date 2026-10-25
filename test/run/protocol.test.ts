@@ -85,7 +85,7 @@ test('protocol: a refusal names the tool in the stop log, and carries the four p
   const answer = JSON.parse(result.stdout) as GuardOutput;
   assert.equal(answer.decision, 'refuse');
   assert.equal(answer.reason?.id, 'force-push');
-  assert.match(answer.reason?.message ?? '', /^yokoten stopped this: .+\nWhy: .+\nDo instead: .+\nMore: /);
+  assert.match(answer.reason?.message ?? '', /^yokoten stopped this: .+\nWhy: .+\nDo instead: .+\nTell the AI: "[^"]+"\nMore: /);
   const file = stopsFile(sandbox.env);
   assert.ok(file);
   const line = JSON.parse(readFileSync(file, 'utf8').trim().split('\n').at(-1) ?? '{}') as { vendor: string; rule: string; answer: string };

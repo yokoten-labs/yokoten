@@ -127,7 +127,7 @@ test('hook --agent grok: the recorded tag push is refused, with the whole reason
   const reply = JSON.parse(result.stdout);
   assert.equal(reply.hookSpecificOutput.hookEventName, 'PreToolUse');
   assert.equal(reply.hookSpecificOutput.permissionDecision, 'deny');
-  assert.match(reply.hookSpecificOutput.permissionDecisionReason, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release/);
+  assert.match(reply.hookSpecificOutput.permissionDecisionReason, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nTell the AI: "I will push these tags myself\."\nMore: https:\/\/\S+#how-to-release/);
   assert.doesNotMatch(reply.hookSpecificOutput.permissionDecisionReason, /YOKOTEN_RELEASE_APPROVAL/);
   assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags/);
   result = await call(recorded('ls', sandbox.repo));

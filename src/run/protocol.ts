@@ -10,7 +10,7 @@
 // Version 1 has no rewrite and no runtime name: a tool either runs the action as written
 // or refuses it, and a refusal names no agent.
 
-import { type Finding, formatFinding, formatRefusal, refusalParts } from '../rules/message.ts';
+import { type Finding, formatFinding, formatRefusal, type RefusalVoice, refusalParts, tellLine } from '../rules/message.ts';
 import type { Action } from './hook.ts';
 
 /** The protocol's name, without its version. */
@@ -201,13 +201,13 @@ const sentenceOf = (text: string): string => `${text.charAt(0).toUpperCase()}${t
 /** The answer that lets the action run, with no reason. */
 export const allowedOutput = (): GuardOutput => ({ protocol: GUARD_PROTOCOL_ID, decision: 'allow' });
 
-/** The answer that refuses the action, with the same four parts the hook prints. */
-export function refusedOutput(finding: Finding): GuardOutput {
+/** The answer that refuses the action, with the same parts the hook prints, and the sentence to say (#816). */
+export function refusedOutput(finding: Finding, voice?: RefusalVoice): GuardOutput {
   const parts = refusalParts(finding);
   return {
     protocol: GUARD_PROTOCOL_ID,
     decision: 'refuse',
-    reason: { id: parts.id, message: formatRefusal(finding), why: parts.why, fix: parts.fix, docs: parts.docs },
+    reason: { id: parts.id, message: formatRefusal(finding, tellLine(finding, voice)), why: parts.why, fix: parts.fix, docs: parts.docs },
   };
 }
 

@@ -60,26 +60,34 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 
 ## 守桥：五条保护
 
-同样的五条保护，从第一天起就对每个人、每个 agent 生效。不需要 `yokoten init`，也不需要改任何设置。
+同样的五条保护，从第一天起就对每个人、每个 agent 生效。不需要 `yokoten init`，也不需要改任何设置。没跑过 `init` 的仓库一样有。
 
 1. **别丢工作**：不许 force push，不许 hard reset，不许删 `.git` 或历史。
 2. **别泄密**：提交或发帖里不许有密钥、令牌、邮箱地址或主目录路径。
 3. **别替你发布**：不许打 tag、发 release、发布软件包，也不许把仓库改成公开。
 4. **别运行没读过的网上代码**：不许把下载内容直接管道给 shell。
-5. **别拆掉守桥**：不许关闭检查或 hook；worker 不许改 CI 或规则，lead 的改动要经过你的审阅。
+5. **别拆掉守桥**：不许关闭检查或 hook。worker 不许改 CI 或规则；它把改动报告给
+   lead，由 lead 交给你审阅。第五条保护里的改动只有主人能做；agent 要请主人来改。
 
-它拦下动作时，总是显示同样的四个部分：
+它拦下动作时，先说清楚拦下了什么，再显示同样这几行：
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
 Why: Only the owner decides when to release.
 Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
+Tell the AI: "这个版本我自己来发布。"
 More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Do instead`
-给出安全的做法，不会读代码的人也能照着说。`More` 链接到规则全文。第五条保护里的改动
-只有主人能做；agent 要请主人来改。
+标题点名被拦下的 tag、文件或分支。`Why` 说风险在哪。`Do instead` 给出安全的那条路。
+`Tell the AI` 是一句可以直接对 AI 说的普通话，不会读代码的人也能用；worker 这句话对
+lead 说，打 tag、发软件包、把仓库改成公开各有自己的说法。规则编号和链接放在最后。
+
+没有专门措辞的规则也得一句普通的话："I did not ask for that; stop and explain it to me
+in plain words." 调用方没有句子时，这一行就不出现，原来的四行形状不变。
+
+有一道检查在 git 里跑：提交检查，由 `yokoten init` 安装。在那之前，hook 会读 agent 运行
+的每条命令，手动提交的 commit 不会被读。
 
 ## 三道检查，一把锁
 
@@ -186,6 +194,7 @@ AI 想推送发版 tag 时，会看到：
 yokoten stopped this: git push --tags pushes tags [release]
 Why: Only the owner decides when to release.
 Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+Tell the AI: "I will push these tags myself."
 More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
@@ -194,11 +203,12 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-rel
 Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它们外面发版。Gemini CLI 如果开了严格的
 环境变量清理，这个变量会被删掉，主人就要到 Gemini CLI 外面去发。
 
-（提示用英文写，因为 AI 读英文最不容易出错。）
+（提示的标题、`Why`、`Do instead` 用英文写，因为 AI 读英文最不容易出错；`Tell the AI` 那句用你的语言。）
 
 每条提示都是同样的四行。第一行说**出了什么事**（what），行尾用方括号给出规则 id，形如
 `yokoten stopped this: <what> [<id>]`。**Why:** 一行说为什么要紧（why）。**Do instead:**
-一行是怎么改（fix，一条命令或者一处改动）。**More:** 一行是规则完整说明的链接。问题出在
+一行是怎么改（fix，一条命令或者一处改动）。规则有话要对人说时，后面再加一行
+**Tell the AI:**，是这个人可以回给 AI 的一句普通话；worker 对 lead 说。**More:** 一行是规则完整说明的链接。问题出在
 某个文件里时，位置紧跟在标题后面：`yokoten stopped this: 文件:行号: <what> [<id>]`。查到问题时，只说是哪一类，不说内容：
 密钥、私有词表里的词，都不会打印出来。
 
