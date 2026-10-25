@@ -150,3 +150,18 @@ test('control: a refusal sample with one word changed is caught', () => {
   const doctored = read('README.md').replace('Only the owner decides when to release.', 'Only the agent decides when to release.');
   assert.ok(refusalProblems(doctored).length > 0, 'a changed refusal sample was not caught');
 });
+
+// npm shows package.json's description in search and the README on the page: one text,
+// kept in the README (10-25: the description still said an old line at a release tag).
+/** The README's opening: its first two paragraphs after the title, joined as one line. */
+function readmeOpening(readme: string): string {
+  const paragraphs = readme.split(/\n\s*\n/).map((part) => part.trim()).filter((part) => part !== '');
+  return paragraphs.slice(1, 3).join(' ');
+}
+
+test('npm: package.json describes yokoten in the README\'s own opening words', () => {
+  assert.equal(readmeOpening('# x · y\n\nA guard.\n\nIt stops mistakes.\n\n- a list\n'), 'A guard. It stops mistakes.');
+  const description: string = JSON.parse(read('package.json')).description;
+  assert.notEqual(description, 'A guard. It stops mistakes.', 'positive control: a different text is not equal');
+  assert.equal(description, readmeOpening(read('README.md')), 'copy the README\'s first two paragraphs into package.json "description"');
+});
