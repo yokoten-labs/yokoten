@@ -259,8 +259,12 @@ const DECISION_MARKS = { 'as-is': 'ok', lighter: 'next', 'not-now': "can't check
  */
 export function adoptScreen(drafted: Draft): string[] {
   const lines = [...title('adopt', 'a draft for this project'), ''];
+  // The first few of each group, so the screen fits (R3); the rest fold into a count.
+  const caps = { 'as-is': 3, lighter: 4, 'not-now': 3 } as const;
   for (const decision of ['as-is', 'lighter', 'not-now'] as const) {
-    for (const one of drafted.rows.filter((r) => r.decision === decision)) lines.push(...row(DECISION_MARKS[decision], one.evidence || one.status, DECISION_WORDS[decision]));
+    const rows = drafted.rows.filter((r) => r.decision === decision);
+    for (const one of rows.slice(0, caps[decision])) lines.push(...row(DECISION_MARKS[decision], one.evidence || one.status, DECISION_WORDS[decision]));
+    if (rows.length > caps[decision]) lines.push(...row(DECISION_MARKS[decision], `${count(rows.length - caps[decision], 'more row')}, with \`yokoten adopt --all\``));
   }
   // Why the rules drafted it, when they did: a note, never folded (R5).
   if (drafted.by === 'rules') lines.push('', ...row('note', `drafted by rules${drafted.note ? `: ${drafted.note}` : ''}`));
