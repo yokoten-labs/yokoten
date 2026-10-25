@@ -98,8 +98,9 @@ yokoten is its own first user: this file came from `kit/project/AGENTS.md` by
   picks a safe plugin copy (#706)
   (`test/repo/architecture.test.ts` holds this). No Python, no shell beyond the one-line git
   hook.
-- **Layers.** `src/` has six, lowest first; a module imports only from its own
+- **Layers.** `src/` has seven, lowest first; a module imports only from its own
   layer or a lower one (`test/repo/architecture.test.ts` holds this):
+  - `platform/`: the place a command runs in (record 0040): the system, and how its paths read.
   - `rules/`: what is allowed, as plain functions (guards, privacy, layout, config).
   - `run/`: the checks at work: the tool-call hook, the commit and CI check.
   - `agents/`: one adapter per AI runtime: its tool-call shape, its settings and

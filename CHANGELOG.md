@@ -454,6 +454,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 - A tag refusal no longer repeats a tag name with a shell character in it as it is. `git tag v1$(id)` now refuses as `creating the tag 'v1$(id)'`, so a person who copies the line into a shell runs nothing; a plain name like `v1.2.0` prints as it did. The same guard covers the `git tag` and `git update-ref` ways of naming the tag. (#962)
 - A file that install or init keeps because you changed it shows as a note (a yellow ⚠ on a colour terminal), not as done: a sandbox file, a kit workflow, an older hooks file, or a git setting of your own.
 - The open standard (`docs/standard.md`) again matches the board: a working dot lasts 15 minutes, not 30, the status file has a `started` field, and the code links point at the files the board split into.
+- Tools that speak the guard protocol now work on Windows. Before, every call was refused with "project must be an absolute folder", because only folders that start with `/` passed. Now `C:\work\app`, `C:/work/app` and network folders such as `\\server\share\app` are accepted on Windows. Git Bash paths like `/c/work/app` are still refused there for now (#1016).
 
 ### Security
 
@@ -542,6 +543,18 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
   It stops disk commands too: `mkfs*`, `wipefs`, `fdisk`, `parted`, `diskutil`, `hdparm`, `sgdisk`, `nvme`, `blkdiscard`, and `shred` onto a disk. It stops `dd` into `/dev`, a redirect into `/dev`, `format` and `diskpart`. A disk tool is refused even when it only reads, such as `diskutil list`.
 
   The wipe and disk refusals say: tell the owner, who runs what needs root or touches a disk. A rule that names an exact case may answer first (#969, by GLM glm-5.3-flash, fixes by DeepSeek deepseek-v4.1-flash).
+- On Windows, the guard now reads Git Bash paths as Windows does. `/c/Users/...` (or `/C/...`) is `C:\Users\...`, and `/tmp/...` is your temp folder. Before, a worker could write a lead-only file such as `AGENTS.md` or a workflow by its `/c/...` path. It could also move or remove its own desk, so the desk lost its worker mark (#1015).
+
+  - A worker's write to a lead-only file by its Git Bash path is refused, as the `C:\...` form already was. This covers `echo >`, `cp`, `sed -i`, `rm`, `git -C` and `cd /c/... &&`.
+  - A worker's `mv` or `rm -rf` of its desk, or of a folder that holds it, by its Git Bash path is refused.
+  - A path Git Bash keeps for itself (`/usr/...`, `/etc/...`), or a relative path that climbs past the drive root, is refused as unsure. `/dev/null` still works.
+  - The same reading applies to the config-folder, lose-work and post-body checks.
+  - The secret scan of a commit now runs when the repo is named as `git -C /c/...` or `cd /c/... &&`. A commit in a folder that is not there, or with `GIT_DIR=` or `GIT_WORK_TREE=` before git, is refused as unknown.
+  - A tag push from a repo named by a Git Bash path (`-C`, `--git-dir`, `GIT_DIR=`, `cd`) is refused. So is a push with `push.followTags` set. The same holds for a push that deletes the default branch.
+  - A push from a repo that git can't open is refused, because its tags can't be read.
+  - A write to `.git/hooks` or `.git/config` by a Git Bash path is refused.
+  - `cmd /c` (and `cmd //c`, `cmd.exe`) is read as a program that runs commands. A worker's `cmd /c del` of its git folder is refused, and `cmd /c rd /s` of home is refused as a wipe.
+- A Windows home folder that bash ran together is now hidden too. Bash drops the backslashes of an unquoted Windows path, so `C:\Users\<name>\AppData` became `C:Users<name>AppData`. That text showed the user name in guard messages, `yokoten redact` output and other printed text. Now it shows as `~AppData`. The privacy check also finds a private mark inside such a path (#1017).
 
 ### Internal
 
