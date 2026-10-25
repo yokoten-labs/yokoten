@@ -209,6 +209,22 @@ test('output colour: a mark in green, red or yellow, a heading in bold, a comman
   assert.equal(styleLine('  ok      tool-call-guard: ready', true), '  \u001b[32m✔ ok\u001b[0m    tool-call-guard: ready');
   assert.match(styleLine('  MISSING tree: 2 problems', true), /^\s+\u001b\[31m✘ MISSING\u001b\[0m /);
   assert.match(styleLine('    note    a warning', true), /^\s+\u001b\[33m⚠ note\u001b\[0m /);
+  // A file kept because the user changed it is a note, not done; the words stay the same (#964).
+  // The first two are `describeWrite`'s words, the rest init's (src/setup/init.ts:87, 805, 1260, and
+  // install's own setting, so every command prints the same state in one colour).
+  const keptAsYours = [
+    "  kept    the skill foo in ~/.claude/skills/foo (yours, not yokoten's)",
+    '  kept    (your edit) the skill foo',
+    '  kept    your Claude Code sandbox in .claude/settings.json (doctor names what differs)',
+    '  kept    your .githooks/pre-commit: .githooks/pre-commit runs it after the check',
+    '  kept    .github/workflows/ci.yml: it has your changes. To see how the kit\'s newest copy differs: `git diff --no-index .github/workflows/ci.yml .yokoten/kit/project/.github/workflows/ci.yml`',
+    '  kept    your own git mailmap.file setting; add the lines of .mailmap to that file',
+  ];
+  for (const kept of keptAsYours) {
+    assert.match(styleLine(kept, true), /^\s+\u001b\[33m⚠ kept\u001b\[0m /, kept);
+    assert.equal(styleLine(kept, false), kept);
+  }
+  assert.match(styleLine('  kept    the tool-call hook in .claude/settings.json', true), /^\s+\u001b\[32m✔ kept\u001b\[0m /, 'a file that was already right stays done');
   assert.equal(styleLine('  next: run `yokoten init`', true), '  next: run \u001b[36m`yokoten init`\u001b[0m', 'a command line is not a state');
   assert.equal(styleLine('project:', true), '\u001b[1mproject:\u001b[0m');
   assert.equal(styleLine('yokoten stopped this: a tag push [release]', true), '\u001b[1;31myokoten stopped this: a tag push [release]\u001b[0m');
