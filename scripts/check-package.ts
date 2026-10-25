@@ -68,7 +68,10 @@ try {
   // 3. The command a user types. The bin link runs dist/bin/yokoten.js.
   const bin = join(app, 'node_modules', '.bin', IS_WINDOWS ? 'yokoten.cmd' : 'yokoten');
   assert.equal(step('yokoten --version', bin, ['--version'], app).stdout.trim(), VERSION);
-  assert.match(step('npx yokoten help', 'npx', ['--no', 'yokoten', 'help'], app).stdout, /yokoten init/);
+  // The help names where to start and the init row (#1027: one row per command, no `yokoten ` prefix).
+  const help = step('npx yokoten help', 'npx', ['--no', 'yokoten', 'help'], app).stdout;
+  assert.match(help, /Start here: run `yokoten`/);
+  assert.match(help, /^ {2}init {2,}\S/m);
 
   // 4. install: the machine layer, into the temp HOME. The machine copy runs as .ts.
   step('yokoten install', bin, ['install'], app);
