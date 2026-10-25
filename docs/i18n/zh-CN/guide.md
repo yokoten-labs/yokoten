@@ -1869,7 +1869,8 @@ agent，守卫都拦下这些：
   `get-url`、`show`；`git config --list`，以及读 `user.*`、`remote.*`；`gh auth status`；用 `gh`
   以 GET 查访问量和账号；`npm whoami`；`wrangler whoami`。整条命令只有其中一条、前后没有别的东西
   时，守卫会把它改成 `set -o pipefail # yokoten-redact`，再接
-  `( <命令> ) 2>&1 | { <node> <yokoten> redact || cat; }`，退出码还是原命令的。命令里有 `&&`、
+  `( <命令> ) 2>&1 | <node> <yokoten> redact`，退出码还是原命令的。redact 跑不起来时，输出整个藏起来，
+  stderr 上只说一行原因；这时命令本身成功的话，退出码是 1。命令里有 `&&`、
   `;`、管道、重定向、`$(...)`、`sudo` 这类前缀，或者会写文件的选项，就不改，照原样跑。
 - **别的 agent 照常跑命令。** 它们的 hook 改不了命令。`doctor` 和会话开头会说一次。想在那边
   直接拦下这类命令，就在 `yokoten.json` 里设 `"privacy": { "output": "stop" }`，守卫会拦下命令，
