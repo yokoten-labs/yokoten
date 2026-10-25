@@ -14,6 +14,8 @@ import { envFolder, folderIn, folderOf, hideHome, homeOf } from '../../rules/pri
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
+import { codexCanonicalForms, codexCurrentFolder, codexFindKey, codexKeyFold, codexLookupReadings } from '../../platform/folder-keys.ts';
+import { hostPathPlace } from '../../platform/paths.ts';
 import { readStop } from './claude-code.ts';
 import type { AgentAdapter } from './runtime.ts';
 import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
@@ -199,6 +201,29 @@ const untrustedFix = (store: string): string => `to change it, set trust_level =
 /** How the user turns on a yokoten hook they turned off in Codex: yokoten never turns it on (#984). */
 export const HOOK_OFF_FIX = "to turn it on, use Codex's `/hooks` screen";
 
+const TOML_ESCAPES: Record<string, string> = { b: '\b', t: '\t', n: '\n', f: '\f', r: '\r', e: '\x1b', '"': '"', '\\': '\\' };
+
+/**
+ * The text of a TOML basic string, its escapes read as TOML reads them (`\uXXXX`,
+ * `\UXXXXXXXX`, `\xHH`, `\e` and the short ones). Null for any other escape, such as a
+ * Windows path written with single backslashes (`"C:\Users"`): Codex can't read that file,
+ * and a key that can't be read trusts nothing.
+ */
+function readTomlEscapes(text: string): string | null {
+  let invalid = false;
+  const decoded = text.replace(/\\(?:u([0-9A-Fa-f]{4})|U([0-9A-Fa-f]{8})|x([0-9A-Fa-f]{2})|(.))/gs, (_, short: string, long: string, byte: string, other: string) => {
+    const code = short ?? long ?? byte;
+    if (code !== undefined) {
+      const point = Number.parseInt(code, 16);
+      if (point > 0x10ffff || (point >= 0xd800 && point <= 0xdfff)) invalid = true;
+      return invalid ? '' : String.fromCodePoint(point);
+    }
+    if (!(other in TOML_ESCAPES)) invalid = true;
+    return TOML_ESCAPES[other] ?? '';
+  });
+  return invalid ? null : decoded;
+}
+
 /** One TOML key, bare or quoted, at the start of `text`: the key and the text after it. */
 function readTomlKey(text: string): [string, string] | null {
   const rest = text.trimStart();
@@ -206,11 +231,8 @@ function readTomlKey(text: string): [string, string] | null {
   if (bare) return [bare[0], rest.slice(bare[0].length)];
   const basic = /^"((?:[^"\\]|\\.)*)"/.exec(rest);
   if (basic) {
-    try {
-      return [JSON.parse(`"${basic[1]}"`) as string, rest.slice(basic[0].length)];
-    } catch {
-      return null;
-    }
+    const decoded = readTomlEscapes(basic[1]);
+    return decoded === null ? null : [decoded, rest.slice(basic[0].length)];
   }
   const literal = /^'([^']*)'/.exec(rest);
   return literal ? [literal[1], rest.slice(literal[0].length)] : null;
@@ -439,6 +461,42 @@ function mainCheckout(root: string): string | null {
   }
 }
 
+/** The real path of `dir` as the system resolves it (on Windows, in the case on disk); null when it is gone. */
+function realPath(dir: string): string | null {
+  try {
+    return realpathSync.native(dir);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What Codex decides about trusting the folder at `root`, from the `projects` table
+ * (src/platform/folder-keys.ts says how Codex spells and compares the keys). Codex tries the
+ * folder, then the main checkout of a worktree, and stops at the first key it finds,
+ * trusted or not. When the path Codex uses has more than one possible spelling, each is
+ * read, and the folder is trusted only when every reading says so: fail closed. `choice` is
+ * a key set to something other than "trusted", the user's choice (#984). `current` is the
+ * folder as Codex sees its current folder: it keys the hooks, and `yokoten trust` writes it.
+ */
+function codexFolderTrust(projects: Map<string, Record<string, unknown>>, root: string, platform: NodeJS.Platform): { trusted: boolean; current: string; choice?: { key: string; level: unknown } } {
+  const given = folderKeys(root)[0];
+  const real = realPath(given);
+  const saved = [...projects].filter(([, fields]) => fields.trust_level !== undefined).map(([key]) => key);
+  const main = mainCheckout(root);
+  const mainKeys = main ? [...new Set([...codexCanonicalForms(realPath(main) ?? main, platform), main].map((key) => codexKeyFold(key, platform)))] : [];
+  let trusted = true;
+  let choice: { key: string; level: unknown } | undefined;
+  for (const keys of codexLookupReadings(given, real, platform)) {
+    const found = [...keys, ...mainKeys].map((key) => codexFindKey(saved, key, platform)).find((key) => key !== undefined);
+    const level = found === undefined ? undefined : projects.get(found)?.trust_level;
+    if (level === 'trusted') continue;
+    trusted = false;
+    if (found !== undefined) choice ??= { key: found, level };
+  }
+  return { trusted, current: codexCurrentFolder(given, real, platform), ...(choice ? { choice } : {}) };
+}
+
 /**
  * The model and provider the user's `config.toml` names (#748): top-level `model` and
  * `model_provider`, as Codex reads them. Null when the file is missing, unreadable, or
@@ -464,7 +522,7 @@ export function readModelIdentity(env: Env): { model: string; provider: string }
  * Read-only. Only the hook commands yokoten writes count: a hook that merely mentions
  * yokoten's flags is not yokoten's.
  */
-export function readTrust(root: string, env: Env): CodexTrust {
+export function readTrust(root: string, env: Env, platform: NodeJS.Platform = hostPathPlace().platform): CodexTrust {
   const store = configShown(env);
   const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store };
@@ -483,12 +541,11 @@ export function readTrust(root: string, env: Env): CodexTrust {
   } catch {
     // no hooks file doctor can read: no yokoten hook for Codex to trust
   }
-  // Codex looks in this order and stops at the first key it finds, trusted or not.
-  const main = mainCheckout(root);
-  const folders = [...folderKeys(root), ...(main ? folderKeys(main) : [])];
-  const project = folders.map((folder) => tables.projects.get(folder)).find((fields) => fields?.trust_level !== undefined);
+  const folder = codexFolderTrust(tables.projects, root, platform);
   // A trust_level that is set but not "trusted" is the user's choice (#984).
-  if (project?.trust_level !== 'trusted') return { state: 'untrusted', store, ...(project ? { userChoiceFix: untrustedFix(store) } : {}) };
+  if (!folder.trusted) return { state: 'untrusted', store, ...(folder.choice ? { userChoiceFix: untrustedFix(store) } : {}) };
+  // Codex keys a hook by its current folder, exactly.
+  const hooksKey = join(folder.current, '.codex', 'hooks.json');
   const events = isObject(hooks) && isObject(hooks.hooks) ? hooks.hooks : {};
   const states: CodexTrust['state'][] = [];
   for (const [name, event] of TRUST_EVENTS) {
@@ -502,9 +559,7 @@ export function readTrust(root: string, env: Env): CodexTrust {
           return;
         }
         if (!isYokotenHook(event, handler)) return;
-        const saved = folderKeys(root)
-          .map((folder) => tables.hookStates.get(`${join(folder, '.codex', 'hooks.json')}:${event}:${groupIndex}:${handlerIndex}`))
-          .find((fields) => fields !== undefined);
+        const saved = tables.hookStates.get(`${hooksKey}:${event}:${groupIndex}:${handlerIndex}`);
         if (saved?.enabled === false) states.push('hooks off');
         else if (typeof saved?.trusted_hash !== 'string') states.push('hooks untrusted');
         else states.push(saved.trusted_hash === hookHash(event, group.matcher, handler) ? 'trusted' : 'hooks changed');
@@ -521,7 +576,7 @@ export function readTrust(root: string, env: Env): CodexTrust {
  * trusts a hook that is not the exact command yokoten writes: a hook edited after trust
  * is reported instead (`changed`), for `yokoten init` to put back.
  */
-export function trustProject(root: string, env: Env): TrustPlan {
+export function trustProject(root: string, env: Env, platform: NodeJS.Platform = hostPathPlace().platform): TrustPlan {
   const store = configShown(env);
   const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store, changes: [] };
@@ -535,7 +590,6 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const tables = readTrustTables(text);
   const changes: TrustChange[] = [];
   const change = (path: string[], key: string, value: string, before: string | null, kind?: 'boolean'): TrustChange => ({ agent: 'Codex', store, file, format: 'toml', path, key, value, before, ...(kind ? { kind } : {}) });
-  const folders = folderKeys(root);
   let hooks: unknown = null;
   try {
     hooks = JSON.parse(readFileSync(projectHooks(root), 'utf8'));
@@ -548,33 +602,31 @@ export function trustProject(root: string, env: Env): TrustPlan {
     return groups.some((group: unknown) => isObject(group) && Array.isArray(group.hooks) && group.hooks.some((handler: unknown) => isObject(handler) && isEditedYokotenHook(event, handler)));
   });
   if (edited) return { state: 'changed', store, changes: [] };
-  const main = mainCheckout(root);
-  const keys = [...folders, ...(main ? folderKeys(main) : [])];
-  // Codex stops at the first folder key it finds, trusted or not.
-  const savedFolder = keys.find((folder) => tables.projects.get(folder)?.trust_level !== undefined);
-  const savedProject = savedFolder === undefined ? undefined : tables.projects.get(savedFolder);
+  const folder = codexFolderTrust(tables.projects, root, platform);
   // The user set this folder to something other than trusted: their choice stays, and
   // nothing is written, hooks included (#984).
-  if (savedFolder !== undefined && savedProject?.trust_level !== 'trusted') {
-    const level = JSON.stringify(String(savedProject?.trust_level));
-    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(savedFolder, env)} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+  if (folder.choice) {
+    const level = JSON.stringify(String(folder.choice.level));
+    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder.choice.key, env, { platform })} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
   }
   const kept: { what: string; fix: string }[] = [];
-  if (savedProject?.trust_level !== 'trusted') {
-    const folder = folders.find((key) => tables.projects.has(key)) ?? folders[0];
-    const before = typeof savedProject?.trust_level === 'string' ? savedProject.trust_level : null;
-    changes.push(change(['projects', folder], 'trust_level', 'trusted', before));
+  if (!folder.trusted) {
+    // Codex tries its current folder in every reading, so that key trusts the folder. A
+    // table already there for it (in another case, on Windows) is filled in, not doubled.
+    const key = codexFindKey(tables.projects.keys(), codexKeyFold(folder.current, platform), platform) ?? folder.current;
+    const level = tables.projects.get(key)?.trust_level;
+    changes.push(change(['projects', key], 'trust_level', 'trusted', typeof level === 'string' ? level : null));
   }
+  // Codex keys a hook by its current folder, exactly.
+  const hooksKey = join(folder.current, '.codex', 'hooks.json');
   for (const [name, event] of TRUST_EVENTS) {
     const groups = Array.isArray(events[name]) ? events[name] : [];
     groups.forEach((group: unknown, groupIndex: number) => {
       if (!isObject(group) || !Array.isArray(group.hooks)) return;
       group.hooks.forEach((handler: unknown, handlerIndex: number) => {
         if (!isObject(handler) || !isYokotenHook(event, handler)) return;
-        const key = `${join(root, '.codex', 'hooks.json')}:${event}:${groupIndex}:${handlerIndex}`;
-        const saved = folders
-          .map((folder) => tables.hookStates.get(`${join(folder, '.codex', 'hooks.json')}:${event}:${groupIndex}:${handlerIndex}`))
-          .find((fields) => fields !== undefined);
+        const key = `${hooksKey}:${event}:${groupIndex}:${handlerIndex}`;
+        const saved = tables.hookStates.get(key);
         // A hook the user turned off stays off (#984); its hash is still saved, so turning
         // it on in Codex is all it takes.
         if (saved?.enabled === false && kept.length === 0) kept.push({ what: `a yokoten hook in .codex/hooks.json stays off (enabled = false in ${store}; yokoten would turn it on)`, fix: HOOK_OFF_FIX });
