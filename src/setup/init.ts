@@ -1472,6 +1472,19 @@ function isInHead(root: string, rel: string, bytes: Buffer, env: Env): boolean {
 }
 
 /**
+ * Before a write to AGENTS.md: when git can't give the current bytes back, keep them as
+ * AGENTS_BACKUP. `clash` is true when a different copy is there already: it is never
+ * overwritten, and the caller must not write AGENTS.md.
+ */
+function keepAgentsBackup(root: string, bytes: Buffer, env: Env): { backedUp: boolean; clash: boolean } {
+  if (isInHead(root, 'AGENTS.md', bytes, env)) return { backedUp: false, clash: false };
+  const backup = join(root, AGENTS_BACKUP);
+  if (existsSync(backup) && !readFileSync(backup).equals(bytes)) return { backedUp: false, clash: true };
+  writeFileSync(backup, bytes);
+  return { backedUp: true, clash: false };
+}
+
+/**
  * Put the core rules into the project's AGENTS.md when it has no `## This project`
  * heading. Returns the report lines. The old file can always come back: from git when
  * HEAD has it as it is, or else from a copy next to it.
@@ -1485,15 +1498,11 @@ function addCoreRules(root: string, kit: string, env: Env): string[] {
   const project = bytes.toString('utf8');
   if (findProjectStart(project) !== -1) return ['kept AGENTS.md (`yokoten update` brings its core rules up to date)'];
   if (findProjectStart(kit) === -1) return [`kept AGENTS.md: the kit's AGENTS.md has no \`${PROJECT_HEADING}\` heading; report it in an issue at yokoten`];
-  let restore = 'to get the old file back: `git checkout HEAD -- AGENTS.md`';
-  if (!isInHead(root, 'AGENTS.md', bytes, env)) {
-    const backup = join(root, AGENTS_BACKUP);
-    if (existsSync(backup) && !readFileSync(backup).equals(bytes)) {
-      return [`kept AGENTS.md: it has no \`${PROJECT_HEADING}\` heading, and ${AGENTS_BACKUP} is there already, so yokoten kept both as they are. Move ${AGENTS_BACKUP} away, then run \`yokoten init\` again`];
-    }
-    writeFileSync(backup, bytes);
-    restore = `kept the old file as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right`;
+  const kept = keepAgentsBackup(root, bytes, env);
+  if (kept.clash) {
+    return [`kept AGENTS.md: it has no \`${PROJECT_HEADING}\` heading, and ${AGENTS_BACKUP} is there already, so yokoten kept both as they are. Move ${AGENTS_BACKUP} away, then run \`yokoten init\` again`];
   }
+  const restore = kept.backedUp ? `kept the old file as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right` : 'to get the old file back: `git checkout HEAD -- AGENTS.md`';
   const moved = moveUnderProjectHeading(project, kit);
   writeFileSync(path, moved.text);
   if (moved.lines === 0) return [`wrote AGENTS.md: it had no text${moved.frontMatter ? ' below its front matter' : ''}, so it now has the core rules and an empty \`${PROJECT_HEADING}\` section (${restore})`];
@@ -1692,7 +1701,7 @@ export function summarizeUpdate(rules: { changes: LineChange[]; sections: Sectio
  * `yokoten update`: replace the core part of AGENTS.md with the kit's. Without `write`
  * it only shows the change. `ok` is false when there is nothing it can compare.
  */
-export function updateCoreRules(root: string, { write }: { write: boolean }): { ok: boolean; lines: string[] } {
+export function updateCoreRules(root: string, { write }: { write: boolean }, env: Env): { ok: boolean; lines: string[] } {
   const rules = readCoreRules(root);
   if (rules === null) return { ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one'] };
   if (rules.state === "can't compare") return { ok: false, lines: [`can't compare AGENTS.md with the kit: ${rules.why}. Nothing was written. To fix it, ${rules.fix}`] };
@@ -1702,8 +1711,17 @@ export function updateCoreRules(root: string, { write }: { write: boolean }): { 
   }
   const summary = summarizeUpdate(rules);
   if (write) {
-    writeFileSync(join(root, 'AGENTS.md'), rules.updated);
-    return { ok: true, lines: [`replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: ${summary}. "${PROJECT_HEADING}" and below are unchanged`] };
+    const path = join(root, 'AGENTS.md');
+    if (lstatSync(path).isSymbolicLink()) {
+      return { ok: false, lines: [`kept AGENTS.md: it is a link to ${readlinkSync(path)}, so yokoten did not write the core rules into it. Nothing was written. Update the file it points to by hand`] };
+    }
+    const kept = keepAgentsBackup(root, readFileSync(path), env);
+    if (kept.clash) {
+      return { ok: false, lines: [`kept AGENTS.md: ${AGENTS_BACKUP} is there already, so yokoten kept both as they are. Nothing was written. Move ${AGENTS_BACKUP} away, then run \`yokoten update --write\` again`] };
+    }
+    writeFileSync(path, rules.updated);
+    const backup = kept.backedUp ? `. The old file is kept as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right` : '';
+    return { ok: true, lines: [`replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: ${summary}. "${PROJECT_HEADING}" and below are unchanged${backup}`] };
   }
   return {
     ok: true,

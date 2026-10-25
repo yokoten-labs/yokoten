@@ -146,7 +146,7 @@ export function runUpdate(invocation: Invocation): number {
   }
   const root = requireRoot(invocation, dir);
   if (!root) return 1;
-  const { ok, lines } = updateCoreRules(root, { write: options.flags.has('--write') });
+  const { ok, lines } = updateCoreRules(root, { write: options.flags.has('--write') }, invocation.env);
   print(invocation, [`yokoten update: ${lines[0]}`, ...lines.slice(1)], ok ? invocation.stdout : invocation.stderr);
   return ok ? 0 : 1;
 }

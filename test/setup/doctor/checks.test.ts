@@ -8,7 +8,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir, ROOT } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
-import { launcherDir, setUpLauncher } from '../../../src/setup/install.ts';
+import { launcherDir, PROFILE_LINE, setUpLauncher } from '../../../src/setup/install.ts';
 import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
 import { doctor, launcherCheck, privacyNotes, releaseChannel } from '../../../src/setup/doctor/index.ts';
 
@@ -194,9 +194,15 @@ test('doctor --session: with the plugin on, takes back what an older install lef
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] });
   writeFileSync(settingsFile, JSON.stringify(settings));
+  // The older install's PATH line in the shell profile: a session names it and never edits it (#983).
+  const profile = join(sandbox.home, '.bashrc');
+  const profileText = `export EDITOR=vi\n${PROFILE_LINE}\n`;
+  writeFileSync(profile, profileText);
 
   const session = (await sandbox.call(['doctor', '--session'])).stdout;
   assert.match(session, /^yokoten: cleaned \d+ files an older install left; the plugin brings them now$/m);
+  assert.equal(readFileSync(profile, 'utf8'), profileText, 'a session never edits a shell profile');
+  assert.match(session, /^yokoten: ~\/\.bashrc still has the PATH line an older install added; delete the line that ends with "# added by yokoten"$/m);
   assert.match(session, /^yokoten: kept your edit to skill dispatch: an older install left it$/m);
   assert.match(readFileSync(edited, 'utf8'), /Ask the owner first/, 'the edited copy stays');
   for (const name of skills.filter((name) => name !== 'dispatch')) {
