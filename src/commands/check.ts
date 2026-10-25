@@ -1333,9 +1333,11 @@ export function runCiHealth(invocation: Invocation): number {
     print(invocation, [`yokoten ci-health: ${posted}`], invocation.stderr);
     return 1;
   }
+  // One screen: where the report is, then what it found (issue #1027).
   print(invocation, [
-    `yokoten ci-health: ${posted.created ? 'opened' : 'updated'} issue #${posted.number} in ${repo}${posted.pinned ? '' : ' (not pinned: pin it once by hand)'}`,
-    `${problems} problem(s) in the last ${runs.length} runs.`,
+    ...title('ci-health', `${posted.created ? 'opened' : 'updated'} issue #${posted.number} in ${repo}${posted.pinned ? '' : ' (not pinned yet)'}`),
+    '',
+    ...row('ok', `${count(runs.length, 'run')}: ${count(problems, 'problem')}`),
   ]);
   return 0;
 }

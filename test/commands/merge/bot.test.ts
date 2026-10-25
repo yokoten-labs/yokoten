@@ -25,6 +25,7 @@ import {
   makeSandbox,
 } from '../../repo/helpers.ts';
 import { invoke } from '../../repo/invoke.ts';
+import { botHeading } from '../../../src/commands/merge/bot.ts';
 
 // #117: the bot checks a title before it sends anything, by the rules CI uses. A fake gh
 // and a local API server stand in for GitHub; the real ones are never reached.
@@ -1560,4 +1561,11 @@ test('bot: an empty body passes, from --body or --body-file (#609)', async () =>
   } finally {
     server.close();
   }
+});
+
+// #1027: one line before the command's own output names the bot and what runs.
+test('bot: the heading names the bot and the command (#1027)', () => {
+  assert.deepEqual(botHeading({ YOKOTEN_BOT_NAME: 'team-bot' }, ['gh', 'pr', 'create', '--fill']), ['yokoten bot · as team-bot · gh pr create --fill']);
+  assert.deepEqual(botHeading({}, ['gh', 'issue', 'list']), ['yokoten bot · as yokoten-bot · gh issue list']);
+  for (const line of botHeading({}, ['gh', 'pr', 'create', '--title', 'a'.repeat(60)])) assert.ok(line.length <= 80);
 });

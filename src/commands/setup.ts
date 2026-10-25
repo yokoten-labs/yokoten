@@ -464,9 +464,55 @@ export function runUpdate(invocation: Invocation): number {
   }
   const root = requireRoot(invocation, dir);
   if (!root) return 1;
-  const { ok, lines } = updateCoreRules(root, { write: options.flags.has('--write') }, invocation.env);
-  print(invocation, [`yokoten update: ${lines[0]}`, ...lines.slice(1)], ok ? invocation.stdout : invocation.stderr);
+  const isWrite = options.flags.has('--write');
+  const { ok, lines } = updateCoreRules(root, { write: isWrite }, invocation.env);
+  print(invocation, updateScreen({ ok, lines, isWrite }), ok ? invocation.stdout : invocation.stderr);
   return ok ? 0 : 1;
+}
+
+/** The core rule a diff line belongs to, from the rules table; null for any other line. */
+const ruleOf = (line: string): string | null => /^\| (\d+) \|/.exec(line.trim())?.[1] ?? null;
+
+/**
+ * The default screen of `yokoten update` (issue #1027): how many core rules changed, one row
+ * per rule, and the note that the project's own part stays. A problem is never folded (R5).
+ */
+export function updateScreen({ ok, lines, isWrite }: { ok: boolean; lines: string[]; isWrite: boolean }): string[] {
+  const [first = '', ...rest] = lines;
+  // Nothing to do: one line (R8).
+  if (/are up to date/.test(first)) return title('update', 'the core rules are up to date, nothing changed');
+  // A refusal keeps every word of why and how to fix it, wrapped (R5).
+  if (!ok) return [...title('update', 'nothing changed'), '', ...row('MISSING', first)];
+  if (isWrite) {
+    const kept = /kept as (\S+?);/.exec(first)?.[1];
+    return [
+      ...title('update', "the core rules in AGENTS.md are this version's now"),
+      '',
+      ...row('ok', 'AGENTS.md, the core rules', 'rules'),
+      ...(kept === undefined ? [] : row('note', `the file before it is kept as ${kept}`, 'backup')),
+    ];
+  }
+  const added = new Set<string>();
+  const removed = new Set<string>();
+  for (const line of rest) {
+    const change = /^([+-]) (.*)$/.exec(line);
+    const rule = change?.[2] === undefined ? null : ruleOf(change[2]);
+    if (!change || rule === null) continue;
+    (change[1] === '+' ? added : removed).add(rule);
+  }
+  const rules = [...new Set([...added, ...removed])].sort((a, b) => Number(a) - Number(b));
+  if (!rules.length) {
+    return [...title('update', 'the core rules changed upstream'), '', ...row('note', 'the change is outside the rules table; `yokoten update --write` writes it'), '', ...nextLine('yokoten update --write')];
+  }
+  const rows = rules.flatMap((rule) => row('next', added.has(rule) && removed.has(rule) ? 'wording changed' : added.has(rule) ? 'new' : 'removed', `rule ${rule}`));
+  return [
+    ...title('update', `${count(rules.length, 'core rule')} changed upstream`),
+    '',
+    ...rows,
+    '  Your "This project" part stays as it is.',
+    '',
+    ...nextLine('yokoten update --write'),
+  ];
 }
 
 /**

@@ -16,7 +16,7 @@ import { workerRole } from '../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../run/hook.ts';
 import { docsLink, formatFinding } from '../../rules/message.ts';
 import { hideHome } from '../../rules/privacy.ts';
-import { draft, facts, table } from '../../setup/advice/adopt.ts';
+import { type Draft, draft, facts, table } from '../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../setup/advice/explain.ts';
 import { cleanOlderInstall, PROFILE_MARK } from '../../setup/install.ts';
 import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
@@ -244,9 +244,28 @@ export function runAdopt(invocation: Invocation): number | Promise<number> {
     if (options.flags.has('--json')) {
       printJson(invocation, drafted.rows.map(({ key, status, evidence, decision, reason }) => ({ key, status, evidence, decision, reason })));
       print(invocation, [`yokoten adopt: drafted by ${drafted.by}${drafted.note ? `, because ${drafted.note}` : ''}. You decide every row.`], invocation.stderr);
-    } else print(invocation, table(drafted));
+    } else print(invocation, options.flags.has('--all') ? table(drafted) : adoptScreen(drafted));
     return 0;
   });
+}
+
+/** The word a plain reader knows for each decision (issue #1027). */
+const DECISION_WORDS = { 'as-is': 'keep', lighter: 'add', 'not-now': 'decide' } as const;
+const DECISION_MARKS = { 'as-is': 'ok', lighter: 'next', 'not-now': "can't check" } as const;
+
+/**
+ * The default screen of `yokoten adopt` (issue #1027): a title, then one row per practice,
+ * grouped by what the draft says to do with it, and the full table behind `--json`.
+ */
+export function adoptScreen(drafted: Draft): string[] {
+  const lines = [...title('adopt', 'a draft for this project'), ''];
+  for (const decision of ['as-is', 'lighter', 'not-now'] as const) {
+    for (const one of drafted.rows.filter((r) => r.decision === decision)) lines.push(...row(DECISION_MARKS[decision], one.evidence || one.status, DECISION_WORDS[decision]));
+  }
+  // Why the rules drafted it, when they did: a note, never folded (R5).
+  if (drafted.by === 'rules') lines.push('', ...row('note', `drafted by rules${drafted.note ? `: ${drafted.note}` : ''}`));
+  lines.push('', ...moreLine('`yokoten adopt --json` shows every row with its reason'));
+  return lines;
 }
 
 // What `yokoten doctor` shows by default (issue #1027): one screen. Owner 2026-10-25, after running it

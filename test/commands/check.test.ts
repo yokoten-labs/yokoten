@@ -1177,7 +1177,10 @@ test('ci-health: opens and pins the one report issue, then edits it in place', a
   let result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /opened issue #12 in octo\/demo/);
-  assert.match(result.stdout, /0 problem\(s\)/);
+  assert.match(result.stdout, /0 problems/);
+  // #1027: one screen: the title says where the report is, then one row says what it found.
+  assert.match(result.stdout, /^yokoten ci-health · opened issue #12 in octo\/demo\n\n {2}ok {10}1 run: 0 problems\n$/);
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, `over 80: ${line}`);
   assert.ok(healthCalls(sandbox).some((call) => call.startsWith('issue create')), 'an issue was made');
   assert.ok(healthCalls(sandbox).some((call) => call.startsWith('issue pin 12')), 'and pinned');
 

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
-import { claudeCommand, previewLines } from '../../src/commands/setup.ts';
+import { claudeCommand, previewLines, updateScreen } from '../../src/commands/setup.ts';
 import { VERSION } from '../../src/setup/files.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
@@ -295,4 +295,34 @@ test('upgrade on Windows (#1002): finds claude.exe, or claude.cmd, on the PATH',
   // Positive control: neither found falls back to the shell; Linux never uses it.
   assert.deepEqual(claudeCommand({ PATH: empty }, 'win32'), { file: 'claude.cmd', shell: true });
   assert.deepEqual(claudeCommand({ PATH: exeOnly }, 'linux'), { file: 'claude', shell: false });
+});
+
+// #1027: one screen for update: how many core rules changed, one row per rule, the way back next.
+test('update: one screen per core rule change (#1027)', () => {
+  const lines = [
+    "the core rules in AGENTS.md differ from yokoten 0.1.1's: 2 line(s) added, 1 removed",
+    '',
+    '+ | 9 | Nothing reaches main without a pull request | x |',
+    '- | 4 | A fix task changes code | x |',
+    '+ | 4 | A fix task changes code and tests | x |',
+    '- | 12 | An old rule | x |',
+    '',
+    'A line marked - is replaced.',
+    'Move any rule of your own under "This project" first. That part stays as it is.',
+    'Nothing was written. Run `yokoten update --write` to write it.',
+  ];
+  const screen = updateScreen({ ok: true, lines, isWrite: false });
+  assert.equal(screen[0], 'yokoten update · 3 core rules changed upstream');
+  assert.ok(screen.some((line) => /^  next\s+rule 4\s+wording changed$/.test(line)), 'a changed rule');
+  assert.ok(screen.some((line) => /^  next\s+rule 9\s+new$/.test(line)), 'a new rule');
+  assert.ok(screen.some((line) => /^  next\s+rule 12\s+removed$/.test(line)), 'a removed rule');
+  assert.ok(screen.includes('  Your "This project" part stays as it is.'));
+  assert.equal(screen.at(-1), 'Next: `yokoten update --write`');
+  assert.deepEqual(updateScreen({ ok: true, lines: ['the core rules in AGENTS.md are up to date with yokoten 0.1.1; nothing to change'], isWrite: false }), ['yokoten update · the core rules are up to date, nothing changed']);
+  assert.equal(updateScreen({ ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one'], isWrite: false })[1], '');
+  for (const one of [
+    updateScreen({ ok: true, lines, isWrite: false }),
+    updateScreen({ ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one, then run `yokoten update` again after that.'], isWrite: false }),
+    updateScreen({ ok: true, lines: ["replaced the core rules in AGENTS.md with yokoten 0.1.1's: 1 line(s) added, 0 removed. \"This project\" and below are unchanged. The old file is kept as AGENTS.backup.md; delete it once the new AGENTS.md reads right"], isWrite: true }),
+  ]) for (const line of one) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

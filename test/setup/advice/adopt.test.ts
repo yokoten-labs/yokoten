@@ -26,6 +26,7 @@ import {
   table,
 } from '../../../src/setup/advice/adopt.ts';
 import { ROAD } from '../../../src/setup/road.ts';
+import { adoptScreen } from '../../../src/commands/advice/doctor.ts';
 
 const statusOf = (rows: Fact[]) => Object.fromEntries(rows.map((r) => [r.key, r.status]));
 
@@ -41,7 +42,7 @@ test('adopt: with no key, the rule-based draft and how to set the key; it change
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'node --test' } }));
   const before = sandbox.git('status', '--porcelain', '--ignored').stdout;
   // The entry, through the real binary; the rest runs in this process.
-  const r = sandbox.run(['adopt']);
+  const r = sandbox.run(['adopt', '--all']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^\| Practice \| The project today \| Draft \| Why \|/);
   assert.match(r.stdout, /\| rules \| partial: no AGENTS\.md, but CLAUDE\.md \| lighter \|/);
@@ -179,4 +180,25 @@ test('promptProblems: a marks file that can not be read stops the prompt, never 
   const problems = promptProblems(prompt(FACTS), { HOME: home, YOKOTEN_PRIVATE_MARKS: folder });
   assert.ok(problems.some((line) => /private-marks file can't be read/.test(line)), 'refused');
   assert.deepEqual(promptProblems(prompt(FACTS), { HOME: home }), [], 'readable: clean facts may go');
+});
+
+// #1027: the default adopt is one screen, grouped by what to do with each row.
+test('adopt: the default screen groups the rows as keep, add and decide (#1027)', () => {
+  const drafted = {
+    by: 'rules',
+    note: 'no model key; set MODEL_API_KEY',
+    rows: [
+      { key: 'rules', status: 'partial' as const, evidence: 'your CI, your PR template', why: '', decision: 'as-is' as const, reason: '' },
+      { key: 'tests', status: 'missing' as const, evidence: 'AGENTS.md, the commit check', why: '', decision: 'lighter' as const, reason: '' },
+      { key: 'codeowners', status: 'unknown' as const, evidence: 'your CODEOWNERS differs from the road', why: '', decision: 'not-now' as const, reason: '' },
+    ],
+  };
+  const lines = adoptScreen(drafted);
+  assert.equal(lines[0], 'yokoten adopt · a draft for this project');
+  assert.ok(lines.some((line) => /^  ok\s+keep\s+your CI, your PR template$/.test(line)), 'a keep row');
+  assert.ok(lines.some((line) => /^  next\s+add\s+AGENTS\.md, the commit check$/.test(line)), 'an add row');
+  assert.ok(lines.some((line) => /^  can't check\s+decide\s+your CODEOWNERS/.test(line)), 'a decide row');
+  assert.ok(lines.some((line) => line.startsWith('  note') && line.includes('MODEL_API_KEY')), 'why the rules drafted it');
+  assert.equal(lines.at(-1), 'More: `yokoten adopt --json` shows every row with its reason');
+  for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

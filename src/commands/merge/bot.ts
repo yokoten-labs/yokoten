@@ -8,7 +8,13 @@ import { botConfig, botEnv, botProgram, type Gh, installationToken, readApproval
 import { DEFAULTS, type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding } from '../../rules/message.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../rules/pr.ts';
-import { bullets, type Invocation, type Output, parse, print, readInput, requireRoot, rootOf, usage } from '../shared.ts';
+import { bullets, type Invocation, type Output, parse, print, readInput, requireRoot, rootOf, title, usage } from '../shared.ts';
+
+/** The bot's name: the App's own name when the project sets one, else the default (#1027). */
+export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bot';
+
+/** The one line before the command's own output: `yokoten bot · as yokoten-bot · gh pr create`. */
+export const botHeading = (env: Env, command: string[]): string[] => title('bot', `as ${botName(env)} · ${command.join(' ')}`);
 
 async function bot(invocation: Invocation, command: string[]): Promise<number> {
   const { env, cwd } = invocation;
@@ -61,6 +67,9 @@ async function bot(invocation: Invocation, command: string[]): Promise<number> {
   }
   const token = await installationToken(config, repo);
   const [file, ...given] = command;
+  // One line before the command's own output, on a terminal only: a pipe keeps the command's
+  // bytes exactly, so `yokoten bot -- gh pr view --json … | jq` still reads JSON (#1027).
+  if (invocation.stdout.isTTY === true) print(invocation, [...botHeading(env, command), '']);
   const ghEnv = botEnv(env, token);
   // A new pull request with no milestone takes its linked issue's (#512): one `gh issue view`.
   const wanted = body && !isLookup(body) ? readCommandMilestone(command, body.text) : null;

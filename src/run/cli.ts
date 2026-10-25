@@ -267,9 +267,9 @@ export const COMMANDS: Command[] = [
   {
     name: 'adopt',
     summary: 'a draft of the adoption table for an old project',
-    usage: '[--json]',
+    usage: '[--json] [--all]',
     text: ['Drafts the adoption table: what the project does today, and as-is, lighter or not now', 'for each step. You decide every row. It writes no file.'],
-    options: [{ name: '--json', text: 'the rows as JSON on stdout' }],
+    options: [{ name: '--json', text: 'the rows as JSON on stdout' }, { name: '--all', text: 'the whole table, with a reason for every row' }],
     example: 'yokoten adopt',
   },
   {
@@ -465,7 +465,7 @@ export const COMMANDS: Command[] = [
   {
     name: 'anchor',
     summary: "list a worker's checkpoints: commits whose checks passed",
-    usage: '[--json]',
+    usage: '[--json] [--all]',
     text: [
       'Lists the anchors recorded in this checkout, newest first. A worker records one when',
       'its checks pass and its tree is clean. An anchor is a commit, so going back is a new',
