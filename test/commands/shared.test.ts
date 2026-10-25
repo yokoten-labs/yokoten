@@ -336,3 +336,22 @@ test('output colour: help bolds the usage and sections, and names each command i
   assert.match(one.stdout, /\u001b\[1mExample:\u001b\[0m/, 'the example title is bold');
 });
 
+
+// #1027: the screen helpers every command uses.
+test('screen helpers: 80 columns, the label column, plural counts, the old console falls back (#1027)', async () => {
+  const { wrap, row, title, nextLine, count, isUnicodeTerminal } = await import('../../src/commands/shared.ts');
+  const long = 'word '.repeat(40).trim();
+  for (const line of [...wrap('  note        ', long), ...row('note', long, 'label'), ...title('doctor', long)]) assert.ok(line.length <= 80, line);
+  assert.deepEqual(row('ok', 'on for Claude Code', 'guard'), ['  ok          guard       on for Claude Code']);
+  assert.deepEqual(nextLine('yokoten init'), ['Next: `yokoten init`']);
+  assert.equal(count(1, 'file'), '1 file');
+  assert.equal(count(3, 'file'), '3 files');
+  // is-unicode-supported's rules: Windows Terminal and VS Code draw ✔; the classic console gets √.
+  assert.equal(isUnicodeTerminal({}, 'win32'), false);
+  assert.equal(isUnicodeTerminal({ WT_SESSION: 'x' }, 'win32'), true);
+  assert.equal(isUnicodeTerminal({ TERM_PROGRAM: 'vscode' }, 'win32'), true);
+  assert.equal(isUnicodeTerminal({}, 'darwin'), true);
+  assert.equal(isUnicodeTerminal({ TERM: 'linux' }, 'linux'), false);
+  assert.match(styleLine('  ok          guard', true, false), /√ ok/);
+  assert.match(styleLine('  ok          guard', true, true), /✔ ok/);
+});

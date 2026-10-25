@@ -303,7 +303,9 @@ export function shortLines(report: DoctorReport, brokenLine?: string): string[] 
   if (steps.length) lines.push(...row('done', `${done} of ${count(steps.length, 'step')}`));
   // A problem fails doctor, so it is never folded: each one with its fix.
   for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`, f.id));
-  for (const s of left) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
+  for (const s of left.slice(0, 5)) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  if (left.length > 5) lines.push(...row('to do', `${count(left.length - 5, 'more step')}, listed by \`yokoten doctor --all\``));
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
   if (unchecked) lines.push(...row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
   // Work only on this machine can be lost, so it shows too, one line each.
