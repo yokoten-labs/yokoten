@@ -13,8 +13,11 @@ yokoten is a neutral trust layer, with an open standard, a provenance ledger, on
 log, and autonomy earned from a record. Record [0040](0040-one-codebase-platform-layer.md)
 decides how one codebase serves every place an agent runs.
 
-What was missing is the one shape that ties them together, and the order to build it in.
-The owner agreed on 2026-10-25: "we build AI infrastructure".
+The destination is already written down. The [manifesto](../assets/manifesto.md), section
+8, calls it "the rule of law for the agent economy", and the `vision 1` to `vision 7` labels
+name its steps, from a seatbelt to the rule of law. This record does not change the
+destination. What was missing is the one shape that ties the records together, and the
+order to build it in. The owner agreed on 2026-10-25: "we build AI infrastructure".
 
 ## Decision
 
@@ -51,12 +54,15 @@ Grants go into the event log ([0029](0029-a-control-plane.md)), and autonomy lev
 
 ### 4. Four layers, near to far
 
-| Layer | What it is | Built from |
-|---|---|---|
-| Kernel | On one machine, every agent action goes through one set of rules | The action model, record 0040's adapters, the guard protocol ([0039](0039-the-guard-protocol.md)) |
-| Factory | In one team, agents from many vendors work under one set of rules | Signed team rules, locks, budgets, grants, the control plane (0029) |
-| Network | Between teams, trust comes from evidence | The open protocol and the provenance ledger (0028), signed evidence, certification |
-| Economy | Agents become parties that do paid work | Below |
+The layers group the vision labels. An issue keeps its `vision N` label; the layer is only
+the build order.
+
+| Layer | Vision labels | What it is | Built from |
+|---|---|---|---|
+| Kernel | 1 a seatbelt, 2 a fleet | On each machine, every agent action goes through one set of rules | The action model, record 0040's adapters, the guard protocol ([0039](0039-the-guard-protocol.md)) |
+| Factory | 3 a factory | In one team, agents from many vendors work under one set of rules | Signed team rules, locks, budgets, grants, the control plane (0029) |
+| Network | 4 a mark, 5 traffic rules, 6 an immune system | Between teams, trust comes from evidence | The open protocol and the provenance ledger (0028), signed evidence, certification |
+| Economy | 7 rule of law | Agents become parties that do paid work | Below |
 
 The economy layer adds four things. Each one stands on evidence that the kernel already
 writes.
