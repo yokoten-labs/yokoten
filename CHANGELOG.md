@@ -555,6 +555,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
   - A write to `.git/hooks` or `.git/config` by a Git Bash path is refused.
   - `cmd /c` (and `cmd //c`, `cmd.exe`) is read as a program that runs commands. A worker's `cmd /c del` of its git folder is refused, and `cmd /c rd /s` of home is refused as a wipe.
 - A Windows home folder that bash ran together is now hidden too. Bash drops the backslashes of an unquoted Windows path, so `C:\Users\<name>\AppData` became `C:Users<name>AppData`. That text showed the user name in guard messages, `yokoten redact` output and other printed text. Now it shows as `~AppData`. The privacy check also finds a private mark inside such a path (#1017).
+- yokoten now reads Codex's folder trust the way Codex does. Before, the board could start Codex while Codex skipped the guard hooks. This happened in two cases: two keys for one folder in a different case on Windows, and a folder reached through a symlink. On Windows, a folder that Codex trusted (its key in lower case) read as untrusted. `yokoten trust` now writes the key and hooks under the path Codex uses: the real path on Linux and macOS. The board also refuses to start Codex when nothing trusts the folder. This is when there is no Codex home, no `config.toml`, or a `config.toml` yokoten cannot read.
 
 ### Internal
 
