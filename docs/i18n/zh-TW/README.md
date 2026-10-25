@@ -59,15 +59,15 @@ v0.1.1 新增：幾個 AI 工作階段在同一個儲存庫裡工作時，`yokot
 
 | Agent | 已做端對端驗證 | 要先跑 `npx yokoten trust` | 測試過的模型 |
 |---|---|---|---|
-| Claude Code | yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | yes | yes | `deepseek-flash` |
-| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | yes | yes | the default model |
+| Claude Code | ✅ yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **語言**：什麼語言都可以。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的測試指令。
 
