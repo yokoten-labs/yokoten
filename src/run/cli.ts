@@ -347,7 +347,8 @@ export const COMMANDS: Command[] = [
     text: [
       'Reads text on stdin and writes it to stdout with placeholders: <secret>, <owner>,',
       '<email>, <host> and <mark>. It hides secrets, your private marks, private email',
-      'addresses, git user.name and private remote hosts. If it fails, the text passes as it is.',
+      'addresses, git user.name and private remote hosts. If it cannot hide the text, it prints',
+      'no more of it, says why in one line on stderr, and exits 1.',
     ],
     options: [],
     example: 'git log -1 2>&1 | yokoten redact',
