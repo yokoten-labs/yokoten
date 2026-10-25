@@ -6,7 +6,7 @@ import { type Env } from '../../config.ts';
 import { WORKER_MARK, protectedGitDirs, markFinding, FIND_WRITES } from './mark.ts';
 import { configFolder, configFinding, namesConfigFolder, withHomeRead, UNKNOWN_PART, ANY_PART } from './config.ts';
 import { GIT_PLAIN_OPTIONS, isLongOption, hasShortOption } from './box.ts';
-import { isAssignment, withoutShellRedirects, realPath, FIND_ACTIONS, REDIRECT, programName, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
+import { isAssignment, withoutShellRedirects, realPath, placedPath, FIND_ACTIONS, REDIRECT, programName, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
 import { writesFile } from '../bash/body.ts';
 import { plainArgs } from '../lead-only/targets.ts';
 
@@ -159,8 +159,10 @@ function pathCandidates(word: string, folder: string | null, home: string | null
     const halves = (value: string) => (value.split('`').length % 2 === 0 ? value.replace(/^[^`]*`(?=[^`]*$)/, '$U').replace(/`[^`]*$/, '$U') : value);
     const unknown = (value: string) => value.replace(/\$\{?PWD\}?(?=[\\/]|$)/g, '\0').replace(UNKNOWN_PART, '').replace(/\0/g, '$PWD');
     for (const form of new Set([read(unknown(halves(text))), read(halves(text)).replace(UNKNOWN_PART, ANY_PART)])) {
-      const expanded = form.replace(/\*\*+/g, '*'); // bash has no globstar unless it is set
-      if (!expanded || /[$`]/.test(expanded) || expanded.startsWith('~') || (folder === null && !isAbsolute(expanded))) continue;
+      const globbed = form.replace(/\*\*+/g, '*'); // bash has no globstar unless it is set
+      // Git Bash's `/c/x` is `C:\x` on Windows (#1015); one the guard can't place is skipped, as a `$` is.
+      const expanded = !globbed || /[$`]/.test(globbed) || globbed.startsWith('~') ? null : placedPath(globbed, folder);
+      if (expanded === null || (folder === null && !isAbsolute(expanded))) continue;
       out.push(expanded);
     }
   };

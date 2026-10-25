@@ -2,6 +2,7 @@ import { realpathSync, statSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { spend } from './run.ts';
 import { commandWords } from './read.ts';
+import { climbsPastDrive, fromGitBash, pathsFor, type PathPlace } from '../../../../platform/paths.ts';
 
 export function isFolder(path: string): boolean {
   try {
@@ -99,6 +100,35 @@ export function leaves(line: string): boolean {
 
 // The script's command lines, as the shell reads them: a \ before a line end joins the
 // lines, a quote stays open across lines, a comment is dropped, and a line after one that
+
+// ---- Where the command's paths are read (#1015) ----
+//
+// checkCommand sets the place for one call, from its caller, as it sets gitAnswers.map: the
+// system and the folder Git Bash calls `/tmp`. Outside a call it is unset, and a path reads
+// as written.
+export const commandPlace: { current: PathPlace | null } = { current: null };
+
+/**
+ * A path from a command as the system reads it: on Windows Git Bash's `/c/x` is `C:\x` and
+ * `/tmp/x` is in the temp folder. Null for a `/` path that can't be placed (`/usr/x` on
+ * Windows), or for a relative one that climbs from `folder` past its drive root, where bash
+ * goes on to its own root: the caller reads it as unsure and refuses, as for any path it
+ * cannot read.
+ */
+export function placedPath(path: string, folder: string | null = null): string | null {
+  const place = commandPlace.current;
+  if (place === null) return path;
+  const placed = fromGitBash(path, place.platform, place.tmp);
+  if (placed === null || folder === null || pathsFor(place.platform).isAbsolute(placed)) return placed;
+  return climbsPastDrive(folder, placed, place.platform) ? null : placed;
+}
+
+/** `path` from `folder` as the system reads it; null when the guard can't place it (see placedPath). */
+export function resolvedFrom(folder: string, path: string): string | null {
+  const placed = placedPath(path, folder);
+  // A Git Bash path the helper placed is already a full path on its system.
+  return placed === null ? null : placed !== path ? placed : resolve(folder, placed);
+}
 
 /**
  * The real path, through symlinks. git reports the repo root's real path, and a tool may

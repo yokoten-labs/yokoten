@@ -1,14 +1,29 @@
-import { isAbsolute, join } from 'node:path';
+import nodePath from 'node:path';
 import { finding, type Finding } from '../../message.ts';
 import { type Env } from '../../config.ts';
 import { stripWorktreeRoot, LEAD_ONLY_FIX, isLeadOnly, isGranted } from './edit.ts';
-import { base } from '../bash/read/words.ts';
+import { base, commandPlace, placedPath } from '../bash/read/words.ts';
 import { UNSURE_FOLDER_FIX, writeTargets, commitTargets, type WriteTarget, type FileRules } from './targets.ts';
+import { pathsFor } from '../../../platform/paths.ts';
 
-function isUnsureTarget(target: WriteTarget, env: Env): boolean {
-  if (target.from !== null || target.path === '' || target.path === '-') return false;
-  const expanded = /^~(?=\/|$)/.test(target.path) && env.HOME ? join(env.HOME, target.path.slice(1)) : target.path;
-  return !isAbsolute(expanded);
+// A `/` path Git Bash reads as one of its own folders (`/usr/x`, `/etc/x`): on Windows the
+// guard can't tell which file that is, so it is refused as unsure (#1015).
+const UNPLACED_FIX = 'write the path with its drive, as `C:/...` or `/c/...`, or relative to your worktree';
+
+/** Why the guard can't tell which file a target is: `folder` (relative, from an unknown folder), `place` (a Git Bash path), or null. */
+function unsureTarget(target: WriteTarget, env: Env): 'folder' | 'place' | null {
+  if (target.path === '' || target.path === '-') return null;
+  const paths = commandPlace.current ? pathsFor(commandPlace.current.platform) : nodePath;
+  const placed = placedPath(/^~(?=\/|$)/.test(target.path) && env.HOME ? paths.join(env.HOME, target.path.slice(1)) : target.path, target.from);
+  if (placed === null) return 'place';
+  return target.from === null && !paths.isAbsolute(placed) ? 'folder' : null;
+}
+
+function unsureFinding(target: WriteTarget, env: Env, does: string): Finding | null {
+  const unsure = unsureTarget(target, env);
+  if (unsure === 'place') return finding('lead-only', `${does} ${target.path}, a Git Bash path yokoten can't place on Windows`, UNPLACED_FIX);
+  if (unsure === 'folder') return finding('lead-only', `${does} ${target.path}, and yokoten can't tell which file that is from an unknown folder`, UNSURE_FOLDER_FIX);
+  return null;
 }
 
 export function checkLeadOnlyWrites(words: string[], { env, rules, folder }: { env: Env; rules: FileRules; folder: string | null }): Finding | null {
@@ -31,16 +46,14 @@ export function checkLeadOnlyWrites(words: string[], { env, rules, folder }: { e
       }
       continue;
     }
-    if (isUnsureTarget(target, env)) {
-      return finding('lead-only', `this command writes ${target.path}, and yokoten can't tell which file that is from an unknown folder`, UNSURE_FOLDER_FIX);
-    }
+    const unsure = unsureFinding(target, env, 'this command writes');
+    if (unsure) return unsure;
     const path = stopped(target);
     if (path !== null) return finding('lead-only', `this command writes ${path}, which is lead-only (yokoten.json "leadOnly")`, LEAD_ONLY_FIX);
   }
   for (const target of commitTargets(words, folder, rules.rootOf, env)) {
-    if (isUnsureTarget(target, env)) {
-      return finding('lead-only', `this commit changes ${target.path}, and yokoten can't tell which file that is from an unknown folder`, UNSURE_FOLDER_FIX);
-    }
+    const unsure = unsureFinding(target, env, 'this commit changes');
+    if (unsure) return unsure;
     const path = stopped(target);
     if (path !== null) return finding('lead-only', `this commit changes ${path}, which is lead-only (yokoten.json "leadOnly")`, `unstage it with \`git restore --staged ${path}\`, then ${LEAD_ONLY_FIX}`);
   }

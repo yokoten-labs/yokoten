@@ -1,9 +1,23 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { rmSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
-import { makeTempDir, blocked, allowed, makeHooksRepo, setHooks } from '../../../../test/repo/helpers.ts';
+import { makeTempDir, makeSandbox, blocked, allowed, makeHooksRepo, setHooks } from '../../../../test/repo/helpers.ts';
+
+// #1015: Git Bash names the repo's hooks folder `/c/.../.git/hooks`. The place is passed in
+// with this disk's temp folder as `/tmp`, so Linux CI walks a real repo.
+test('hooks setting: a write to the hooks by a Git Bash path is refused on Windows (#1015)', () => {
+  const sandbox = makeSandbox();
+  const place = { platform: 'win32', tmp: dirname(sandbox.repo) } as const;
+  const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: sandbox.repo, place });
+  for (const command of ['echo x > /tmp/repo/.git/hooks/pre-commit', 'cp a.sh /tmp/repo/.git/hooks/pre-commit', 'echo x > /tmp/repo/.git/config']) {
+    assert.equal(run(command)?.id, 'hooks-path', command);
+  }
+  // Positive controls: a file in the work tree, and a read of the hook.
+  for (const command of ['echo x > /tmp/repo/notes.txt', 'cat /tmp/repo/.git/hooks/pre-commit']) assert.equal(run(command), null, command);
+});
 
 test('hooks setting: a read passes, a change or a one-command skip blocks (#114)', () => {
   allowed('git config core.hooksPath');

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { makeSandbox, yokotenSandbox } from '../../../../test/repo/helpers.ts';
-import type { Env } from '../../../../src/rules/config.ts';
+import { DEFAULTS, type Env } from '../../../../src/rules/config.ts';
 
 test('lead-only files: a worker shell write under .worktrees/<issue>/ is stopped, not the lead (#571)', () => {
   const sandbox = yokotenSandbox();
@@ -37,4 +37,56 @@ test('lead-only files: the hook stops a shell write from the plugin agent yokote
     assert.equal((await call()).status, 0, 'the lead');
     assert.equal((await call('yokoten:reviewer')).status, 0, 'not a worker');
   }
+});
+
+// #1015: on Windows a worker writes Git Bash paths (`/c/Users/...`, `/tmp/...`). They name the
+// same files as `C:\Users\...`, so the same writes are refused. The place is passed in, so
+// Linux CI reads them as Windows does; the paths are text, with nothing on this disk.
+test('lead-only files: a worker write by a Git Bash path is refused on Windows (#1015)', () => {
+  const place = { platform: 'win32', tmp: 'C:\\Users\\agent\\AppData\\Local\\Temp' } as const;
+  const repo = 'C:\\Users\\agent\\proj';
+  const worktree = `${repo}\\.worktrees\\1015-w`;
+  const repos = [repo, `${place.tmp}\\scratch`].map((root) => ({ root, leadOnly: DEFAULTS.leadOnly }));
+  const run = (command: string) => checkCommand(command, { env: { YOKOTEN_ROLE: 'worker' }, cwd: worktree, repos, place });
+  const refused: [string, RegExp][] = [
+    ['echo hacked > /c/Users/agent/proj/AGENTS.md', /writes \/c\/Users\/agent\/proj\/AGENTS\.md|AGENTS\.md, which is lead-only/],
+    ["echo 'on: push' > /c/Users/agent/proj/.github/workflows/ci.yml", /lead-only/],
+    ['cp notes.md /c/Users/agent/proj/AGENTS.md', /lead-only/],
+    ['sed -i s/a/b/ /c/Users/agent/proj/AGENTS.md', /lead-only/],
+    ['rm /c/Users/agent/proj/AGENTS.md', /lead-only/],
+    ['rm -rf /c/Users/agent/proj/.github', /lead-only/],
+    ['echo x > /c/Users/agent/proj/.yokoten/state.json', /lead-only/],
+    ['echo hacked > /C/Users/agent/proj/AGENTS.md', /lead-only/],
+    ['echo hacked > /c/Users/agent/proj/.worktrees/1015-w/AGENTS.md', /lead-only/],
+    ['echo hacked > /tmp/scratch/AGENTS.md', /lead-only/],
+    ["echo 'on: push' > /tmp/scratch/.github/workflows/ci.yml", /lead-only/],
+    ['cd /c/Users/agent/proj && echo hacked > AGENTS.md', /lead-only/],
+    ['git -C /c/Users/agent/proj checkout AGENTS.md', /lead-only/],
+    // The forms that were refused before stay refused.
+    ['echo hacked > C:/Users/agent/proj/AGENTS.md', /lead-only/],
+    ["echo hacked > 'C:\\Users\\agent\\proj\\AGENTS.md'", /lead-only/],
+    ['echo hacked > "C:\\Users\\agent\\proj\\AGENTS.md"', /lead-only/],
+  ];
+  for (const [command, what] of refused) {
+    const finding = run(command);
+    assert.equal(finding?.id, 'lead-only', command);
+    assert.match(finding?.what ?? '', what, command);
+  }
+  // Unsure: a Git Bash folder of its own, and a climb past the drive, where bash goes on from
+  // `/`. The worker's mark rule answers first, with the same reason.
+  for (const command of ['echo x > /usr/x', 'echo x > ../../../../../../c/Users/agent/proj/AGENTS.md', 'rm -rf /etc/x']) {
+    assert.match(run(command)?.what ?? '', /can't place on Windows/, command);
+  }
+  // Positive controls: the worker's own files, in every form, and files outside every repo.
+  for (const command of [
+    'echo x > src/a.ts',
+    'echo x > C:/Users/agent/proj/.worktrees/1015-w/src/a.ts',
+    "echo x > 'C:\\Users\\agent\\proj\\.worktrees\\1015-w\\src\\a.ts'",
+    'echo x > /c/Users/agent/proj/.worktrees/1015-w/src/a.ts',
+    'echo x > /C/Users/agent/proj/.worktrees/1015-w/src/a.ts',
+    'cd /c/Users/agent/proj/.worktrees/1015-w && echo x > src/a.ts',
+    'echo x > /tmp/out.txt',
+    'echo x > /dev/null',
+    'echo x 2> /dev/stderr',
+  ]) assert.equal(run(command), null, command);
 });

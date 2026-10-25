@@ -7,7 +7,7 @@ import { markFinding, checkWorkerWrites } from '../worker/mark.ts';
 import { checkWorkerBox } from '../worker/box.ts';
 import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark } from '../worker/sends.ts';
-import { base, isGit, GIT_VALUE_OPTIONS, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
+import { base, isGit, GIT_VALUE_OPTIONS, commandPlace, placedPath, resolvedFrom, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
 import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner } from './lose-work.ts';
 import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, checkGitSetupWrites, checkHomeSetting, checkWorkerRealHome } from '../hooks/settings.ts';
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
@@ -19,13 +19,18 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
+import { hostPathPlace, type PathPlace } from '../../../platform/paths.ts';
 
-export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
+// `place` is where the command's paths are read (#1015): the entry point passes this machine's;
+// a test passes another system's, so Linux CI tests the Windows reading.
+export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[]; place?: PathPlace }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
   // never let through: an error here must not open the guard.
   const outerAnswers = gitAnswers.map;
+  const outerPlace = commandPlace.current;
   try {
     gitAnswers.map = outerAnswers ?? new Map();
+    commandPlace.current = options.place ?? outerPlace ?? hostPathPlace();
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
     // The file rules are looked up once per call, and only for a worker.
     const rules = isWorker ? fileRules(options.repos ?? []) : undefined;
@@ -34,6 +39,7 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
     gitAnswers.map = outerAnswers;
+    commandPlace.current = outerPlace;
   }
 }
 
@@ -82,7 +88,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     // The name is built only on a refusal (#498).
     const saw = (isMarked: (word: string) => boolean) => writeRisk(words, { heredoc, plainText, plainAt, fills, writers, isMarked });
     const reason =
-      checkGit(words, { env, config, cwd, rules }) ??
+      checkGit(words, { env, config, cwd, folder: postCwd, rules }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
       hostSettingsWrite(words) ??
@@ -102,7 +108,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkBlocked(words, config?.commands.block ?? {}) ??
       // The text a post carries comes before the publish rule: a publish that would leak a
       // private mark names the mark, which is the part the agent must fix (#391, #829).
-      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder } }) ??
+      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd }) : null) ??
       // Last, so a worker's own rule names the case first. The commit's content: a repo with no
@@ -121,7 +127,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // walk over the command's programs. That walk reads only the words already parsed,
       // so it runs under its own budget: a long command that the reader accepted must not
       // lose these rules, and a rule that runs after the read must not make it unreadable.
-      withBudget(words.length, () => checkDamage(words, postCwd, env), true) ??
+      withBudget(words.length, () => checkDamage(words, postCwd, env, commandPlace.current?.platform), true) ??
       // Git's own ways to lose uncommitted work, a stash, the reflog or the default branch
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).
@@ -231,8 +237,9 @@ function folderForGitDirectory(value: string | undefined, from: string | null): 
   if (value === undefined || value === '') return null;
   // A relative folder needs a folder to start from: `GIT_DIR=` sets the working folder to
   // null, and then only a path that stands on its own can be read.
-  if (from === null && !isAbsolute(value)) return null;
-  const folder = resolve(from ?? '', value);
+  const placed = placedPath(value, from);
+  if (placed === null || (from === null && !isAbsolute(placed))) return null;
+  const folder = resolve(from ?? '', placed);
   return base(folder) === '.git' ? dirname(folder) : folder;
 }
 
@@ -315,24 +322,49 @@ function followsTags(directory: string | null, env: Env): boolean {
 
 // Each check looks for its program anywhere in the command, so a prefix such as FOO=1,
 // sudo, env, command, exec, time, nice, nohup, timeout or xargs does not hide it.
-function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; rules?: FileRules }): Finding | null {
+/**
+ * The folder git works in, from `from`: `-C` moves it, and `GIT_DIR=…` names the git folder
+ * before the program does. With `--git-dir`, the folder that reads the same tags and settings
+ * is the git folder's parent, so a push of a tag stays visible; `--work-tree` does not move
+ * the git folder at all (#865). `isNamed`: the command names the folder itself.
+ */
+function gitDirectoryOf(words: string[], start: number, from: string | null): { directory: string | null; isNamed: boolean } {
+  // The shell keeps the last assignment, and so does git: the first one can be a decoy.
+  const namedDirectory = words.slice(0, start).findLast((word) => /^GIT_DIR=/.test(word));
+  let directory = from;
+  let isNamed = namedDirectory !== undefined;
+  if (namedDirectory !== undefined) directory = folderForGitDirectory(namedDirectory.slice('GIT_DIR='.length), from);
+  for (let index = start + 1; index < words.length && words[index].startsWith('-'); index += GIT_VALUE_OPTIONS.has(words[index]) ? 2 : 1) {
+    if (words[index] === '-C') {
+      isNamed = true;
+      if (directory !== null) directory = resolvedFrom(directory, words[index + 1] ?? '');
+    }
+    const gitDirectory = /^--git-dir(?:=(.*))?$/s.exec(words[index]);
+    if (gitDirectory) {
+      isNamed = true;
+      directory = folderForGitDirectory(gitDirectory[1] ?? words[index + 1], directory);
+    }
+  }
+  return { directory, isNamed };
+}
+
+// `folder`: where the command runs after its `cd`s. `cwd` is null after a cd, for the hooks
+// setting; a push still reads its tags from the folder the cd went to (#1015).
+function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules }): Finding | null {
   const start = words.findIndex(isGit);
   if (start === -1) return null;
   const settings: string[] = [];
   const fromEnvironment: string[] = []; // --config-env name=VARIABLE
-  // The folder git works in: `-C` moves it, and `GIT_DIR=…` names the git folder before
-  // the program does. With `--git-dir`, the folder that reads the same tags and settings is
-  // the git folder's parent, so a push of a tag stays visible; `--work-tree` does not move
-  // the git folder at all (#865).
-  // The shell keeps the last assignment, and so does git: the first one can be a decoy.
-  const namedDirectory = words.slice(0, start).findLast((word) => /^GIT_DIR=/.test(word));
-  let directory: string | null = cwd;
-  if (namedDirectory !== undefined) directory = folderForGitDirectory(namedDirectory.slice('GIT_DIR='.length), cwd);
+  const here = gitDirectoryOf(words, start, cwd);
+  const { directory } = here;
+  // Where a push reads its tags: after a cd, the folder it went to. A folder the command
+  // names (or moves to) that git can't read leaves the push unknown, so it is refused.
+  const moved = cwd === null && folder !== null;
+  const pushFrom = moved ? gitDirectoryOf(words, start, folder) : here;
+  const pushDirectory = pushFrom.directory;
+  const isPushUnknown = () => (pushFrom.isNamed || moved) && (pushDirectory === null || readGit(pushDirectory, ['rev-parse', '--git-dir'], env) === null);
   let index = start + 1;
   while (index < words.length && words[index].startsWith('-')) {
-    if (words[index] === '-C' && directory !== null) directory = resolve(directory, words[index + 1] ?? '');
-    const gitDirectory = /^--git-dir(?:=(.*))?$/s.exec(words[index]);
-    if (gitDirectory) directory = folderForGitDirectory(gitDirectory[1] ?? words[index + 1], directory);
     if (words[index] === '-c') settings.push(words[index + 1] ?? '');
     if (words[index] === '--config-env') fromEnvironment.push(words[index + 1] ?? '');
     if (words[index].startsWith('--config-env=')) fromEnvironment.push(words[index].slice('--config-env='.length));
@@ -373,17 +405,21 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
       const tagFlag = options.find((a) => isGitLongOption(a, '--tags') || isGitLongOption(a, '--follow-tags') || isGitLongOption(a, '--mirror'));
       // A dry run changes nothing on the remote, so it may name tags.
       if (tagFlag && !dryRun) return release(`git push ${tagFlag} pushes tags`);
-      if (!dryRun && pushesTag(args, directory, env)) return release(`git push ${args.join(' ')} pushes a release tag`);
+      // A repo git can't read: neither its tags nor push.followTags can be read (#1015).
+      if (!dryRun && isPushUnknown()) {
+        return finding('release', "yokoten can't read the repo this push runs in, so it can't tell whether the push carries a tag", 'run the push from the repo folder, or name the folder by a path git can open, then push again');
+      }
+      if (!dryRun && pushesTag(args, pushDirectory, env)) return release(`git push ${args.join(' ')} pushes a release tag`);
       // The setting can arrive in an earlier call: `git config push.followTags true`, then
       // a plain `git push` (#829). Read the config git will read.
-      if (!dryRun && followsTags(directory, env)) return release('git push carries tags, because push.followTags is set');
+      if (!dryRun && followsTags(pushDirectory, env)) return release('git push carries tags, because push.followTags is set');
     }
     const force = args.find((a) => isGitLongOption(a, '--force') || /^-[a-z]*f[a-z]*$/i.test(a) || a.startsWith('+'));
     if (force) return finding('force-push', `git push ${force} forces the push`, 'use --force-with-lease, which stops when the remote has work you have not seen');
     // A worker commits in its worktree; the lead reviews and pushes (#555).
     if (env.YOKOTEN_ROLE === 'worker') return sends('a worker does not push');
     const pushed = findPushedDeletes(withoutShellRedirects(words, argsAt));
-    const gone = pushed?.find((name) => isDefaultBranch(name, directory, env));
+    const gone = pushed?.find((name) => isDefaultBranch(name, pushDirectory, env));
     if (gone !== undefined) return deleteBranchFinding(`\`git push\` deletes the default branch \`${gone}\` on the remote`);
   }
   if (sub === 'tag' && !env.YOKOTEN_RELEASE_APPROVAL) {

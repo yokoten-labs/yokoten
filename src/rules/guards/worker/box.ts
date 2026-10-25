@@ -5,7 +5,7 @@ import { type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';
 import { gitLinkAbove, FIND_WRITES } from './mark.ts';
 import { onlyReads, symlinkTargetReach, configReach } from './config-command.ts';
-import { isGit, isAssignment, withoutShellRedirects, realPath, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
+import { isGit, isAssignment, withoutShellRedirects, realPath, placedPath, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';
 
 // ---- The worker's box (#591) ----
@@ -158,7 +158,9 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         if (paths.length !== 1 || target === '-' || target.startsWith('-') || !PLAIN_PATH.test(target) || target === '') {
           return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / - and a leading ~), not ${paths.join(' ') || 'no path'}`);
         }
-        const expanded = target.startsWith('~') ? (home === null ? null : home + target.slice(1)) : target;
+        const read = target.startsWith('~') ? (home === null ? null : home + target.slice(1)) : target;
+        // Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015); a folder it can't place is outside.
+        const expanded = read === null ? null : placedPath(read, folder);
         const full = expanded === null ? null : isAbsolute(expanded) ? expanded : folder === null ? null : resolve(folder, expanded);
         const real = full === null ? null : realPath(full);
         if (real === null || box === null || (real !== box && !real.startsWith(box + sep))) {

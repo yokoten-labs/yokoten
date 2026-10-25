@@ -45,7 +45,19 @@ export const RUNNERS: Record<string, RegExp | null> = {
   sudo: /^(-[a-zA-Z]*[si]|--shell|--login)/, doas: /^-[a-zA-Z]*s/, env: /^(-[a-zA-Z]*S|--s)/,
 };
 
-const RUNNER_OPTIONS = Object.entries(RUNNERS).flatMap(([runner, option]) => (option ? [[runner, option] as const] : []));
+// Windows' cmd runs the words after its switches (`cmd /c del x`, `cmd //c` from Git Bash,
+// `CMD.EXE /c "rd /s x"`) as commands (#1015).
+export const isCmd = (word: string) => /^cmd(?:\.exe)?$/i.test(base(word));
+const CMD_SWITCH = /^\/\/?[a-z](?::\S*)?$/i;
+
+// The command cmd runs: the words after its switches. cmd reads no `\` escapes, so each `\`
+// is kept for the shell reader that reads the string again.
+function cmdCommand(words: string[], index: number): string {
+  while (index < words.length && CMD_SWITCH.test(words[index])) index++;
+  return words.slice(index).map((word) => word.replace(/\\/g, '\\\\')).join(' ');
+}
+
+const RUNNER_OPTIONS =Object.entries(RUNNERS).flatMap(([runner, option]) => (option ? [[runner, option] as const] : []));
 
 // Where a shell or a runner stands in the command, or -1. Anywhere counts: `find -exec sh
 // -c`, `xargs sh -c` and `sudo bash -c` all run a string.
@@ -56,7 +68,7 @@ export function runnerAt(words: string[]): number {
   let at = -1;
   for (let i = words.length - 1; i >= 0; i--) {
     const name = base(words[i]);
-    if (isShell(words[i]) || (Object.hasOwn(RUNNERS, name) && (RUNNERS[name] === null || later.has(name))) || sourcesInput(words, i)) at = i;
+    if (isShell(words[i]) || isCmd(words[i]) || (Object.hasOwn(RUNNERS, name) && (RUNNERS[name] === null || later.has(name))) || sourcesInput(words, i)) at = i;
     for (const [runner, option] of RUNNER_OPTIONS) if (option.test(words[i])) later.add(runner);
   }
   return at;
@@ -237,6 +249,7 @@ export function runString(words: string[], at: number): string {
   if (name === 'ssh') return words.slice(sshCommand(words, at + 1)).join(' ');
   if (name === 'flock') return flockCommand(words, at + 1);
   if (name === 'env') return envCommand(words, at + 1) ?? words.slice(at + 1).join(' ');
+  if (isCmd(words[at])) return cmdCommand(words, at + 1);
   return words.slice(at + 1).join(' ');
 }
 

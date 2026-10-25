@@ -15,13 +15,14 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
+import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
 import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
-import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
+import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
 import { loadMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
 
-export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
+export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
 
 /**
  * The marks a project allows in its own repo (#424): those its yokoten.json "privacy.allow"
@@ -897,6 +898,7 @@ export function scanText(
   const own = ownMarks(marks, ownAllow);
   const stopped = own.length ? marks.filter((mark) => !own.includes(mark)) : marks;
   let cleanReason: ((text: string) => string) | undefined;
+  const unglue = stopped.length ? makeUngluer(env.HOME) : null;
   lines.forEach((line, index) => {
     const where = { file, line: index + 1 };
     // The secret itself is never printed either, only its kind. An ignore with no reason
@@ -933,11 +935,12 @@ export function scanText(
       if (octets.some((n) => n > 255) || OK_IP.some((re) => re.test(hit)) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
       problems.push(finding('ip', 'an IP address', 'use a placeholder from 192.0.2.0/24', { ...where, grade: 'sure', ...ignoreFields('ip', [hit], true) }));
     }
-    const folded = stopped.length ? foldLine(line) : null;
+    const marked = stopped.length && unglue ? unglue(line) : line;
+    const folded = stopped.length ? foldLine(marked) : null;
     for (const mark of stopped) {
       // The mark itself is never printed: the output may land in a CI log or a chat.
-      if (!hasMark(line, mark, folded!)) continue;
-      if (places && logins.includes(mark) && !hasMark(places(line, index, mark), mark)) continue;
+      if (!hasMark(marked, mark, folded!)) continue;
+      if (places && logins.includes(mark) && !hasMark(places(marked, index, mark), mark)) continue;
       const { what, fix } = describeMark(kinds && kinds.has(mark) ? kinds.get(mark) : undefined);
       problems.push(finding('private-mark', what, fix, { ...where, grade: 'sure', ...ignoreFields('private-mark', [mark], false) }));
     }
@@ -952,6 +955,18 @@ const BEFORE_HOME = String.raw`(?<!${PATH_CHAR}|[.\\/])`;
 const AFTER_HOME = String.raw`(?!${PATH_CHAR}|\.${PATH_CHAR})`;
 // Where a cut home path ends: the end of a line, maybe after `…`, `...` or spaces (#404).
 const CUT_END = String.raw`(?=(?:…|\.\.\.)?[ \t]*\r?$)`;
+
+/**
+ * A function that writes a Windows home bash ran together (`C:Users<name>AppData`) back with
+ * its backslashes, and one after it, so the scan finds the user name in it as a word (#1017).
+ * Null when the home has no such form. Case does not count: a drive path is a Windows path.
+ */
+function makeUngluer(home: string | undefined): ((line: string) => string) | null {
+  const forms = gluedHomes(home?.replace(/[\\/]+$/, '')).sort((a, b) => b.glued.length - a.glued.length);
+  if (!forms.length) return null;
+  const pattern = new RegExp(`${BEFORE_HOME}(?:${forms.map((form) => `(${escapeRegExp(form.glued)})`).join('|')})`, 'giu');
+  return (line) => line.replace(pattern, (...groups: unknown[]) => `${forms[groups.slice(1, forms.length + 1).findIndex((group) => group !== undefined)].path}\\`);
+}
 
 /** The forms of one home folder that text may hold: as given, its real path, and on Windows its MSYS form. */
 function homeForms(home: string | undefined): string[] {
@@ -1000,8 +1015,12 @@ export function hideHome(text: string, env: Env, { platform = process.platform a
   const whole = text.replace(new RegExp(`${BEFORE_HOME}(?:${asPattern(homes)})${AFTER_HOME}`, flags), '~');
   // The home inside a URL, its slashes written as %2F or %5C: `vscode-remote://...%2Fhome%2F<name>%2Fx`.
   const encoded = whole.includes('%') ? whole.replace(new RegExp(`${BEFORE_HOME}(?:${asPattern(homes, `%(?:2[Ff]|5[Cc])`)})(?=${ENCODED_EDGE}|$|(?!${PATH_CHAR}|\\.${PATH_CHAR}))`, flags), '~') : whole;
+  // The home bash ran together, with its backslashes dropped: `C:Users<name>AppData` (#1017).
+  // Its end can't be told from the folders bash glued after it, so any text may follow.
+  const glued = [...new Set(homes.flatMap((home) => gluedHomes(home).map((form) => form.glued)))].sort((a, b) => b.length - a.length);
+  const unglued = glued.length ? encoded.replace(new RegExp(`${BEFORE_HOME}(?:${glued.map(escapeRegExp).join('|')})`, flags), '~') : encoded;
   const cuts = [...new Set(homes.flatMap(cutForms))].sort((a, b) => b.length - a.length);
-  return cuts.length ? encoded.replace(new RegExp(`${BEFORE_HOME}(?:${asPattern(cuts)})${CUT_END}`, `${flags}m`), '~') : encoded;
+  return cuts.length ? unglued.replace(new RegExp(`${BEFORE_HOME}(?:${asPattern(cuts)})${CUT_END}`, `${flags}m`), '~') : unglued;
 }
 
 /**
@@ -1369,6 +1388,8 @@ export interface CommandFiles {
   saw?: (isMarked: (word: string) => boolean) => Risk | undefined;
   /** A cd in the command: a path with `..` goes up from the real folder, behind any symlink. */
   movesFolder?: boolean;
+  /** Where the command's paths are read: on Windows Git Bash's `/c/x` is `C:\x` (#1015). Unset: as written. */
+  place?: PathPlace;
 }
 
 /** What a gh command posts: its pieces, a file the guard can't find, or a short-option cluster. Null when it posts nothing. */
@@ -1723,6 +1744,13 @@ export function checkPost(
     // A `..` past a `cd` escapes whatever folder the command lands in, so it is named
     // even from an unknown one: the file stays unreadable either way (#559).
     if (files?.movesFolder && full.split(/[\\/]/).includes('..')) return { saw: { what: 'a `cd` before a path with `..`' } };
+    // A Git Bash path the guard can't place on Windows (`/usr/x`, or a climb past the drive) is unsure (#1015).
+    const place = files?.place;
+    if (place) {
+      const placed = fromGitBash(full, place.platform, place.tmp);
+      if (placed === null || (cwd !== null && !isAbsolute(placed) && climbsPastDrive(cwd, placed, place.platform))) return 'unsure';
+      full = placed;
+    }
     if (!isAbsolute(full) && cwd === null) return 'unsure';
     const at = isAbsolute(full) || !cwd ? full : `${cwd}/${full}`;
     let stat: ReturnType<typeof statSync> | null = null;
