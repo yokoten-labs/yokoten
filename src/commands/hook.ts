@@ -54,7 +54,7 @@ import {
   wasRefusedRecently,
   writeAgentChecks,
 } from '../run/hook.ts';
-import { bullets, field, type Invocation, type Output, parse, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
+import { bullets, count, field, type Invocation, nextLine, type Output, parse, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
 
 // Each runtime sends its tool call in its own shape; its adapter turns it into an Action.
 // The table below asks the adapters' contract (#395), never a runtime's name.
@@ -849,14 +849,12 @@ export function runAnchor(invocation: Invocation): number {
     return 0;
   }
   if (!anchors.length) {
-    print(invocation, ['yokoten anchor: no anchors yet. A worker records one when its checks pass and its tree is clean.']);
+    print(invocation, [...title('anchor', 'no checkpoints yet'), '', ...row('to do', 'A worker records one when its checks pass and its tree is clean')]);
     return 0;
   }
-  const lines = [`yokoten anchor: ${anchors.length} checkpoint${anchors.length === 1 ? '' : 's'}, newest first.`];
-  for (const anchor of anchors) {
-    lines.push(`  ${anchor.commit.slice(0, 12)} ${anchor.at} ${anchor.check}`);
-  }
-  lines.push(`Go back without losing anything: git switch -c try-2 <commit>`);
+  const lines = [...title('anchor', `${count(anchors.length, 'checkpoint')}, newest first`), ''];
+  for (const anchor of anchors) lines.push(...row('ok', `${anchor.at} ${anchor.check}`, anchor.commit.slice(0, 12)));
+  lines.push('', ...nextLine('git switch -c try-2 <commit>'));
   print(invocation, lines);
   return 0;
 }

@@ -179,8 +179,8 @@ test('mcp command: a clean server passes, in the text and JSON forms', async () 
   const sandbox = mcpProject('clean');
   const result = await sandbox.call(['mcp']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /yokoten mcp: ok \(1 server\(s\), 2 tool\(s\)\)/);
-  assert.match(result.stdout, /2 tool\(s\), \d+ B of definitions, longest description \d+ characters/);
+  assert.match(result.stdout, /yokoten mcp --check · 2 tools ready/);
+  assert.match(result.stdout, /2 tools, \d+ B/);
   const json = await sandbox.call(['mcp', '--json']);
   assert.equal(json.status, 0, json.stderr);
   const report = JSON.parse(json.stdout);
@@ -213,7 +213,7 @@ test('mcp command: --command runs a server that has no config entry', async () =
   const command = `${process.execPath} ${join(sandbox.repo, 'server.ts')} clean`;
   const result = await sandbox.call(['mcp', '--command', command]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /server "command line"/);
+  assert.match(result.stdout, /command line/);
 });
 
 test('mcp command: a Windows-only launch is a warning, even when the server cannot start here', async () => {

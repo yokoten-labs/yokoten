@@ -1258,7 +1258,7 @@ test('provenance: a commit names its writer, reviewers, approver, tier and issue
   gh('printf "owner-login\\t2026-10-20T00:00:00Z\\n"');
   let result = await sandbox.call(['provenance', 'HEAD'], { extra: path });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^[0-9a-f]{7} feat\(guard\): a pipe is refused \(#12\)\n  writer: Grok \(grok-4\.7\)\n  reviewers: Claude Code \(claude-opus-5-5\)\n  approver: owner-login\n  tier: B\n  issue: #12, #13$/m);
+  assert.match(result.stdout, /^yokoten provenance · [0-9a-f]{7} feat\(guard\): a pipe is refused \(#12\)\n\n  writer      Grok \(grok-4\.7\)\n  reviewers   Claude Code \(claude-opus-5-5\)\n  approver    owner-login\n  tier        B\n  issue       #12, #13$/m);
   const json = JSON.parse((await sandbox.call(['provenance', 'HEAD', '--json'], { extra: path })).stdout);
   assert.equal(json.length, 1);
   assert.equal(json[0].approver, 'owner-login');
@@ -1270,7 +1270,7 @@ test('provenance: a commit names its writer, reviewers, approver, tier and issue
   gh('exit 1');
   result = await sandbox.call(['provenance', 'HEAD'], { extra: path });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /  approver: unknown$/m);
+  assert.match(result.stdout, /  approver    unknown$/m);
   assert.equal(JSON.parse((await sandbox.call(['provenance', 'HEAD', '--json'], { extra: path })).stdout)[0].approver, null);
 });
 
@@ -1290,7 +1290,7 @@ test('provenance: a range shows each commit, and a bad ref is one finding (#756)
   commit('docs: second (#8)', 'Made with worker Grok (grok-4.7)');
   const result = await sandbox.call(['provenance', 'HEAD~2..HEAD']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal((result.stdout.match(/^  writer: /gm) ?? []).length, 2, result.stdout);
+  assert.equal((result.stdout.match(/^  writer      /gm) ?? []).length, 2, result.stdout);
   assert.match(result.stdout, /docs: first \(#7\)/);
   assert.match(result.stdout, /docs: second \(#8\)/);
   const bad = await sandbox.call(['provenance', 'not-a-ref']);
@@ -1342,7 +1342,7 @@ test('borrowed --dry-run: a repo with no wheel writes nothing and says so', asyn
   const sandbox = makeSandbox();
   const result = await sandbox.call(['borrowed', '--dry-run']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /borrowed: 0 file\(s\), 0 source\(s\) changed, 0 unreadable/);
+  assert.match(result.stdout, /yokoten borrowed · 0 sources, none moved/);
 });
 // #432: `pr sync` lists the open pull requests first. With none, it needs no bot and no
 // network, and says so in one line. The merge itself is tested in test/run/check.test.ts.

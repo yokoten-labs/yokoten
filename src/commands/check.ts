@@ -33,7 +33,7 @@ import { isCodeFile, nameNotes } from '../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, field, type Invocation, parse, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
+import { bullets, count, field, type Invocation, parse, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -349,14 +349,15 @@ export async function runProvenance(invocation: Invocation): Promise<number> {
     return 0;
   }
   const lines: string[] = [];
-  for (const row of rows) {
+  for (const record of rows) {
     if (lines.length) lines.push('');
-    lines.push(`${row.commit.slice(0, 7)} ${row.subject}`);
-    lines.push(`  writer: ${agentsText(row.writers)}`);
-    lines.push(`  reviewers: ${agentsText(row.reviewers)}`);
-    lines.push(`  approver: ${row.approver || 'unknown'}`);
-    lines.push(`  tier: ${row.tier ?? 'none'}`);
-    lines.push(`  issue: ${row.issues.length ? row.issues.map((issue) => `#${issue}`).join(', ') : 'none'}`);
+    lines.push(...title('provenance', `${record.commit.slice(0, 7)} ${record.subject}`), '');
+    const field = (label: string, value: string): string => `  ${label.padEnd(12)}${value}`;
+    lines.push(field('writer', agentsText(record.writers)));
+    lines.push(field('reviewers', agentsText(record.reviewers)));
+    lines.push(field('approver', record.approver || 'unknown'));
+    lines.push(field('tier', record.tier ?? 'none'));
+    lines.push(field('issue', record.issues.length ? record.issues.map((issue) => `#${issue}`).join(', ') : 'none'));
   }
   print(invocation, lines);
   return 0;
@@ -1408,7 +1409,8 @@ export async function runBorrowed(invocation: Invocation): Promise<number> {
   if (json) printJson(invocation, { borrowed: watch, issues: issues.map(({ change, issue }) => ({ source: change.source, ...issue })) });
   else if (isDryRun) {
     for (const { change, issue } of issues) print(invocation, [`would open: ${issue.title} for ${change.source}`, ...issue.body.trimEnd().split('\n')]);
-    print(invocation, [`borrowed: ${files.length} file(s), ${watch.changed.length} source(s) changed, ${watch.unreadable.length} unreadable`]);
+    const sources = new Set(files.map((file) => file.source)).size;
+    print(invocation, [...title('borrowed', `${count(sources, 'source')}, ${watch.changed.length ? `${count(watch.changed.length, 'source')} moved` : 'none moved'}`)]);
   }
   if (isDryRun || json) return watch.unreadable.length ? 1 : 0;
   let failed = watch.unreadable.length > 0;
@@ -1426,7 +1428,11 @@ export async function runBorrowed(invocation: Invocation): Promise<number> {
       failed = true;
     }
   }
-  print(invocation, [`borrowed: ${files.length} file(s), ${watch.changed.length} source(s) changed, ${watch.unreadable.length} unreadable`]);
+  const sources = new Set(files.map((file) => file.source)).size;
+  const lines = [...title('borrowed', `${count(sources, 'source')}, ${watch.changed.length ? `${count(watch.changed.length, 'source')} moved` : 'none moved'}`), ''];
+  for (const change of watch.changed) lines.push(...row('next', `${change.source} moved ${count(change.commits.length, 'commit')}`, 'upstream'));
+  for (const gap of watch.unreadable) lines.push(...row("can't check", `${gap.source}: ${gap.reason}`));
+  print(invocation, lines);
   return failed ? 1 : 0;
 }
 // ---- `yokoten pr sync` (#432) ----
