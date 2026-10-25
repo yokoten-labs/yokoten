@@ -549,7 +549,9 @@ test('codex trust on Windows: the key Codex writes reads as trusted, and a key C
   assert.equal(trustProject(root, env, 'win32').state, 'kept', 'yokoten trust keeps the choice');
   assert.equal(readTrust(root, env, 'linux').state, 'trusted', 'on Linux the exact key is the one');
   // A key with the other separator trusts nothing: Codex keeps separators as written.
-  write(projectKey(root.replace(/\//g, '\\'), 'trusted') + hooks(root));
+  const otherSeparator = root.includes('\\') ? root.replace(/\\/g, '/') : root.replace(/\//g, '\\');
+  assert.notEqual(otherSeparator, root, 'the key really has the other separator');
+  write(projectKey(otherSeparator, 'trusted') + hooks(root));
   assert.equal(readTrust(root, env, 'win32').state, 'untrusted');
   // A hook keyed in another case is another hook to Codex.
   write(projectKey(root, 'trusted') + hooks(root.toLowerCase()));
