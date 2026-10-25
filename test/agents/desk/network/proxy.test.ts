@@ -8,6 +8,10 @@ import { test } from 'node:test';
 import { isAllowedTarget, type ProxyEvent, readConnectTarget, startProxy } from '../../../../src/agents/desk/network/proxy.ts';
 import { makeTempDir } from '../../../repo/helpers.ts';
 
+// The proxy listens on a Unix socket in the Linux and macOS desk. A desk on native Windows
+// is not ready (#669), and a socket path there never connects, so the test hung for an hour.
+const desksOnly = { skip: process.platform === 'win32' && 'the desk proxy runs in the Linux and macOS desk only (#669)' };
+
 test('readConnectTarget: a CONNECT line with a host name and a port; nothing else', () => {
   assert.deepEqual(readConnectTarget('CONNECT API.Example.com.:443 HTTP/1.1\r\nHost: x'), { host: 'api.example.com', port: 443 });
   assert.equal(readConnectTarget('GET http://example.com/ HTTP/1.1'), null);
@@ -40,7 +44,7 @@ const talk = (path: string, text: string, until = '\u0000') =>
     socket.on('error', () => resolve(got));
   });
 
-test('startProxy: tunnels to an allowed host, refuses others and anything not CONNECT', async () => {
+test('startProxy: tunnels to an allowed host, refuses others and anything not CONNECT', desksOnly, async () => {
   const echo = createServer((socket) => socket.on('data', (chunk) => socket.end(`echo:${chunk}`)));
   await new Promise<void>((resolve) => echo.listen(0, '127.0.0.1', resolve));
   const port = (echo.address() as { port: number }).port;
@@ -64,7 +68,7 @@ test('startProxy: tunnels to an allowed host, refuses others and anything not CO
   }
 });
 
-test('startProxy: listens on a port too, for a backend that has no socket', async () => {
+test('startProxy: listens on a port too, for a backend that has no socket', desksOnly, async () => {
   const proxy = await startProxy(0, []);
   try {
     const address = proxy.server.address() as { address: string; port: number };
@@ -75,7 +79,7 @@ test('startProxy: listens on a port too, for a backend that has no socket', asyn
   }
 });
 
-test('startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed', async () => {
+test('startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed', desksOnly, async () => {
   const echo = createServer((socket) => socket.on('data', (chunk) => socket.write(`echo:${chunk}`)));
   await new Promise<void>((resolve) => echo.listen(0, '127.0.0.1', resolve));
   const port = (echo.address() as { port: number }).port;
