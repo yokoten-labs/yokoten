@@ -10,7 +10,7 @@ import { killedLine, makeSandbox, makeTempDir, runChild } from './helpers.ts';
 import { fileURLToPath } from 'node:url';
 import { COMMANDS } from '../../src/run/cli.ts';
 import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } from '../../src/run/notes/names.ts';
-import { HOME_DIR, homeDirOf } from '../../src/setup/files.ts';
+import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
@@ -1720,4 +1720,23 @@ test('the release workflow publishes the tarball as a file, not a GitHub repo na
   const publish = workflow.split('\n').filter((line) => /\bnpm publish\b/.test(line) && !line.trim().startsWith('#'));
   assert.ok(publish.length > 0, 'the release workflow runs npm publish');
   for (const line of publish) assert.match(line, /npm publish \.\//, line.trim());
+});
+
+// A test that names the current version breaks at every release bump (10-25: three update
+// tests said 0.1.0 and failed a release pull request). Read VERSION from src/setup/files.ts.
+/** The lines of `text` that name `version` as it is, or escaped for a regular expression. */
+function versionLines(text: string, version: string): number[] {
+  const dotted = version.replaceAll('.', '\\.');
+  const escaped = version.replaceAll('.', '\\\\\\.');
+  const named = new RegExp(`(^|[^0-9.])(${dotted}|${escaped})($|[^0-9])`);
+  return text.split('\n').flatMap((line, index) => (named.test(line) ? [index + 1] : []));
+}
+
+test('tests: none names the current version; they read VERSION, so a release needs no test edits', () => {
+  assert.deepEqual(versionLines("assert.match(out, /yokoten 1\\.2\\.3's/);\nconst x = 'yokoten 1.2.3';\nconst y = '1.2.30';", '1.2.3'), [1, 2], 'a written version, plain or escaped, was not caught');
+  const found: string[] = [];
+  for (const path of filesUnder(join(ROOT, 'test')).filter((file) => file.endsWith('.ts'))) {
+    for (const line of versionLines(readFileSync(join(ROOT, 'test', path), 'utf8'), VERSION)) found.push(`test/${path}:${line}`);
+  }
+  assert.deepEqual(found, [], `use VERSION from src/setup/files.ts instead of ${VERSION} at: ${found.join(', ')}`);
 });
