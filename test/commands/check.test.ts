@@ -14,6 +14,7 @@ import {
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
+import { PassThrough, Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import {
   at,
@@ -21,10 +22,10 @@ import {
   makeSandbox,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { type ActionsHealth, cutPoint, readActionsRuns, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../src/commands/check.ts';
+import { type ActionsHealth, cutPoint, failureWord, readActionsRuns, redactStream, runRedact, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../src/commands/check.ts';
 import { borrowedIssue, hasOpenIssue, prSyncEnv, pullLine } from '../../src/commands/check.ts';
 import { type BorrowedHost, watchBorrowed } from '../../src/run/check.ts';
-import { wrapForRedact } from '../../src/rules/guards/index.ts';
+import { REDACT_FAILED, wrapForRedact } from '../../src/rules/guards/index.ts';
 
 // On run, not call: one real child keeps the check entry point (exit code and output through the binary) tested (#475).
 test('check --pr: reads the CI event, lists the changed files from git, notes long prose (#47)', () => {
@@ -656,19 +657,136 @@ test('redact: in-process, the given stdin comes out hidden, a long one streamed 
   assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '' });
 });
 
-test('redact: fails open; a marks file it cannot read passes the output through, with one line (#390)', async () => {
-  const { sandbox, wrapped } = ownerSandbox();
-  // A folder where the file should be: reading it fails.
+// #1006: redact fails closed. A marks file it cannot read, or a piece it cannot redact,
+// prints nothing more of the input, one line on stderr, and exit 1. Then the wrapper hides the rest.
+const REDACT_REFUSED = /^yokoten redact: the output is hidden, because [^\n]*\n$/;
+
+test('redact: fails closed; a marks file it cannot read prints none of the input, one line, exit 1 (#1006)', async () => {
+  const { sandbox } = ownerSandbox();
+  // A folder where the file should be: reading it fails, as root too.
+  const folder = join(sandbox.home, 'marks-folder');
+  mkdirSync(folder);
+  const unreadable: [why: string, path: string][] = [['a folder', folder]];
+  // A file with no read permission: root reads it anyway, so only for others.
+  if (process.getuid?.() !== 0) {
+    const locked = join(sandbox.home, 'marks-locked');
+    writeFileSync(locked, `${CITY}\n`);
+    chmodSync(locked, 0o000);
+    unreadable.push(['a file with no read permission', locked]);
+  }
+  for (const [why, path] of unreadable) {
+    const result = await sandbox.call(['redact'], { input: `Author: ${OWNER} <${EMAIL}>\n${'more\n'.repeat(10_000)}`, extra: { YOKOTEN_PRIVATE_MARKS: path } });
+    assert.equal(result.status, 1, why);
+    assert.equal(result.stdout, '', why);
+    assert.match(result.stderr, REDACT_REFUSED, why);
+    assertHidden(result.stderr, [OWNER, EMAIL, sandbox.home]);
+  }
+});
+
+test('redact: through the wrapper, a marks file it cannot read hides the output and prints REDACT_FAILED (#1006)', () => {
+  const { sandbox } = ownerSandbox();
   const broken = join(sandbox.home, 'marks-folder');
   mkdirSync(broken);
-  const result = await sandbox.call(['redact'], { input: `by ${OWNER}\n`, extra: { YOKOTEN_PRIVATE_MARKS: broken } });
-  assert.equal(result.status, 0);
-  assert.equal(result.stdout, `by ${OWNER}\n`);
-  assert.match(result.stderr, /^yokoten redact: output is not hidden, because [^\n]*\n$/);
-  // In the wrapper, the command's own exit code still comes through.
-  const pass = spawnSync('bash', ['-c', wrapForRedact('echo hi; exit 5', `node "${CLI}" redact`)], { cwd: sandbox.repo, env: { ...sandbox.env, YOKOTEN_PRIVATE_MARKS: broken }, encoding: 'utf8' });
-  assert.deepEqual([pass.status, pass.stdout], [5, 'hi\n']);
+  const wrapped = (command: string) => spawnSync('bash', ['-c', wrapForRedact(command, `node "${CLI}" redact`)], { cwd: sandbox.repo, env: { ...sandbox.env, YOKOTEN_PRIVATE_MARKS: broken }, encoding: 'utf8' });
+  const cases: [command: string, status: number][] = [
+    // The command passed: hidden output never looks like a clean run.
+    ['git log -1', 1],
+    [`echo "Author: ${OWNER} <${EMAIL}>"`, 1],
+    // A long output is read to its end: the command is not stopped by a closed pipe.
+    [`for i in $(seq 1 20000); do echo "by ${OWNER}"; done`, 1],
+    // The command failed: its own exit code comes through.
+    [`echo "by ${OWNER}"; exit 5`, 5],
+  ];
+  for (const [command, status] of cases) {
+    const result = wrapped(command);
+    assert.equal(result.status, status, command);
+    assert.equal(result.stdout, '', command);
+    assert.ok(result.stderr.includes(REDACT_FAILED), `${command}: ${result.stderr}`);
+    assertHidden(result.stdout + result.stderr, [OWNER, EMAIL]);
+  }
+});
+
+test('redact: no marks file, or a readable one, still redacts and exits 0 (#1006)', async () => {
+  const cases: [why: string, marks: boolean, extra: Record<string, string>][] = [
+    ['no marks file', false, {}],
+    ['YOKOTEN_PRIVATE_MARKS names a file that is not there', false, { YOKOTEN_PRIVATE_MARKS: 'no-such-marks-file' }],
+    ['a readable marks file', true, {}],
+  ];
+  for (const [why, marks, extra] of cases) {
+    const { sandbox } = ownerSandbox({ marks });
+    const result = await sandbox.call(['redact'], { input: `Author: ${OWNER} <${EMAIL}>\n`, extra });
+    assert.deepEqual([result.status, result.stdout, result.stderr], [0, 'Author: <owner> <<email>>\n', ''], why);
+  }
+  // Through the wrapper too.
+  const { wrapped } = ownerSandbox();
+  const log = wrapped('git log -1');
+  assert.equal(log.status, 0, log.stderr);
+  assert.match(log.stdout, /Author: <owner> <<email>>/);
   assert.equal(wrapped('true').status, 0);
+});
+
+test('redactStream: a redactor that throws stops the output, and the rest is read and dropped (#1006)', async () => {
+  const cases: [why: string, failAt: number, written: string[]][] = [
+    ['the first piece fails', 1, []],
+    ['a later piece fails', 2, ['one\n']],
+    ['no piece fails', 0, ['one\n', 'two\n', 'three']],
+  ];
+  for (const [why, failAt, written] of cases) {
+    const input = new PassThrough();
+    const out: string[] = [];
+    let calls = 0;
+    const redact = (text: string) => {
+      calls++;
+      if (calls === failAt) throw new Error(`cannot redact ${OWNER}`);
+      return text;
+    };
+    const done = redactStream(input, redact, (text) => out.push(text));
+    // One write per piece, each read on its own turn.
+    for (const piece of ['one\n', 'two\n', `by ${OWNER}\n`.repeat(3), 'three']) {
+      input.write(piece);
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    input.end();
+    const failure = await done;
+    assert.equal(input.readableEnded, true, `${why}: the input is read to its end`);
+    if (failAt === 0) {
+      assert.equal(failure, null, why);
+      assert.deepEqual(out, ['one\n', 'two\n', `by ${OWNER}\n`.repeat(3), 'three'], why);
+    } else {
+      assert.ok(failure instanceof Error, why);
+      assert.deepEqual(out, written, why);
+    }
+  }
+  // The stderr line names the failure by a code or a name, never by its message: a message can hold a path.
+  const words: [err: unknown, word: string][] = [
+    [Object.assign(new Error('open /x/y'), { code: 'EACCES' }), 'EACCES'],
+    [new TypeError('x'), 'TypeError'],
+    [Object.assign(new Error('x'), { code: '/x/y' }), 'error'],
+    ['a path /x/y', 'error'],
+    [undefined, 'error'],
+  ];
+  for (const [err, word] of words) assert.equal(failureWord(err), word);
+});
+
+test('redact: a piece that cannot be written or redacted ends in one line on stderr and exit 1 (#1006)', async () => {
+  const { sandbox } = ownerSandbox();
+  const stdout = new Writable();
+  stdout.write = () => {
+    throw new Error(`write failed for ${OWNER}`);
+  };
+  const stderr: string[] = [];
+  const stderrStream = new Writable({
+    write(chunk, _, done) {
+      stderr.push(String(chunk));
+      done();
+    },
+  });
+  const stream = Readable.from([`by ${OWNER}\n`, 'more\n'], { objectMode: false });
+  const code = await runRedact({ command: 'redact', args: [], env: sandbox.env, cwd: sandbox.repo, stdout, stderr: stderrStream, stdin: { fd: null, text: null, stream }, script: CLI });
+  assert.equal(code, 1);
+  assert.equal(stderr.length, 1);
+  assert.match(stderr.join(''), REDACT_REFUSED);
+  assertHidden(stderr.join(''), [OWNER]);
 });
 
 test('redact: a long line is cut only at a space or tab, never inside a value (#390)', async () => {

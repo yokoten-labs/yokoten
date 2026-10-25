@@ -57,14 +57,46 @@ const isCatFileRead = (args: string[]) => args.length === 2 && ['-p', 'commit', 
 const isRemoteRead = (args: string[]) =>
   (args.length === 1 && (args[0] === '-v' || args[0] === '--verbose')) || ((args[0] === 'get-url' || args[0] === 'show') && args.slice(1).every((arg) => /^(?:--all|--push|-n|[\w.-]+)$/.test(arg)));
 
-// `git config --list`, or a read of one account key. A write prints nothing.
-const CONFIG_SCOPES = new Set(['--global', '--system', '--local', '--show-origin', '--show-scope', '--includes', '--name-only', '-z', '--null']);
+// `git config --list`, or a read of one account key: `--get user.email`, `get user.email`,
+// or the plain `git config user.email` (#1006). A write prints nothing: a value after the
+// key, or an option or subcommand that changes the config. Other options, such as
+// `--global` or `--show-origin`, keep it a read.
 const ACCOUNT_KEY = /^(?:user|remote|credential|url|sendemail)\./i;
+/** Options of `git config` that take the next word as their value, unless written `--option=value`. */
+const CONFIG_VALUED = new Set(['--file', '-f', '--blob', '--type', '--default', '--comment', '--value', '--url']);
+const CONFIG_LISTS = new Set(['--list', '-l']);
+const CONFIG_GETS = new Set(['--get', '--get-all', '--get-regexp']);
+const CONFIG_WRITES = new Set(['--add', '--replace-all', '--unset', '--unset-all', '--rename-section', '--remove-section', '--edit', '-e']);
+const CONFIG_WRITE_SUBCOMMANDS = new Set(['set', 'unset', 'rename-section', 'remove-section', 'edit']);
+
+/** The words of a `git config` call, after `config`, split into its options and the other words. */
+export function splitConfigArgs(args: string[]): { options: string[]; words: string[] } {
+  const options: string[] = [];
+  const words: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (!arg.startsWith('-') || arg === '-') words.push(arg);
+    else {
+      options.push(arg.replace(/=.*$/s, ''));
+      if (CONFIG_VALUED.has(arg)) i++;
+    }
+  }
+  return { options, words };
+}
+
+/** True when `git config <args>` prints the whole config or an account key, and changes nothing. */
 export function isConfigRead(args: string[]): boolean {
-  const [verb, key, ...more] = args.filter((arg) => !CONFIG_SCOPES.has(arg));
-  if (verb === '--list' || verb === '-l' || verb === 'list') return key === undefined;
-  if (verb === '--get' || verb === '--get-all' || verb === 'get' || verb === '--get-regexp') return key !== undefined && ACCOUNT_KEY.test(key) && more.length === 0;
-  return false;
+  const { options, words } = splitConfigArgs(args);
+  if (options.some((option) => CONFIG_WRITES.has(option))) return false;
+  const [first, ...rest] = words;
+  if (first !== undefined && CONFIG_WRITE_SUBCOMMANDS.has(first)) return false;
+  if (first === 'list') return rest.length === 0;
+  if (options.some((option) => CONFIG_LISTS.has(option))) return words.length === 0;
+  const isGet = first === 'get';
+  const [key, ...more] = isGet ? rest : words;
+  if (key === undefined || !ACCOUNT_KEY.test(key)) return false;
+  // An explicit get takes a value pattern after the key; the plain form with a value after the key is a write.
+  return isGet || options.some((option) => CONFIG_GETS.has(option)) ? more.length <= 1 : more.length === 0;
 }
 
 // A GET of a traffic or account path: one path, and only options that read.
@@ -182,11 +214,17 @@ export const hardenRead = (command: string): string => readAccount(command)?.har
 /** The refusal for an agent whose hook can't change the command, with yokoten.json "privacy.output" "stop": the fix is the wrapped command. */
 export const privateOutput = (printed: string, wrapped: string): Finding => finding('private-output', `${printed}, and this agent can't filter it`, `run it as \`${wrapped}\``);
 
+/** The one line a wrapped command prints on stderr when redact could not run (#1006). No single quote, since the wrapper quotes it, and no backtick, since a refusal shows the wrapper in backticks. No "yokoten redact" either, or isRedacted would count the line as the call. */
+export const REDACT_FAILED = 'yokoten: the output is hidden, because the redact step could not run. Run yokoten doctor to see what to fix.';
+
 /**
  * The command with its output, stderr too, sent through `redact`, the command that runs
- * `yokoten redact`. pipefail keeps the command's exit code. If redact can't start or
- * stops, `cat` passes the rest through: hiding output never stops the command. The
- * command sits on lines of its own, after the marker.
+ * `yokoten redact`. The command sits on lines of its own, after the marker.
+ * If redact can't start or stops, the rest of the output is read and thrown away, so a
+ * closed pipe never stops the command, and REDACT_FAILED goes to stderr. Output that redact
+ * did not check is never printed (#1006). The exit code is the command's when it failed.
+ * When the command passed and redact failed, it is 1: hidden output never looks like a clean run.
  */
-export const wrapForRedact = (command: string, redact: string): string => `set -o pipefail ${REDACT_MARKER}\n(\n${command}\n) 2>&1 | { ${redact} || cat; }`;
+export const wrapForRedact = (command: string, redact: string): string =>
+  `set -o pipefail ${REDACT_MARKER}\n(\n${command}\n) 2>&1 | { ${redact} || { cat >/dev/null; printf '%s\\n' '${REDACT_FAILED}' >&2; exit 1; }; }; (exit "$(( PIPESTATUS[0] ? PIPESTATUS[0] : PIPESTATUS[1] ))")`;
 

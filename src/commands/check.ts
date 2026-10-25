@@ -373,23 +373,68 @@ export function cutPoint(pending: string, max: number = MAX_PENDING): number {
   return space === -1 ? pending.length : space + 1;
 }
 
+/** A failure in one word with no path in it: an error code such as EACCES, or the error's name. */
+export function failureWord(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  const name = (err as Error | null)?.name;
+  const word = typeof code === 'string' ? code : typeof name === 'string' ? name : '';
+  return /^[A-Za-z_]{1,40}$/.test(word) ? word : 'error';
+}
+
+/**
+ * Send `stream` through `redact` to `write`, a piece at a time: whole lines, or text cut at
+ * a space (cutPoint). Resolves null when every piece was redacted and written. Else it
+ * resolves the error that stopped it: then nothing more is written, and the rest of the
+ * input is read and dropped, so a closed pipe never stops the command that writes it (#1006).
+ */
+export function redactStream(stream: NodeJS.ReadableStream, redact: (text: string) => string, write: (text: string) => void): Promise<unknown> {
+  let failure: unknown = null;
+  let pending = '';
+  const send = (text: string) => {
+    if (!text || failure !== null) return;
+    try {
+      write(redact(text));
+    } catch (err) {
+      failure = err ?? new Error('redact failed');
+    }
+  };
+  return new Promise((settle) => {
+    stream.setEncoding('utf8');
+    stream.on('data', (chunk: string) => {
+      if (failure !== null) return;
+      pending += chunk;
+      const cut = cutPoint(pending);
+      if (cut === 0) return;
+      send(pending.slice(0, cut));
+      pending = pending.slice(cut);
+    });
+    stream.on('end', () => {
+      send(pending);
+      settle(failure);
+    });
+    stream.on('error', (err) => settle(failure ?? err ?? new Error('stdin failed')));
+  });
+}
+
 /**
  * `yokoten redact`: stdin to stdout, with the owner hidden. It works line by line, so a
- * long output streams through. It reads only this machine (no network) and always exits 0:
- * the command it wraps gives the exit code, through pipefail. It fails open: when it can't
- * read the marks, or a piece fails, it says so in one line on stderr and passes the rest
- * through as it is. Hiding output must never stop the command it wraps.
+ * long output streams through. It reads only this machine (no network). It fails closed
+ * (#1006): when it can't hide the output fully, it prints no more of it, reads the rest and
+ * drops it, says so in one line on stderr, and exits 1. Then the wrapper (wrapForRedact)
+ * prints REDACT_FAILED. A marks file that is not there is no failure: the built-in rules
+ * (secrets, emails, home folder, git name) still run. A marks file it can't read is a
+ * failure. On exit 0 the wrapper gives the command's own exit code, through pipefail.
  */
 export function runRedact(invocation: Invocation): number | Promise<number> {
   const { env, stdout } = invocation;
   const options = parse('redact', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
-  let isWarned = false;
-  const warn = (err: unknown) => {
-    if (!isWarned) say(invocation, `yokoten redact: output is not hidden, because ${String((err as Error)?.message ?? err).split('\n')[0]}\n`, invocation.stderr);
-    isWarned = true;
+  const fail = (why: string, err: unknown) => {
+    say(invocation, `yokoten redact: the output is hidden, because ${why} (${failureWord(err)})\n`, invocation.stderr);
+    return 1;
   };
-  let redact = (text: string) => text;
+  let redact: ((text: string) => string) | null = null;
+  let setupError: unknown = null;
   try {
     const found = machineMarks(env, { cwd: invocation.cwd });
     redact = makeRedactor(
@@ -401,37 +446,21 @@ export function runRedact(invocation: Invocation): number | Promise<number> {
       env,
     );
   } catch (err) {
-    warn(err);
+    setupError = err ?? new Error('redact failed');
   }
-  // The output is the command's, already redacted (home folder included), so it is written as it is.
-  const write = (text: string) => {
-    if (!text) return;
-    let out = text;
-    try {
-      out = redact(text);
-    } catch (err) {
-      warn(err);
-      redact = (rest) => rest;
-    }
-    stdout.write(out);
-  };
-  let pending = '';
+  // With nothing to redact by, the first piece fails: nothing is written, and the input is drained.
+  const pieces =
+    redact ??
+    (() => {
+      throw setupError;
+    });
   return new Promise((settle) => {
     stdout.on('error', () => settle(0));
-    const { stream } = invocation.stdin;
-    stream.setEncoding('utf8');
-    stream.on('data', (chunk: string) => {
-      pending += chunk;
-      const cut = cutPoint(pending);
-      if (cut === 0) return;
-      write(pending.slice(0, cut));
-      pending = pending.slice(cut);
+    void redactStream(invocation.stdin.stream, pieces, (text) => stdout.write(text)).then((err) => {
+      if (!redact) settle(fail('it could not read what to hide, such as your private-marks file', setupError));
+      else if (err === null) settle(0);
+      else settle(fail('a piece of it could not be redacted', err));
     });
-    stream.on('end', () => {
-      write(pending);
-      settle(0);
-    });
-    stream.on('error', () => settle(0));
   });
 }
 

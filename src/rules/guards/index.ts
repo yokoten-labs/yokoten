@@ -13,7 +13,7 @@
 export { isPlainCommand } from './bash/body.ts';
 export { commandWords } from './bash/read/read.ts';
 export { withoutShellRedirects, realPath, findProgramPlaces, findHeavyJob } from './bash/read/words.ts';
-export { ACCOUNT_PRINTERS, REDACT_MARKER, isRedacted, printsAccount, hardenRead, privateOutput, wrapForRedact } from './commands/accounts.ts';
+export { ACCOUNT_PRINTERS, REDACT_FAILED, REDACT_MARKER, isRedacted, printsAccount, hardenRead, privateOutput, wrapForRedact } from './commands/accounts.ts';
 export { checkCommand } from './commands/check.ts';
 export type { RuledRepo } from './commands/check.ts';
 export { hookFile, runsCheck } from './hooks/read.ts';

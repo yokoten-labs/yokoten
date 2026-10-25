@@ -8,6 +8,23 @@ import { test } from 'node:test';
 import { addUserHooks, hasUserDir, readTrust, removeUserHooks, userHooksFile, userHooksState } from '../../src/agents/copilot.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
+test('copilot trust on Windows (#1003): drive folders count, without case or separator differences', () => {
+  const sandbox = makeSandbox();
+  const home = sandbox.home;
+  mkdirSync(join(home, '.copilot'), { recursive: true });
+  const env = { HOME: home, USERPROFILE: home };
+  trustFolders(home, 'C:\\Work\\Parent\\', '/not/windows');
+  assert.equal(readTrust('c:/work/parent/project', env, 'win32').state, 'trusted');
+  assert.equal(readTrust('C:\\WORK\\PARENT', env, 'win32').state, 'trusted');
+  // Positive controls: a folder that only starts with the same letters, and another drive.
+  assert.equal(readTrust('C:\\Work\\Parenting', env, 'win32').state, 'untrusted');
+  assert.equal(readTrust('D:\\Work\\Parent', env, 'win32').state, 'untrusted');
+  // Linux keeps its case rule.
+  trustFolders(home, '/a/Parent/');
+  assert.equal(readTrust('/a/parent', env, 'linux').state, 'untrusted');
+  assert.equal(readTrust('/a/Parent/x', env, 'linux').state, 'trusted');
+});
+
 /** Write Copilot CLI's config.json in `home`, in the shape Copilot CLI 1.0.98 saved it (#341). */
 function trustFolders(home: string, ...folders: string[]): string {
   const file = join(home, '.copilot', 'config.json');
