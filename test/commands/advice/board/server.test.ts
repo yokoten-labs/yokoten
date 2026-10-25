@@ -438,12 +438,12 @@ test('board server: over the limit the start is refused', async () => {
   try {
     assert.equal((await boardPost(url, 'agents/limits', 'maxAgents=1')).status, 200);
     assert.equal((await boardPost(url, 'agents/start', 'issue=12&vendor=claude-code&model=model-a')).status, 200);
-    const over = await boardPost(url, 'agents/start', 'issue=13&vendor=codex&model=model-a');
+    const over = await boardPost(url, 'agents/start', 'issue=13&vendor=antigravity&model=model-a');
     assert.equal(over.status, 409, 'one too many');
     assert.match(over.text, /already runs 1 agent of 1/, 'a plain reason');
     assert.equal(over.kind, 'text/plain; charset=utf-8');
     assert.equal((await boardPost(url, 'agents/limits', 'maxAgents=3')).status, 200);
-    assert.equal((await boardPost(url, 'agents/start', 'issue=13&vendor=codex&model=model-a')).status, 200);
+    assert.equal((await boardPost(url, 'agents/start', 'issue=13&vendor=antigravity&model=model-a')).status, 200);
     assert.match((await boardPost(url, 'agents/limits', 'models=model-a%3A2')).text, /model-a/, 'a per-model cap saves');
     const capped = await boardPost(url, 'agents/start', 'issue=14&vendor=grok&model=model-a');
     assert.equal(capped.status, 409);
@@ -613,7 +613,7 @@ test('board server: stop only stops what the board started', async () => {
   const { server, url } = await startBoardServer(sandbox.repo, sandbox.env, gh, { controls });
   try {
     assert.equal((await boardPost(url, 'agents/start', 'issue=12&vendor=claude-code&model=model-a')).status, 200);
-    assert.equal((await boardPost(url, 'agents/start', 'issue=13&vendor=codex&model=model-b')).status, 200);
+    assert.equal((await boardPost(url, 'agents/start', 'issue=13&vendor=antigravity&model=model-b')).status, 200);
     const foreign = await boardPost(url, 'agents/stop', 'name=issue-99-claude-code');
     assert.equal(foreign.status, 404, 'a process the board did not start');
     assert.match(foreign.text, /no agent called issue-99-claude-code was started by this board/);

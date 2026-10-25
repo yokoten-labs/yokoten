@@ -2,7 +2,7 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -202,8 +202,15 @@ test('board controls: a start is refused when the hooks will not run', () => {
   // Codex in use, but no hooks in the worktree: init adds them.
   const bare = makeTempDir('yokoten-board-bare-');
   assert.match(boardGuardReady('codex', bare, sandbox.env) ?? '', /yokoten init/, 'missing hooks name init');
-  // Codex not in use here at all: no store to check against, so nothing is refused.
-  assert.equal(boardGuardReady('codex', bare, { ...sandbox.env, HOME: join(makeTempDir('yokoten-board-'), 'no-home') }), null);
+  // No trust store is no trust: Codex would start, make its home and skip the hooks, so the
+  // board refuses. Before, it let these through as "can't tell".
+  const noHome = { ...sandbox.env, HOME: join(makeTempDir('yokoten-board-'), 'no-home') };
+  assert.match(boardGuardReady('codex', bare, noHome) ?? '', /yokoten init/, 'no hooks, no Codex home: still refused');
+  assert.match(boardGuardReady('codex', sandbox.repo, noHome) ?? '', /Codex is not set up on this machine \(no ~\/\.codex\/config\.toml\), so nothing trusts that folder\. Run codex once, then run `yokoten trust`/);
+  rmSync(join(sandbox.home, '.codex', 'config.toml'));
+  assert.match(boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '', /nothing trusts that folder \(no ~\/\.codex\/config\.toml\)\. Run `yokoten trust`/);
+  mkdirSync(join(sandbox.home, '.codex', 'config.toml'));
+  assert.match(boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '', /can't read ~\/\.codex\/config\.toml/, 'a store yokoten cannot read is refused');
   // Grok in use, but no hooks in the worktree: init adds them. An untrusted folder
   // passes: the board starts grok with --trust, which trusts it there.
   mkdirSync(join(sandbox.home, '.grok'), { recursive: true });
