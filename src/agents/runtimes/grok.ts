@@ -21,14 +21,14 @@
 // - A deny is `permissionDecision: "deny"` on stdout; at exit 2 its reason, whole, is
 //   what the model reads (stderr alone gives only its first line).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
 import { blankedToml, hasTomlArray, hasTomlHeader, hasTomlKey, hasTomlTable, isInsideProject, parseToml, readTomlTables, type TrustChange, type TrustPlan } from './codex.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
@@ -294,8 +294,7 @@ function readProfile(text: string): Record<string, unknown> | 'blocked' | null {
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'unreadable' {
   const path = join(root, SANDBOX_FILE);
   if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, FRESH_SANDBOX);
+    writeSafely(path, FRESH_SANDBOX);
     return 'added';
   }
   let text: string;
@@ -311,8 +310,7 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'un
   const lines = text.split(/\r?\n/);
   while (lines.length > 0 && lines.at(-1) === '') lines.pop();
   lines.push('', '[profiles.yokoten]', `extends = "${PROFILE_BASE}"`, '');
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, lines.join(newline));
+  writeSafely(path, lines.join(newline));
   return 'added';
 }
 

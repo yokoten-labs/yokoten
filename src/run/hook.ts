@@ -413,14 +413,26 @@ export function sessionIdOf(input: unknown): string | undefined {
   return typeof value === 'string' && /^[\w-]{1,128}$/.test(value) ? value : undefined;
 }
 
+/** The id of the subagent a tool call comes from, when the runtime sends one and it is a safe name. */
+export function agentIdOf(input: unknown): string | undefined {
+  if (input === null || typeof input !== 'object') return undefined;
+  const call = input as Record<string, unknown>;
+  const value = call.agent_id ?? call.agentId;
+  return typeof value === 'string' && /^[\w-]{1,128}$/.test(value) ? value : undefined;
+}
+
 /**
  * The key a repeat count belongs to: the session id, or null when the runtime sends none
  * (#792). Counting under the folder instead added up calls from separate sessions in one
  * project, so the third refusal stopped a session that had repeated nothing. Without a
  * session id the hook cannot tell sessions apart, so it keeps the refusal's own id.
+ * A subagent sends the lead's session id and its own agent id: each agent keeps its own
+ * count, or one worker's refusals stop another on its first call (#990).
  */
-export function repeatKeyOf(sessionId: string | undefined): string | null {
-  return sessionId !== undefined && /^[\w-]{1,128}$/.test(sessionId) ? sessionId : null;
+export function repeatKeyOf(sessionId: string | undefined, agentId?: string): string | null {
+  if (sessionId === undefined || !/^[\w-]{1,128}$/.test(sessionId)) return null;
+  if (agentId === undefined || agentId === sessionId || !/^[\w-]{1,128}$/.test(agentId)) return sessionId;
+  return `${sessionId}--${agentId}`;
 }
 
 const repeatFolder = (env: Env, key: string): string | null => {

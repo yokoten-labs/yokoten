@@ -263,6 +263,22 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   assert.match(result.stdout, /^yokoten: stage 2 of 5, issues and pull requests\. Next: there is no origin remote, so the work is only on this machine; make the repo on your code host, add it as origin \(`git remote add origin <url>`\), and push \(`git push -u origin --all`\)/);
 });
 
+// #988: yokoten wants TZ=UTC for agent commits, but a TZ the user set in
+// .claude/settings.json stays. init says so in one line and never prints the value. The
+// positive control: the old init wrote UTC over it and said "updated".
+test("init: a TZ the user set in .claude/settings.json is kept, with one note (#988)", async () => {
+  const sandbox = makeSandbox();
+  const file = join(sandbox.repo, '.claude', 'settings.json');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ env: { TZ: 'Europe/Paris' } }));
+  const result = await sandbox.call(['init']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).env.TZ, 'Europe/Paris', "the user's value stays");
+  assert.equal(countLines(result.stdout, 'kept your TZ in .claude/settings.json; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there'), 1);
+  assert.doesNotMatch(result.stdout, /Europe\/Paris/, 'the value is not printed');
+  assert.doesNotMatch(result.stdout, /updated TZ=UTC/);
+});
+
 const GUIDE_LINE = 'other agents: see the guide';
 const HOOK_ON_LINE = 'git hook: on (the commit check runs from .githooks)';
 
@@ -1241,6 +1257,11 @@ test('init: a file under .husky/ keeps its mode; husky 9 runs it with sh (#256)'
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done', 'husky 9 needs no execute bit on .husky/pre-commit');
 });
 
+function commitAgents(sandbox: ReturnType<typeof makeSandbox>): void {
+  sandbox.git('add', 'AGENTS.md');
+  sandbox.git('commit', '-q', '--allow-empty', '-m', 'rules');
+}
+
 // A lesson added to the kit's core rules reaches a project that already ran init (#120).
 test('update: doctor says when the core rules are behind; update previews, and --write keeps "This project" byte for byte (#120)', async () => {
   const sandbox = makeSandbox();
@@ -1274,6 +1295,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.equal(readFileSync(path, 'utf8'), old, 'the preview writes nothing');
 
   // --write replaces the core part only; a second run has nothing to do.
+  commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
   result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, `yokoten update: replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 2 line(s) added, 1 removed; sections changed: Core rules, Writing. "## This project" and below are unchanged\n`);
@@ -1329,6 +1351,7 @@ test('update: init writes the kit version; a newer project is refused, an older 
   // Older: the same text with an older mark is updated, and gets the new mark.
   writeFileSync(path, newer.replace(`${NEWER} -->`, '0.0.9 -->'));
   assert.match((await sandbox.call(['doctor'])).stdout, /MISSING core-rules: the core rules in AGENTS\.md are behind/);
+  commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
   let result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh);
@@ -1336,11 +1359,61 @@ test('update: init writes the kit version; a newer project is refused, an older 
   // No mark (every project before #141): an unknown version, compared by content as before.
   const unmarked = newer.replace(/^<!-- yokoten kit .* -->\n/, '');
   writeFileSync(path, unmarked);
+  commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
   result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh, 'updated, and the mark is added');
   writeFileSync(path, fresh.replace(/^<!-- yokoten kit .* -->\n/, ''));
   assert.match((await sandbox.call(['update'])).stdout, /up to date/, 'the mark alone is no change');
+});
+
+// `update --write` replaces the core part of AGENTS.md; it keeps what init keeps (#989).
+async function behindSandbox() {
+  const sandbox = makeSandbox();
+  assert.equal((await sandbox.call(['init'])).status, 0);
+  const path = join(sandbox.repo, 'AGENTS.md');
+  const fresh = readFileSync(path, 'utf8');
+  const behind = fresh.replace('Plain English, close to', 'Plain words, close to');
+  return { sandbox, path, fresh, behind };
+}
+
+test('update --write: a file git cannot give back is kept as AGENTS.md.before-yokoten; a committed one is not (#989)', async () => {
+  const { sandbox, path, fresh, behind } = await behindSandbox();
+  writeFileSync(path, behind);
+  const backup = join(sandbox.repo, AGENTS_BACKUP);
+  const result = await sandbox.call(['update', '--write']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /The old file is kept as AGENTS\.md\.before-yokoten/);
+  assert.equal(readFileSync(backup, 'utf8'), behind, 'the old file, byte for byte');
+  assert.equal(readFileSync(path, 'utf8'), fresh);
+
+  // A different copy is there already: never overwritten, and AGENTS.md is not written.
+  writeFileSync(path, behind.replace('Plain words', 'Simple words'));
+  const clash = await sandbox.call(['update', '--write']);
+  assert.equal(clash.status, 1);
+  assert.match(clash.stderr, /AGENTS\.md\.before-yokoten is there already.*Nothing was written/);
+  assert.equal(readFileSync(backup, 'utf8'), behind);
+  assert.match(readFileSync(path, 'utf8'), /Simple words/);
+
+  // The control: when HEAD has the file as it is, no copy is made.
+  rmSync(backup);
+  commitAgents(sandbox);
+  assert.equal((await sandbox.call(['update', '--write'])).status, 0);
+  assert.ok(!existsSync(backup), 'git has the old file');
+  assert.equal(readFileSync(path, 'utf8'), fresh);
+});
+
+test('update --write: a linked AGENTS.md is refused and the target stays as it was (#989)', { skip: NO_SYMLINK }, async () => {
+  const { sandbox, path, behind } = await behindSandbox();
+  sandbox.write('docs/rules.md', behind);
+  rmSync(path);
+  symlinkSync('docs/rules.md', path);
+  const result = await sandbox.call(['update', '--write']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /kept AGENTS\.md: it is a link to docs\/rules\.md, so yokoten did not write the core rules into it/);
+  assert.equal(readFileSync(join(sandbox.repo, 'docs', 'rules.md'), 'utf8'), behind);
+  assert.ok(lstatSync(path).isSymbolicLink(), 'the link is still a link');
+  assert.ok(!existsSync(join(sandbox.repo, AGENTS_BACKUP)));
 });
 
 // CI and the hooks run the copy in .yokoten/. It carries the kit's AGENTS.md, so doctor

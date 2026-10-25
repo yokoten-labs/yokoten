@@ -6,17 +6,17 @@
 // command has to be trusted again.
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
+import { envFolder, folderIn, folderOf, hideHome, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
 import { readStop } from './claude-code.ts';
 import type { AgentAdapter } from './runtime.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
 
@@ -113,7 +113,15 @@ export const checkProjectHooks = (root: string): void => checkHooksFile(projectH
 /** A Stop event: the same fields as Claude Code's (`cwd`, `stop_hook_active`). */
 export { readStop };
 
-const userHooks = (env: Env) => join(homeIn(env), '.codex', 'hooks.json');
+/** Codex's user folder: `$CODEX_HOME` when it is a full path, as Codex reads it, else ~/.codex (#988). One folder for the hooks, the trust and the login. */
+const codexHome = (env: Env): string | null => folderOf(env, 'CODEX_HOME', '.codex');
+/** As codexHome; with neither it throws NO_HOME, so nothing is written. */
+const codexHomeIn = (env: Env): string => folderIn(env, 'CODEX_HOME', '.codex');
+/** The user's config.toml as the user would type it. */
+const configShown = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml');
+const userHooks = (env: Env) => join(codexHomeIn(env), 'hooks.json');
+/** The user's hooks file, as the user would type it. */
+export const userHooksFile = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/hooks.json' : '~/.codex/hooks.json');
 
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
@@ -437,8 +445,7 @@ function mainCheckout(root: string): string | null {
  * names no model: the harness then keeps its own default. Read-only, no git.
  */
 export function readModelIdentity(env: Env): { model: string; provider: string } | null {
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const home = codexHome(env) ?? '';
   if (!home) return null;
   let parsed: Record<string, unknown>;
   try {
@@ -458,9 +465,8 @@ export function readModelIdentity(env: Env): { model: string; provider: string }
  * yokoten's flags is not yokoten's.
  */
 export function readTrust(root: string, env: Env): CodexTrust {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store };
   const file = join(home, 'config.toml');
   if (!isFolder(home)) return { state: 'no home', store };
@@ -516,9 +522,8 @@ export function readTrust(root: string, env: Env): CodexTrust {
  * is reported instead (`changed`), for `yokoten init` to put back.
  */
 export function trustProject(root: string, env: Env): TrustPlan {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store, changes: [] };
   const file = join(home, 'config.toml');
   let text = '';
@@ -995,8 +1000,7 @@ function hasMissedTable(text: string, blanked: string): boolean {
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'unreadable' {
   const path = join(root, SANDBOX_FILE);
   if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, FRESH_SANDBOX);
+    writeSafely(path, FRESH_SANDBOX);
     return 'added';
   }
   let text: string;
@@ -1043,8 +1047,7 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'un
       lines.push('', `[${tablePath.join('.')}]`, `${tableKey} = ${tableValue}`, '');
     } else lines.splice(at + 1, 0, `${tableKey} = ${tableValue}`);
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, lines.join(newline));
+  writeSafely(path, lines.join(newline));
   return 'added';
 }
 
@@ -1166,8 +1169,8 @@ export const AGENT_ENV: RuntimeEnv = { login: ['OPENAI_API_KEY', 'CODEX_API_KEY'
  * its own sandbox blocks `.git` and the pipes tests use.
  */
 export const DESK: RuntimeDesk = {
-  leadState: (env) => [env.CODEX_HOME || join(homeIn(env), '.codex')],
-  login: (env) => [{ from: join(env.CODEX_HOME || join(homeIn(env), '.codex'), 'auth.json'), to: 'auth.json' }],
+  leadState: (env) => [codexHomeIn(env)],
+  login: (env) => [{ from: join(codexHomeIn(env), 'auth.json'), to: 'auth.json' }],
   stateEnv: (state) => ({ CODEX_HOME: state }),
   hosts: ['api.openai.com', 'api.deepseek.com'],
   identity: readModelIdentity,
@@ -1426,8 +1429,7 @@ export function writeTrust(plan: TrustPlan): 'written' | 'kept' | 'unreadable' {
     text = `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`;
   }
   if (!written) return 'kept';
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, text);
+  writeSafely(file, text);
   return 'written';
 }
 
@@ -1444,12 +1446,12 @@ export function revertTrust(change: TrustChange): 'reverted' | 'kept' | 'unreada
     if (tomlValue(text, change.path, change.key) !== change.value) return 'kept';
     const next = setTomlField(text, change.path, change.key, change.before, change.kind === 'boolean' ? 'boolean' : undefined);
     if (next === text) return 'kept';
-    writeFileSync(change.file, next);
+    writeSafely(change.file, next);
     return 'reverted';
   }
   const parsed = readJson(text);
   if (!parsed) return 'unreadable';
   if (!setJsonField(parsed.data as Record<string, unknown>, change, true)) return 'kept';
-  writeFileSync(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
+  writeSafely(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
   return 'reverted';
 }

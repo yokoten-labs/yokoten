@@ -257,3 +257,17 @@ test("Muse's hook entry point in a marked clone sees a worker and refuses a lead
   assert.equal(result.status, 1);
   assert.match(result.stderr, /is the main checkout, the lead's/);
 });
+
+// #988: a relative XDG_CONFIG_HOME is ignored, as the XDG spec says. The positive control:
+// the old code took it, and wrote Muse's settings under the folder the command ran in.
+test('muse: a relative XDG_CONFIG_HOME is ignored; the hooks go to ~/.config/muse (#988)', () => {
+  const home = makeTempDir();
+  mkdirSync(join(home, '.config', 'muse'), { recursive: true });
+  const env = { HOME: home, XDG_CONFIG_HOME: 'relative-config' };
+  assert.equal(userSettingsFile(env), '~/.config/muse/settings.json');
+  assert.equal(hasUserDir(env), true);
+  assert.equal(readTrust(makeTempDir(), env).store, '~/.config/muse/trust.json');
+  addUserHooks(env, CLI, 'gone');
+  assert.ok(existsSync(join(home, '.config', 'muse', 'settings.json')));
+  assert.ok(!existsSync(join(process.cwd(), 'relative-config')), 'nothing in the current folder');
+});

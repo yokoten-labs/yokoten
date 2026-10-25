@@ -18,7 +18,7 @@ import { formatFinding } from '../../rules/message.ts';
 import { hideHome } from '../../rules/privacy.ts';
 import { draft, facts, table } from '../../setup/advice/adopt.ts';
 import { explain, explainLines, ids } from '../../setup/advice/explain.ts';
-import { cleanOlderInstall } from '../../setup/install.ts';
+import { cleanOlderInstall, PROFILE_MARK } from '../../setup/install.ts';
 import { blocksToSay, doctor, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
 import { READERS } from '../hook.ts';
 import { type Invocation, noRootFinding, parse, print, printJson, requireRoot, rootOf, say, usage } from '../shared.ts';
@@ -63,6 +63,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   if (cleanup?.files && !options.flags.has('--json')) {
     lines.push(`yokoten: cleaned ${cleanup.files} ${cleanup.files === 1 ? 'file' : 'files'} an older install left; the plugin brings them now`);
     if (cleanup.edits.length) lines.push(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`);
+    for (const profile of cleanup.profiles) lines.push(`yokoten: ${profile} still has the PATH line an older install added; delete the line that ends with "${PROFILE_MARK}"`);
   }
   // A desk that named a vendor other than the harness's (#748) speaks first: the agent
   // learns who it is before the harness's prompt tells it about its own maker.

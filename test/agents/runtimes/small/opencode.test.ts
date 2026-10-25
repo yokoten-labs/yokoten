@@ -3,14 +3,14 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { guardCommand } from '../../../../src/run/cli.ts';
 import { GUARD_FAILED, PLUGIN_FILE, UNREADABLE_CALL, formatDenial, hasUserDir, pluginSource, projectPluginPath, projectPluginSource, readToolCall, userPluginFile, userPluginPath, userPluginSource } from '../../../../src/agents/runtimes/small/opencode.ts';
 import { managedState } from '../../../../src/setup/files.ts';
 import { agentHooks, userAgentHooks } from '../../../../src/setup/doctor/index.ts';
-import { USER_CLI, USER_MISSING } from '../../../../src/setup/install.ts';
+import { USER_CLI, USER_MISSING, writeOpenCodePlugin } from '../../../../src/setup/install.ts';
 import { CLI, makeSandbox } from '../../../repo/helpers.ts';
 
 const worker = { YOKOTEN_ROLE: 'worker' };
@@ -527,4 +527,17 @@ test('install writes the user plugin when OpenCode is installed, and skips it ot
   await sandbox.call(['install']);
   await sandbox.call(['uninstall']);
   assert.equal(managedState(path, userPluginSource(USER_CLI, USER_MISSING)), 'wrote');
+});
+
+// #988: a relative XDG_CONFIG_HOME is ignored, as the XDG spec says. The positive control:
+// the old code took it, and looked for OpenCode under the folder the command ran in.
+test('opencode: a relative XDG_CONFIG_HOME is ignored; the plugin goes to ~/.config/opencode (#988)', () => {
+  const sandbox = makeSandbox();
+  mkdirSync(join(sandbox.home, '.config', 'opencode'), { recursive: true });
+  const env = { ...sandbox.env, XDG_CONFIG_HOME: 'relative-config' };
+  assert.equal(userPluginFile(env), '~/.config/opencode/plugins/yokoten.ts');
+  assert.equal(hasUserDir(env), true);
+  assert.equal(writeOpenCodePlugin(userPluginPath(env), userPluginSource(USER_CLI, USER_MISSING)), 'added');
+  assert.ok(existsSync(join(sandbox.home, '.config', 'opencode', 'plugins', 'yokoten.ts')));
+  assert.ok(!existsSync(join(process.cwd(), 'relative-config')), 'nothing in the current folder');
 });

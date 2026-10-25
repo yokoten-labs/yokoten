@@ -18,10 +18,10 @@ import type { Config, Env } from './config.ts';
 import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
-import { homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
+import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
 import { loadMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
 
-export { homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
+export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
 
 /**
  * The marks a project allows in its own repo (#424): those its yokoten.json "privacy.allow"
