@@ -18,7 +18,7 @@ import { withBudget } from '../bash/read/run.ts';
 import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
-import { checkNoRoot, checkWipe, checkDisk } from './no-wipe.ts';
+import { checkDamage } from './no-wipe.ts';
 
 export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
@@ -117,10 +117,11 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // A changed home folder hides the private marks (#664).
       checkHomeSetting(words, env) ??
       // Damage outside the project (#969): no root for agents, no wipe of home or system
-      // folders, no disk commands. They answer after the exact rules above.
-      checkNoRoot(words) ??
-      checkWipe(words, postCwd, env) ??
-      checkDisk(words) ??
+      // folders, no disk commands. They answer after the exact rules above, and share one
+      // walk over the command's programs. That walk reads only the words already parsed,
+      // so it runs under its own budget: a long command that the reader accepted must not
+      // lose these rules, and a rule that runs after the read must not make it unreadable.
+      withBudget(words.length, () => checkDamage(words, postCwd, env), true) ??
       // Git's own ways to lose uncommitted work, a stash, the reflog or the default branch
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).

@@ -3,8 +3,7 @@ import { docsLink, type Finding } from '../../message.ts';
 import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
 import { plainArgs, WRITE_REDIRECT } from '../lead-only/targets.ts';
-import { braceForms, findProgramPlaces, findPrograms, programName, realPath, unquotedRedirects, withoutShellRedirects } from '../bash/read/words.ts';
-import { spend } from '../bash/read/run.ts';
+import { braceForms, findProgramPlaces, programName, realPath, unquotedRedirects, withoutShellRedirects } from '../bash/read/words.ts';
 
 // ---- Damage outside the project (#969) ----
 //
@@ -39,10 +38,19 @@ const diskFindingOf = (what: string): Finding => ({ id: 'disk-command', what, wh
 
 const ROOT_PROGRAMS = new Set(['sudo', 'doas', 'su', 'pkexec', 'runas']);
 
+/** One program of a command and where its word sits (`-1` for a program an `env -S` string holds). */
+type ProgramPlace = ReturnType<typeof findProgramPlaces>[number];
+
+// One walk over the programs feeds all three rules: a command that can do none of them
+// pays for a single scan (#969).
+export function checkDamage(words: string[], cwd: string | null, env: Env): Finding | null {
+  const programs = findProgramPlaces(words, true);
+  return checkNoRoot(programs, words) ?? checkWipe(programs, words, cwd, env) ?? checkDisk(programs, words);
+}
+
 /** A command that asks for root, by any of its programs (#969). The walk counts the launchers too, so `sudo` itself is found. */
-export function checkNoRoot(words: string[]): Finding | null {
-  spend(words.length);
-  for (const { word, index } of findProgramPlaces(words, true)) {
+function checkNoRoot(programs: ProgramPlace[], words: string[]): Finding | null {
+  for (const { word, index } of programs) {
     const name = programName(word).toLowerCase();
     if (ROOT_PROGRAMS.has(name)) return noRootFinding(word);
     if (name === 'start-process' && startsRunAs(words, index)) return noRootFinding(word);
@@ -67,17 +75,15 @@ const WIPE_PROGRAMS = new Set(['rm', 'rmdir', 'remove-item', 'rd']);
 const CMD_FLAGS = new Set(['/s', '/q']);
 
 /** A recursive delete or a recursive mode or owner change on a dangerous place (#969). */
-export function checkWipe(words: string[], cwd: string | null, env: Env): Finding | null {
+function checkWipe(programs: ProgramPlace[], words: string[], cwd: string | null, env: Env): Finding | null {
   const home = homeOf(env);
   const homeReal = home === null ? null : realPath(home);
-  spend(words.length);
-  let from = 0;
-  for (const program of findPrograms(words)) {
-    const at = words.indexOf(program, from);
-    if (at === -1) continue;
-    from = at + 1;
+  for (const { word: program, index } of programs) {
+    // A program an `env -S` string holds has no word of its own here: the reader runs that
+    // string as commands, and this rule reads them there.
+    if (index < 0) continue;
     const name = programName(program).toLowerCase();
-    const args = withoutShellRedirects(words, at + 1);
+    const args = withoutShellRedirects(words, index + 1);
     if (name === 'find') {
       // `find <start> … -delete`: the start folder is the target; an inner `rm` is read at its own word.
       if (!args.includes('-delete')) continue;
@@ -221,9 +227,8 @@ const DISK_PROGRAMS = new Set(['wipefs', 'fdisk', 'sfdisk', 'cfdisk', 'parted', 
 const QUIET_DEV = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty']);
 
 /** A disk command, or a write into a disk under `/dev` (#969). */
-export function checkDisk(words: string[]): Finding | null {
-  spend(words.length);
-  for (const { word, index } of findProgramPlaces(words)) {
+function checkDisk(programs: ProgramPlace[], words: string[]): Finding | null {
+  for (const { word, index } of programs) {
     const name = programName(word).toLowerCase();
     if (name.startsWith('mkfs')) return diskFindingOf(`\`${word}\` would write a filesystem on a disk`);
     if (DISK_PROGRAMS.has(name)) return diskFindingOf(`\`${word}\` would change a disk`);
