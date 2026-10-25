@@ -335,7 +335,11 @@ export function boardGuardReady(vendor: string, dir: string, env: Env): string |
     }
     const trust = codex.readTrust(dir, env);
     if (trust.state === 'trusted' || trust.state === 'no home' || trust.state === 'no store' || trust.state === 'unreadable') return null;
-    return `codex would skip the guard hooks in ${hideHome(dir, env)}: ${trust.state === 'untrusted' ? 'that folder is not trusted' : 'the hooks there are not trusted'}. ${codex.TRUST_STEP}`;
+    // A folder or hook the user set off on purpose: `yokoten trust` keeps that choice, so the
+    // board names the user's own step (#984).
+    const why = trust.state === 'untrusted' ? 'that folder is not trusted' : trust.state === 'hooks off' ? 'a yokoten hook there is turned off' : 'the hooks there are not trusted';
+    const fix = trust.userChoiceFix ?? (trust.state === 'hooks off' ? codex.HOOK_OFF_FIX : codex.TRUST_STEP);
+    return `codex would skip the guard hooks in ${hideHome(dir, env)}: ${why}. ${fix.charAt(0).toUpperCase()}${fix.slice(1)}`;
   }
   if (vendor === 'muse') {
     const guard = muse.projectHooksState(dir, hookCliPath(dir)).guard;
