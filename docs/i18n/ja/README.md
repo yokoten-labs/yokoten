@@ -10,26 +10,20 @@ AI コーディングツールのための安全な番人。
 
 AI エージェントは一瞬で大きなミスをします。yokoten はその前に止めます。
 
-- **危険な操作を止めます**：force push、作業の削除、秘密の漏えい、あなた抜きのリリース。
-- **いま使っているツールの中で動きます**：Claude Code、Codex、Copilot CLI、Muse Code など。
-- **最初から有効です。** コマンドひとつで始まり、新しく覚えることはありません。
-- **あなたの設定を勝手に変えません**：あなたが決めた設定はそのまま残し、ファイルを変える前にコピーを取ります。
-- **Linux、Windows、macOS で動きます。** Windows では WSL を完全にサポートし、ネイティブ Windows はベータ版で、Git Bash と PowerShell 7 に対応しています。
-
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 
 ## はじめる
 
-[Node](https://nodejs.org/) 22.23.4 以降が必要です。次を実行します。
+[Node](https://nodejs.org/) 22.23.4 以降が必要です。そして実行します。
 
 ```sh
 cd your-project
 npx yokoten
 ```
 
-これだけです。いつでももう一度実行できます。足りないものだけを入れます。
+これだけです。コマンドひとつで、設定はいりません。何度でも実行でき、足りない分だけを行います。
 
-初回は一画面です。何を入れたか、いまどこにいるか、次に打つコマンド一つ。
+初回は一画面だけ表示されます。設定した内容、いまの段階、次のコマンドです。
 
 <!-- The first run in a new repo, from `yokoten` 0.1.1; regenerate it when the screen changes. -->
 ```text
@@ -54,9 +48,17 @@ Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `yokoten doctor --all` shows every check and 5 notes
 ```
 
-## 見えるもの
+## 何を止めるか
 
-エージェントが危ないことをしようとすると、yokoten が止めて、代わりに何をすべきかを伝えます。
+| 守るもの | 止めること |
+|---|---|
+| 作業 | force push、hard reset、`.git` の削除 |
+| 秘密 | 鍵、個人のメールアドレス、IP アドレスを加えるコミット |
+| リリース | 新しいタグ、パッケージの公開、リポジトリの公開 |
+| 実行するコード | だれも読んでいないダウンロードをそのまま実行すること |
+| 番人そのもの | コミットチェックの省略や、それを切ること |
+
+止めたときは、理由と代わりの手順を伝えます。
 
 ```
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
@@ -66,29 +68,20 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
   More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-## 何を止めるか
-
-yokoten は五つを守ります。`npx yokoten` を実行すれば、五つの保護はどのプロジェクトでも有効で、ほかの設定はいりません。
-
-- **作業**：force push、hard reset、`.git` の削除など、作業を失う操作。
-- **秘密**：鍵、個人のメールアドレス、IP アドレスを加えるコミット。
-- **リリース**：新しいタグ、パッケージの公開、リポジトリの公開。リリースの時期を決めるのはあなただけです。
-- **実行するコード**：だれも読んでいないダウンロードをプログラムに実行させること。
-- **番人そのもの**：コミットチェックの省略や、それを切ること。
-
 ## しくみ
 
-yokoten は AI ではなくプログラムです。同じコマンドには毎回同じ答えを返します。5 分の 1 秒もかからず、費用はかかりません。AI ツールはコマンドや編集の前に yokoten に確認します。yokoten はコミットごとにも確認し、CI でも動くので、エージェントがいなくても悪い変更を止めます。
-
-v0.1.1 の新機能：一つのリポジトリで複数の AI セッションが働くとき、`yokoten conflicts` は同じファイルに触れる開いた pull request と、先にマージするものを示します。別の開いた変更が移動中のファイルを編集しようとすると、番人が止めます。
+- **AI ではなくプログラムです。**同じコマンドには毎回同じ答えを返します。5 分の 1 秒もかからず、費用もかかりません。
+- **三か所で働きます。**AI ツールはコマンドや編集の前に yokoten に確認します。yokoten はコミットごとにも確認し、CI でも動きます。
+- **設定を勝手に変えません。**あなたが決めた設定はそのまま残し、ファイルを変える前にコピーを取ります。
+- **一つのリポジトリで複数の AI セッション。**`yokoten conflicts` は先にマージする変更を示します。別の開いた変更が移動中のファイルへの編集は、番人が止めます。
 
 ## 対応しているもの
 
-どの AI モデルでも動きます。番人は agent が実行するコマンドを検査します。モデルではありません。
+どの AI モデルでも動きます。番人が検査するのは agent が実行するコマンドで、モデルではありません。
 
-- **エージェント**：番人は下のどのエージェントとも一緒に働きます。各行の証拠（日付、実行の方法、先に知るべきこと）は [エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）にあります。
+- **エージェント**：番人は下のどのエージェントとも動きます。各行の証拠（日付、実行の方法、先に知るべきこと）は、ガイドの[エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）にあります。
 
-| エージェント | 端から端まで確認済み | 最初に `npx yokoten trust` が必要 | 試したモデル |
+| Agent | 端から端まで検証済み | 先に `npx yokoten trust` が必要 | 試したモデル |
 |---|---|---|---|
 | Claude Code | ✅ yes | no | `deepseek-flash` |
 | GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
@@ -101,6 +94,7 @@ v0.1.1 の新機能：一つのリポジトリで複数の AI セッションが
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **言語**：どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
+- **プラットフォーム**：Linux、macOS、WSL。ネイティブ Windows はベータ版で、Git Bash と PowerShell 7 に対応しています。
 
 ## ほかのインストール方法
 
@@ -110,24 +104,22 @@ npx yokoten init        # プロジェクトごとに一度
 npx yokoten doctor      # いまどこにいて、次に何をするか
 ```
 
-- **Claude Code プラグイン**：`/plugin marketplace add https://github.com/yokoten-labs/yokoten.git`（HTTPS なので SSH 鍵はいりません）のあと `/plugin install yokoten@yokoten`。プラグインか `npx` のどちらか一つを使います。
+- **Claude Code プラグイン**：`/plugin marketplace add https://github.com/yokoten-labs/yokoten.git` のあと `/plugin install yokoten@yokoten`。プラグインか `npx` のどちらか一つを使います。
 - **バージョン**：Stable（既定）、Beta、Dev。[どのバージョンを入れるか](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install)（英語）を見てください。
 - **CI だけで使う**：[GitHub Action として使う](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action)（英語）。
-- **Node**：22.23.4 以降。Node 24 なら 24.22.1 以降、Node 26 なら 26.12.1 以降。
-- **UTC**：コミットチェックは UTC のコミット時刻を求めます。一度だけ設定します：シェルの設定ファイルに `export TZ=UTC`、PowerShell では `$PROFILE` に `$env:TZ = "UTC"` を加えます。`npx yokoten doctor` が、あなたのシェル用の行を教えてくれます。
-- `npx skills add yokoten-labs/yokoten` はスキルだけをコピーします。`npx yokoten install` も実行しないと、何も守られません。
+- **Node**：22.23.4 以降、24.22.1 以降、または 26.12.1 以降。
+- **UTC**：コミットチェックは UTC のコミット時刻を求めます。`npx yokoten doctor` が、あなたのシェル用の行を教えてくれます。
 
-## これからの道
+## ロードマップ
 
 - **いま、v0.1.1**：五つの保護をすべての人に；一つのリポジトリで複数の AI セッション；どのコマンドも一画面。
 - **次、v0.1.2**：コマンドラインでエージェントのチームを動かす（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
 - **その先**：一つのプロジェクトが学んだことを、すべてのプロジェクトのチェックにする。
 
-*横展*（yokoten）はトヨタの工場の言葉です。一つのラインで見つけた直しを、すべてのラインに広げます。[マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) も見てください。
+*横展*（yokoten）はトヨタの工場の言葉です。一つのラインで見つけた直しを、すべてのラインに広げます。
 
 ## もっと知る
 
-- [ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md)：すべてのルールとコマンド、そして yokoten にできないこと。
-- [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)、[決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)、[変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)、[貢献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)、[セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)（英語）。
+[ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md) · [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)（英語） · [決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)（英語） · [変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)（英語） · [マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) · [貢献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)（英語） · [セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)（英語）
 
 MIT ライセンス。[coolwhite](https://coolwhite.us/) と AI エージェントのチームが作っています。
