@@ -494,6 +494,19 @@ test('codex folder keys: the current folder and each reading, on each system (re
   assert.equal(codexCurrentFolder('C:\\Link\\Repo', 'D:\\Real\\Repo', 'win32'), 'C:\\Link\\Repo');
   assert.deepEqual(codexLookupReadings('C:\\Link\\Repo', 'D:\\Real\\Repo', 'win32'), [['d:\\real\\repo', 'c:\\link\\repo']]);
   assert.deepEqual(codexLookupReadings('C:\\Repo', 'C:\\Repo', 'win32'), [['c:\\repo']]);
+  // A short (8.3) name in the folder as given, as in a TEMP of `C:\Users\LONGNA~1\...`:
+  // Codex's canonical path is the long name (dunce reads it from the disk), tried first;
+  // the short form is its current folder, tried second, and keys the hooks as given.
+  const shortName = 'C:\\Users\\LONGNA~1\\AppData\\Local\\Temp\\Repo';
+  const longName = 'C:\\Users\\Longname\\AppData\\Local\\Temp\\Repo';
+  assert.deepEqual(codexLookupReadings(shortName, longName, 'win32'), [['c:\\users\\longname\\appdata\\local\\temp\\repo', 'c:\\users\\longna~1\\appdata\\local\\temp\\repo']]);
+  assert.equal(codexCurrentFolder(shortName, longName, 'win32'), shortName);
+  // Codex's own key (the long name, lower case) is found in the first place, so a short-form
+  // key beside it never decides; with only the short form saved, the second place finds it.
+  const [keys] = codexLookupReadings(shortName, longName, 'win32');
+  const saved = [longName.toLowerCase(), shortName];
+  assert.deepEqual(keys.map((key) => codexFindKey(saved, key, 'win32')), [longName.toLowerCase(), shortName]);
+  assert.deepEqual(keys.map((key) => codexFindKey([shortName], key, 'win32')), [undefined, shortName]);
   // dunce keeps `\\?\` on a share, and maybe on a long path or a reserved name: each is read.
   assert.deepEqual(codexCanonicalForms('\\\\server\\share\\repo', 'win32'), ['\\\\?\\UNC\\server\\share\\repo']);
   assert.deepEqual(codexCanonicalForms('C:\\Repo', 'win32'), ['C:\\Repo']);
@@ -521,7 +534,9 @@ test('codex config.toml: a key reads as TOML reads it; a bad escape trusts nothi
 /** A project with yokoten's guard hook, at a folder with upper case in it, and its hook trusted as `hooks`. */
 function codexProject(): { root: string; env: Env; write: (text: string) => void; hooks: (root: string) => string } {
   const sandbox = makeSandbox();
-  const root = join(realpathSync(makeTempDir('yokoten-codex-case-')), 'Repo-X');
+  // The real path, long names and all: the folder as given is then the one Codex reads first,
+  // as it is for most folders. A short (8.3) TEMP, as on CI runners, is the case table's.
+  const root = join(realpathSync.native(makeTempDir('yokoten-codex-case-')), 'Repo-X');
   mkdirSync(root, { recursive: true });
   addProjectHook(root, 'bin/yokoten.mjs');
   const config = join(sandbox.home, '.codex', 'config.toml');
@@ -566,7 +581,7 @@ test('codex trust on Windows: the key Codex writes reads as trusted, and a key C
 
 test('codex trust through a symlink: Codex reads the real path first, and on Linux and macOS only that (record 0040)', (context) => {
   const { root, env, write, hooks } = codexProject();
-  const link = join(realpathSync(makeTempDir('yokoten-codex-link-')), 'link');
+  const link = join(realpathSync.native(makeTempDir('yokoten-codex-link-')), 'link');
   try {
     symlinkSync(root, link, 'junction');
   } catch {
