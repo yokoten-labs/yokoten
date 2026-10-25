@@ -14,7 +14,7 @@
 // timeout of its own and must finish fast: yokoten caps its heap.
 
 import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix, win32 } from 'node:path';
 import type { Env } from '../rules/config.ts';
 import { homeIn, homeOf } from '../rules/privacy.ts';
 import { guardCommand } from '../run/cli.ts';
@@ -26,12 +26,21 @@ import type { RuntimeEnv } from './desk/agent-env.ts';
 /** The one step that makes Copilot CLI run the project's hooks. */
 export const TRUST_STEP = TRUST_COMMAND;
 
+/** A folder without its trailing separators: `/` and `\` on Windows, `/` elsewhere. */
+const withoutTrailing = (folder: string, platform: NodeJS.Platform): string => folder.replace(platform === 'win32' ? /[\\/]+$/ : /\/+$/, '');
+
 /**
- * Whether `folder` is `trusted` or inside it. Both without a trailing slash. A "/" entry
+ * Whether `folder` is `trusted` or inside it. Both without a trailing separator. A "/" entry
  * (empty here) covers every folder: inferred from the rule seen in a run, a folder covers
- * the folders inside it; no run has saved "/" itself.
+ * the folders inside it; no run has saved "/" itself. Windows names folders without case,
+ * and writes `\` or `/` between them, so there the comparison ignores both (#1003).
  */
-const isInside = (folder: string, trusted: string) => trusted === '' || folder === trusted || folder.startsWith(`${trusted}/`);
+const isInside = (folder: string, trusted: string, platform: NodeJS.Platform) => {
+  if (trusted === '') return true;
+  if (platform !== 'win32') return folder === trusted || folder.startsWith(`${trusted}/`);
+  const flat = (path: string) => path.replace(/\\/g, '/').toLowerCase();
+  return flat(folder) === flat(trusted) || flat(folder).startsWith(`${flat(trusted)}/`);
+};
 
 /** Copilot's home folder: `$COPILOT_HOME`, or ~/.copilot; empty with neither. */
 const homeDir = (env: Env): string => {
@@ -40,7 +49,7 @@ const homeDir = (env: Env): string => {
 };
 
 /** Whether Copilot CLI trusts the project at `root`, from its config file. Read-only. */
-export function readTrust(root: string, env: Env): FolderTrust {
+export function readTrust(root: string, env: Env, platform: NodeJS.Platform = process.platform): FolderTrust {
   const store = env.COPILOT_HOME ? '$COPILOT_HOME/config.json' : '~/.copilot/config.json';
   const home = homeDir(env);
   if (!home) return { state: 'no home', store };
@@ -59,8 +68,8 @@ export function readTrust(root: string, env: Env): FolderTrust {
     return { state: 'unreadable', store };
   }
   if (!isObject(saved)) return { state: 'unreadable', store };
-  const trusted = Array.isArray(saved.trustedFolders) ? saved.trustedFolders.filter((folder) => typeof folder === 'string' && folder.startsWith('/')).map((folder) => folder.replace(/\/+$/, '')) : [];
-  const isTrusted = folderKeys(root).some((key) => trusted.some((folder) => isInside(key, folder)));
+  const trusted = Array.isArray(saved.trustedFolders) ? saved.trustedFolders.filter((folder) => typeof folder === 'string' && (platform === 'win32' ? win32 : posix).isAbsolute(folder)).map((folder) => withoutTrailing(folder, platform)) : [];
+  const isTrusted = folderKeys(root).map((key) => withoutTrailing(key, platform) || key).some((key) => trusted.some((folder) => isInside(key, folder, platform)));
   return { state: isTrusted ? 'trusted' : 'untrusted', store };
 }
 
