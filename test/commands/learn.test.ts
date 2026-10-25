@@ -23,6 +23,8 @@ import {
   CLI,
   makeSandbox,
 } from '../repo/helpers.ts';
+import { learnScreen } from '../../src/commands/learn.ts';
+import type { Draft } from '../../src/run/learn.ts';
 
 test('changelog: previews the change files, and --write moves them into CHANGELOG.md (#132)', async () => {
   const sandbox = makeSandbox();
@@ -63,7 +65,7 @@ test('learn: previews a check draft from an incident, writes it with --write, an
   chmodSync(join(bin, 'gh'), 0o755);
   const extra = { PATH: `${bin}:${process.env.PATH}` };
   // The entry, through the real binary, with the fake gh on its PATH; the rest runs in this process.
-  let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['learn', '7'], { extra });
+  let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['learn', '7', '--all'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten learn: a check draft from issue #7, "repo: a test fails behind a proxy"\.\nThe issue left 1 field\(s\) open, each a TODO\(reviewer\):\n- why: the issue has no "Why it matters" section\nThe reviewer also writes the check \(findProblems\) and the cases in its test, each a TODO\(reviewer\) too\.\n/);
   assert.match(result.stdout, /\n--- lessons\/incident-7\/lesson\.ts\n[^]*fix: 'the test sets NO_PROXY',[^]*\n--- lessons\/incident-7\/lesson\.test\.ts\n/);
@@ -314,4 +316,16 @@ test('learn --upstream: an empty or missing HOME never writes into the repo', ()
     assert.equal(runWith(env, ['--done', 'nope']).status, 1);
     assert.ok(!existsSync(join(sandbox.repo, '.config')), 'no inbox inside the repo');
   }
+});
+
+// #1027: the default learn screen says the rule, where the files go, and the command to type.
+test('learn: the default screen is the rule, the file and the next command (#1027)', () => {
+  const draft: Draft = { finding: { id: 'no-force-push', what: 'a force push to main is stopped', why: 'it rewrites history', fix: 'stop it' }, todos: ['why: the issue has no "Why it matters" section'], files: [{ path: 'lessons/incident-138/lesson.ts', text: '' }] };
+  const lines = learnScreen({ number: 138 }, draft, '138');
+  assert.equal(lines[0], 'yokoten learn · a check draft from issue #138');
+  assert.ok(lines.some((line) => /^  rule\s+a force push to main is stopped$/.test(line)), 'the rule');
+  assert.ok(lines.some((line) => line.includes('lessons/incident-138/lesson.ts (not written yet)')), 'the file');
+  assert.ok(lines.some((line) => /still to fill in/.test(line)), 'the fields left open, as a count');
+  assert.equal(lines.at(-1), 'Next: `yokoten learn 138 --write`');
+  for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

@@ -11,7 +11,7 @@ import { HOME_DIR, VERSION } from '../setup/files.ts';
 import { isSelf } from '../setup/init.ts';
 import { machineMarks, machineUserNames } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, type Invocation, type Parsed, parse, print, rootOf, usage } from './shared.ts';
+import { bullets, count, field, type Invocation, nextLine, type Parsed, parse, print, rootOf, title, usage } from './shared.ts';
 
 /**
  * A usage error for --upstream that repeats nothing typed (#392): a stray word or a note
@@ -114,6 +114,11 @@ export function runLearn(invocation: Invocation): number {
   const draft = draftLesson(incident);
   const [first, ...rest] = formatDraft(incident, draft);
   if (!options.flags.has('--write')) {
+    // One screen by default; `--all` keeps every field and the files' text (issue #1027).
+    if (!options.flags.has('--all')) {
+      print(invocation, learnScreen(incident, draft, reference));
+      return 0;
+    }
     print(invocation, [`yokoten learn: ${first}`, ...rest, '', `Nothing was written. \`yokoten learn ${reference} --write\` adds these files for review.`]);
     return 0;
   }
@@ -126,6 +131,20 @@ export function runLearn(invocation: Invocation): number {
     'Review the draft: fill in each TODO, write the check, and make its test pass.',
   ]);
   return 0;
+}
+
+/**
+ * The default screen of `yokoten learn` (issue #1027): the rule the check will hold, where
+ * its files go, and the command that writes them. `--all` shows every field and the files.
+ */
+export function learnScreen(incident: { number: number }, draft: ReturnType<typeof draftLesson>, reference: string): string[] {
+  const lines = [...title('learn', `a check draft from issue #${incident.number}`), ''];
+  lines.push(...field('rule', draft.finding.what));
+  for (const file of draft.files.slice(0, 2)) lines.push(...field('file', `${file.path} (not written yet)`));
+  if (draft.files.length > 2) lines.push(...field('files', `${count(draft.files.length - 2, 'more file')}`));
+  if (draft.todos.length) lines.push('', ...field('open', `${count(draft.todos.length, 'field')} still to fill in, listed by \`--all\``));
+  lines.push('', ...nextLine(`yokoten learn ${reference} --write`));
+  return lines;
 }
 
 /** `learn --export`: a lesson as one small file, for another project. It writes only with --out. */

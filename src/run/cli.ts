@@ -428,6 +428,7 @@ export const COMMANDS: Command[] = [
     ],
     options: [
       { name: '--write', text: 'put the draft in lessons/ (adds only, never overwrites)' },
+      { name: '--all', text: 'show every field the issue left open, and the files the draft writes' },
       { name: '--ship', text: 'move a reviewed lesson into kit/lessons/; refused while a TODO is left' },
       { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file (prints it, or writes it with --out)' },
       { name: '--out', value: 'file', text: 'with --export: write the lesson file here instead of printing it' },
