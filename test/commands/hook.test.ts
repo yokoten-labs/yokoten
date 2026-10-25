@@ -385,7 +385,7 @@ test('hook: Claude Code gets a plain read rewritten through redact, with allow, 
   assert.equal(output.permissionDecision, 'allow');
   assert.equal(output.permissionDecisionReason, 'yokoten: `git log` prints author names and emails, so its output goes through yokoten redact');
   assert.equal(output.updatedInput.description, 'Show');
-  assert.match(output.updatedInput.command, /^set -o pipefail # yokoten-redact\n\(\ngit log --no-ext-diff --no-textconv --no-show-signature -1\n\) 2>&1 \| \{ "[^"]+" "[^"]*yokoten\.ts" redact \|\| cat; \}$/);
+  assert.match(output.updatedInput.command, /^set -o pipefail # yokoten-redact\n\(\ngit log --no-ext-diff --no-textconv --no-show-signature -1\n\) 2>&1 \| \{ "[^"]+" "[^"]*yokoten\.ts" redact \|\| \{ cat >\/dev\/null; [^`]*; \}; \(exit [^`]*\)$/);
   // The rewritten command runs, and prints the placeholder.
   // On a child (#475): the rewrite runs yokoten redact as its own process.
   const ran = spawnSync('bash', ['-c', output.updatedInput.command], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
@@ -485,7 +485,7 @@ test("hook: an agent that can't rewrite runs the command, or with privacy.output
   assert.equal(result.status, 2);
   assert.equal(result.stdout, '');
   assert.match(result.stderr, /^yokoten stopped this: `git remote` prints remote URLs, and this agent can't filter it \[[\w-]+\]\nWhy: /);
-  assert.match(result.stderr, /Run it as `set -o pipefail # yokoten-redact\n\(\ngit remote -v\n\) 2>&1 \| \{ "[^"]+" "[^"]+" redact \|\| cat; \}`\./);
+  assert.match(result.stderr, /Run it as `set -o pipefail # yokoten-redact\n\(\ngit remote -v\n\) 2>&1 \| \{ "[^"]+" "[^"]+" redact \|\| \{ cat >\/dev\/null; [^`]*; \}; \(exit [^`]*\)`\./);
   // A push still runs: only plain reads are ever stopped.
   assert.deepEqual(pick(await codexCall('git push origin main')), [0, '', '']);
   const json = await sandbox.call(['hook', '--json'], { input: JSON.stringify({ tool_input: { command: 'npm whoami' } }) });

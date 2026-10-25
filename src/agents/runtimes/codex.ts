@@ -6,17 +6,17 @@
 // command has to be trusted again.
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { envFolder, folderIn, folderOf, hideHome, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
 import { readStop } from './claude-code.ts';
 import type { AgentAdapter } from './runtime.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookArgs, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
 
@@ -113,7 +113,15 @@ export const checkProjectHooks = (root: string): void => checkHooksFile(projectH
 /** A Stop event: the same fields as Claude Code's (`cwd`, `stop_hook_active`). */
 export { readStop };
 
-const userHooks = (env: Env) => join(homeIn(env), '.codex', 'hooks.json');
+/** Codex's user folder: `$CODEX_HOME` when it is a full path, as Codex reads it, else ~/.codex (#988). One folder for the hooks, the trust and the login. */
+const codexHome = (env: Env): string | null => folderOf(env, 'CODEX_HOME', '.codex');
+/** As codexHome; with neither it throws NO_HOME, so nothing is written. */
+const codexHomeIn = (env: Env): string => folderIn(env, 'CODEX_HOME', '.codex');
+/** The user's config.toml as the user would type it. */
+const configShown = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml');
+const userHooks = (env: Env) => join(codexHomeIn(env), 'hooks.json');
+/** The user's hooks file, as the user would type it. */
+export const userHooksFile = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/hooks.json' : '~/.codex/hooks.json');
 
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
@@ -184,6 +192,12 @@ export const TRUST_STEP = `${TRUST_COMMAND} (Codex's \`/hooks\` screen does the 
  * writes; trust must not trust that one, and `yokoten init` puts the command back.
  */
 export type CodexTrust = FolderTrust<'hooks untrusted' | 'hooks changed' | 'hooks edited' | 'hooks off'>;
+
+/** How the user trusts a folder they marked untrusted in Codex: yokoten never flips it (#984). */
+const untrustedFix = (store: string): string => `to change it, set trust_level = "trusted" for this folder in ${store}, then run \`yokoten trust\``;
+
+/** How the user turns on a yokoten hook they turned off in Codex: yokoten never turns it on (#984). */
+export const HOOK_OFF_FIX = "to turn it on, use Codex's `/hooks` screen";
 
 /** One TOML key, bare or quoted, at the start of `text`: the key and the text after it. */
 function readTomlKey(text: string): [string, string] | null {
@@ -431,8 +445,7 @@ function mainCheckout(root: string): string | null {
  * names no model: the harness then keeps its own default. Read-only, no git.
  */
 export function readModelIdentity(env: Env): { model: string; provider: string } | null {
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const home = codexHome(env) ?? '';
   if (!home) return null;
   let parsed: Record<string, unknown>;
   try {
@@ -452,9 +465,8 @@ export function readModelIdentity(env: Env): { model: string; provider: string }
  * yokoten's flags is not yokoten's.
  */
 export function readTrust(root: string, env: Env): CodexTrust {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store };
   const file = join(home, 'config.toml');
   if (!isFolder(home)) return { state: 'no home', store };
@@ -475,7 +487,8 @@ export function readTrust(root: string, env: Env): CodexTrust {
   const main = mainCheckout(root);
   const folders = [...folderKeys(root), ...(main ? folderKeys(main) : [])];
   const project = folders.map((folder) => tables.projects.get(folder)).find((fields) => fields?.trust_level !== undefined);
-  if (project?.trust_level !== 'trusted') return { state: 'untrusted', store };
+  // A trust_level that is set but not "trusted" is the user's choice (#984).
+  if (project?.trust_level !== 'trusted') return { state: 'untrusted', store, ...(project ? { userChoiceFix: untrustedFix(store) } : {}) };
   const events = isObject(hooks) && isObject(hooks.hooks) ? hooks.hooks : {};
   const states: CodexTrust['state'][] = [];
   for (const [name, event] of TRUST_EVENTS) {
@@ -509,9 +522,8 @@ export function readTrust(root: string, env: Env): CodexTrust {
  * is reported instead (`changed`), for `yokoten init` to put back.
  */
 export function trustProject(root: string, env: Env): TrustPlan {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store, changes: [] };
   const file = join(home, 'config.toml');
   let text = '';
@@ -539,7 +551,15 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const main = mainCheckout(root);
   const keys = [...folders, ...(main ? folderKeys(main) : [])];
   // Codex stops at the first folder key it finds, trusted or not.
-  const savedProject = keys.map((folder) => tables.projects.get(folder)).find((fields) => fields?.trust_level !== undefined);
+  const savedFolder = keys.find((folder) => tables.projects.get(folder)?.trust_level !== undefined);
+  const savedProject = savedFolder === undefined ? undefined : tables.projects.get(savedFolder);
+  // The user set this folder to something other than trusted: their choice stays, and
+  // nothing is written, hooks included (#984).
+  if (savedFolder !== undefined && savedProject?.trust_level !== 'trusted') {
+    const level = JSON.stringify(String(savedProject?.trust_level));
+    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(savedFolder, env)} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+  }
+  const kept: { what: string; fix: string }[] = [];
   if (savedProject?.trust_level !== 'trusted') {
     const folder = folders.find((key) => tables.projects.has(key)) ?? folders[0];
     const before = typeof savedProject?.trust_level === 'string' ? savedProject.trust_level : null;
@@ -555,13 +575,15 @@ export function trustProject(root: string, env: Env): TrustPlan {
         const saved = folders
           .map((folder) => tables.hookStates.get(`${join(folder, '.codex', 'hooks.json')}:${event}:${groupIndex}:${handlerIndex}`))
           .find((fields) => fields !== undefined);
-        if (saved?.enabled === false) changes.push(change(['hooks', 'state', key], 'enabled', 'true', 'false', 'boolean'));
+        // A hook the user turned off stays off (#984); its hash is still saved, so turning
+        // it on in Codex is all it takes.
+        if (saved?.enabled === false && kept.length === 0) kept.push({ what: `a yokoten hook in .codex/hooks.json stays off (enabled = false in ${store}; yokoten would turn it on)`, fix: HOOK_OFF_FIX });
         const hash = hookHash(event, group.matcher, handler);
         if (saved?.trusted_hash !== hash) changes.push(change(['hooks', 'state', key], 'trusted_hash', hash, typeof saved?.trusted_hash === 'string' ? saved.trusted_hash : null));
       });
     });
   }
-  return { state: changes.length > 0 ? 'trusted' : 'same', store, changes };
+  return { state: changes.length > 0 ? 'trusted' : 'same', store, changes, ...(kept.length ? { kept } : {}) };
 }
 
 // ---- The project's sandbox (#589) ----
@@ -978,8 +1000,7 @@ function hasMissedTable(text: string, blanked: string): boolean {
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'unreadable' {
   const path = join(root, SANDBOX_FILE);
   if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, FRESH_SANDBOX);
+    writeSafely(path, FRESH_SANDBOX);
     return 'added';
   }
   let text: string;
@@ -1026,8 +1047,7 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'un
       lines.push('', `[${tablePath.join('.')}]`, `${tableKey} = ${tableValue}`, '');
     } else lines.splice(at + 1, 0, `${tableKey} = ${tableValue}`);
   }
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, lines.join(newline));
+  writeSafely(path, lines.join(newline));
   return 'added';
 }
 
@@ -1149,8 +1169,8 @@ export const AGENT_ENV: RuntimeEnv = { login: ['OPENAI_API_KEY', 'CODEX_API_KEY'
  * its own sandbox blocks `.git` and the pipes tests use.
  */
 export const DESK: RuntimeDesk = {
-  leadState: (env) => [env.CODEX_HOME || join(homeIn(env), '.codex')],
-  login: (env) => [{ from: join(env.CODEX_HOME || join(homeIn(env), '.codex'), 'auth.json'), to: 'auth.json' }],
+  leadState: (env) => [codexHomeIn(env)],
+  login: (env) => [{ from: join(codexHomeIn(env), 'auth.json'), to: 'auth.json' }],
   stateEnv: (state) => ({ CODEX_HOME: state }),
   hosts: ['api.openai.com', 'api.deepseek.com'],
   identity: readModelIdentity,
@@ -1210,9 +1230,15 @@ export interface TrustPlan {
    * `changed`: a hook yokoten wrote was edited, so writing trust would bless a command
    * yokoten does not know. `yokoten init` puts the hook back; nothing is written here.
    */
-  state: 'trusted' | 'same' | 'changed' | 'unreadable' | 'no home';
+  state: 'trusted' | 'same' | 'changed' | 'unreadable' | 'no home' | 'kept';
   store: string;
   changes: TrustChange[];
+  /**
+   * What the user set on purpose and yokoten leaves as it is (#984): a folder they marked
+   * not trusted (state `kept`, nothing is written), or a hook they turned off. `what` says
+   * what stays, and what yokoten would have set; `fix` says how to change it in the agent.
+   */
+  kept?: { what: string; fix: string }[];
   /** The shape of a missing store: Muse's schema version, or Copilot's list. */
   seed?: unknown;
 }
@@ -1403,8 +1429,7 @@ export function writeTrust(plan: TrustPlan): 'written' | 'kept' | 'unreadable' {
     text = `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`;
   }
   if (!written) return 'kept';
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, text);
+  writeSafely(file, text);
   return 'written';
 }
 
@@ -1421,12 +1446,12 @@ export function revertTrust(change: TrustChange): 'reverted' | 'kept' | 'unreada
     if (tomlValue(text, change.path, change.key) !== change.value) return 'kept';
     const next = setTomlField(text, change.path, change.key, change.before, change.kind === 'boolean' ? 'boolean' : undefined);
     if (next === text) return 'kept';
-    writeFileSync(change.file, next);
+    writeSafely(change.file, next);
     return 'reverted';
   }
   const parsed = readJson(text);
   if (!parsed) return 'unreadable';
   if (!setJsonField(parsed.data as Record<string, unknown>, change, true)) return 'kept';
-  writeFileSync(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
+  writeSafely(change.file, `${parsed.prefix}${JSON.stringify(parsed.data, null, 2)}\n`);
   return 'reverted';
 }

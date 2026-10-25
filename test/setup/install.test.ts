@@ -39,7 +39,7 @@ import {
 } from '../repo/helpers.ts';
 import { hasHook } from '../../src/agents/hooks-file.ts';
 import { copyRuntime, isEditedManaged, sealManaged, writeManaged } from '../../src/setup/files.ts';
-import { addOwnMark, countMarkKinds, fillMarks, filledLines, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, type UserNameProbe, USER_CLI, writeFileAtomic } from '../../src/setup/install.ts';
+import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
 
 const BAD_USER_SETTINGS: [content: string, reason: (file: string) => string][] = [
@@ -189,6 +189,68 @@ test('uninstall: takes back what install wrote, keeps the user\'s own files and 
   assert.equal(readFileSync(join(claude, 'settings.json'), 'utf8'), 'not json');
 });
 
+// #984: install never breaks or loses the user's settings file.
+test('install: a symlinked ~/.claude/settings.json stays a link, through install and uninstall (#984)', async () => {
+  const sandbox = makeSandbox();
+  const dotfiles = join(sandbox.home, 'dotfiles');
+  mkdirSync(dotfiles, { recursive: true });
+  mkdirSync(join(sandbox.home, '.claude'));
+  const real = join(dotfiles, 'claude-settings.json');
+  const link = join(sandbox.home, '.claude', 'settings.json');
+  writeFileSync(real, '{"model":"x"}\n');
+  symlinkSync(real, link);
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'install keeps the link');
+  assert.ok(hasHook(real, 'PreToolUse', 'hook'), 'the hooks went into the file the link points at');
+  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps the link');
+  assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), { model: 'x' });
+  // A linked file that only holds yokoten's hooks is emptied, not unlinked: the link is the user's.
+  writeFileSync(real, '{}\n');
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps a link to a file it emptied');
+  assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), {});
+});
+
+test('install: the first change to the user\'s settings keeps one .before-yokoten copy, never overwritten (#984)', async () => {
+  const sandbox = makeSandbox();
+  const file = join(sandbox.home, '.claude', 'settings.json');
+  mkdirSync(dirname(file));
+  writeFileSync(file, '{"model":"x"}\n');
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal(readFileSync(`${file}.before-yokoten`, 'utf8'), '{"model":"x"}\n');
+  // The user changes the file, and install changes it again: the copy still holds the first version.
+  const settings = JSON.parse(readFileSync(file, 'utf8'));
+  settings.model = 'y';
+  settings.hooks.SessionStart[0].hooks[0].command += ' ';
+  writeFileSync(file, JSON.stringify(settings));
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal(readFileSync(`${file}.before-yokoten`, 'utf8'), '{"model":"x"}\n', 'the copy is never overwritten');
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).model, 'y');
+  // A home with no settings file before install gets no copy: install made the file.
+  const empty = makeSandbox();
+  assert.equal((await empty.call(['install'])).status, 0);
+  assert.ok(!existsSync(join(empty.home, '.claude', 'settings.json.before-yokoten')));
+});
+
+test("install and uninstall: a user's own npx yokoten hook stays (#984)", async () => {
+  const sandbox = makeSandbox();
+  const file = join(sandbox.home, '.claude', 'settings.json');
+  mkdirSync(dirname(file));
+  const own = { matcher: 'Bash', hooks: [{ type: 'command', command: 'npx yokoten hook --agent claude-code' }] };
+  const doctor = { hooks: [{ type: 'command', command: 'npx --yes yokoten doctor --session' }] };
+  writeFileSync(file, JSON.stringify({ hooks: { PreToolUse: [own], SessionStart: [doctor] } }));
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  let hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
+  assert.deepEqual(hooks.PreToolUse[0], own, 'install keeps the user\'s guard');
+  assert.deepEqual(hooks.SessionStart[0], doctor, 'install keeps the user\'s doctor');
+  assert.equal(hooks.PreToolUse.length, 2, 'and adds its own beside it');
+  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
+  assert.deepEqual(hooks, { PreToolUse: [own], SessionStart: [doctor] }, 'uninstall takes out only yokoten\'s own hooks');
+});
+
 // #904: with the Claude Code plugin on, install writes no global skill or agent, and takes
 // back the copies it wrote before. A file of the user's stays.
 test('install: the plugin replaces the global skills and agents (#904)', async () => {
@@ -220,6 +282,36 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   assert.match(result.stdout, /no runtime: the yokoten plugin brings its own/);
   assert.doesNotMatch(result.stdout, /nothing to remove/, 'a skill that was never there is not named');
   assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
+});
+
+// #988: Claude Code reads its user folder from CLAUDE_CONFIG_DIR. Install, uninstall and a
+// session's cleanup all use that folder; ~/.claude is never made. The positive control: the
+// old install wrote the hooks to ~/.claude/settings.json, which Claude Code never read.
+test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never ~/.claude (#988)', async () => {
+  const sandbox = makeSandbox();
+  const config = join(sandbox.home, 'claude-elsewhere');
+  const extra = { CLAUDE_CONFIG_DIR: config };
+  const result = await sandbox.call(['install'], { extra });
+  assert.equal(result.status, 0, result.stderr);
+  const settingsFile = join(config, 'settings.json');
+  const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
+  assert.ok(settings.hooks.SessionStart && settings.hooks.PreToolUse, 'the hooks are where Claude Code reads them');
+  assert.ok(existsSync(join(config, 'skills', 'yokoten', 'SKILL.md')), 'the entry skill');
+  assert.ok(existsSync(join(config, 'agents', 'worker.md')), 'the agents');
+  assert.ok(!existsSync(join(sandbox.home, '.claude')), '~/.claude is not made');
+  assert.match((await sandbox.call(['doctor'], { extra })).stdout, /ok +session-doctor/, 'doctor reads the same folder');
+  // A session with the plugin on takes back what install left, in the same folder.
+  settings.enabledPlugins = { 'yokoten@yokoten': true };
+  writeFileSync(settingsFile, JSON.stringify(settings));
+  const cleaned = cleanOlderInstall({ ...sandbox.env, ...extra });
+  assert.ok(cleaned.files > 0, 'it found the older files');
+  assert.ok(!existsSync(join(config, 'agents', 'worker.md')));
+  assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).hooks, undefined, 'the hooks went from CLAUDE_CONFIG_DIR');
+  assert.ok(!existsSync(join(sandbox.home, '.claude')));
+  // Uninstall reads the same folder, and leaves the user's settings file.
+  assert.equal((await sandbox.call(['uninstall'], { extra })).status, 0);
+  assert.ok(existsSync(settingsFile));
+  assert.ok(!existsSync(join(sandbox.home, '.claude')));
 });
 
 // #904: the upgrade from v0.1.0. An older install added the Claude Code hooks; with the

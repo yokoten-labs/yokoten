@@ -363,6 +363,7 @@ OpenCode gets the command guard in
 Grok's trust gate is off: `GROK_FOLDER_TRUST=0`, or `[folder_trust] enabled = false` in
 `~/.grok/config.toml`. In Codex, the guard checks the files
 of an `apply_patch`, also one run through the shell.
+When `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `XDG_CONFIG_HOME` is a full path, `install` writes in that folder instead, where the tool reads.
 
 Each agent runs a project hook only after you trust it:
 
@@ -2569,16 +2570,17 @@ yokoten hides your details before some commands run.
   private remotes (`<host>`) and your private marks. A mark that looks like a domain
   becomes `<host>`; any other mark becomes `<mark>`. It finds a mark as the check does (see above).
   Without a private-marks file, it still hides the patterns and what git knows. If it
-  can't start or read your marks, it says so in one line and passes the output through:
-  it never stops the command.
+  can't read your marks file or can't hide a piece, it prints no more of the output.
+  It says so in one line on stderr and exits 1.
 - **In Claude Code, the guard filters plain reads.** These commands print account
   details: `git log`, `git show`, `git shortlog <revision>`, `git blame` and `git for-each-ref`,
   with any format; `git cat-file -p`; `git remote -v`, `get-url` and `show`; `git config --list` and reads of
-  `user.*` and `remote.*`; `gh auth status`; GET calls through `gh` on traffic and user
+  `user.*` and `remote.*`, such as `git config user.email`; `gh auth status`; GET calls through `gh` on traffic and user
   paths; `npm whoami`; `wrangler whoami`. When the whole command is one of these, with
   nothing around it, the guard changes it to
-  `set -o pipefail # yokoten-redact`, then `( <command> ) 2>&1 | { <node> <yokoten> redact || cat; }`.
-  The exit code stays the command's. A command with `&&`, `;`, a pipe, a redirect, a
+  `set -o pipefail # yokoten-redact`, then `( <command> ) 2>&1 | <node> <yokoten> redact`.
+  If redact cannot run, the output is hidden, and one line on stderr says so.
+  The exit code stays the command's; it is 1 when only redact failed. A command with `&&`, `;`, a pipe, a redirect, a
   substitution, a prefix such as `sudo`, or an option that writes a file, is left as it
   is.
 - **Other agents run the command as it is.** Their hooks can't change a command.

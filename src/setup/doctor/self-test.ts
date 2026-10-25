@@ -11,14 +11,14 @@ import { notUtc, POSITIVE_CONTROL, scanText } from '../../rules/privacy.ts';
 import { SECRET_CONTROL } from '../../rules/privacy/secrets.ts';
 import { judge } from '../../run/hook.ts';
 import { readToolCall, sandboxProblem as claudeSandboxProblem, addUserHooks } from '../../agents/runtimes/claude-code.ts';
-import { addProjectPlugin } from '../../agents/runtimes/small/opencode.ts';
+import { projectPluginPath, projectPluginSource } from '../../agents/runtimes/small/opencode.ts';
 import { machineChecks, openCodePluginNote, type Practice } from './checks.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
 import * as gemini from '../../agents/runtimes/gemini.ts';
 import * as grok from '../../agents/runtimes/grok.ts';
 import { hostGuardMisses } from '../../host/gh-commands.ts';
 import { UNSAVED_CONTROL, unsavedNotes } from '../advice/unsaved.ts';
-import { HOME_DIR, isNewerKitCopy, sealManaged } from '../files.ts';
+import { HOME_DIR, isNewerKitCopy, sealManaged, writeManaged } from '../files.ts';
 import { USER_CLI, USER_MISSING } from '../install.ts';
 import { compareCoreRules } from '../init.ts';
 import { coreRulesControl, roadControl } from './lessons.ts';
@@ -71,7 +71,7 @@ function openCodeControl(): string[] {
     writeFileSync(join(marked, 'opencode.json'), '{}\n');
     const note = openCodePluginNote(marked, cli);
     if (!note || note.ok || note.finding.id !== 'opencode-hook') return ['OpenCode plugin note'];
-    addProjectPlugin(marked, cli);
+    writeManaged(projectPluginPath(marked), projectPluginSource(cli));
     if (openCodePluginNote(marked, cli) !== null) return ['OpenCode plugin note'];
     return [];
   } catch {

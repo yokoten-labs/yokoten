@@ -24,9 +24,16 @@ function runsByRunner(text: string, rest: RegExp): boolean {
   return false;
 }
 
+/**
+ * A command that runs yokoten's `<sub>` by the path of a yokoten file (yokoten.ts or
+ * yokoten.mjs): the form yokoten builds for its own hooks. A package runner's `npx yokoten
+ * <sub>` is not one: that is a hook the user wrote, and install and uninstall leave it (#984).
+ */
+export const runsByPath = (sub: string): RegExp => new RegExp(`yokoten\\.(?:ts|mjs)"?\\s+${sub}\\b`);
+
 /** A command that runs yokoten's `<sub>`, by whatever path (yokoten.ts or, since #408, yokoten.mjs), or by a package runner (#298). */
 export const runs = (sub: string): CommandTest => {
-  const byPath = new RegExp(`yokoten\\.(?:ts|mjs)"?\\s+${sub}\\b`);
+  const byPath = runsByPath(sub);
   const afterRunner = new RegExp(String.raw`[ \t]+yokoten(?:@[\w.^~-]+)?\s+${sub}\b`, 'y');
   return { test: (text) => byPath.test(text) || runsByRunner(text, afterRunner) };
 };
@@ -340,7 +347,8 @@ export const COMMANDS: Command[] = [
     text: [
       'Reads text on stdin and writes it to stdout with placeholders: <secret>, <owner>,',
       '<email>, <host> and <mark>. It hides secrets, your private marks, private email',
-      'addresses, git user.name and private remote hosts. If it fails, the text passes as it is.',
+      'addresses, git user.name and private remote hosts. If it cannot hide the text, it prints',
+      'no more of it, says why in one line on stderr, and exits 1.',
     ],
     options: [],
     example: 'git log -1 2>&1 | yokoten redact',

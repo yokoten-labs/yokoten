@@ -61,7 +61,6 @@ const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 // Modules with no test file of their own. Keep it short: a new module gets its test file.
 const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
-  'agents/hooks-file.ts', // no tests yet (#152); the install and init tests use it
   'host/github/index.ts', // re-exports the GitHub adapter's public names
   'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
@@ -1382,6 +1381,60 @@ test('process: below bin/main.ts, src/ reads no env, folder or stream of the pro
     .filter((path) => path.endsWith('.ts'))
     .flatMap((path) => processReads(readFileSync(join(SRC, path), 'utf8')).map((read) => `src/${path}:${read}`));
   assert.deepEqual(found, [], 'read it from the Invocation (bin/main.ts makes it), or pass it in as an argument');
+});
+
+// ---- Which system: one place to ask (record 0040) ----
+//
+// The first native Windows run found real bugs, all in code that asked `process.platform`
+// in place. Record 0040 moves every such read into src/platform/. Until then, these files may
+// keep the reads they have: a new file with a read, or one more read in a listed file,
+// fails. When a read moves out, lower its count here, so the list only gets shorter.
+const PLATFORM_READS: [string, number][] = [
+  ['agents/copilot.ts', 1],
+  ['agents/desk/desk.ts', 2],
+  ['agents/desk/start.ts', 1],
+  ['agents/runtimes/small/deepseek-harness.ts', 1],
+  ['commands/advice/board/server.ts', 1],
+  ['commands/check.ts', 1],
+  ['commands/hook.ts', 1],
+  ['commands/merge/train.ts', 1],
+  ['commands/setup.ts', 2],
+  ['host/light.ts', 1],
+  ['rules/guards/commands/no-wipe.ts', 2],
+  ['rules/guards/hooks/read.ts', 1],
+  ['rules/guards/lead-only/edit.ts', 2],
+  ['rules/privacy.ts', 1],
+  ['run/hook.ts', 6],
+  ['setup/advice/unsaved.ts', 5],
+  ['setup/doctor/checks.ts', 2],
+  ['setup/init.ts', 1],
+  ['setup/install.ts', 10],
+  ['setup/road.ts', 1],
+];
+
+/** How many times `text` reads `process.platform`, outside comments and strings. */
+function platformReads(text: string): number {
+  const tokens = tokenize(text);
+  return tokens.filter((token, index) => token.text === 'process' && (tokens[index + 1]?.text === '.' || tokens[index + 1]?.text === '?.') && tokens[index + 2]?.text === 'platform').length;
+}
+
+test('platform: the scan counts process.platform, and not one in a comment or a string (record 0040)', () => {
+  const text = ["// process.platform in a comment", "const said = 'process.platform';", 'const os = process.platform;', 'const win = process?.platform === "win32";', 'const kind = options.platform;'].join('\n');
+  assert.equal(platformReads(text), 2);
+});
+
+test('platform: no new process.platform read outside the list, and the list only shrinks (record 0040)', () => {
+  const allowed = new Map(PLATFORM_READS);
+  const problems: string[] = [];
+  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts'))) {
+    const reads = platformReads(readFileSync(join(SRC, path), 'utf8'));
+    const most = allowed.get(path) ?? 0;
+    if (path.startsWith('platform/')) continue;
+    if (reads > most) problems.push(`src/${path}: ${reads} read(s) of process.platform, ${most} allowed. Take the platform as an argument, from the caller.`);
+    if (reads < most) problems.push(`src/${path}: ${reads} read(s) now, ${most} listed. Lower its count in PLATFORM_READS (test/repo/architecture.test.ts).`);
+  }
+  for (const [path] of PLATFORM_READS) if (!existsSync(join(SRC, path))) problems.push(`src/${path} is gone. Remove its line from PLATFORM_READS.`);
+  assert.deepEqual(problems, []);
 });
 
 // ---- Code given to node -e (#329) ----

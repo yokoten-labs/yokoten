@@ -189,6 +189,11 @@ test('board controls: a start is refused when the hooks will not run', () => {
   codexHooks.addProjectStopHook(sandbox.repo, 'bin/yokoten.mjs');
   writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects."${sandbox.repo}"]\ntrust_level = "trusted"\n`);
   assert.match(boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '', /\/hooks/, 'untrusted hooks name the trust step');
+  // A folder the user set untrusted on purpose: the board names their own step, not `yokoten trust` (#984).
+  writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects."${sandbox.repo}"]\ntrust_level = "untrusted"\n`);
+  const own = boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '';
+  assert.match(own, /not trusted/);
+  assert.match(own, /set trust_level = "trusted" for this folder/, own);
   // Codex in use, but no hooks in the worktree: init adds them.
   const bare = makeTempDir('yokoten-board-bare-');
   assert.match(boardGuardReady('codex', bare, sandbox.env) ?? '', /yokoten init/, 'missing hooks name init');

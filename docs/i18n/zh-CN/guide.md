@@ -317,6 +317,7 @@ agent 列在这里，但还没有确认它的守卫能端到端拦住。光看�
 `~/.config/muse/settings.json`（设了 `$XDG_CONFIG_HOME` 就写进 `$XDG_CONFIG_HOME/muse/settings.json`）。有 `~/.grok` 的话，Grok CLI 只装命令守卫，写进
 `~/.grok/hooks/yokoten.json`：会话开头钩子的输出，Grok 只给你看，不给 agent 看。有 `~/.gemini/config` 的话，Antigravity CLI 只装命令守卫，写进 `~/.gemini/config/hooks.json`。有 `~/.copilot` 的话，Copilot CLI 也装命令守卫，写进 `~/.copilot/hooks/yokoten.json`。两者都还没有收尾检查：agy 的 Stop 事件没有重入信号，Copilot 的钩子超时后会放行调用。有 `~/.config/opencode` 的话，OpenCode 只装命令守卫，写进 `~/.config/opencode/plugins/yokoten.ts`。Grok 的信任检查关掉时（设了 `GROK_FOLDER_TRUST=0`，或者 `~/.grok/config.toml` 里写了 `[folder_trust] enabled = false`），`doctor` 把每个文件夹都当成已信任。在 Codex 里，`apply_patch` 要改哪些
 文件，守卫都会查，在 shell 里跑的也查。
+`CLAUDE_CONFIG_DIR`、`CODEX_HOME` 或 `XDG_CONFIG_HOME` 设成完整路径的话，`install` 就写进那个文件夹，工具自己也从那里读。
 
 每个工具都要你先信任，项目钩子才会跑：
 
@@ -1861,14 +1862,15 @@ agent，守卫都拦下这些：
   邮箱（`<email>`）、git 的 user.name 和 Linux、Windows 的用户名（`<owner>`）、主目录（`~`）、
   私有远程仓库的主机名（`<host>`），还有私有
   词表里的词。像域名的词换成 `<host>`，其他的换成 `<mark>`。查词的办法和上面的检查一样。没有私有
-  词表也能用，这时只藏邮箱、密钥这类格式和 git 知道的信息。它要是启动不了、读不了词表，会用
-  一行字说明，然后原样输出：绝不会让命令停下来。
+  词表也能用，这时只藏邮箱、密钥这类格式和 git 知道的信息。它要是读不了词表，或者有一段藏不住，
+  后面的输出就一个字也不印，在 stderr 上用一行字说明，退出码是 1。
 - **在 Claude Code 里，守卫会过滤单纯的读命令。** 下面这些命令会打印账号信息：`git log`、`git show`、
   `git shortlog <revision>`、`git blame`、`git for-each-ref`（不管带什么格式），`git cat-file -p`；`git remote -v`、
-  `get-url`、`show`；`git config --list`，以及读 `user.*`、`remote.*`；`gh auth status`；用 `gh`
+  `get-url`、`show`；`git config --list`，以及读 `user.*`、`remote.*`（比如 `git config user.email`）；`gh auth status`；用 `gh`
   以 GET 查访问量和账号；`npm whoami`；`wrangler whoami`。整条命令只有其中一条、前后没有别的东西
   时，守卫会把它改成 `set -o pipefail # yokoten-redact`，再接
-  `( <命令> ) 2>&1 | { <node> <yokoten> redact || cat; }`，退出码还是原命令的。命令里有 `&&`、
+  `( <命令> ) 2>&1 | <node> <yokoten> redact`，退出码还是原命令的。redact 跑不起来时，输出整个藏起来，
+  stderr 上只说一行原因；这时命令本身成功的话，退出码是 1。命令里有 `&&`、
   `;`、管道、重定向、`$(...)`、`sudo` 这类前缀，或者会写文件的选项，就不改，照原样跑。
 - **别的 agent 照常跑命令。** 它们的 hook 改不了命令。`doctor` 和会话开头会说一次。想在那边
   直接拦下这类命令，就在 `yokoten.json` 里设 `"privacy": { "output": "stop" }`，守卫会拦下命令，

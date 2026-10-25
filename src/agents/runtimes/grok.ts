@@ -21,14 +21,14 @@
 // - A deny is `permissionDecision: "deny"` on stdout; at exit 2 its reason, whole, is
 //   what the model reads (stderr alone gives only its first line).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
-import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook } from '../hooks-file.ts';
+import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
 import { blankedToml, hasTomlArray, hasTomlHeader, hasTomlKey, hasTomlTable, isInsideProject, parseToml, readTomlTables, type TrustChange, type TrustPlan } from './codex.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
@@ -191,6 +191,9 @@ function isTrustGateOff(home: string): boolean {
   }
 }
 
+/** How the user trusts a folder they set `trusted = false` for in Grok: yokoten never flips it (#984). */
+const untrustedFix = (store: string): string => `to change it, set trusted = true for this folder in ${store}, or run \`grok --trust\` at the repo root`;
+
 /** Whether Grok trusts the project at `root`, from its trust store. Read-only. */
 export function readTrust(root: string, env: Env): FolderTrust {
   const store = env.GROK_HOME ? '$GROK_HOME/trusted_folders.toml' : '~/.grok/trusted_folders.toml';
@@ -205,8 +208,10 @@ export function readTrust(root: string, env: Env): FolderTrust {
   } catch {
     return { state: 'unreadable', store };
   }
-  const isTrusted = folderKeys(root).some((key) => folders.get(key)?.trusted === true);
-  return { state: isTrusted ? 'trusted' : 'untrusted', store };
+  const saved = folderKeys(root).map((key) => folders.get(key)?.trusted);
+  if (saved.includes(true)) return { state: 'trusted', store };
+  // `trusted = false` for the folder is the user's choice (#984).
+  return { state: 'untrusted', store, ...(saved.includes(false) ? { userChoiceFix: untrustedFix(store) } : {}) };
 }
 
 /**
@@ -234,8 +239,9 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const folder = keys.find((key) => folders.has(key)) ?? keys[0];
   const trusted = folders.get(folder)?.trusted;
   if (trusted === true) return { state: 'same', store, changes: [] };
-  const before = trusted === false ? 'false' : null;
-  const change: TrustChange = { agent: 'Grok CLI', store, file, format: 'toml', path: ['folders', folder], key: 'trusted', value: 'true', before, kind: 'boolean' };
+  // `trusted = false` is the user's choice: it stays (#984).
+  if (trusted === false) return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays trusted = false in ${store} (yokoten would set true)`, fix: untrustedFix(store) }] };
+  const change: TrustChange = { agent: 'Grok CLI', store, file, format: 'toml', path: ['folders', folder], key: 'trusted', value: 'true', before: null, kind: 'boolean' };
   return { state: 'trusted', store, changes: [change] };
 }
 
@@ -288,8 +294,7 @@ function readProfile(text: string): Record<string, unknown> | 'blocked' | null {
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'unreadable' {
   const path = join(root, SANDBOX_FILE);
   if (!existsSync(path)) {
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, FRESH_SANDBOX);
+    writeSafely(path, FRESH_SANDBOX);
     return 'added';
   }
   let text: string;
@@ -305,8 +310,7 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | 'un
   const lines = text.split(/\r?\n/);
   while (lines.length > 0 && lines.at(-1) === '') lines.pop();
   lines.push('', '[profiles.yokoten]', `extends = "${PROFILE_BASE}"`, '');
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, lines.join(newline));
+  writeSafely(path, lines.join(newline));
   return 'added';
 }
 

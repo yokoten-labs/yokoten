@@ -209,11 +209,17 @@ test('help: the board row and `board --help` say preview (#933)', () => {
 test('compile cache: a cache folder that cannot be made does not stop the command (#286)', () => {
   const sandbox = makeSandbox();
   // A file where the folder should be: Node can't create the cache there.
-  const file = join(sandbox.home, 'not-a-folder');
+  // On Linux the file is ~/.cache, and XDG_CACHE_HOME is relative (#988): the XDG spec says
+  // to ignore it, so the entry tries ~/.cache/yokoten and makes nothing in the current
+  // folder. The sandbox's own NODE_COMPILE_CACHE is cleared, or it would win. The positive
+  // control: the old entry made the cache under the current folder.
+  const isLinux = process.platform === 'linux';
+  const file = join(sandbox.home, isLinux ? '.cache' : 'not-a-folder');
   writeFileSync(file, '');
-  const r = sandbox.run(['--version'], { extra: { NODE_COMPILE_CACHE: file } });
+  const r = sandbox.run(['--version'], { extra: isLinux ? { NODE_COMPILE_CACHE: '', XDG_CACHE_HOME: 'relative-cache' } : { NODE_COMPILE_CACHE: file } });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^\d+\.\d+\.\d+\n$/);
+  assert.ok(!existsSync(join(sandbox.repo, 'relative-cache')), 'nothing in the current folder');
 });
 
 // #408: the agent hooks now run yokoten.mjs; hooks an older yokoten wrote run yokoten.ts.

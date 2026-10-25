@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { configHomeIn, configHomeOf, configHomeShown, folderIn, hideHome } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import type { Action } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -112,11 +112,13 @@ export function isGuardOff(root: string, env: Env): boolean {
   return state === 'untrusted' || state === 'no store';
 }
 
+/** How the user trusts a folder they decided not to trust in Muse: yokoten never flips it (#984). */
+const untrustedFix = (store: string): string => `to change it, set "decision": "trusted" for this folder in ${store}, or pass \`--trust-workspace\` to \`muse exec\``;
+
 /** Whether Muse trusts the project at `root`, from its trust store. Read-only. */
 export function readTrust(root: string, env: Env): FolderTrust {
-  const store = env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/muse/trust.json' : '~/.config/muse/trust.json';
-  const user = homeOf(env);
-  const config = env.XDG_CONFIG_HOME || (user ? join(user, '.config') : '');
+  const store = configHomeShown(env, 'muse/trust.json');
+  const config = configHomeOf(env);
   if (!config) return { state: 'no home', store };
   const home = join(config, 'muse');
   const file = join(home, 'trust.json');
@@ -130,11 +132,11 @@ export function readTrust(root: string, env: Env): FolderTrust {
   }
   if (!isObject(saved) || saved.schema_version !== 1 || !isObject(saved.projects)) return { state: 'unreadable', store };
   const projects = saved.projects;
-  const isTrusted = folderKeys(root).some((key) => {
-    const entry = Object.hasOwn(projects, key) ? projects[key] : undefined;
-    return isObject(entry) && entry.decision === 'trusted';
-  });
-  return { state: isTrusted ? 'trusted' : 'untrusted', store };
+  const entries = folderKeys(root).map((key) => (Object.hasOwn(projects, key) ? projects[key] : undefined));
+  if (entries.some((entry) => isObject(entry) && entry.decision === 'trusted')) return { state: 'trusted', store };
+  // A decision recorded for the folder is the user's choice (#984).
+  const isChosen = entries.some((entry) => isObject(entry) && typeof entry.decision === 'string');
+  return { state: 'untrusted', store, ...(isChosen ? { userChoiceFix: untrustedFix(store) } : {}) };
 }
 
 /**
@@ -142,9 +144,8 @@ export function readTrust(root: string, env: Env): FolderTrust {
  * per folder: this one decision is what makes yokoten's hooks run.
  */
 export function trustProject(root: string, env: Env): TrustPlan {
-  const store = env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/muse/trust.json' : '~/.config/muse/trust.json';
-  const user = homeOf(env);
-  const config = env.XDG_CONFIG_HOME || (user ? join(user, '.config') : '');
+  const store = configHomeShown(env, 'muse/trust.json');
+  const config = configHomeOf(env);
   if (!config) return { state: 'no home', store, changes: [] };
   const home = join(config, 'muse');
   const file = join(home, 'trust.json');
@@ -169,8 +170,11 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const folder = keys.find((key) => Object.hasOwn(projects, key)) ?? keys[0];
   const entry = projects[folder];
   if (isObject(entry) && entry.decision === 'trusted') return { state: 'same', store, changes: [] };
-  const before = isObject(entry) && typeof entry.decision === 'string' ? entry.decision : null;
-  const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before };
+  // A decision the user made, other than trusted, stays (#984).
+  if (isObject(entry) && typeof entry.decision === 'string') {
+    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+  }
+  const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before: null };
   return { state: 'trusted', store, changes: [change], seed: { schema_version: 1, projects: {} } };
 }
 
@@ -182,13 +186,13 @@ export function trustProject(root: string, env: Env): TrustPlan {
 // 1.4.11 on 2026-10-22: a SessionStart hook in that file fired in a headless run.
 
 /** Muse's config folder: `$XDG_CONFIG_HOME/muse`, or `~/.config/muse`. */
-const configDir = (env: Env): string => join(env.XDG_CONFIG_HOME || join(homeIn(env), '.config'), 'muse');
+const configDir = (env: Env): string => join(configHomeIn(env), 'muse');
 
 /** The user's settings file. With no home folder it throws NO_HOME, so nothing is written. */
 const userSettings = (env: Env): string => join(configDir(env), 'settings.json');
 
 /** The user's settings file, as the user would type it. */
-export const userSettingsFile = (env: Env): string => (env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/muse/settings.json' : '~/.config/muse/settings.json');
+export const userSettingsFile = (env: Env): string => configHomeShown(env, 'muse/settings.json');
 
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
@@ -244,7 +248,7 @@ export const AGENT_ENV: RuntimeEnv = { login: ['MODEL_API_KEY'], config: [] };
  * names HTTPS_PROXY, ALL_PROXY and MUSE_HTTP_PROXY.
  */
 export const DESK: RuntimeDesk = {
-  leadState: (env) => [configDir(env), join(env.XDG_DATA_HOME || join(homeIn(env), '.local', 'share'), 'muse')],
+  leadState: (env) => [configDir(env), join(folderIn(env, 'XDG_DATA_HOME', '.local', 'share'), 'muse')],
   login: (env) => [{ from: join(configDir(env), 'auth.json'), to: join('config', 'muse', 'auth.json') }],
   stateEnv: (state) => ({ XDG_CONFIG_HOME: join(state, 'config'), XDG_DATA_HOME: join(state, 'data') }),
   hosts: ['api.meta.ai'],

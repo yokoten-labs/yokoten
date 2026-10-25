@@ -2,11 +2,11 @@
 
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectSandbox, blankedToml, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
+import { addProjectSandbox, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 
 // Each call is shaped as the runtime's hook docs show it (#30): Codex's PreToolUse
@@ -191,7 +191,7 @@ test('codex trust (#341): doctor says when Codex skips the hooks, and ok only wh
   writeConfig(project + state('pre_tool_use', 'sha256:old') + state('stop', stopHash));
   assert.match(await doctor(), /note +codex-hook: yokoten's hooks in \.codex\/hooks\.json changed after you trusted them, so Codex skips them/);
   writeConfig(project + state('pre_tool_use', guardHash, 'enabled = false\n') + state('stop', stopHash));
-  assert.match(await doctor(), /note +codex-hook: a yokoten hook in \.codex\/hooks\.json is turned off in Codex/);
+  assert.match(await doctor(), /note +codex-hook: you turned off a yokoten hook in \.codex\/hooks\.json in Codex; to turn it on, use Codex's `\/hooks` screen/, 'trust keeps that choice, so the fix is in Codex (#984)');
   // A hook whose command yokoten did not write, though it runs yokoten's subcommand: not
   // yokoten's, so doctor names it and trust must leave it alone (#661).
   const edited = JSON.parse(readFileSync(join(root, '.codex', 'hooks.json'), 'utf8'));
@@ -429,4 +429,25 @@ test('trust store: a list in a JSON file keeps its comment lines, and undo remov
   assert.equal(readFileSync(file, 'utf8'), '// Copilot CLI settings\n{\n  "trustedFolders": [\n    "/other"\n  ]\n}\n');
   // Already gone: undo leaves the file and says it kept it.
   assert.equal(revertTrust(full), 'kept');
+});
+
+// #988: Codex reads its hooks and its trust from one folder, CODEX_HOME. The positive
+// control: the old hooks path was always ~/.codex/hooks.json, while trust followed CODEX_HOME.
+test('codex: the user hooks go to CODEX_HOME, the folder trust reads, never ~/.codex (#988)', () => {
+  const home = makeTempDir();
+  const codexHome = makeTempDir();
+  const env = { HOME: home, CODEX_HOME: codexHome };
+  assert.equal(hasUserDir(env), true, 'CODEX_HOME is the user folder');
+  assert.equal(hasUserDir({ HOME: home }), false, 'no ~/.codex');
+  assert.equal(userHooksFile(env), '$CODEX_HOME/hooks.json');
+  assert.deepEqual(addUserHooks(env, '"$HOME/.local/share/yokoten/bin/yokoten.mjs"', 'gone'), { doctor: 'added', guard: 'added' });
+  assert.ok(existsSync(join(codexHome, 'hooks.json')), 'the hooks are where Codex reads them');
+  assert.ok(!existsSync(join(home, '.codex')), '~/.codex is not made');
+  assert.equal(readTrust(makeTempDir(), env).store, '$CODEX_HOME/config.toml', 'trust reads the same folder');
+  assert.deepEqual(removeUserHooks(env), { doctor: 'removed', guard: 'removed' });
+  // A relative CODEX_HOME is ignored: the default, never the current folder.
+  const relative = { HOME: home, CODEX_HOME: 'codex-here' };
+  assert.equal(userHooksFile(relative), '~/.codex/hooks.json');
+  assert.equal(readTrust(makeTempDir(), relative).store, '~/.codex/config.toml');
+  assert.equal(hasUserDir(relative), false);
 });

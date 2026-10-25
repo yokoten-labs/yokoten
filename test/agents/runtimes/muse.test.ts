@@ -132,7 +132,8 @@ test('muse trust (#341): doctor says when Muse skips the hooks; ok only when tru
   // Another decision, a file that won't parse, and a schema doctor does not know: never ok.
   writeFileSync(file, JSON.stringify({ schema_version: 1, projects: { [root]: { decision: 'untrusted' } } }));
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'untrusted');
-  assert.match(await doctor(), off);
+  // The user's own decision: trust keeps it, so the fix is in Muse (#984).
+  assert.match(await doctor(), /(next|to do) +tool-hook: the guard is off in Muse Code: you set it not to trust this folder; to change it, set "decision": "trusted" for this folder in ~\/\.config\/muse\/trust\.json, or pass `--trust-workspace` to `muse exec`/);
   writeFileSync(file, '{ not json');
   // A store doctor can't read is a note, and the note names the headless way to trust (#557).
   assert.match(
@@ -255,4 +256,18 @@ test("Muse's hook entry point in a marked clone sees a worker and refuses a lead
   result = await sandbox.call(['worker', 'mark', sandbox.repo], { cwd: deskHome });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /is the main checkout, the lead's/);
+});
+
+// #988: a relative XDG_CONFIG_HOME is ignored, as the XDG spec says. The positive control:
+// the old code took it, and wrote Muse's settings under the folder the command ran in.
+test('muse: a relative XDG_CONFIG_HOME is ignored; the hooks go to ~/.config/muse (#988)', () => {
+  const home = makeTempDir();
+  mkdirSync(join(home, '.config', 'muse'), { recursive: true });
+  const env = { HOME: home, XDG_CONFIG_HOME: 'relative-config' };
+  assert.equal(userSettingsFile(env), '~/.config/muse/settings.json');
+  assert.equal(hasUserDir(env), true);
+  assert.equal(readTrust(makeTempDir(), env).store, '~/.config/muse/trust.json');
+  addUserHooks(env, CLI, 'gone');
+  assert.ok(existsSync(join(home, '.config', 'muse', 'settings.json')));
+  assert.ok(!existsSync(join(process.cwd(), 'relative-config')), 'nothing in the current folder');
 });

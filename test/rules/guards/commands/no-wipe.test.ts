@@ -105,6 +105,37 @@ test('guard: a project one or two folders below the root is the project (#969)',
   assert.equal(at('/app', 'rm -rf /')?.id, 'delete-checkout');
 });
 
+test('guard: on Windows, the home folder and the system folders are no place to wipe (#999)', () => {
+  // The platform is passed in, so Linux CI checks the Windows reading too.
+  const home = { HOME: 'C:\\Users\\agent' };
+  const project = 'C:\\Users\\agent\\project';
+  const wipeAt = (cwd: string, target: string, env = home) => checkDamage(['rm', '-rf', target], cwd, env, 'win32')?.id ?? null;
+  for (const target of [
+    '~', '~/', '~\\', '~/*', '$HOME', '..', '../*',
+    'C:\\Users\\agent', 'C:\\Users\\agent\\', 'c:/users/AGENT', 'C:/Users/agent/*', '/c/Users/agent', 'C:\\Users\\agent\\project\\..',
+    // The other system folders on a drive, and what sits one level in them.
+    'C:\\Users', 'C:\\Users\\other', 'C:\\Windows', 'C:\\Windows\\System32', 'C:\\Program Files', 'C:\\Program Files (x86)',
+    'C:\\Program Files\\Git', 'C:\\ProgramData', 'D:\\', 'C:\\*', '/c/',
+  ]) assert.equal(wipeAt(project, target), 'wipe-home-or-system', `should refuse on win32: rm -rf ${target}`);
+  // A home folder written the Git Bash way is the same folder.
+  assert.equal(wipeAt(project, 'C:\\Users\\agent', { HOME: '/c/Users/agent' }), 'wipe-home-or-system');
+  assert.equal(wipeAt(project, '~', { HOME: '/c/Users/agent' }), 'wipe-home-or-system');
+  // The folder the command runs in stays refused, in any of its forms.
+  assert.match(checkDamage(['rm', '-rf', '.'], project, home, 'win32')?.what ?? '', /this command runs in/);
+  assert.match(checkDamage(['rm', '-rf', '/c/users/agent/PROJECT'], project, home, 'win32')?.what ?? '', /this command runs in/);
+  // Work inside a project stays allowed, by any form of its path.
+  for (const target of ['dist', '.\\dist', 'node_modules', 'coverage/*', 'C:\\Users\\agent\\project\\dist', '/c/Users/agent/project/dist', 'c:/USERS/agent/project/build', 'C:\\Users\\agent\\other-project', 'C:\\tmp\\x', 'D:\\work\\app']) {
+    assert.equal(wipeAt(project, target), null, `should allow on win32: rm -rf ${target}`);
+  }
+  // A POSIX-style path in Git Bash keeps its POSIX reading: the project at /app is the project.
+  for (const target of ['dist', '/app/dist', '/tmp/x']) assert.equal(wipeAt('/app', target), null, `should allow on win32 at /app: rm -rf ${target}`);
+  for (const target of ['/', '/usr', '/app']) assert.equal(wipeAt('/app', target), 'wipe-home-or-system', `should refuse on win32 at /app: rm -rf ${target}`);
+  // Positive control: the same home folder is refused by every program the rule reads.
+  for (const words of [['rd', '/s', '/q', 'C:\\Users\\agent'], ['Remove-Item', '-Recurse', '~'], ['find', '~', '-delete'], ['chmod', '-R', '777', '/c/Users/agent']]) {
+    assert.equal(checkDamage(words, project, home, 'win32')?.id, 'wipe-home-or-system', `should refuse on win32: ${words.join(' ')}`);
+  }
+});
+
 test('guard: no disk commands (#969)', () => {
   for (const command of [
     'mkfs.ext4 /dev/sda1', 'mkfs /dev/sdb', 'mkfs.vfat /dev/sdc',

@@ -33,17 +33,17 @@
 // `allow` and `ask` let it go on. Exit 0 and exit 1 also let it go on. A crash, a signal,
 // a timeout, or an answer it cannot read denies.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { homeIn, homeOf } from '../../../rules/privacy.ts';
+import { configHomeIn, configHomeOf, configHomeShown } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
 import { GUARD_PROTOCOL_ID } from '../../../run/protocol.ts';
 import type { RuntimeEnv } from '../../desk/agent-env.ts';
 import { isFolder } from '../../folder-trust.ts';
 import type { AgentAdapter } from '../runtime.ts';
-import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile } from '../../hooks-file.ts';
+import { isObject, type Problem } from '../../hooks-file.ts';
 
 /** The project plugin `init` writes. OpenCode loads every file in this folder at startup. */
 export const PLUGIN_FILE = '.opencode/plugins/yokoten.ts';
@@ -66,7 +66,7 @@ const EDITS = new Set(EDIT_ACTIONS);
 const READS = new Set(READ_ACTIONS);
 
 /** A problem reading the plugin: it is there, but not text yokoten can replace. */
-const UNREADABLE: Problem = { kind: 'shape', hint: 'the plugin file should be readable text' };
+export const UNREADABLE_PLUGIN: Problem = { kind: 'shape', hint: 'the plugin file should be readable text' };
 
 const textOf = (value: unknown): string | undefined => (typeof value === 'string' && value !== '' ? value : undefined);
 
@@ -228,7 +228,11 @@ export const formatDenial = (reason: string): { stdout: string; exitCode: number
  */
 export function pluginSource(command: string, timeoutMs = PLUGIN_TIMEOUT_MS): string {
   const wait = Number.isFinite(timeoutMs) && timeoutMs >= 1 ? Math.floor(timeoutMs) : PLUGIN_TIMEOUT_MS;
+  // The mark lets install and init tell their own copy from one the user wrote or
+  // edited: those stay (#984).
   const body = `
+    // managed by yokoten
+    // yokoten keeps this file up to date. Edit it and yokoten leaves it as it is.
     import { spawnSync } from 'node:child_process';
     import { Plugin } from '@opencode/plugin';
 
@@ -408,81 +412,40 @@ const projectCommand = (cli: string) =>
 /** The user's command guard, in every repo. `missing` is what it says when `cli` is gone. */
 const userCommand = (cli: string, missing: string) => guardCommand(cli, 'hook --protocol --commands-only', missing, { isToolCall: true });
 
-/** The plugin's text, or why yokoten will not replace it. A missing file is empty text. */
-function readPlugin(path: string): { text: string } | { problem: Problem } {
-  try {
-    return { text: readFileSync(path, 'utf8') };
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { text: '' };
-    return { problem: UNREADABLE };
-  }
-}
+// The plugin is a file yokoten owns, with the managed mark. setup/ writes it with
+// `writeManaged`, so a file without the mark, or one the user edited, stays (#984).
 
-/** What writing `source` over the plugin at `path` would do, read-only. */
-function pluginState(path: string, source: string): HookState {
-  const read = readPlugin(path);
-  if ('problem' in read) return read.problem;
-  if (read.text === '') return 'added';
-  return read.text === source ? 'same' : 'updated';
-}
+/** The project plugin's path on disk. */
+export const projectPluginPath = (root: string): string => join(root, PLUGIN_FILE);
 
-/** Write `source` over the plugin at `path`. A file yokoten cannot read throws and stays as it was. */
-function writePlugin(path: string, source: string): Added {
-  const state = pluginState(path, source);
-  if (typeof state === 'object') throw new UnreadableHooksFile(path, state);
-  if (state === 'same') return state;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, source);
-  return state;
-}
+/** The project plugin's text, for `cli`, the repo's own yokoten. */
+export const projectPluginSource = (cli: string): string => pluginSource(projectCommand(cli));
 
-/** What `addProjectPlugin` would do, read-only. */
-export const projectPluginState = (root: string, cli: string): HookState => pluginState(join(root, PLUGIN_FILE), pluginSource(projectCommand(cli)));
-
-/** Write the tool-call plugin into `.opencode/plugins/yokoten.ts`. */
-export const addProjectPlugin = (root: string, cli: string): Added => writePlugin(join(root, PLUGIN_FILE), pluginSource(projectCommand(cli)));
+/** The user plugin's text: the command guard; `missing` is what it says when `cli` is gone. */
+export const userPluginSource = (cli: string, missing: string): string => pluginSource(userCommand(cli, missing));
 
 /** True when the project looks set up for OpenCode: `opencode.json`, or a `.opencode` folder. */
 export const usesOpenCode = (root: string): boolean => existsSync(join(root, 'opencode.json')) || existsSync(join(root, '.opencode'));
 
 /** OpenCode's config folder: `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`. */
-const configDir = (env: Env): string => join(env.XDG_CONFIG_HOME || join(homeIn(env), '.config'), 'opencode');
+const configDir = (env: Env): string => join(configHomeIn(env), 'opencode');
 
 /** The user plugin, as the user would type it. */
-export const userPluginFile = (env: Env): string => (env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/opencode/plugins/yokoten.ts' : '~/.config/opencode/plugins/yokoten.ts');
+export const userPluginFile = (env: Env): string => configHomeShown(env, 'opencode/plugins/yokoten.ts');
 
 /** The user plugin's path on disk. With no home folder, and no XDG dir, it throws NO_HOME. */
-const userPluginPath = (env: Env): string => join(configDir(env), 'plugins', 'yokoten.ts');
+export const userPluginPath = (env: Env): string => join(configDir(env), 'plugins', 'yokoten.ts');
 
 /** Whether OpenCode looks used on this machine: its config folder is there. */
 export function hasUserDir(env: Env): boolean {
   try {
-    const home = homeOf(env);
-    const base = env.XDG_CONFIG_HOME || (home ? join(home, '.config') : '');
-    return base !== '' && isFolder(join(base, 'opencode'));
+    const base = configHomeOf(env);
+    return base !== null && isFolder(join(base, 'opencode'));
   } catch {
     return false;
   }
 }
 
-/** What `addUserPlugin` would do, read-only. */
-export const userPluginState = (env: Env, cli: string, missing: string): HookState => pluginState(userPluginPath(env), pluginSource(userCommand(cli, missing)));
-
-/** The user's command guard, in `~/.config/opencode/plugins/yokoten.ts`. */
-export const addUserPlugin = (env: Env, cli: string, missing: string): Added => writePlugin(userPluginPath(env), pluginSource(userCommand(cli, missing)));
-
-/** Take back the user plugin, only when it is still the text yokoten writes. */
-export function removeUserPlugin(env: Env, cli: string, missing: string): 'removed' | 'not there' | 'kept (yours)' {
-  const path = userPluginPath(env);
-  if (!existsSync(path)) return 'not there';
-  try {
-    if (readFileSync(path, 'utf8') !== pluginSource(userCommand(cli, missing))) return 'kept (yours)';
-  } catch {
-    return 'kept (yours)';
-  }
-  rmSync(path, { force: true });
-  return 'removed';
-}
 
 /** The names this runtime's agent gets on top of the shared ones. OpenCode's login name was not in the docs. */
 export const AGENT_ENV: RuntimeEnv = { login: [], config: [] };
