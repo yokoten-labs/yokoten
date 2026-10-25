@@ -7,6 +7,8 @@ AI agents can make a big mistake in a second. yokoten stops it before it happens
 - **Stops dangerous actions**: a force push, deleting your work, leaking a secret, releasing without you.
 - **Works inside the tools you already use**: Claude Code, Codex, Copilot CLI, Muse Code and more.
 - **On by default.** One command to start, nothing new to learn.
+- **Leaves your settings alone**: it keeps the choices you made, and saves a copy before it changes a file of yours.
+- **Works on Linux, Windows and macOS.**
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
