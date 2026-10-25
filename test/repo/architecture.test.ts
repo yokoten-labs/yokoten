@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, TIMED_OUT } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, shardOf, TIMED_OUT } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1842,6 +1842,20 @@ test('windows known: each failure keeps the first line of its error, with folder
   assert.deepEqual(readKnown(text).required, ['test/a.test.ts :: one', 'test/a.test.ts :: two']);
   // Counts group a cause across tests: numbers and quoted parts do not split it.
   assert.deepEqual(reasonCounts(["spawn sh ENOENT", "spawn sh ENOENT", "timed out after 120 ms", "timed out after 300 ms", "got 'a'"]), ['   2  spawn sh ENOENT', '   2  timed out after N ms', "   1  got …"]);
+});
+
+test('windows known: shards split the files by size, biggest first, and each judges only its own', () => {
+  const files = [['a', 90], ['b', 50], ['c', 40], ['d', 30], ['e', 20], ['f', 10]].map(([name, size]) => ({ name: `test/${name}.test.ts`, size: Number(size) }));
+  const shards = [1, 2, 3].map((index) => shardOf(files, index, 3));
+  assert.deepEqual(shards, [['test/a.test.ts'], ['test/b.test.ts', 'test/e.test.ts', 'test/f.test.ts'], ['test/c.test.ts', 'test/d.test.ts']]);
+  // Every file runs once, in exactly one shard; one shard is the whole suite.
+  assert.deepEqual(shards.flat().sort(), files.map((file) => file.name).sort());
+  assert.deepEqual(shardOf(files, 1, 1), files.map((file) => file.name));
+  assert.deepEqual(shardOf(files, 4, 3), []);
+  // A shard's list holds only its files' entries, so an entry of another shard is not "fixed".
+  const known = readKnown(['test/a.test.ts :: broken', 'test/c.test.ts :: broken', '? test/b.test.ts :: flaky'].join('\n'));
+  assert.deepEqual(knownFor(known, ['test\\c.test.ts', 'test/d.test.ts']), { required: ['test/c.test.ts :: broken'], flaky: [] });
+  assert.deepEqual(judgeKnown([], knownFor(known, shards[1])), { added: [], fixed: [] });
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {
