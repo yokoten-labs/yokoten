@@ -14,7 +14,9 @@ test('bash: a command of 100k words is read in linear time (#226)', () => {
     ['echo a', (n) => `echo ${'a '.repeat(n)}`],
     ['then', (n) => `${'then '.repeat(n)}echo`],
     ['env', (n) => `${'env '.repeat(n)}echo`],
-    ['sudo', (n) => `${'sudo '.repeat(n)}echo`],
+    // A launcher chain, not `sudo`: the root rule refuses sudo itself (#969), whatever
+    // it wraps. The point here is that a long chain reads in linear time.
+    ['nice', (n) => `${'nice '.repeat(n)}echo`],
     ['GIT_CONFIG_PARAMETERS', (n) => `${'GIT_CONFIG_PARAMETERS=x '.repeat(n)}git status`],
   ];
   // From 3125 words to 8 times that.

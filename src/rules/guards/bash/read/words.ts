@@ -263,18 +263,18 @@ export function findPrograms(words: string[]): string[] {
 }
 
 /** The programs a command runs, each with its index in `words`. */
-export function findProgramPlaces(words: string[]): { word: string; index: number }[] {
+export function findProgramPlaces(words: string[], launchersToo = false): { word: string; index: number }[] {
   spend(words.length);
   const programs: ProgramPlace[] = [];
   // commandWords reads `bash -c 'x'` again as `-c x`: the shell's options come first.
   const start = words.findIndex((word) => !word.startsWith('-'));
   if (start === -1) return programs;
-  const findAt = programAt(words, start, programs);
+  const findAt = programAt(words, start, programs, false, launchersToo);
   // find runs the program after each -exec, -execdir, -ok and -okdir. One pass over the
   // words finds them all, a find inside a find too, without reading any word twice.
   if (findAt !== -1) {
     for (let action = findAt + 1; action < words.length && programs.length <= MAX_PROGRAMS; action++) {
-      if (FIND_ACTIONS.has(words[action])) programAt(words, action + 1, programs, true);
+      if (FIND_ACTIONS.has(words[action])) programAt(words, action + 1, programs, true, launchersToo);
     }
   }
   return programs;
@@ -285,7 +285,7 @@ export function findProgramPlaces(words: string[]): { word: string; index: numbe
 // string. Returns the index of the program when it is find, or -1. In a find action
 // (`isAction`) the command ends at `;` or `{} +`, and the walk stops at the next action too:
 // findProgramPlaces reads that one itself, so no word is walked once for each action before it.
-function programAt(words: string[], index: number, programs: ProgramPlace[], isAction = false): number {
+function programAt(words: string[], index: number, programs: ProgramPlace[], isAction = false, launchersToo = false): number {
   let limit = words.length;
   if (isAction) {
     limit = index;
@@ -295,10 +295,13 @@ function programAt(words: string[], index: number, programs: ProgramPlace[], isA
     index = skipPrefix(words, index, limit);
     if (index >= limit || HEADS.has(words[index])) return -1;
     const name = programName(words[index]);
-    if (!Object.hasOwn(LAUNCHERS, name)) {
+    const isLauncher = Object.hasOwn(LAUNCHERS, name);
+    if (!isLauncher) {
       programs.push({ word: words[index], index });
       return name === 'find' ? index : -1;
     }
+    // `launchersToo` counts the launcher itself as the program it is: the root rule reads `sudo` (#969).
+    if (launchersToo) programs.push({ word: words[index], index });
     const launcher = LAUNCHERS[name];
     index++;
     // `command -v x` only says where x is; it does not run it.
@@ -307,7 +310,7 @@ function programAt(words: string[], index: number, programs: ProgramPlace[], isA
       const split = name === 'env' ? splitString(words, index) : undefined;
       if (split !== undefined) {
         for (const command of commandWords(split)) {
-          for (const program of findProgramPlaces(command)) programs.push({ word: program.word, index: -1 });
+          for (const program of findProgramPlaces(command, launchersToo)) programs.push({ word: program.word, index: -1 });
         }
       }
       index += launcher.options.includes(words[index]) ? 2 : 1;

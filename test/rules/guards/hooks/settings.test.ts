@@ -457,7 +457,9 @@ test('hooks setting: sudo -D and sudo --chdir move repo, like env -C (#226)', ()
     for (const prefix of ['sudo -D /tmp ', 'sudo -nD /tmp ', 'sudo -D/tmp ', 'sudo --chdir=/tmp ', 'sudo --chdir /tmp ', 'sudo -u root -D /tmp ']) {
       assert.equal(checkCommand(prefix + set, { env: {}, cwd })?.id, 'hooks-path', `should block: ${prefix}`);
     }
-    for (const prefix of ['sudo ', 'sudo -n ', 'sudo -u root ']) assert.equal(checkCommand(prefix + set, { env: {}, cwd }), null, `should allow: ${prefix}`);
+    // No root for agents (#969): a plain sudo is refused for that rule; the hooks-path rule itself
+    // still allows the .husky value, which the -D forms above answer first.
+    for (const prefix of ['sudo ', 'sudo -n ', 'sudo -u root ']) assert.equal(checkCommand(prefix + set, { env: {}, cwd })?.id, 'no-root', `no root: ${prefix}`);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }

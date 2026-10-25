@@ -50,13 +50,16 @@ test('lead-only files: each shell writer form stops a worker, not the lead (#402
     'git mv AGENTS.md RULES.md',
     'git apply fix.patch',
     'cd src && cp x ../AGENTS.md',
-    'sudo -u x sed -i s/a/b/ AGENTS.md',
     'bash -c "echo x > AGENTS.md"',
     'nice -n 10 tee AGENTS.md < x',
   ]) {
     assert.equal(run(command, worker)?.id, 'lead-only', `should stop a worker: ${JSON.stringify(command)}`);
     assert.equal(run(command, {}), null, `should let the lead: ${JSON.stringify(command)}`);
   }
+  // The sudo row shows the reader seeing through a launcher's option. No root for agents
+  // (#969) refuses the sudo for the lead too; the worker still hears lead-only first.
+  assert.equal(run('sudo -u x sed -i s/a/b/ AGENTS.md', worker)?.id, 'lead-only');
+  assert.equal(run('sudo -u x sed -i s/a/b/ AGENTS.md', {})?.id, 'no-root');
   // The message names the file and how to hand it over.
   const found = run('sed -i s/a/b/ AGENTS.md', worker);
   assert.match(found?.what ?? '', /writes AGENTS\.md, which is lead-only/);

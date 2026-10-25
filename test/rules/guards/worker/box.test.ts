@@ -378,7 +378,6 @@ test('guard: a worker command with a part the guard cannot read, or a shell mode
   // A worktree without such a link: ordinary commands, variables and recursion still pass.
   for (const command of [
     'for f in src/*.ts; do sed -i s/a/b/ $f; done',
-    'rm -rf $OUT_DIR',
     'cd src && npm test',
     'cd -L src',
     'rm -rf node_modules',
@@ -394,4 +393,7 @@ test('guard: a worker command with a part the guard cannot read, or a shell mode
     'cat /proc/cpuinfo',
     'npm test 2>/dev/null',
   ]) assert.equal(checkCommand(command, { cwd: clean, env: worker }), null, `should allow: ${command}`);
+  // One exception (#969): a wipe whose target the guard cannot read is refused, so
+  // `$OUT_DIR` no longer passes; the other variables above still do.
+  assert.equal(checkCommand('rm -rf $OUT_DIR', { cwd: clean, env: worker })?.id, 'wipe-home-or-system');
 });

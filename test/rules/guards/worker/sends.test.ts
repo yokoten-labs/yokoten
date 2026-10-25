@@ -285,9 +285,11 @@ test('guard: cancelling or deleting an Actions run is refused for every role (#6
     ]) assert.equal(checkCommand(command, { cwd: process.cwd(), env }), null, command);
     // A launcher's value may be the word `gh`. The program after it is still read.
     // A worker may not use `env -u` at all, so these are the lead's.
-    for (const command of ['env -u gh gh run rerun 1', 'sudo -u gh gh run view 1', 'xargs -a gh gh run list']) {
+    for (const command of ['env -u gh gh run rerun 1', 'xargs -a gh gh run list']) {
       assert.equal(checkCommand(command, { cwd: process.cwd(), env: lead }), null, command);
     }
+    // No root for agents (#969): the launcher still passes the word `gh` on, and sudo itself is refused.
+    assert.equal(checkCommand('sudo -u gh gh run view 1', { cwd: process.cwd(), env: lead })?.id, 'no-root');
   }
   // A write that is not a cancel or a delete stays the worker's own rule. The lead may rerun.
   for (const command of [

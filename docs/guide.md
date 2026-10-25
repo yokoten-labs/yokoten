@@ -73,7 +73,9 @@ All of this is on from the start, for everyone: you don't answer a question or e
 The same five protections are on from the start, for every person and every agent. They
 hold with no `yokoten init` and no setting.
 
-1. **Lose your work**: no force push, no hard reset, no deleting `.git` or its history.
+1. **Lose your work**: no force push, no hard reset, no deleting `.git` or its history. No wiping
+   the home folder or a system folder, no disk command (`mkfs`, `dd` onto a disk), and no root
+   (`sudo`, `su`): the owner runs what needs root.
 2. **Leak a secret**: no key, token, email address or home path in a commit or a post.
 3. **Publish for you**: no tag, no release, no package publish, no making a repo public.
 4. **Run code from the internet unread**: no download piped into a shell.
@@ -105,7 +107,7 @@ flowchart LR
 
 | | Runs | Stops |
 |-|------|-------|
-| **1** | before each tool call | tag pushes, force pushes, skipped checks; test edits in a fix task; a worker editing the rules; a program the project blocks; an issue or pull request title that breaks the title rules; personal data or a secret in an issue, pull request, comment or release note an agent posts with `gh`; cancelling or deleting an Actions run |
+| **1** | before each tool call | tag pushes, force pushes, skipped checks; root commands, wipes of the home or a system folder, disk commands; test edits in a fix task; a worker editing the rules; a program the project blocks; an issue or pull request title that breaks the title rules; personal data or a secret in an issue, pull request, comment or release note an agent posts with `gh`; cancelling or deleting an Actions run |
 | **1b** | when a Claude Code agent ends its turn | the same personal data, secrets and file rules as the commit check, in the changed files. It sends the agent back once with the findings |
 | **2** | on every commit | what the hook can't see: files changed by `sed` or a script, personal data, an overfull folder |
 | **3** | on every pull request | a commit made with the hook off |
@@ -1248,6 +1250,16 @@ project's own stack.
 The guard reads command text. It does not see a program that a script, a `make` target,
 an npm script or a shell function runs. Name each version you want to stop:
 `python3.12` is not `python3`.
+
+The safeguard's own refusals are fixed, not a setting: a wipe of home or the system,
+a disk command, and root. Two of them can surprise you.
+
+- A wipe of a target the guard cannot read is refused, such as `$OUT_DIR` or `$(pwd)`.
+  Name the folder with a plain path instead.
+- A disk tool is refused even when it only reads: `fdisk -l`, `parted -l`,
+  `diskutil list` and `gpt -r show disk0`. Ask the owner to run it.
+
+The folder the command runs in counts as the project, so `rm -rf dist` passes there.
 
 ### yokoten.json
 
