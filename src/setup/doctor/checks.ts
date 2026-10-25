@@ -53,6 +53,8 @@ function trustPractice(id: RuleId, agent: string, file: string, trust: FolderTru
     case 'trusted':
       return practice(id, id, true, '', '');
     case 'untrusted':
+      // The user told the agent not to trust it: `yokoten trust` keeps that, so the fix is theirs (#984).
+      if (trust.userChoiceFix) return note(`you set ${agent} not to trust this folder, so it skips ${file}`, trust.userChoiceFix);
       return note(`${agent} skips ${file} until you trust this folder`, step);
     case 'no store':
       return note(`can't check whether ${agent} trusts this folder: no ${trust.store}`, `if you use ${agent}: ${step}`);
@@ -65,7 +67,8 @@ function trustPractice(id: RuleId, agent: string, file: string, trust: FolderTru
     case 'hooks edited':
       return note(`a hook in ${file} runs yokoten's guard, but it is not the one yokoten writes, so ${agent} skips it`, 'run `yokoten init` to put yokoten\'s hook back, then `yokoten trust`');
     case 'hooks off':
-      return note(`a yokoten hook in ${file} is turned off in ${agent}`, TRUST_COMMAND);
+      // `yokoten trust` leaves a hook the user turned off as it is (#984).
+      return note(`you turned off a yokoten hook in ${file} in ${agent}`, codex.HOOK_OFF_FIX);
   }
 }
 

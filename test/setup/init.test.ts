@@ -2433,3 +2433,81 @@ test('trust (#661): Copilot CLI gets one trusted folder, and its comment lines s
   assert.deepEqual(JSON.parse(text.split('\n').filter((line) => !line.trimStart().startsWith('//')).join('\n')), { trustedFolders: ['/elsewhere'] });
   assert.equal(copilotTrust(root, { HOME: sandbox.home }).state, 'untrusted');
 });
+
+// #984: a folder the user marked not trusted stays so, in every agent, with one line that
+// says what stays and how to change it. The positive control in each case: with nothing
+// recorded for the folder, trust writes it, as before.
+test('trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code', async () => {
+  const cases = [
+    {
+      agent: 'Codex',
+      dir: ['.codex'],
+      store: ['.codex', 'config.toml'],
+      saved: (root: string) => `[projects."${root}"]\ntrust_level = "untrusted"\n`,
+      said: 'stays "untrusted" in ~/.codex/config.toml (yokoten would set "trusted"); to change it, set trust_level = "trusted" for this folder in ~/.codex/config.toml, then run `yokoten trust`',
+      doctor: 'codex-hook: you set Codex not to trust this folder, so it skips .codex/hooks.json; to change it, set trust_level',
+      read: codexTrust,
+    },
+    {
+      agent: 'Grok CLI',
+      dir: ['.grok'],
+      store: ['.grok', 'trusted_folders.toml'],
+      saved: (root: string) => `[folders."${root}"]\ntrusted = false\n`,
+      said: 'stays trusted = false in ~/.grok/trusted_folders.toml (yokoten would set true); to change it, set trusted = true for this folder in ~/.grok/trusted_folders.toml, or run `grok --trust` at the repo root',
+      doctor: 'grok-hook: you set Grok CLI not to trust this folder, so it skips .grok/hooks/yokoten.json; to change it, set trusted = true',
+      read: grokTrust,
+    },
+    {
+      agent: 'Muse Code',
+      dir: ['.config', 'muse'],
+      store: ['.config', 'muse', 'trust.json'],
+      saved: (root: string) => JSON.stringify({ schema_version: 1, projects: { [root]: { decision: 'untrusted' } } }),
+      said: 'stays "untrusted" in ~/.config/muse/trust.json (yokoten would set "trusted"); to change it, set "decision": "trusted" for this folder in ~/.config/muse/trust.json, or pass `--trust-workspace` to `muse exec`',
+      doctor: 'the guard is off in Muse Code: you set it not to trust this folder; to change it, set "decision": "trusted"',
+      read: museTrust,
+    },
+  ];
+  for (const { agent, dir, store, saved, said, doctor, read } of cases) {
+    // The positive control: nothing recorded for the folder, so trust writes it.
+    const fresh = makeSandbox();
+    home(fresh, ...dir);
+    await fresh.call(['init', '--no-ci']);
+    assert.equal((await trustAtTerminal(fresh)).status, 0, agent);
+    assert.equal(read(realpathSync(fresh.repo), { HOME: fresh.home }).state, 'trusted', `${agent}: no user value, trust sets it`);
+
+    const sandbox = makeSandbox();
+    home(sandbox, ...dir);
+    await sandbox.call(['init', '--no-ci']);
+    const root = realpathSync(sandbox.repo);
+    const file = join(sandbox.home, ...store);
+    writeFileSync(file, saved(root));
+    const done = await trustAtTerminal(sandbox);
+    assert.equal(done.status, 0, `${agent}: the user's choice is not a failure\n${done.stdout}`);
+    assert.ok(done.stdout.includes(`kept your choice in ${agent}: `) && done.stdout.includes(said), `${agent}\n${done.stdout}`);
+    assert.doesNotMatch(done.stdout, /turned on yokoten's guard/, agent);
+    assert.equal(readFileSync(file, 'utf8'), saved(root), `${agent}: the store stays byte for byte`);
+    assert.equal(read(root, { HOME: sandbox.home }).state, 'untrusted', agent);
+    const report = (await sandbox.call(['doctor'])).stdout;
+    assert.ok(report.includes(doctor), `${agent}\n${report}`);
+  }
+});
+
+test('trust (#984): a yokoten hook the user turned off in Codex stays off', async () => {
+  const sandbox = makeSandbox();
+  home(sandbox, '.codex');
+  await sandbox.call(['init', '--no-ci']);
+  assert.equal((await trustAtTerminal(sandbox)).status, 0);
+  const root = realpathSync(sandbox.repo);
+  assert.equal(codexTrust(root, { HOME: sandbox.home }).state, 'trusted', 'the positive control: no user value, trust turns it on');
+  const config = join(sandbox.home, '.codex', 'config.toml');
+  const off = readFileSync(config, 'utf8').replace(/(\[hooks\.state\."[^"]*:pre_tool_use:0:0"\]\n)/, '$1enabled = false\n');
+  assert.notEqual(off, readFileSync(config, 'utf8'));
+  writeFileSync(config, off);
+  assert.equal(codexTrust(root, { HOME: sandbox.home }).state, 'hooks off');
+  const again = await trustAtTerminal(sandbox);
+  assert.equal(again.status, 0, again.stdout);
+  assert.ok(again.stdout.includes("kept your choice in Codex: a yokoten hook in .codex/hooks.json stays off (enabled = false in ~/.codex/config.toml; yokoten would turn it on); to turn it on, use Codex's `/hooks` screen"), again.stdout);
+  assert.doesNotMatch(again.stdout, /already on/);
+  assert.equal(readFileSync(config, 'utf8'), off, 'the off switch stays');
+  assert.ok((await sandbox.call(['doctor'])).stdout.includes("codex-hook: you turned off a yokoten hook in .codex/hooks.json in Codex; to turn it on, use Codex's `/hooks` screen"));
+});

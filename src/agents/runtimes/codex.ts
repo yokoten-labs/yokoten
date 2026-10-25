@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -184,6 +184,12 @@ export const TRUST_STEP = `${TRUST_COMMAND} (Codex's \`/hooks\` screen does the 
  * writes; trust must not trust that one, and `yokoten init` puts the command back.
  */
 export type CodexTrust = FolderTrust<'hooks untrusted' | 'hooks changed' | 'hooks edited' | 'hooks off'>;
+
+/** How the user trusts a folder they marked untrusted in Codex: yokoten never flips it (#984). */
+const untrustedFix = (store: string): string => `to change it, set trust_level = "trusted" for this folder in ${store}, then run \`yokoten trust\``;
+
+/** How the user turns on a yokoten hook they turned off in Codex: yokoten never turns it on (#984). */
+export const HOOK_OFF_FIX = "to turn it on, use Codex's `/hooks` screen";
 
 /** One TOML key, bare or quoted, at the start of `text`: the key and the text after it. */
 function readTomlKey(text: string): [string, string] | null {
@@ -475,7 +481,8 @@ export function readTrust(root: string, env: Env): CodexTrust {
   const main = mainCheckout(root);
   const folders = [...folderKeys(root), ...(main ? folderKeys(main) : [])];
   const project = folders.map((folder) => tables.projects.get(folder)).find((fields) => fields?.trust_level !== undefined);
-  if (project?.trust_level !== 'trusted') return { state: 'untrusted', store };
+  // A trust_level that is set but not "trusted" is the user's choice (#984).
+  if (project?.trust_level !== 'trusted') return { state: 'untrusted', store, ...(project ? { userChoiceFix: untrustedFix(store) } : {}) };
   const events = isObject(hooks) && isObject(hooks.hooks) ? hooks.hooks : {};
   const states: CodexTrust['state'][] = [];
   for (const [name, event] of TRUST_EVENTS) {
@@ -539,7 +546,15 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const main = mainCheckout(root);
   const keys = [...folders, ...(main ? folderKeys(main) : [])];
   // Codex stops at the first folder key it finds, trusted or not.
-  const savedProject = keys.map((folder) => tables.projects.get(folder)).find((fields) => fields?.trust_level !== undefined);
+  const savedFolder = keys.find((folder) => tables.projects.get(folder)?.trust_level !== undefined);
+  const savedProject = savedFolder === undefined ? undefined : tables.projects.get(savedFolder);
+  // The user set this folder to something other than trusted: their choice stays, and
+  // nothing is written, hooks included (#984).
+  if (savedFolder !== undefined && savedProject?.trust_level !== 'trusted') {
+    const level = JSON.stringify(String(savedProject?.trust_level));
+    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(savedFolder, env)} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+  }
+  const kept: { what: string; fix: string }[] = [];
   if (savedProject?.trust_level !== 'trusted') {
     const folder = folders.find((key) => tables.projects.has(key)) ?? folders[0];
     const before = typeof savedProject?.trust_level === 'string' ? savedProject.trust_level : null;
@@ -555,13 +570,15 @@ export function trustProject(root: string, env: Env): TrustPlan {
         const saved = folders
           .map((folder) => tables.hookStates.get(`${join(folder, '.codex', 'hooks.json')}:${event}:${groupIndex}:${handlerIndex}`))
           .find((fields) => fields !== undefined);
-        if (saved?.enabled === false) changes.push(change(['hooks', 'state', key], 'enabled', 'true', 'false', 'boolean'));
+        // A hook the user turned off stays off (#984); its hash is still saved, so turning
+        // it on in Codex is all it takes.
+        if (saved?.enabled === false && kept.length === 0) kept.push({ what: `a yokoten hook in .codex/hooks.json stays off (enabled = false in ${store}; yokoten would turn it on)`, fix: HOOK_OFF_FIX });
         const hash = hookHash(event, group.matcher, handler);
         if (saved?.trusted_hash !== hash) changes.push(change(['hooks', 'state', key], 'trusted_hash', hash, typeof saved?.trusted_hash === 'string' ? saved.trusted_hash : null));
       });
     });
   }
-  return { state: changes.length > 0 ? 'trusted' : 'same', store, changes };
+  return { state: changes.length > 0 ? 'trusted' : 'same', store, changes, ...(kept.length ? { kept } : {}) };
 }
 
 // ---- The project's sandbox (#589) ----
@@ -1210,9 +1227,15 @@ export interface TrustPlan {
    * `changed`: a hook yokoten wrote was edited, so writing trust would bless a command
    * yokoten does not know. `yokoten init` puts the hook back; nothing is written here.
    */
-  state: 'trusted' | 'same' | 'changed' | 'unreadable' | 'no home';
+  state: 'trusted' | 'same' | 'changed' | 'unreadable' | 'no home' | 'kept';
   store: string;
   changes: TrustChange[];
+  /**
+   * What the user set on purpose and yokoten leaves as it is (#984): a folder they marked
+   * not trusted (state `kept`, nothing is written), or a hook they turned off. `what` says
+   * what stays, and what yokoten would have set; `fix` says how to change it in the agent.
+   */
+  kept?: { what: string; fix: string }[];
   /** The shape of a missing store: Muse's schema version, or Copilot's list. */
   seed?: unknown;
 }

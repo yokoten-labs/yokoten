@@ -1867,12 +1867,19 @@ interface TrustWork {
   edited: string[];
   blocked: Planned[];
   unsafe: { name: string; problem: { what: string; fix: string } }[];
+  /** What the user set on purpose, and trust leaves as it is (#984). */
+  kept: { name: string; what: string; fix: string }[];
 }
 
 function trustWork(root: string, env: Env): TrustWork {
-  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], unsafe: [] };
+  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], unsafe: [], kept: [] };
   for (const plannedAgent of planned(root, env)) {
     work.found++;
+    const kept = plannedAgent.plan.kept ?? [];
+    work.kept.push(...kept.map((choice) => ({ name: plannedAgent.name, ...choice })));
+    if (plannedAgent.plan.state === 'kept') continue;
+    // Nothing to write, but a hook the user turned off: the guard is not all on.
+    if (plannedAgent.plan.state === 'same' && kept.length > 0) continue;
     if (plannedAgent.plan.state === 'same') work.same.push(plannedAgent.name);
     else if (plannedAgent.plan.state === 'changed') work.edited.push(plannedAgent.name);
     else if (plannedAgent.plan.state === 'trusted' && plannedAgent.problem) work.unsafe.push({ name: plannedAgent.name, problem: plannedAgent.problem });
@@ -1893,6 +1900,8 @@ function refusedLines(work: TrustWork): { ok: boolean; lines: string[] } {
   // problem doctor finds is a reason to leave trust off, not to write it and look on.
   for (const { name, problem } of work.unsafe) lines.push(`left yokoten's guard off in ${name}: ${problem.what}; ${problem.fix}`);
   for (const { name, plan } of work.blocked) lines.push(`couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`);
+  // The user's own choice is a note, not a failure: it stays, and the line says how to change it (#984).
+  for (const { name, what, fix } of work.kept) lines.push(`kept your choice in ${name}: ${what}; ${fix}`);
   return { ok: work.edited.length === 0 && work.unsafe.length === 0 && work.blocked.length === 0, lines };
 }
 

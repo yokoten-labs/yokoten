@@ -16,6 +16,12 @@ import { realpathSync, statSync } from 'node:fs';
 export interface FolderTrust<State extends string = never> {
   state: 'trusted' | 'untrusted' | 'no home' | 'no store' | 'unreadable' | State;
   store: string;
+  /**
+   * Set when the store says "not trusted" on purpose (Codex `trust_level = "untrusted"`,
+   * a Muse decision, Grok `trusted = false`): how the user changes it in that agent.
+   * `yokoten trust` never flips that choice (#984).
+   */
+  userChoiceFix?: string;
 }
 
 /** The one command that turns the guard on in every agent installed here (#661). */

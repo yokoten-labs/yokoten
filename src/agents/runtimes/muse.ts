@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import type { Action } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -112,6 +112,9 @@ export function isGuardOff(root: string, env: Env): boolean {
   return state === 'untrusted' || state === 'no store';
 }
 
+/** How the user trusts a folder they decided not to trust in Muse: yokoten never flips it (#984). */
+const untrustedFix = (store: string): string => `to change it, set "decision": "trusted" for this folder in ${store}, or pass \`--trust-workspace\` to \`muse exec\``;
+
 /** Whether Muse trusts the project at `root`, from its trust store. Read-only. */
 export function readTrust(root: string, env: Env): FolderTrust {
   const store = env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/muse/trust.json' : '~/.config/muse/trust.json';
@@ -130,11 +133,11 @@ export function readTrust(root: string, env: Env): FolderTrust {
   }
   if (!isObject(saved) || saved.schema_version !== 1 || !isObject(saved.projects)) return { state: 'unreadable', store };
   const projects = saved.projects;
-  const isTrusted = folderKeys(root).some((key) => {
-    const entry = Object.hasOwn(projects, key) ? projects[key] : undefined;
-    return isObject(entry) && entry.decision === 'trusted';
-  });
-  return { state: isTrusted ? 'trusted' : 'untrusted', store };
+  const entries = folderKeys(root).map((key) => (Object.hasOwn(projects, key) ? projects[key] : undefined));
+  if (entries.some((entry) => isObject(entry) && entry.decision === 'trusted')) return { state: 'trusted', store };
+  // A decision recorded for the folder is the user's choice (#984).
+  const isChosen = entries.some((entry) => isObject(entry) && typeof entry.decision === 'string');
+  return { state: 'untrusted', store, ...(isChosen ? { userChoiceFix: untrustedFix(store) } : {}) };
 }
 
 /**
@@ -169,8 +172,11 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const folder = keys.find((key) => Object.hasOwn(projects, key)) ?? keys[0];
   const entry = projects[folder];
   if (isObject(entry) && entry.decision === 'trusted') return { state: 'same', store, changes: [] };
-  const before = isObject(entry) && typeof entry.decision === 'string' ? entry.decision : null;
-  const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before };
+  // A decision the user made, other than trusted, stays (#984).
+  if (isObject(entry) && typeof entry.decision === 'string') {
+    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+  }
+  const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before: null };
   return { state: 'trusted', store, changes: [change], seed: { schema_version: 1, projects: {} } };
 }
 
