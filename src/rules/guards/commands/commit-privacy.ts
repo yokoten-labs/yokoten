@@ -7,12 +7,12 @@
 // line and the kind, never the secret: the refusal may land in a chat or a CI log.
 
 import { spawnSync } from 'node:child_process';
-import { readFileSync, statSync, type Stats } from 'node:fs';
+import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { matcher, type Config, type Env } from '../../config.ts';
 import { finding, type Finding, isFailingFinding, type RuleId } from '../../message.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, repoMarkKinds, scanText } from '../../privacy.ts';
-import { findPrograms, isGit, withoutShellRedirects } from '../bash/read/words.ts';
+import { findPrograms, isGit, withoutShellRedirects, placedPath } from '../bash/read/words.ts';
 import { gitParts, gitRootAbove, parseCommitOptions } from '../lead-only/targets.ts';
 
 /** The largest patch the guard reads for a commit. Bigger than this is refused, never skipped. */
@@ -86,15 +86,23 @@ function readCommitChange(words: string[], folder: string | null, env: Env): Com
   if (program === undefined) return null;
   const { sub, args, dir } = gitParts(withoutShellRedirects(words, words.indexOf(program) + 1), folder);
   if (sub !== 'commit') return null;
-  const { named, isAll, isInclude, namesFromFile } = parseCommitOptions(args);
+  const parsed = parseCommitOptions(args);
+  const { isAll, isInclude, namesFromFile } = parsed;
+  // Git Bash's `/c/x` is `C:\x` on Windows (#1015). One the guard can't place stays as
+  // written: it then reads as no file, and the commit is refused.
+  const named = parsed.named.map((name) => placedPath(name, dir) ?? name);
   // git reads the paths to commit from a file whose shape the guard cannot follow, so a
   // commit that names them that way is refused rather than guessed (#824).
   if (namesFromFile) return { problem: 'names from a file' };
   // From an unknown folder the staged diff cannot be read: the named files still can (#559).
-  if (dir === null) return { problem: 'unknown folder', named };
+  // `GIT_DIR=` and `GIT_WORK_TREE=` before git move it as `--git-dir` does (#1015).
+  const movesGit = words.slice(0, words.indexOf(program)).some((word) => /^GIT_(DIR|WORK_TREE)=/.test(word));
+  if (dir === null || movesGit) return { problem: 'unknown folder', named };
   // git names files from the repo's root. The root is found by a walk, not a second git.
   const root = gitRootAbove(dir, new Map());
-  if (root === null) return null;
+  // Outside a repo the commit fails by itself. A folder that is not there is one the guard
+  // read wrong, such as Git Bash's `/c/x` before #1015: unknown, so refused.
+  if (root === null) return existsSync(dir) ? null : { problem: 'unknown folder', named };
   // A commit that names paths commits only those, so each diff is asked for those alone:
   // a large change beside them cannot make the guard refuse a commit that leaves it out.
   const paths = named.length > 0 && !isInclude ? named : [];

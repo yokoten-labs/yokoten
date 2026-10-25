@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { checkDamage } from '../../../../src/rules/guards/commands/no-wipe.ts';
+import { climbsPastDrive, fromGitBash, gitBashDrive, isHostPaths, pathsFor } from '../../../../src/platform/paths.ts';
 import { formatRefusal } from '../../../../src/rules/message.ts';
 import { TEST_HOME } from '../../../repo/home.ts';
 import { allowed, blocked, refusedAs } from '../../../../test/repo/helpers.ts';
@@ -163,4 +164,74 @@ test('guard: the refusal keeps its four lines (#969)', () => {
   assert.match(lines[1], /^Why: /);
   assert.match(lines[2], /^Do instead: /);
   assert.match(lines[3], /^More: https:/);
+});
+
+test('guard: a wipe run through cmd /c is read as the same wipe (#1015)', () => {
+  for (const command of ['cmd /c del /s /q C:\\\\Users', 'cmd /c "del /s /q C:\\Users"', 'cmd //c "rd /s /q %USERPROFILE%"', 'cmd.exe /c rd /s /q %USERPROFILE%', 'CMD /C rd /s ~']) {
+    refusedAs(command, 'wipe-home-or-system');
+  }
+  for (const command of ['cmd /c dir', 'cmd /c del /q build\\out.log', 'cmd //c echo hi']) allowed(command);
+});
+
+// ---- src/platform/paths.ts (#1015) ----
+//
+// The wipe guard is the first user of the Git Bash reading. test/ is at its 7-entry cap, so the
+// platform helpers are tested here (architecture.test.ts NO_TEST_FILE says so).
+
+const WIN_TMP = 'C:\\Users\\agent\\AppData\\Local\\Temp';
+
+test('fromGitBash: on Windows a Git Bash path is the Windows one; elsewhere it stays as written (#1015)', () => {
+  const cases: [string, string | null][] = [
+    ['/c/Users/x/AGENTS.md', 'C:\\Users\\x\\AGENTS.md'],
+    ['/C/Users/x', 'C:\\Users\\x'],
+    ['/d', 'D:\\'],
+    ['/c/', 'C:\\'],
+    ['/c/../d/x', 'D:\\x'],
+    ['/dev/../c/x', 'C:\\x'],
+    ['/tmp', WIN_TMP],
+    ['/tmp/repo/a', `${WIN_TMP}/repo/a`],
+    ['/dev/null', '/dev/null'],
+    ['/dev/stderr', '/dev/stderr'],
+    // Folders Git Bash keeps for itself, and its root: the guard can't place them.
+    ['/usr/x', null],
+    ['/etc', null],
+    ['/', null],
+    ['/cx/y', null],
+    ['/tmpx', null],
+    ['/tmp/..', null],
+    ['/dev/../usr', null],
+    // Not a Git Bash full path: unchanged.
+    ['//server/share/x', '//server/share/x'],
+    ['src/a.ts', 'src/a.ts'],
+    ['C:/x', 'C:/x'],
+    ['C:\\x', 'C:\\x'],
+  ];
+  for (const [path, windows] of cases) {
+    assert.equal(fromGitBash(path, 'win32', WIN_TMP), windows, `win32: ${path}`);
+    for (const platform of ['linux', 'darwin'] as const) assert.equal(fromGitBash(path, platform, '/var/tmp'), path, `${platform}: ${path}`);
+  }
+  assert.equal(gitBashDrive('/c/x/y'), 'C:\\x\\y');
+  assert.equal(gitBashDrive('/usr/x'), null);
+});
+
+test('climbsPastDrive: a relative path that climbs past C:\\ is unsure on Windows only (#1015)', () => {
+  const folder = 'C:\\Users\\agent\\proj';
+  const cases: [string, boolean][] = [
+    ['src/a.ts', false],
+    ['../x', false],
+    ['../../../x', false], // C:\x
+    ['../../../../c/x', true], // bash: /c/x, Node: C:\c\x
+    ['a/../../../../../x', true],
+    ['./a/./b', false],
+  ];
+  for (const [path, climbs] of cases) {
+    assert.equal(climbsPastDrive(folder, path, 'win32'), climbs, `win32: ${path}`);
+    assert.equal(climbsPastDrive('/home/agent/proj', path, 'linux'), false, `linux: ${path}`);
+  }
+});
+
+test('pathsFor: Windows paths read as Windows reads them on any machine (#1015)', () => {
+  assert.equal(pathsFor('win32').isAbsolute('C:\\x'), true);
+  assert.equal(pathsFor('linux').isAbsolute('C:\\x'), false);
+  assert.equal(isHostPaths(process.platform), true);
 });

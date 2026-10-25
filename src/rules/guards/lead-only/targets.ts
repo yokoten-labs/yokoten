@@ -1,7 +1,8 @@
 import { existsSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import nodePath, { dirname, join, relative, resolve, sep } from 'node:path';
 import { loadConfig, type Env } from '../../config.ts';
-import { base, isGit, GIT_VALUE_OPTIONS, unquotedRedirects, readWords, withoutShellRedirects, realPath, REDIRECT, programName, findPrograms } from '../bash/read/words.ts';
+import { base, isGit, GIT_VALUE_OPTIONS, unquotedRedirects, readWords, withoutShellRedirects, realPath, REDIRECT, programName, findPrograms, commandPlace, placedPath, resolvedFrom } from '../bash/read/words.ts';
+import { isHostPaths, pathsFor } from '../../../platform/paths.ts';
 import { type RuledRepo } from '../commands/check.ts';
 import { readGit, readText } from '../hooks/read.ts';
 
@@ -57,21 +58,30 @@ export function fileRules(repos: RuledRepo[]): FileRules {
   // Roots and files are compared by real path, as for an edit: a symlink to AGENTS.md is
   // AGENTS.md, and on macOS /var is /private/var. The roots are read once, on first use.
   let realRepos: RuledRepo[] | null = null;
+  // Paths read as the command's system reads them (#1015). Another system's paths, as a test
+  // gives them, are compared as text: this disk can't follow their links or find their repos.
+  const platform = commandPlace.current?.platform;
+  const paths = platform === undefined ? nodePath : pathsFor(platform);
+  const isHost = platform === undefined || isHostPaths(platform);
+  const real = isHost ? realPath : (path: string) => path;
   const ruled: FileRules['ruled'] = ({ path, from }, env) => {
     if (path === '' || path === '-') return null;
-    const expanded = /^~(?=\/|$)/.test(path) && env.HOME ? join(env.HOME, path.slice(1)) : path;
-    if (from === null && !isAbsolute(expanded)) {
+    // An unplaced path (`/usr/x` on Windows) is refused by the caller first, as unsure.
+    const expanded = placedPath(/^~(?=\/|$)/.test(path) && env.HOME ? paths.join(env.HOME, path.slice(1)) : path, from);
+    if (expanded === null) return null;
+    if (from === null && !paths.isAbsolute(expanded)) {
       return repos.length ? { path: expanded.replace(/\\/g, '/').replace(/^(\.\/)+/, ''), leadOnly: repos[0].leadOnly } : null;
     }
-    const full = realPath(resolve(from ?? '/', expanded));
-    realRepos ??= repos.map((repo) => ({ ...repo, root: realPath(repo.root) }));
+    const full = real(paths.resolve(from ?? '/', expanded));
+    realRepos ??= repos.map((repo) => ({ ...repo, root: real(repo.root) }));
     let best: { path: string; leadOnly: string[] } | null = null;
     for (const repo of realRepos) {
-      const inRepo = relative(repo.root, full);
-      if (inRepo === '' || inRepo.startsWith('..') || isAbsolute(inRepo)) continue;
+      const inRepo = paths.relative(repo.root, full);
+      if (inRepo === '' || inRepo.startsWith('..') || paths.isAbsolute(inRepo)) continue;
       if (!best || inRepo.length < best.path.length) best = { path: inRepo, leadOnly: repo.leadOnly };
     }
-    if (best) return { ...best, path: best.path.split(sep).join('/') };
+    if (best) return { ...best, path: best.path.split(paths.sep).join('/') };
+    if (!isHost) return null;
     const root = rootOf(dirname(full));
     if (root === null) return null;
     if (!leadOnlyAt.has(root)) leadOnlyAt.set(root, existsSync(join(root, 'yokoten.json')) ? loadConfig(root, { onProblem: () => {} }).leadOnly : null);
@@ -173,7 +183,7 @@ function copyTargets(args: string[], { valued, isMove, folder }: { valued: strin
 
 function isFolderOnDisk(folder: string | null, path: string): boolean {
   try {
-    return statSync(resolve(folder ?? '.', path)).isDirectory();
+    return statSync(resolve(folder ?? '.', placedPath(path) ?? path)).isDirectory();
   } catch {
     return false;
   }
@@ -312,7 +322,10 @@ export function gitParts(args: string[], folder: string | null): { sub: string |
   let dir = folder;
   let index = 0;
   while (index < args.length && args[index].startsWith('-')) {
-    if (args[index] === '-C') dir = dir === null ? null : resolve(dir, args[index + 1] ?? '');
+    if (args[index] === '-C') {
+      // A Git Bash folder the guard can't place leaves git's folder unknown (#1015).
+      dir = dir === null ? null : resolvedFrom(dir, args[index + 1] ?? '');
+    }
     if (/^--(git-dir|work-tree)(=|$)/.test(args[index])) dir = null;
     index += GIT_VALUE_OPTIONS.has(args[index]) ? 2 : 1;
   }
@@ -343,15 +356,16 @@ function gitWrites(words: string[], folder: string | null, rootOf: FileRules['ro
   // `-` is stdin, which the guard never reads. A patch is read only as a plain file of at
   // most PATCH_LIMIT bytes: never a FIFO, a device or /dev/stdin, which could wait or be huge.
   for (const patch of plainArgs(args, ['-p', '--exclude', '--include', '--directory']).filter((arg) => arg !== '-')) {
-    const file = resolve(dir, patch);
+    const placed = placedPath(patch);
+    const file = placed === null ? null : resolve(dir, placed);
     let isReadable = false;
     try {
-      const stat = statSync(file);
-      isReadable = stat.isFile() && stat.size <= PATCH_LIMIT;
+      const stat = file === null ? null : statSync(file);
+      isReadable = stat !== null && stat.isFile() && stat.size <= PATCH_LIMIT;
     } catch {
       isReadable = false;
     }
-    if (!isReadable) targets.push({ path: patch, from: dir, isUnread: true });
+    if (file === null || !isReadable) targets.push({ path: patch, from: dir, isUnread: true });
     else targets.push(...patchFiles(readText(file)).map((path) => ({ path: join(root, path), from: root })));
   }
   return targets;

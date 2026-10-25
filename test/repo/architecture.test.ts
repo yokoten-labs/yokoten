@@ -21,12 +21,13 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = join(ROOT, 'src');
 
 // Lowest first. A module may import from its own layer or a lower one, never a higher.
-// rules: what is allowed, as pure functions. run: the checks at work (hook, commit, CI).
+// platform: how paths and processes read on each system (record 0040). rules: what is
+// allowed, as pure functions. run: the checks at work (hook, commit, CI).
 // agents: one adapter per AI runtime, and llama.ts, the model API that adopt calls.
 // host: one adapter per code host (the bot, a CI run's pull request). setup: writing
 // yokoten into a machine or a project. commands: one module per command or small group,
 // which bin/main.ts calls (#330).
-const LAYERS = ['rules', 'run', 'agents', 'host', 'setup', 'commands'];
+const LAYERS = ['platform', 'rules', 'run', 'agents', 'host', 'setup', 'commands'];
 
 test('layers: no module imports from a layer above its own', () => {
   const found = new Set<string>();
@@ -65,6 +66,7 @@ const NO_TEST_FILE = [
   'host/github/index.ts', // re-exports the GitHub adapter's public names
   'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
+  'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
 ];
 
 const filesUnder = (folder: string) =>

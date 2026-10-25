@@ -5,6 +5,7 @@ import { homeOf } from '../../privacy.ts';
 import { plainArgs, WRITE_REDIRECT } from '../lead-only/targets.ts';
 import { braceForms, findProgramPlaces, programName, realPath, unquotedRedirects, withoutShellRedirects } from '../bash/read/words.ts';
 import { FIND_LEAD_OPTIONS } from '../worker/mark.ts';
+import { gitBashDrive } from '../../../platform/paths.ts';
 
 // ---- Damage outside the project (#969) ----
 //
@@ -227,7 +228,8 @@ type Folders = { cwd: string | null; home: string | null; homeReal: string | nul
  */
 function fullPath(path: string, platform: NodeJS.Platform): string {
   const isWindows = platform === 'win32';
-  let text = isWindows ? path.replace(/^[\\/]([A-Za-z])(?=[\\/]|$)/, '$1:') : path;
+  // Git Bash's `/c/x` is `C:\x` (src/platform/paths.ts); `\c\x` is read the same way here.
+  let text = isWindows ? (gitBashDrive(path.replace(/^[\\/]([A-Za-z])(?:[\\/]|$)/, '/$1/')) ?? path) : path;
   const drive = /^[A-Za-z]:/.exec(text)?.[0];
   if (drive === undefined && !isWindows) return posix.resolve(text);
   if (drive !== undefined) text = text.slice(drive.length);

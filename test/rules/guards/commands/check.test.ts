@@ -1,7 +1,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
@@ -10,6 +10,29 @@ import { blocked, allowed, makeSandbox, makeTempDir } from '../../../../test/rep
 test('the bot is not a way around the guard', () => {
   assert.ok(checkCommand('node .yokoten/bin/yokoten.ts bot -- git push --tags', { cwd: process.cwd(), env: {} }));
   assert.ok(checkCommand('yokoten bot -- gh release create v1', { cwd: process.cwd(), env: {} }));
+});
+
+// #1015: a tag push names its repo by a Git Bash path. The place is passed in with this disk's
+// temp folder as `/tmp`, so Linux CI reads the real repo's tags and push.followTags.
+test('release: a tag push from a repo named by a Git Bash path is refused on Windows (#1015)', () => {
+  const sandbox = makeSandbox();
+  sandbox.git('commit', '-q', '--allow-empty', '-m', 'start');
+  sandbox.git('tag', 'rel-1');
+  const place = { platform: 'win32', tmp: dirname(sandbox.repo) } as const;
+  const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: dirname(sandbox.repo), place });
+  const named = ['git -C /tmp/repo push', 'git --git-dir=/tmp/repo/.git push', 'cd /tmp/repo && git push', 'GIT_DIR=/tmp/repo/.git git push'];
+  for (const form of named) assert.equal(run(`${form} origin rel-1`)?.id, 'release', `${form} origin rel-1`);
+  // Positive controls: a branch push and a read in the same forms.
+  for (const form of named) assert.equal(run(`${form} origin feature`), null, `${form} origin feature`);
+  assert.equal(run('git -C /tmp/repo status'), null);
+  assert.equal(run('git -C /tmp/repo push origin :main')?.id, 'delete-default-branch');
+  // A folder git can't open: neither its tags nor push.followTags can be read.
+  for (const command of ['git -C /c/nowhere push origin feature', 'cd /c/nowhere && git push', 'git --git-dir=/c/nowhere/.git push']) {
+    assert.equal(run(command)?.id, 'release', command);
+  }
+  sandbox.git('config', 'push.followTags', 'true');
+  for (const form of named) assert.equal(run(form)?.id, 'release', `${form}, with push.followTags`);
+  assert.equal(run('git -C /tmp/repo push --dry-run'), null, 'a dry run changes nothing');
 });
 
 // .yokoten/ is the copy of yokoten the hooks and CI run: a worker that changes it can turn the checks off (#297).
@@ -295,9 +318,10 @@ test('redteam #865: git --git-dir still shows the tag and push.followTags', asyn
   const decoy = makeSandbox();
   assert.equal((await askHook(sandbox, `GIT_DIR=${decoy.repo}/.git GIT_DIR=${gitDir} git push`)).status, 2, 'the last GIT_DIR is the repo git reads');
   assert.equal((await askHook(sandbox, `GIT_DIR=${decoy.repo}/.git GIT_DIR=${gitDir} git push origin rel-1`)).status, 2, 'the last GIT_DIR still shows the pushed tag');
-  // A folder the guard cannot read is not a folder it reads wrongly: a push from there fails too.
+  // A folder git can't open may be one the guard read wrongly, as Git Bash's `/c/...` was on
+  // Windows: its tags can't be read, so the push is refused (#1015, was allowed in #865).
   const elsewhere = makeTempDir('yokoten-elsewhere-');
-  assert.equal((await askHook(sandbox, `git --git-dir=${elsewhere}/.git push origin feature-v2`)).status, 0);
+  assert.equal((await askHook(sandbox, `git --git-dir=${elsewhere}/.git push origin feature-v2`)).status, 2);
 });
 
 test('redteam #865: a package runner starts a release tool through exec or dlx', async () => {

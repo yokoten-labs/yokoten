@@ -2,7 +2,7 @@ import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { finding, type Finding } from '../../message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
-import { globMatches, braceForms, base, isGit, ASSIGNERS, isAssignment, withoutShellRedirects, realPath, KEYWORDS, LAUNCHERS, programName, findPrograms, findProgramPlaces, REDIRECT, REDIRECT_OPERATOR, redirectLength } from '../bash/read/words.ts';
+import { globMatches, braceForms, base, placedPath, isGit, ASSIGNERS, isAssignment, withoutShellRedirects, realPath, KEYWORDS, LAUNCHERS, programName, findPrograms, findProgramPlaces, REDIRECT, REDIRECT_OPERATOR, redirectLength } from '../bash/read/words.ts';
 import { isShell } from '../bash/read/run.ts';
 import { MARK_WRITERS, RUNS_CODE, findWrites, protectedGitDirs } from '../worker/mark.ts';
 import { HAS_GLOB } from '../worker/config-command.ts';
@@ -257,7 +257,9 @@ export function checkGitSetupWrites(words: string[], { folder, from, env }: { fo
   const held = root === null ? [] : [realPath(root), ...protectedGitDirs(from ?? root)];
   const home = homeOf(env);
   const target = targets.find((path) => {
-    const expanded = /^~(?=[\\/]|$)/.test(path) ? (home === null ? null : join(home, path.slice(1))) : path;
+    const read = /^~(?=[\\/]|$)/.test(path) ? (home === null ? null : join(home, path.slice(1))) : path;
+    // Git Bash's `/c/x` is `C:\x` on Windows (#1015); one the guard can't place is read by its names.
+    const expanded = read === null ? null : placedPath(read, folder);
     const isPlaced = expanded !== null && !/[$`]/.test(path) && (folder !== null || isAbsolute(expanded));
     if (!isPlaced || held.length === 0) return namesGitSetup(path);
     const full = realPath(resolve(folder ?? '/', expanded));
