@@ -8,6 +8,8 @@ AI agent 一秒钟就能犯大错。yokoten 在它动手之前拦住。
 - **拦住危险操作**：强推、删掉你的工作、泄露密钥、没经过你就发版。
 - **在你已经在用的工具里工作**：Claude Code、Codex、Copilot CLI、Muse Code 等等。
 - **默认开启。** 一条命令开始，不用学新东西。
+- **不乱动你的设置**：你做过的选择它都保留；改你的文件之前，先留一份副本。
+- **支持 Linux、Windows 和 macOS。** Windows 上完整支持 WSL；原生 Windows 为测试版，支持 Git Bash 和 PowerShell 7。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · 简体中文 · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -57,15 +59,15 @@ v0.1.1 新增：几个 AI 会话在同一个仓库里干活时，`yokoten confli
 
 | Agent | 已做端到端验证 | 要先跑 `npx yokoten trust` | 测试过的模型 |
 |---|---|---|---|
-| Claude Code | yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | yes | yes | `deepseek-flash` |
-| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | yes | yes | the default model |
+| Claude Code | ✅ yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **语言**：什么语言都行。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的测试命令。
 

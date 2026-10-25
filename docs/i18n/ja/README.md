@@ -8,6 +8,8 @@ AI エージェントは一瞬で大きなミスをします。yokoten はその
 - **危険な操作を止めます**：force push、作業の削除、秘密の漏えい、あなた抜きのリリース。
 - **いま使っているツールの中で動きます**：Claude Code、Codex、Copilot CLI、Muse Code など。
 - **最初から有効です。** コマンドひとつで始まり、新しく覚えることはありません。
+- **あなたの設定を勝手に変えません**：あなたが決めた設定はそのまま残し、ファイルを変える前にコピーを取ります。
+- **Linux、Windows、macOS で動きます。** Windows では WSL を完全にサポートし、ネイティブ Windows はベータ版で、Git Bash と PowerShell 7 に対応しています。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 
@@ -57,15 +59,15 @@ v0.1.1 の新機能：一つのリポジトリで複数の AI セッションが
 
 | エージェント | 端から端まで確認済み | 最初に `npx yokoten trust` が必要 | 試したモデル |
 |---|---|---|---|
-| Claude Code | yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | yes | yes | `deepseek-flash` |
-| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | yes | yes | the default model |
+| Claude Code | ✅ yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **言語**：どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
 

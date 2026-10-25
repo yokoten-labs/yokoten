@@ -20,6 +20,9 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 - `yokoten upgrade` brings yokoten to the newest version in one command, with no SSH key.
 - OpenCode is guarded too, tested with DeepSeek V4.1 Flash and GLM-5.3 Flash. The README shows every agent in one table.
 - `yokoten doctor` shows your next step first, then one block per stage.
+- yokoten leaves your settings alone: it keeps a choice you made on purpose, saves a copy before it changes a file of yours, and asks before it changes your git config.
+- Windows: the guard reads Windows and Git Bash paths, and every test runs on Windows in CI. WSL is fully supported. Native Windows is in beta, in Git Bash and PowerShell 7. Windows PowerShell 5.1 is not supported.
+- The board starts Codex only where its guard really runs. If it cannot tell, it does not start Codex and says what to do.
 
 ### Added
 
@@ -326,6 +329,16 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- yokoten keeps a value you set on purpose, and says so in one line with how to change it (#984). `init` and `install` no longer turn the Antigravity CLI guard back on after you set `"enabled": false`. `yokoten trust` no longer trusts a folder you marked untrusted in Codex, Muse Code or Grok CLI. It no longer turns on a Codex hook you turned off. The OpenCode plugin now carries yokoten's mark: a plugin you wrote or edited stays as it is. Doctor names the same choices and the way to change each one.
+- `install`, `init` and `uninstall` are safer with your agent tools' settings files (#984). A settings file that is a link to your dotfiles stays a link. A write that fails half way leaves your file as it was. The first time yokoten changes a file of yours, it keeps a copy next to it as `<file>.before-yokoten`, and it never overwrites that copy. A hook you wrote yourself that runs `npx yokoten`, such as `npx yokoten hook`, now stays: yokoten changes and removes only the hooks it wrote.
+- `yokoten install` now asks before it changes your git config. It lists git's global `mailmap.file` in its plan and sets it only when you say yes; with no terminal, it prints the command to run. `yokoten uninstall` now removes only the folders and git config file that install made, so an empty folder you had before stays. On Windows, the merge train's test step runs again (#985).
+- `install`, `uninstall`, `doctor` and the session cleanup now use the folder Claude Code reads when `CLAUDE_CONFIG_DIR` is set. Codex's hooks follow `CODEX_HOME`, as its trust already did. Before, the hooks went to `~/.claude` or `~/.codex`, where the tool never read them, so the guard was off. A relative `XDG_CONFIG_HOME` or `XDG_CACHE_HOME` is now ignored, as the XDG spec says. `init` keeps a `TZ` you set in `.claude/settings.json`, and says how to set UTC (#988).
+- `yokoten update --write` now keeps the old AGENTS.md as `AGENTS.md.before-yokoten` when git cannot give it back. It never overwrites an existing copy. It refuses an AGENTS.md that is a link, as `yokoten init` does (#989).
+- A subagent worker keeps its own count of refusals. Before, every subagent shared the count of the lead's session. After a few refusals in one worker, another worker was stopped on its first call. The dispatch skill now says to start a subagent worker inside its own worktree, with `isolation: "worktree"` in Claude Code. Put the issue text in its brief (#990).
+- In a linked worktree, where workers run, the guard refuses a `find` that deletes from the top of the worktree. Before, it let that `find` delete the `.git` file that links the worktree to its history, so the worktree broke (#994).
+- `yokoten upgrade` now finds Claude Code on native Windows. Claude Code's own installer puts only `claude.exe` on the PATH, but yokoten looked only for `claude.cmd`, so the upgrade stopped with "'claude.cmd' is not recognized". It now looks for `claude.exe` first, then `claude.cmd` (#1002).
+- `yokoten doctor` now sees a Windows folder that Copilot CLI trusts. Before, it only read folders that start with `/`, so it kept saying Copilot skips the hooks even after `yokoten trust`. It now reads `C:\...` folders, and ignores case and a `\` or `/` at the end (#1003).
+- A worker's report no longer opens with "NOT DONE: checks failing" when its checks passed. Only a worker the stop hook let through with a failing check starts that way (#1009).
 - A session start no longer edits your shell profile. The PATH line an older install added to `~/.bashrc` or `~/.zshrc` stays, and the session tells you to delete it. A profile that is a symlink, as dotfile managers keep it, stays a symlink when `yokoten uninstall` removes the line. On macOS, install adds the PATH line for bash to `~/.bash_profile`, which the login shell reads (#983).
 - On Windows, a done-when check stops programs it left running after `cmd.exe` exits (#735). On Linux, a check that ends also stops a program in a new process group in its session; one that started its own session, such as `setsid`, is still left running. If Windows has no job host, the check runs without one and says why on stderr.
 - The Windows job host is found even when an agent hands the hook an environment with no `SystemRoot`: yokoten falls back to `windir`, then `C:\Windows`. Tested on Windows with Node 24.22.1.
@@ -442,9 +455,12 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 - A tag refusal no longer repeats a tag name with a shell character in it as it is. `git tag v1$(id)` now refuses as `creating the tag 'v1$(id)'`, so a person who copies the line into a shell runs nothing; a plain name like `v1.2.0` prints as it did. The same guard covers the `git tag` and `git update-ref` ways of naming the tag. (#962)
 - A file that install or init keeps because you changed it shows as a note (a yellow ⚠ on a colour terminal), not as done: a sandbox file, a kit workflow, an older hooks file, or a git setting of your own.
 - The open standard (`docs/standard.md`) again matches the board: a working dot lasts 15 minutes, not 30, the status file has a `started` field, and the code links point at the files the board split into.
+- Tools that speak the guard protocol now work on Windows. Before, every call was refused with "project must be an absolute folder", because only folders that start with `/` passed. Now `C:\work\app`, `C:/work/app` and network folders such as `\\server\share\app` are accepted on Windows. Git Bash paths like `/c/work/app` are still refused there for now (#1016).
 
 ### Security
 
+- On Windows, the guard now refuses `rm -rf ~` and other wipes of the home folder. It reads `C:\Users\<name>`, `C:\Program Files`, `C:\Program Files (x86)` and `C:\ProgramData` as system folders. Paths with `\` or `/`, any letter case, and Git Bash's `/c/...` now count as the same folder. A POSIX-style project path such as `/app/dist` is no longer refused on Windows (#999).
+- The guard sends `git log`, `git config user.email` and similar reads through `yokoten redact`. When redact cannot start or stops partway, the output is now hidden instead of printed as it is. One line on stderr says so and tells you to run `yokoten doctor`. The exit code is the command's when it failed, and 1 when only redact failed (#1006). `yokoten redact` itself now exits 1 and prints no more of the text when it can't read your private-marks file or can't hide a piece. A missing marks file is still fine. The guard now also catches the plain `git config user.email` form.
 - yokoten now needs Node 22.23.4 or later (24.22.1 on Node 24, 26.12.1 on Node 26). Releases 22.18 to 22.23.3 still run yokoten. But they have the security holes that Node fixed on 2026-10-21, among them TLS hostname checks that the calls to GitHub rely on. npm warns about them at install, and `yokoten doctor` notes an unfixed Node with the version to upgrade to. The kit workflows and the GitHub Action set up `^22.23.4` (#572).
 - The guard refuses `find -delete` and `find -exec rm` when a test can name `.git` (#573).
   It also refuses a null-split `xargs` when one word can be `.git`.
@@ -528,6 +544,19 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
   It stops disk commands too: `mkfs*`, `wipefs`, `fdisk`, `parted`, `diskutil`, `hdparm`, `sgdisk`, `nvme`, `blkdiscard`, and `shred` onto a disk. It stops `dd` into `/dev`, a redirect into `/dev`, `format` and `diskpart`. A disk tool is refused even when it only reads, such as `diskutil list`.
 
   The wipe and disk refusals say: tell the owner, who runs what needs root or touches a disk. A rule that names an exact case may answer first (#969, by GLM glm-5.3-flash, fixes by DeepSeek deepseek-v4.1-flash).
+- On Windows, the guard now reads Git Bash paths as Windows does. `/c/Users/...` (or `/C/...`) is `C:\Users\...`, and `/tmp/...` is your temp folder. Before, a worker could write a lead-only file such as `AGENTS.md` or a workflow by its `/c/...` path. It could also move or remove its own desk, so the desk lost its worker mark (#1015).
+
+  - A worker's write to a lead-only file by its Git Bash path is refused, as the `C:\...` form already was. This covers `echo >`, `cp`, `sed -i`, `rm`, `git -C` and `cd /c/... &&`.
+  - A worker's `mv` or `rm -rf` of its desk, or of a folder that holds it, by its Git Bash path is refused.
+  - A path Git Bash keeps for itself (`/usr/...`, `/etc/...`), or a relative path that climbs past the drive root, is refused as unsure. `/dev/null` still works.
+  - The same reading applies to the config-folder, lose-work and post-body checks.
+  - The secret scan of a commit now runs when the repo is named as `git -C /c/...` or `cd /c/... &&`. A commit in a folder that is not there, or with `GIT_DIR=` or `GIT_WORK_TREE=` before git, is refused as unknown.
+  - A tag push from a repo named by a Git Bash path (`-C`, `--git-dir`, `GIT_DIR=`, `cd`) is refused. So is a push with `push.followTags` set. The same holds for a push that deletes the default branch.
+  - A push from a repo that git can't open is refused, because its tags can't be read.
+  - A write to `.git/hooks` or `.git/config` by a Git Bash path is refused.
+  - `cmd /c` (and `cmd //c`, `cmd.exe`) is read as a program that runs commands. A worker's `cmd /c del` of its git folder is refused, and `cmd /c rd /s` of home is refused as a wipe.
+- A Windows home folder that bash ran together is now hidden too. Bash drops the backslashes of an unquoted Windows path, so `C:\Users\<name>\AppData` became `C:Users<name>AppData`. That text showed the user name in guard messages, `yokoten redact` output and other printed text. Now it shows as `~AppData`. The privacy check also finds a private mark inside such a path (#1017).
+- yokoten now reads Codex's folder trust the way Codex does. Before, the board could start Codex while Codex skipped the guard hooks. This happened in two cases: two keys for one folder in a different case on Windows, and a folder reached through a symlink. On Windows, a folder that Codex trusted (its key in lower case) read as untrusted. `yokoten trust` now writes the key and hooks under the path Codex uses: the real path on Linux and macOS. The board also refuses to start Codex when nothing trusts the folder. This is when there is no Codex home, no `config.toml`, or a `config.toml` yokoten cannot read.
 
 ### Internal
 

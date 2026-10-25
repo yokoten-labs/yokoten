@@ -7,6 +7,8 @@ AI agents can make a big mistake in a second. yokoten stops it before it happens
 - **Stops dangerous actions**: a force push, deleting your work, leaking a secret, releasing without you.
 - **Works inside the tools you already use**: Claude Code, Codex, Copilot CLI, Muse Code and more.
 - **On by default.** One command to start, nothing new to learn.
+- **Leaves your settings alone**: it keeps the choices you made, and saves a copy before it changes a file of yours.
+- **Works on Linux, Windows and macOS.** On Windows, WSL is fully supported. Native Windows is in beta, in Git Bash and PowerShell 7.
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -60,15 +62,15 @@ Any AI model works. The guard checks the commands the agent runs, not the model.
 
 | Agent | Verified end to end | Needs `npx yokoten trust` first | Models tested |
 |---|---|---|---|
-| Claude Code | yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | yes | yes | `deepseek-flash` |
-| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | yes | yes | the default model |
+| Claude Code | ✅ yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
-| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **Programming languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
 

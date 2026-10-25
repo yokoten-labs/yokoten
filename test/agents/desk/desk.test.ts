@@ -5,7 +5,7 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { DESK_RUNTIMES, findProgram, hiddenFolders, isInside, OWN_RUNTIME, planDesk, prepareDeskState, programExtensions, programFolders, proxyEnv } from '../../../src/agents/desk/desk.ts';
 import { identityLine } from '../../../src/agents/desk/team/who.ts';
@@ -35,10 +35,11 @@ const writeMark = (desk: string) => {
 const env = () => ({ HOME: TEST_HOME, PATH: dirname(process.execPath), GH_TOKEN: 'not-a-real-token', SECRET_THING: 'x' });
 
 test('isInside: the folder itself and what is under it, not a name that only starts the same', () => {
-  assert.ok(isInside('/a/b', '/a/b'));
-  assert.ok(isInside('/a/b/c', '/a/b'));
-  assert.ok(!isInside('/a/bc', '/a/b'));
-  assert.ok(!isInside('/A/b/c', '/a/b'), 'a system that keeps case compares it');
+  // POSIX paths, named as such: on Windows the default compares without case (#669).
+  assert.ok(isInside('/a/b', '/a/b', 'linux'));
+  assert.ok(isInside('/a/b/c', '/a/b', 'linux'));
+  assert.ok(!isInside('/a/bc', '/a/b', 'linux'));
+  assert.ok(!isInside('/A/b/c', '/a/b', 'linux'), 'a system that keeps case compares it');
 });
 
 test('isInside: Windows paths compare without case, and only after a separator', () => {
@@ -51,7 +52,7 @@ test('isInside: Windows paths compare without case, and only after a separator',
 test('findProgram: a name on PATH, a path as it is, null when missing', () => {
   const folder = makeTempDir('bin-');
   writeFileSync(join(folder, 'agent'), '');
-  assert.equal(findProgram('agent', `relative:${folder}`), join(folder, 'agent'));
+  assert.equal(findProgram('agent', ['relative', folder].join(delimiter)), join(folder, 'agent'));
   assert.equal(findProgram(join(folder, 'agent'), ''), join(folder, 'agent'));
   assert.equal(findProgram('missing', folder), null);
 });
@@ -96,8 +97,8 @@ test('planDesk: the desk and its own state writable, a token dropped, role and t
   const { projects, desk } = makeDesk();
   const plan = planDesk({ runtime: 'claude-code', desk, command: ['node', 'x.js'], env: env(), markDesk: (folder) => markWorktree(join(projects, 'origin'), folder, gitEnv()), extraHosts: ['api.deepseek.com'] });
   assert.equal(plan.desk, desk);
-  assert.deepEqual(plan.state, [`${desk}.state/claude-code`]);
-  assert.equal(plan.env.CLAUDE_CONFIG_DIR, `${desk}.state/claude-code`, "the agent uses the desk's state, not the lead's");
+  assert.deepEqual(plan.state, [join(`${desk}.state`, 'claude-code')]);
+  assert.equal(plan.env.CLAUDE_CONFIG_DIR, join(`${desk}.state`, 'claude-code'), "the agent uses the desk's state, not the lead's");
   assert.ok(!plan.readable.some((path) => isInside(path, join(realpathSync(TEST_HOME), '.claude'))), "nothing of the lead's state is shown");
   assert.ok(plan.hidden.includes(projects) && plan.hidden.includes(realpathSync(TEST_HOME)));
   assert.ok(plan.readable.includes(dirname(dirname(realpathSync(process.execPath)))), 'Node is shown');

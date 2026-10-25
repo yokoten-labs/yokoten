@@ -87,7 +87,8 @@ function readmeFacts(readme: string, heading: string): AgentFacts[] {
     .filter((cells) => !isHeaderRow(cells))
     .map((cells) => ({
     label: cells[0],
-    endToEnd: cells[1],
+    // A verified row shows a green mark before `yes` (owner 2026-10-25), so the eye finds them.
+    endToEnd: cells[1] === "✅ yes" ? "yes" : cells[1] === "yes" ? "unmarked yes" : cells[1],
     trust: cells[2],
     models: modelsOf(cells[3]),
   }));
@@ -117,9 +118,9 @@ test('the READMEs copy the guide agents table, row for row', () => {
 // one model renamed here.
 test('control: a README agents row that differs from the guide is caught', () => {
   const guide = guideFacts(read('docs/guide.md'));
-  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex CLI | yes | yes |', '| Codex CLI | yes | no |');
+  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
   assert.ok(tableProblems(readmeFacts(doctored, '## Works with'), guide).some((one) => one.includes('other-model')), 'a changed model in a README row was not caught');
-  const drifted = read('README.md').replace('| Codex CLI | yes | yes |', '| Codex CLI | yes | no |');
+  const drifted = read('README.md').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
   assert.ok(tableProblems(readmeFacts(drifted, '## Works with'), guide).some((one) => one.startsWith('Codex CLI')), 'a changed trust value in a README row was not caught');
 });
 
