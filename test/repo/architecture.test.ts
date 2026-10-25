@@ -934,6 +934,46 @@ test('docs: README images and links use full URLs, so the npm page can show them
   assert.deepEqual(found, [], found.join('\n'));
 });
 
+/** Whether `text` from `start` is an autolink target, such as `https://example.com` or `a@example.com`. */
+function isAutolinkTarget(text: string, start: number): boolean {
+  const rest = text.slice(start);
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>/.test(rest)) return true;
+  return /^[^\s<>@]+@[^\s<>@]+>/.test(rest);
+}
+
+/**
+ * `text` without inline code, HTML comments and Markdown autolinks, so a real tag is
+ * all that is left. A scan, not one regex: CodeQL flags a regex that strips a comment
+ * marker, because filtering with one is incomplete by nature (#966).
+ */
+function stripNonTagText(text: string): string {
+  let plain = '';
+  let index = 0;
+  while (index < text.length) {
+    if (text[index] === '`') {
+      const close = text.indexOf('`', index + 1);
+      if (close !== -1) {
+        index = close + 1;
+        continue;
+      }
+    }
+    if (text.startsWith('<!--', index)) {
+      const close = text.indexOf('-->', index + 4);
+      if (close !== -1) {
+        index = close + '-->'.length;
+        continue;
+      }
+    }
+    if (text[index] === '<' && isAutolinkTarget(text, index + 1)) {
+      index = text.indexOf('>', index + 1) + 1;
+      continue;
+    }
+    plain += text[index];
+    index++;
+  }
+  return plain;
+}
+
 /**
  * The lines of `text` outside code fences that hold an HTML tag. A comment is not a tag,
  * and neither is a Markdown autolink such as `<https://example.com>` (#966).
@@ -943,7 +983,7 @@ function htmlTagLines(text: string): number[] {
   let isFenced = false;
   for (const [index, line] of text.split('\n').entries()) {
     if (line.startsWith('```')) isFenced = !isFenced;
-    else if (!isFenced && /<\/?[A-Za-z][^>]*>/.test(line.replace(/`[^`]*`|<!--.*?-->|<[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>|<[^\s<>@]+@[^\s<>@]+>/g, ''))) lines.push(index + 1);
+    else if (!isFenced && /<\/?[A-Za-z][^>]*>/.test(stripNonTagText(line))) lines.push(index + 1);
   }
   return lines;
 }
