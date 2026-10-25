@@ -617,6 +617,24 @@ test('plugin launcher: a safe cache copy runs, and any other path does not (#706
   assert.equal(attacked.stdout, 'cache hook --commands-only', 'HOME is not the plugin root');
   assert.equal(existsSync(fakeMarker), false, 'a fake HOME does not run');
 
+  // The test-only account home (#902) is a flag in the launcher's own command line, not
+  // an environment variable: a shell sets argv, an environment cannot rewrite it. The
+  // child never sees the flag. HOME alone — here the fake — still never moves the
+  // lookup (#706).
+  const pointed = launch.runLaunch({ mode: 'tool', fallback: rootBinary, args: ['hook', '--commands-only', '--account-home', home], env: { ...sandbox.env, HOME: fakeHome }, input: '{}', cwd: sandbox.repo });
+  assert.equal(pointed.stdout, 'cache hook --commands-only', 'the account-home flag picks the sandbox copy');
+  assert.equal(existsSync(fakeMarker), false, 'the fake HOME does not run, named or not');
+  const envOnly = launch.runLaunch({ mode: 'tool', fallback: rootBinary, args: ['hook', '--commands-only'], env: { ...sandbox.env, HOME: fakeHome, YOKOTEN_TEST_ACCOUNT_HOME: home }, input: '{}', cwd: sandbox.repo });
+  assert.notEqual(envOnly.stdout, 'cache hook --commands-only', 'the environment does not pick the account home');
+  const explicit = launch.runLaunch({ mode: 'tool', fallback: rootBinary, args: ['hook', '--commands-only', '--account-home', join(sandbox.repo, 'nowhere')], env: sandbox.env, input: '{}', cwd: sandbox.repo, accountHome: home });
+  assert.equal(explicit.stdout, 'cache hook --commands-only', 'an explicit accountHome beats the flag');
+  // The same flag through the launcher's entry, as a spawned hook command runs it. The
+  // child gets the yokoten args only, so the flag is stripped before the spawn.
+  mkdirSync(join(rootDir, 'bin'), { recursive: true });
+  writeFileSync(join(rootDir, 'bin', 'launch.mjs'), launchText);
+  const spawned = shell(`${toolCommand} --account-home '${home}'`, '/bin/sh');
+  assert.deepEqual(pick(spawned), [0, 'cache hook --commands-only --agent claude-code', ''], 'the flag on the command line picks the sandbox copy');
+
   reset();
   script(join(outside, 'bin', 'yokoten.mjs'), 'outside');
   install({ scope: 'user', installPath: outside, version: 'abc123' });
@@ -657,7 +675,7 @@ test('plugin launcher: a safe cache copy runs, and any other path does not (#706
   assert.equal(`${started.stdout}${started.stderr}`.includes('this plugin copy is gone'), false, 'the short command runs the launcher file');
   assert.ok(started.status === 0 || started.status === 2, `status ${started.status}`);
   // The plugin root is the account home. The text must not read HOME (#706).
-  assert.doesNotMatch(launchText, /env\.HOME|USERPROFILE/, 'the launcher does not read HOME');
+  assert.doesNotMatch(launchText, /env\.HOME|USERPROFILE|YOKOTEN_TEST_ACCOUNT_HOME/, 'the launcher does not read HOME or a test variable');
   assert.match(launchText, /userInfo\(\)\.homedir/, 'the account home comes from the password file');
 });
 

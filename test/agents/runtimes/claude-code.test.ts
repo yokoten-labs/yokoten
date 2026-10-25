@@ -120,8 +120,11 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
     assert.notEqual(hooks[event][0].hooks[0].command, installed[event][0].hooks[0].command, event);
   }
   // The command as Claude Code runs it: the root filled in, through the shell.
+  // The test names this sandbox as the account home in the command it writes, so no
+  // installed copy on the machine, whose hooks are older, runs (#902). The launcher
+  // reads argv; an environment cannot rewrite it.
   const run = (command: string, input?: string, extra: Record<string, string> = {}) =>
-    spawnSync(command.replaceAll(PLUGIN_ROOT, ROOT), { shell: true, cwd: sandbox.repo, env: { ...sandbox.env, CLAUDE_PLUGIN_ROOT: ROOT, ...extra }, input, encoding: 'utf8' });
+    spawnSync(`${command.replaceAll(PLUGIN_ROOT, ROOT)} --account-home '${sandbox.home}'`, { shell: true, cwd: sandbox.repo, env: { ...sandbox.env, CLAUDE_PLUGIN_ROOT: ROOT, ...extra }, input, encoding: 'utf8' });
   const guard = hooks.PreToolUse[0].hooks[0].command;
   const call = (command: string) => JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
   const r = run(guard, call('git push --force origin main'));
