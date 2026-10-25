@@ -154,7 +154,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   writeFileSync(path, old);
   const skill = readFileSync(join(ROOT, 'kit/plugin/skills/update/SKILL.md'), 'utf8');
   const commands = [...skill.matchAll(/^ *(node "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/yokoten\.ts" update.*)$/gm)].map((m) => m[1]);
-  assert.deepEqual(commands, [`node "${PLUGIN_ROOT}/bin/yokoten.ts" update`, `node "${PLUGIN_ROOT}/bin/yokoten.ts" update --write`], 'preview, then write');
+  assert.deepEqual(commands, [`node "${PLUGIN_ROOT}/bin/yokoten.ts" update --all`, `node "${PLUGIN_ROOT}/bin/yokoten.ts" update --write`], 'preview, then write');
   assert.doesNotMatch(skill, /\.yokoten\/bin/, 'the skill never runs the copy in .yokoten/');
   const run = (command: string) => spawnSync(command.replaceAll(PLUGIN_ROOT, ROOT), { shell: true, cwd: sandbox.repo, env: { ...sandbox.env, CLAUDE_PLUGIN_ROOT: ROOT }, encoding: 'utf8' });
 
@@ -172,7 +172,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   assert.equal(readFileSync(path, 'utf8'), old, 'the preview writes nothing');
   result = run(commands[1]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /replaced the core rules in AGENTS\.md/);
+  assert.match(result.stdout, /the core rules in AGENTS\.md are this version's now/);
   assert.equal(readFileSync(path, 'utf8'), fresh);
   assert.match(run(commands[0]).stdout, /up to date/);
 });

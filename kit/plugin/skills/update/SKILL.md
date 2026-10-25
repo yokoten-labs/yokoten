@@ -14,10 +14,11 @@ the kit's core rules too, but only as new as the day `init` wrote them. The plug
 newer. So run `update` from the plugin: from `.yokoten/`, it finds nothing newer.
 
 1. Go to the root of the repo.
-2. Preview the change with the Bash tool. This writes nothing:
+2. Preview the change with the Bash tool. `--all` shows every changed line. This writes
+   nothing:
 
    ```sh
-   node "${CLAUDE_PLUGIN_ROOT}/bin/yokoten.ts" update
+   node "${CLAUDE_PLUGIN_ROOT}/bin/yokoten.ts" update --all
    ```
 
 3. If it says the rules are up to date, or it can't compare, tell the user and stop.

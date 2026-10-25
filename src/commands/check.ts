@@ -34,7 +34,7 @@ import { isCodeFile, nameNotes } from '../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, count, field, type Invocation, moreLine, parse, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
+import { bullets, count, field, type Invocation, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -57,7 +57,7 @@ export async function runCheck(invocation: Invocation): Promise<number> {
   let problems: Finding[];
   // The notes runMode prints are held (#1027): the screen puts them under its title, folded.
   const held: string[] = [];
-  const sink = new Writable({ write: (chunk, _encoding, done) => { held.push(String(chunk)); done(); } });
+  const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
   const isFolding = !json && mode !== 'anchor';
   try {
     problems = await runMode(isFolding ? { ...invocation, stdout: sink } : invocation, mode, root, config, notes, { name, json, number, values: options.values });
@@ -82,14 +82,6 @@ export async function runCheck(invocation: Invocation): Promise<number> {
   showOnPullRequest(invocation, `yokoten check${mode === 'tree' ? '' : ` --${mode}`}`, problems, notes, { json, isPlaceAFile: mode !== 'history' });
   return problems.length ? 1 : 0;
 }
-
-/** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
-function textColumn(where: string | undefined): number {
-  return where === undefined ? 14 : 26;
-}
-
-/** A part of a finding as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /**
  * A screen with the notes a check printed (#1027). By default they fold into one row
@@ -118,12 +110,6 @@ function cleanSummary(mode: string, number?: string): string {
   return 'clean: layout, privacy, lead-only files';
 }
 
-/** The place a problem names, as editors and agents read it: `path:line`, with no colon after. */
-function locationOf(problem: Finding): string | undefined {
-  if (problem.file === undefined) return undefined;
-  return `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
-}
-
 /**
  * The screen for a check that found problems (issue #1027): the count first, one row per
  * problem with its place first and why and the fix under it, then the one command to type.
@@ -131,12 +117,7 @@ function locationOf(problem: Finding): string | undefined {
  * is one More line.
  */
 function problemScreen(command: string, problems: Finding[], hints: string[]): string[] {
-  const lines = [...title(command, count(problems.length, 'problem')), ''];
-  for (const problem of problems) {
-    const where = locationOf(problem);
-    lines.push(...row('MISSING', problem.what, where));
-    lines.push(...wrap(' '.repeat(textColumn(where)), `${asSentence(problem.why)} ${asSentence(problem.fix)}`));
-  }
+  const lines = [...title(command, count(problems.length, 'problem')), '', ...problemRows(problems)];
   const links = [...new Set(problems.map((problem) => problem.docs).filter((docs) => docs !== undefined))];
   if (hints.length) {
     lines.push('');

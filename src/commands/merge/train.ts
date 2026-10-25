@@ -29,7 +29,7 @@ import { runGit } from '../../run/check.ts';
 import { runBot } from './bot.ts';
 import { listPullRequests, nextPick } from './conflicts/order.ts';
 import { MAP_FILE, MAP_MAX_AGE_MS, type ConflictMap } from './conflicts/types.ts';
-import { type Invocation, nextLine, type Output, parse, print, requireRoot, row, title, usage } from '../shared.ts';
+import { type Invocation, type Output, parse, print, requireRoot, title, usage } from '../shared.ts';
 
 /** How long one test or check run may take, in ms. */
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -653,7 +653,8 @@ export async function runTrain(invocation: Invocation): Promise<number> {
     }
     const label = map.changes.find((change) => change.id === pick.id)?.label ?? pick.id;
     // One screen (issue #1027): which one goes next and why, then the command that merges it.
-    print(invocation, [...title('train', `next: ${label}`), '', ...row('next', pick.why), '', ...nextLine(`yokoten train ${pick.id.replace(/^pr:/, '')}`)]);
+    // One line (#1027 keeps it): an agent reads the pick and why, as before.
+    print(invocation, [`yokoten train · next is ${label}: ${pick.why}`]);
     return 0;
   }
   const prs = given.length ? given : map ? listPullRequests(map) : [];

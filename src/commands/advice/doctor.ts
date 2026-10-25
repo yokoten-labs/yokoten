@@ -325,7 +325,7 @@ export function shortLines(report: DoctorReport, brokenLine?: string): string[] 
   const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
   if (steps.length) lines.push(...row('done', `${done} of ${count(steps.length, 'step')}`));
   // A problem fails doctor, so it is never folded: each one with its fix.
-  for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`, f.id));
+  for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`));
   // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
   for (const s of left.slice(0, 5)) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
   if (left.length > 5) lines.push(...row('to do', `${count(left.length - 5, 'more step')}, listed by \`yokoten doctor --all\``));

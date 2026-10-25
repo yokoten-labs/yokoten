@@ -254,8 +254,10 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     const sha = (ref: string) => sandbox.git('rev-parse', ref).stdout.trim();
     const tier = /^tier: ([ABC])/.exec(body)?.[1] ?? 'A';
     writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat(kit): a', body, labels: [{ name: 'feat' }, { name: `tier ${tier}` }], milestone: { title: 'M0' }, base: { sha: sha('origin/main') }, head: { sha: sha('HEAD') } } }));
-    const r = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file } });
-    return r.stderr.trim().split('\n').slice(1);
+    const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file } });
+    // The problem rows: after the title and its blank line, up to the blank line before Next.
+    const lines = r.stderr.trim().split('\n').slice(2);
+    return lines.slice(0, lines.indexOf(''));
   };
   const good = 'tier: A\nCloses #1\n\n## Why\nx\n\n## What changed\nEvery project gets the new kit file on its next init.\n\n## How tested\nx\n\nMade with worker (opus)\n';
   const refused = async (command: string[], body: string, id: RegExp, input?: string) => {
@@ -263,7 +265,7 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     assert.equal(r.status, 1, command.join(' '));
     const [head, ...lines] = r.stderr.trim().split('\n');
     assert.equal(head, 'yokoten bot: 1 problem(s) in the body; nothing was sent. Fix the body and run it again:');
-    assert.match(lines[0], id);
+    assert.match(lines.join(' ').replace(/\s+/g, ' ').trim(), id);
     assert.deepEqual(lines, await ciSays(body), 'the same message CI gives');
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
@@ -272,16 +274,16 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     assert.equal((await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: join(sandbox.home, 'event.json') } })).status, 0);
     // (a) tier B on a branch that changes a file CODEOWNERS owns.
     const tierB = good.replace('tier: A', 'tier: B');
-    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body', tierB], tierB, /^- body: `tier: B`, and this changes 1 file\(s\) that CODEOWNERS owns \(read from the base branch\): src\/owned\.ts\./);
+    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body', tierB], tierB, /^MISSING body: `tier: B`, and this changes 1 file\(s\) that CODEOWNERS owns \(read from the base branch\): src\/owned\.ts /);
     // (b) a kit/ change whose body does not say every project gets it on the next init.
     const noKit = good.replace('Every project gets the new kit file on its next init.', 'A file.');
     writeFileSync(join(sandbox.home, 'body.md'), noKit);
-    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body-file', join(sandbox.home, 'body.md')], noKit, /^- body: this changes `kit\/` and does not say so\./);
+    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body-file', join(sandbox.home, 'body.md')], noKit, /^MISSING body: this changes `kit\/` and does not say so A change/);
     await refused(['gh', 'pr', 'edit', '--body-file', '-'], noKit, /kit/, noKit);
     await refused(['gh', 'pr', 'edit', 'topic', `--body=${noKit}`], noKit, /kit/);
     // (c) No `Made with` line: refused with what to add, like no `Closes #N` (#570).
     const noMade = good.replace('\n\nMade with worker (opus)\n', '\n');
-    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body', noMade], noMade, /^- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    await refused(['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body', noMade], noMade, /^MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     // A pull request named by number or URL: gh says its branches, with the bot's token, and
     // every body rule runs on origin/main...origin/topic. A branch not here yet is fetched.
     sandbox.git('update-ref', '-d', 'refs/remotes/origin/topic');
@@ -1101,7 +1103,7 @@ test('bot: a pull request comment needs the Made with line; one with it is sent 
   try {
     const refused = await run(['gh', 'pr', 'comment', '5', '--body', 'A note.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'pr', 'comment', '5', '--body', 'A note.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1135,7 +1137,7 @@ test('bot: an issue comment needs the Made with line, from --body or stdin (#609
   try {
     const refused = await run(['gh', 'issue', 'comment', '5', '--body', 'A note.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const good = 'A note.\n\nMade with worker (opus)\n';
     const sent = await run(['gh', 'issue', 'comment', '5', '--body-file', '-'], good);
@@ -1170,7 +1172,7 @@ test('bot: a pull request review with a body needs the Made with line (#609)', a
   try {
     const refused = await run(['gh', 'pr', 'review', '5', '--comment', '-b', 'A review.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'pr', 'review', '5', '--comment', '--body', 'A review.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1214,7 +1216,7 @@ test('bot: a new issue needs the Made with line; its labels are still checked (#
   try {
     const refused = await run(['gh', 'issue', 'create', '-t', 'host: a', '--body', 'An issue.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--body', 'An issue.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1257,7 +1259,7 @@ test('bot: a note body gh posts is always checked, whatever the spelling (#609)'
   const refused = async (command: string[]) => {
     const r = await run(command);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
   try {
@@ -1318,7 +1320,7 @@ test('bot: a note with --attach is refused, since the upload lands past the Made
   const refused = async (command: string[], input = '') => {
     const r = await run(command, input);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: `--attach` appends the upload after the `Made with` line\. .+ Drop `--attach`, or link an uploaded file in the body instead\./);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: `--attach` appends the upload after the `Made with` line .+ Drop `--attach`, or link an uploaded file in the body instead\./);
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
   try {
@@ -1362,7 +1364,7 @@ test('bot: a bare -- as a value does not hide the body gh posts (#609)', async (
     const before = ran().length;
     const r = await run(command);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again:\n- body: no `Made with` line at the end\. .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.equal(ran().length, before, `gh did not run: ${command.join(' ')}`);
   };
   try {

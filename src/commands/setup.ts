@@ -141,7 +141,8 @@ function remaining(lines: string[], { isProblemsOnly = false } = {}): string[] {
     }
     const fix = /`(git config[^`]+)`/.exec(note)?.[1];
     out.push(...row('note', 'hide your email in git logs: not on yet', 'email'));
-    if (fix) out.push(...wrap(ROW_TEXT_INDENT, `to turn it on: \`${fix}\``));
+    // The command stays whole on a line of its own, so it fits 80 columns and copies as one.
+    if (fix) out.push(`${ROW_TEXT_INDENT}to turn it on:`, `${' '.repeat(14)}\`${fix}\``);
   }
   for (const problem of problems) out.push(...row('MISSING', problem));
   return out;
@@ -466,7 +467,9 @@ export function runUpdate(invocation: Invocation): number {
   if (!root) return 1;
   const isWrite = options.flags.has('--write');
   const { ok, lines } = updateCoreRules(root, { write: isWrite }, invocation.env);
-  print(invocation, updateScreen({ ok, lines, isWrite }), ok ? invocation.stdout : invocation.stderr);
+  // --all keeps the whole preview, line by line, for the person who reads it before --write.
+  const screen = options.flags.has('--all') ? [`yokoten update: ${lines[0]}`, ...lines.slice(1)] : updateScreen({ ok, lines, isWrite });
+  print(invocation, screen, ok ? invocation.stdout : invocation.stderr);
   return ok ? 0 : 1;
 }
 

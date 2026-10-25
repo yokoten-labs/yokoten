@@ -225,7 +225,7 @@ test('the command prints the summary and keeps the map for the guard', async () 
 
   const shown = await sandbox.call(['conflicts']);
   assert.equal(shown.status, 0, shown.stderr);
-  assert.match(shown.stdout, /branch one and branch two both change a\.txt\. Merge branch one first, then branch two\./);
+  assert.match(shown.stdout.replace(/\s+/g, ' '), /next branch one ⇄ branch two a\.txt\. Merge branch one first: it collides with 1 other open change/);
 
   const asJson = await sandbox.call(['conflicts', '--json']);
   assert.equal(asJson.status, 0, asJson.stderr);

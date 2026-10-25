@@ -542,7 +542,7 @@ test('check --staged: with nothing staged, no commit time to check (#208)', asyn
   // An empty repo, then one with a commit: nothing staged is ok, and says so.
   for (const step of ['empty', 'committed']) {
     if (step === 'committed') sandbox.git('commit', '-q', '--allow-empty', '-m', 'first');
-    const r = await sandbox.call(['check', '--staged'], { extra: zoned });
+    const r = await sandbox.call(['check', '--staged', '--all'], { extra: zoned });
     assert.equal(r.status, 0, `${step}: ${r.stderr}`);
     assert.match(r.stdout, /note: nothing is staged/);
     assert.ok(!/time zone/.test(r.stderr), step);
@@ -564,7 +564,7 @@ test('check --history: counts commits with a time zone, as a note that does not 
   const sandbox = makeSandbox();
   sandbox.git('commit', '-q', '--allow-empty', '-m', 'utc');
   spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'zoned'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: 'Asia/Tokyo' } });
-  const r = await sandbox.call(['check', '--history']);
+  const r = await sandbox.call(['check', '--history', '--all']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: 1 commit\(s\) record a time zone other than UTC/);
 });
@@ -917,7 +917,7 @@ test('check --staged: a staged change file is read as `yokoten changelog` reads 
   const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(' ');
   sandbox.write('changes/7-dark.md', `Added\n\nA dark mode (#7).\n${long}.\n`);
   sandbox.git('add', '.');
-  result = await sandbox.call(['check', '--staged']);
+  result = await sandbox.call(['check', '--staged', '--all']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(flat(result.stdout), /note: changes\/7-dark\.md:4: a sentence of 30 words/);
 });
@@ -940,7 +940,7 @@ test('check: a sure secret fails, a likely one warns, and an ignored one stays l
   assert.ok(output.notes.some((f) => f.grade === 'likely' && f.ignored === undefined), JSON.stringify(output.notes));
   assert.ok(output.notes.some((f) => f.grade === 'likely' && f.ignored === 'a test fixture'), JSON.stringify(output.notes));
   for (const secret of [sure, ignored, likely, sureIgnored]) assert.ok(!result.stdout.includes(secret), 'no secret appears in the output');
-  const text = await sandbox.call(['check', '--staged']);
+  const text = await sandbox.call(['check', '--staged', '--all']);
   assert.match(text.stdout, /warning: .*\[likely\]/);
   assert.match(text.stdout, /ignored: a test fixture/);
 });
@@ -976,7 +976,7 @@ test('check: a stale exempt glob is a note for the tree and the doctor, never at
   sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7, exempt: ['crates/*/tests/data'] } }));
   sandbox.git('add', '.');
   const note = /note: yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/;
-  const tree = await sandbox.call(['check']);
+  const tree = await sandbox.call(['check', '--all']);
   assert.match(tree.stdout, note);
   assert.equal(tree.status, 0, 'a note never fails the check');
   const staged = await sandbox.call(['check', '--staged']);

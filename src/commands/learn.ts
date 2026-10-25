@@ -51,7 +51,7 @@ export function runChangelog(invocation: Invocation): number {
     const lines = [...title('changelog', `${count(problems.length, 'problem')}; nothing was written`), ''];
     for (const problem of problems) {
       const where = problem.file === undefined ? undefined : `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
-      lines.push(...row('MISSING', problem.what, where), ...wrap(' '.repeat(where === undefined ? 14 : Math.max(26, where.length + 15)), problem.fix));
+      lines.push(...row('MISSING', problem.what, where), ...wrap(' '.repeat(where === undefined ? 14 : 26), problem.fix));
     }
     print(invocation, lines, invocation.stderr);
     return 1;

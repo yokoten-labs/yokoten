@@ -8,7 +8,7 @@ import { botConfig, botEnv, botProgram, type Gh, installationToken, readApproval
 import { DEFAULTS, type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding } from '../../rules/message.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../rules/pr.ts';
-import { bullets, type Invocation, type Output, parse, print, readInput, requireRoot, rootOf, title, usage } from '../shared.ts';
+import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../shared.ts';
 
 /** The bot's name: the App's own name when the project sets one, else the default (#1027). */
 export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bot';
@@ -502,7 +502,7 @@ function checkBody(body: PendingBody, branch: Branch, env: Env): { problems: Fin
 /** Prints the problems with a body the way the title check does, or its note. True when it refuses. */
 function refuseBody(invocation: Invocation, { problems, note }: { problems: Finding[]; note?: string }): boolean {
   if (problems.length) {
-    print(invocation, [`yokoten bot: ${problems.length} problem(s) in the body; nothing was sent. Fix the body and run it again:`, ...bullets(problems)], invocation.stderr);
+    print(invocation, [`yokoten bot: ${problems.length} problem(s) in the body; nothing was sent. Fix the body and run it again:`, ...problemRows(problems)], invocation.stderr);
     return true;
   }
   if (note) print(invocation, [`yokoten bot: note: ${note}`], invocation.stderr);

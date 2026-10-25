@@ -331,6 +331,28 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
   return wrap(head, text);
 }
 
+/** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
+function textColumn(where: string | undefined): number {
+  return where === undefined ? 14 : 26;
+}
+
+/** A part of a finding as a sentence: a capital first, a full stop last. */
+const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
+
+/** The place a problem names, as editors and agents read it: `path:line`, with no colon after. */
+function locationOf(problem: Finding): string | undefined {
+  if (problem.file === undefined) return undefined;
+  return `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
+}
+
+/** One MISSING row per problem, with its why and fix under it: check's screen and bot's refusal (#1027). */
+export function problemRows(problems: Finding[]): string[] {
+  return problems.flatMap((problem) => {
+    const where = locationOf(problem);
+    return [...row('MISSING', problem.what, where), ...wrap(' '.repeat(textColumn(where)), `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
+  });
+}
+
 /** One row with no mark: a label, then the text, wrapped under itself (#1027). */
 export function field(label: string, text: string): string[] {
   return wrap(`  ${label.padEnd(12)}`, text);

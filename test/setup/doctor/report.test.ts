@@ -489,7 +489,7 @@ test('doctor: shows check\'s notes, worded as check words them, and they never c
   // An unknown yokoten.json key.
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   const unknownKey = /^ {2}note +yokoten\.json: "colour" is not a key this version of yokoten knows/m;
-  assert.match((await sandbox.call(['check'])).stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  assert.match((await sandbox.call(['check', '--all'])).stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
   let result = await sandbox.call(['doctor', '--all']);
   assert.match(result.stdout, unknownKey);
   assert.equal(result.status, before.status, 'a note never changes the exit code');

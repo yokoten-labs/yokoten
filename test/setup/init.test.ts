@@ -1147,7 +1147,7 @@ test('init: the hand-off has no switch, and a .git/hooks link to .githooks does 
   for (const shell of SHELLS) {
     const run = runChild(shell, ['.git/hooks/pre-commit'], { cwd: sandbox.repo, env: sandbox.env });
     assert.equal(run.status, 0, `${shell}: ${run.stderr}`);
-    assert.equal((`${run.stdout}${run.stderr}`.match(/yokoten check · clean/g) ?? []).length, 1, `${shell}: the check ran once`);
+    assert.equal((`${run.stdout}${run.stderr}`.match(/yokoten check --staged · clean/g) ?? []).length, 1, `${shell}: the check ran once`);
   }
 });
 
@@ -1285,7 +1285,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.ok(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).findings.some((f: { id: string }) => f.id === 'core-rules'));
 
   // The preview shows each line, the hand edit too, and writes nothing.
-  result = await sandbox.call(['update']);
+  result = await sandbox.call(['update', '--all']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, new RegExp(String.raw`^yokoten update: the core rules in AGENTS\.md differ from yokoten ${versionPattern}'s: 2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\n`));
   assert.match(result.stdout, /^- Plain words, close to ASD-STE100/m, 'the hand-edited line is shown as replaced');
@@ -1296,7 +1296,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
 
   // --write replaces the core part only; a second run has nothing to do.
   commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
-  result = await sandbox.call(['update', '--write']);
+  result = await sandbox.call(['update', '--write', '--all']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, `yokoten update: replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 2 line(s) added, 1 removed; sections changed: Core rules, Writing. "## This project" and below are unchanged\n`);
   assert.equal(readFileSync(path, 'utf8'), kitCore + own);
@@ -1313,13 +1313,13 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /core rules/);
   result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten update: can't compare AGENTS\.md with the kit: .*Nothing was written/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /^yokoten update · nothing changed MISSING can't compare AGENTS\.md with the kit: .*Nothing was written/);
   assert.equal(readFileSync(path, 'utf8'), '# our own rules\n');
 
   rmSync(path);
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /core-rules/, 'the road asks for AGENTS.md');
   result = await sandbox.call(['update']);
-  assert.deepEqual([result.status, result.stderr], [1, 'yokoten update: no AGENTS.md here; nothing was written. Run `yokoten init` to add one\n']);
+  assert.deepEqual([result.status, result.stderr], [1, 'yokoten update · nothing changed\n\n  MISSING     no AGENTS.md here; nothing was written. Run `yokoten init` to add\n              one\n']);
   assert.equal((await sandbox.call(['update', '--force'])).status, 1, 'an unknown option is refused');
   assert.match((await sandbox.call(['explain', 'core-rules'])).stdout.replace(/\s+/g, ' '), /^yokoten explain core-rules · .* What the core rules in AGENTS\.md/);
 });
@@ -1383,7 +1383,7 @@ test('update --write: a file git cannot give back is kept as AGENTS.md.before-yo
   const backup = join(sandbox.repo, AGENTS_BACKUP);
   const result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /The old file is kept as AGENTS\.md\.before-yokoten/);
+  assert.match(result.stdout, /kept as AGENTS\.md\.before-yokoten/);
   assert.equal(readFileSync(backup, 'utf8'), behind, 'the old file, byte for byte');
   assert.equal(readFileSync(path, 'utf8'), fresh);
 
@@ -1391,7 +1391,7 @@ test('update --write: a file git cannot give back is kept as AGENTS.md.before-yo
   writeFileSync(path, behind.replace('Plain words', 'Simple words'));
   const clash = await sandbox.call(['update', '--write']);
   assert.equal(clash.status, 1);
-  assert.match(clash.stderr, /AGENTS\.md\.before-yokoten is there already.*Nothing was written/);
+  assert.match(clash.stderr.replace(/\s+/g, ' '), /AGENTS\.md\.before-yokoten is there already.*Nothing was written/);
   assert.equal(readFileSync(backup, 'utf8'), behind);
   assert.match(readFileSync(path, 'utf8'), /Simple words/);
 
@@ -1410,7 +1410,7 @@ test('update --write: a linked AGENTS.md is refused and the target stays as it w
   symlinkSync('docs/rules.md', path);
   const result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /kept AGENTS\.md: it is a link to docs\/rules\.md, so yokoten did not write the core rules into it/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /kept AGENTS\.md: it is a link to docs\/rules\.md, so yokoten did not write the core rules into it/);
   assert.equal(readFileSync(join(sandbox.repo, 'docs', 'rules.md'), 'utf8'), behind);
   assert.ok(lstatSync(path).isSymbolicLink(), 'the link is still a link');
   assert.ok(!existsSync(join(sandbox.repo, AGENTS_BACKUP)));

@@ -118,9 +118,10 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['check', '--staged'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
-  const lines = result.stderr.split('\n').filter((l) => l.startsWith('- '));
-  assert.ok(lines.length >= 7, result.stderr);
-  for (const line of lines) assert.match(line, /^- .+\. [A-Z].+\. .+\.$/, line);
+  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences.
+  const problems = result.stderr.replace(/\s+/g, ' ').split(' MISSING ').slice(1).map((one) => one.split(' Next: ')[0] ?? one);
+  assert.ok(problems.length >= 7, result.stderr);
+  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. .+\.\s*$/, one);
   clean(result.stderr);
   result = await sandbox.call(['check', '--staged', '--json'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);

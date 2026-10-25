@@ -742,11 +742,11 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `init --github --yes [--remove-default-labels] [--board]` | 补上缺的标准标签；没有打开的里程碑时，建一个叫 "First release" 的；要是已经有一个关掉的里程碑叫这个名字，就叫 "Next release"。关掉的里程碑不会被重新打开。已有的标准标签，颜色和说明改成标准的。`yokoten.json` 里的模块不超过 8 个时，每个模块建一个灰色标签。再跑一次什么也不会变。GitHub 自带的、不在这套里的标签（`question`、`wontfix` 等），只有加上 `--remove-default-labels` 才会删。加 `--board` 还会建一个关联到仓库的看板，要 gh 的令牌带 `project` 权限 |
 | `init --no-ci` | 不用 CI：在 `yokoten.json` 的 `"notNow"` 里记下 `"ci"`，不写 workflow，也不写 Dependabot 配置；这些文件如果还是 kit 原样，就删掉。私有仓库的 Actions 按分钟收费，用这个省下来 |
 | `trust [dir] [--undo]` | 给这台电脑上装了的 agent 打开 yokoten 的守卫：按它们各自的写法，只写 yokoten 自己的钩子需要的信任，支持 Codex、Grok CLI、Copilot CLI 和 Muse Code。这条命令由人在终端里跑；管道里什么都不写。只有 yokoten 自己的钩子在、而且项目的 Codex 沙箱是安全的，它才信任这个文件夹，因为信任文件夹会让项目自己的沙箱设置生效。在终端里跑 `init` 时会问一次；没有终端就什么都不写，只告诉你这条命令。`--undo` 只删 yokoten 写进去的条目，你后来改过的会留着 |
-| `update [dir] [--write]` | 看看这个版本的 yokoten 会怎么改项目 `AGENTS.md` 里的核心规则。加上 `--write` 才真的替换；「This project」那部分原样保留。见[更新规则](#更新规则) |
+| `update [dir] [--write] [--all]` | 默认每条改动的规则一行；`--all` 列出每一行改动。看看这个版本的 yokoten 会怎么改项目 `AGENTS.md` 里的核心规则。加上 `--write` 才真的替换；「This project」那部分原样保留。见[更新规则](#更新规则) |
 | `upgrade` | 把 yokoten 本身升到最新版。装了 Claude Code 插件时，先更新 marketplace，再更新插件，都走 HTTPS，不用 SSH 密钥。不会添加或删除任何东西。没装插件时，只告诉你运行 `npx yokoten@latest` |
 | `doctor [--all] [--session] [--json]` | 项目走到了哪一步，一屏看完：做完了什么、缺什么、下一步做什么。`--all` 列出整条路：每一关、每一步，加上这台电脑还缺什么。`--session` 只说下一步，会话开头用。完整的 doctor 还会拿一条无关紧要的命令把守卫跑一次，报告 `guard: 90 ms per command (60 ms CPU)`：一次调用的墙钟时间和 CPU 时间（用户态加内核态）；会话开头不跑。再加 `--agent gemini`，就按 Gemini CLI 读得懂的 JSON 输出 |
 | `adopt [--all] [--json]` | 默认只显示一屏；`--all` 显示整张表，每一行都附上理由。给老项目的采用表出一份草稿：项目现在做到了哪些，每一步建议怎么定。`--json` 输出每一行的数据。不改任何文件 |
-| `check [--staged] [--json]` | 检查目录层级、隐私和只有 lead 能改的文件；`--staged` 只查下一次提交。提交里不能有构建产物和二进制文件。`changes/` 里的文件按 `changelog` 的读法检查，格式不对，提交时就拦下。什么都没暂存时，`--staged` 提醒一句，算通过。查整个目录时，落后于英文的译文会给一条提醒，见[翻译](#翻译) |
+| `check [--staged] [--all] [--json]` | 一屏：问题全部列出，提示折成一个数字；`--all` 逐条列出提示。检查目录层级、隐私和只有 lead 能改的文件；`--staged` 只查下一次提交。提交里不能有构建产物和二进制文件。`changes/` 里的文件按 `changelog` 的读法检查，格式不对，提交时就拦下。什么都没暂存时，`--staged` 提醒一句，算通过。查整个目录时，落后于英文的译文会给一条提醒，见[翻译](#翻译) |
 | `check --pr` | 在 CI 里检查 PR：标题格式、第一行的 `tier:`、三个小节、关联的 issue、需要时的变更文件、milestone 和标签；最后一行写明做出这个 PR 的每个 AI 和模型：`🤖 Made with <agent> (<model>)`，可写一个或多个逗号分隔的组合；审阅的 AI 也可以写上：`🤖 Made with worker <X> (<模型>), reviewed by <Y> (<模型>) and <Z> (<模型>), lead Claude Code (<模型>)`（一个或两个审阅者，最多两个）。见下面的「更新日志」。改到 CODEOWNERS 里列出的文件，必须写 `tier: A`。这一行会和分支上的 desk 状态文件核对：行里没写出的 desk，或审阅者与写作者同属一个厂商，都算问题。改动的文档里句子太长、改动的代码里名字难读、改动超过 400 行，都只提醒，不算失败。`Made with` 里的模型和 worker 状态文件不一致时也只提醒，而且只在有 worker 工作副本的机器上检查：CI 看不到那个文件 |
 | `check --pr <number>` | 同样的检查，但通过 `gh` 读这个编号的 PR，没有 CI 的仓库合并前自己跑 |
 | `check --issue` | 在 CI 里检查 issue 的标题，见下面的「issue 标题」 |

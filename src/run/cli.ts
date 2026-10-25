@@ -228,12 +228,12 @@ export const COMMANDS: Command[] = [
   {
     name: 'update',
     summary: "the core rules in AGENTS.md: preview, or --write",
-    usage: '[dir] [--write]',
+    usage: '[dir] [--write] [--all]',
     text: [
       "Shows what this yokoten changes in the core rules of the project's AGENTS.md.",
       'With --write it replaces them and keeps the "This project" part as it is.',
     ],
-    options: [{ name: '--write', text: 'replace the core rules in AGENTS.md' }],
+    options: [{ name: '--write', text: 'replace the core rules in AGENTS.md' }, { name: '--all', text: 'every changed line, not one row per rule' }],
     argument: 'dir',
     example: 'yokoten update --write',
   },
