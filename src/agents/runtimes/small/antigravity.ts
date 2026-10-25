@@ -8,13 +8,13 @@
 //   runtime. Empty stdout with exit 0 lets the call go on.
 // - `--dangerously-skip-permissions` skips the hooks altogether.
 
-import { readFileSync, rmSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
-import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile, writeSafely } from '../../hooks-file.ts';
+import { type Added, type HookState, isObject, type Problem, removeEmptied, UnreadableHooksFile, writeSafely } from '../../hooks-file.ts';
 import type { RuntimeEnv } from '../../desk/agent-env.ts';
 import type { AgentAdapter } from '../runtime.ts';
 
@@ -164,7 +164,7 @@ export function removeUserHooks(env: Env): 'removed' | 'not there' | null {
   if (!(NAME in read.entries)) return 'not there';
   delete read.entries[NAME];
   if (Object.keys(read.entries).length) writeSafely(path, `${JSON.stringify(read.entries, null, 2)}\n`, { isOurs: onlyOurEntry });
-  else rmSync(path, { force: true });
+  else removeEmptied(path);
   return 'removed';
 }
 

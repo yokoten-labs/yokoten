@@ -205,6 +205,12 @@ test('install: a symlinked ~/.claude/settings.json stays a link, through install
   assert.equal((await sandbox.call(['uninstall'])).status, 0);
   assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps the link');
   assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), { model: 'x' });
+  // A linked file that only holds yokoten's hooks is emptied, not unlinked: the link is the user's.
+  writeFileSync(real, '{}\n');
+  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps a link to a file it emptied');
+  assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), {});
 });
 
 test('install: the first change to the user\'s settings keeps one .before-yokoten copy, never overwritten (#984)', async () => {

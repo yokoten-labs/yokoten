@@ -111,5 +111,9 @@ test("addHook and removeHook: a user's own npx yokoten hook stays (#984)", () =>
   assert.equal(removeHook(file, 'PreToolUse', 'hook'), 'removed');
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { hooks: { PreToolUse: [userGroup] } }, 'only yokoten\'s hook went');
   assert.equal(removeHook(file, 'PreToolUse', 'hook'), 'not there');
+  // Positive control: the same removal does take out yokoten's own hook, which runs a yokoten file by path.
+  writeFileSync(join(dir, 'ours.json'), JSON.stringify({ hooks: { PreToolUse: [{ hooks: [{ type: 'command', command: OUR_GUARD }] }] } }));
+  assert.equal(removeHook(join(dir, 'ours.json'), 'PreToolUse', 'hook'), 'removed');
+  assert.ok(!existsSync(join(dir, 'ours.json')), 'a file with only yokoten\'s hook goes');
   assert.equal(readFileSync(`${file}${BACKUP_SUFFIX}`, 'utf8'), JSON.stringify({ hooks: { PreToolUse: [userGroup] } }), 'the user\'s file from before yokoten is kept');
 });

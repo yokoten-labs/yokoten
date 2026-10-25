@@ -157,6 +157,21 @@ export function writeSafely(path: string, text: string, { rename = renameSync, i
   }
 }
 
+/**
+ * Remove a settings file that held only what yokoten wrote. A symlink is the user's: it stays,
+ * and the file it points at gets an empty JSON object (#984).
+ */
+export function removeEmptied(path: string): void {
+  let isLink = false;
+  try {
+    isLink = lstatSync(path).isSymbolicLink();
+  } catch {
+    return;
+  }
+  if (isLink) writeSafely(path, '{}\n', { isOurs: () => true });
+  else rmSync(path, { force: true });
+}
+
 export const readSettings = (path: string, options: ReadOptions = {}): Settings => JSON.parse(readText(path, options).text);
 
 /**
@@ -398,7 +413,7 @@ export function removeHook(path: string, event: string, sub: string): 'removed' 
   // A file whose only content was the hooks goes too: install made it, so uninstall leaves
   // the home folder as it was (#904).
   if (!Object.keys(settings).length) {
-    rmSync(path, { force: true });
+    removeEmptied(path);
     return 'removed';
   }
   writeSettings(path, settings);
