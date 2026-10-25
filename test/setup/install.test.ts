@@ -952,10 +952,17 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   assert.match(result.stdout, /^for example: your city, a company domain, a server name$/m);
   assert.match(result.stdout, /type one; it is not shown\nfor example: your city, a company domain, a server name\n/);
   assert.match(readFileSync(marks, 'utf8'), /^# for example: your city, a company domain, a server name$/m);
-  assert.match(result.stdout, /^wrote ~\/\.config\/yokoten\/mailmap, and git log and git show now print your emails as a placeholder$/m);
+  // No terminal: the mailmap file is written, but git's own config is not changed (#985).
+  assert.match(result.stdout, /^skipped the global git setting mailmap\.file: install changes your git config only when you say yes\. A mailmap makes git print a placeholder in place of your email\. To turn it on, run `git config --global mailmap\.file ~\/\.config\/yokoten\/mailmap`$/m);
+  assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '');
+  assert.match(readFileSync(join(sandbox.home, '.config', 'yokoten', 'mailmap'), 'utf8'), /^owner <owner@noreply\.invalid> <jane@personal-mail\.dev>$/m);
   assert.match(readFileSync(marks, 'utf8'), /# added by yokoten from this machine: git name\nJane Example\n# added by yokoten from this machine: git email\njane@personal-mail\.dev\n# added by yokoten from this machine: private remote host\nbuild\.private-host\.dev\n$/);
   assert.equal(statSync(marks).mode & 0o777, 0o600);
-  // git prints the placeholder at the source.
+  // A yes at the terminal sets it, and git prints the placeholder at the source.
+  const asked: string[] = [];
+  const done = install(sandbox.env, { cwd: sandbox.repo, ask: (question) => (asked.push(question), 'y'), platform: 'linux' });
+  assert.ok(asked.includes("Set git's global mailmap.file to ~/.config/yokoten/mailmap, so git prints a placeholder in place of your email in every repo? [Y/n]"), asked.join('\n'));
+  assert.ok(done.lines.some((line) => /^kept .*mailmap, and git log and git show now print your emails as a placeholder$/.test(line)), done.lines.join('\n'));
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '~/.config/yokoten/mailmap\n');
   assert.match(sandbox.git('log', '-1').stdout, /^Author: owner <owner@noreply\.invalid>$/m);
   // A second run appends nothing. It still asks: the city and the domains are not in the file yet.
@@ -971,6 +978,61 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   result = await sandbox.call(['install']);
   assert.match(result.stdout, /^kept your own git mailmap.file setting; add the lines of ~\/\.config\/yokoten\/mailmap to that file$/m);
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '/elsewhere/mailmap\n');
+});
+
+test("install lists git's global mailmap.file in its plan, and a no leaves it unset (#985)", async () => {
+  const sandbox = makeSandbox();
+  sandbox.git('config', 'user.email', `jane${at}personal-mail.dev`);
+  const result = await sandbox.call(['install']);
+  assert.equal(result.status, 0, result.stderr);
+  const plan = result.stdout.split('\n').slice(0, 20).join('\n');
+  assert.match(plan, /^ {2}~\/\.config\/yokoten\/mailmap$/m);
+  assert.match(plan, /^ {2}git config --global mailmap\.file ~\/\.config\/yokoten\/mailmap \(install asks first\)$/m);
+  // Positive control: the old install set it here, with nobody asked.
+  assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '');
+  // A no at the terminal: nothing set, and the line gives the command.
+  const done = install(sandbox.env, { cwd: sandbox.repo, ask: (question) => (question.startsWith("Set git's global mailmap.file") ? 'n' : null), platform: 'linux' });
+  assert.ok(done.lines.some((line) => line.startsWith('skipped the global git setting mailmap.file:') && line.includes('`git config --global mailmap.file ~/.config/yokoten/mailmap`')), done.lines.join('\n'));
+  assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '');
+  // Once it is set, the plan has no such line: nothing changes in git's config.
+  sandbox.git('config', '--global', 'mailmap.file', '~/.config/yokoten/mailmap');
+  const again = install(sandbox.env, { cwd: sandbox.repo, ask: () => { throw new Error('install asked again'); }, platform: 'linux' });
+  assert.ok(!again.lines.some((line) => line.includes('install asks first')), again.lines.join('\n'));
+});
+
+test('uninstall keeps a folder and a git config file that were there before install, even when empty (#985)', async () => {
+  const sandbox = makeSandbox();
+  // The user's own empty folders and git config, from before yokoten.
+  const theirs = [join(sandbox.home, '.config'), join(sandbox.home, '.local', 'bin'), join(sandbox.home, '.claude'), join(sandbox.home, '.agents')];
+  for (const dir of theirs) mkdirSync(dir, { recursive: true });
+  const gitConfig = join(sandbox.home, '.gitconfig');
+  writeFileSync(gitConfig, '');
+  const done = install(sandbox.env, { cwd: sandbox.repo, ask: () => 'y', platform: 'linux' });
+  assert.ok(done.ok, done.lines.join('\n'));
+  // install made ~/.local/share and ~/.config/yokoten, and wrote down only those.
+  const record = JSON.parse(readFileSync(machineStateFile(sandbox.env), 'utf8')).installCreated as string[];
+  assert.ok(record.includes(join(sandbox.home, '.local', 'share')), record.join('\n'));
+  for (const path of [...theirs, gitConfig]) assert.ok(!record.includes(path), `${path} was there before install`);
+  // A second install keeps the record: it finds its own folders, not the user's.
+  install(sandbox.env, { cwd: sandbox.repo, ask: () => 'y', platform: 'linux' });
+  assert.deepEqual(JSON.parse(readFileSync(machineStateFile(sandbox.env), 'utf8')).installCreated, record);
+  const result = await sandbox.call(['uninstall']);
+  assert.equal(result.status, 0, result.stderr);
+  // Positive control: the old uninstall removed each of these.
+  for (const dir of theirs) assert.ok(existsSync(dir), `${dir} was the user's, so it stays`);
+  assert.ok(existsSync(gitConfig), 'the git config file was the user\'s, so it stays');
+  assert.ok(!existsSync(join(sandbox.home, '.local', 'share')), 'the folder install made goes');
+  assert.ok(!existsSync(join(sandbox.home, '.config', 'yokoten')), 'machine.json and its folder go');
+});
+
+test('uninstall takes the empty git config file install made (#985)', async () => {
+  const sandbox = makeSandbox();
+  const gitConfig = join(sandbox.home, '.gitconfig');
+  assert.ok(!existsSync(gitConfig));
+  install(sandbox.env, { cwd: sandbox.repo, ask: () => 'y', platform: 'linux' });
+  assert.ok(existsSync(gitConfig), 'git made the file when install set mailmap.file');
+  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.ok(!existsSync(gitConfig));
 });
 
 test('install: the mark example follows an empty file, and a later run that does not ask leaves it out (#525)', async () => {
@@ -1002,7 +1064,7 @@ test('install: an existing mailmap keeps its lines and gets only the missing one
   let result = await sandbox.call(['install']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(mailmap, 'utf8'), `${own}owner <owner@noreply.invalid> <jane${at}personal-mail.dev>\n`);
-  assert.match(result.stdout, /^wrote|^kept ~\/\.config\/yokoten\/mailmap, and git log/m);
+  assert.match(result.stdout, /^skipped the global git setting mailmap\.file: /m);
   // A marks path that is a folder: install says what it skipped, and goes on.
   const broken = join(sandbox.home, 'marks-folder');
   mkdirSync(broken);

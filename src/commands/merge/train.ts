@@ -427,6 +427,17 @@ function firstLine(message: string): string {
 }
 
 /**
+ * How to start `npm test`. On Windows npm is `npm.cmd`, and Node 18.20.2 and 20.12.2 or later
+ * refuse to start a `.cmd` file without a shell (EINVAL). So Windows runs it through
+ * `cmd.exe /d /s /c`, as the done-when check does. The command line is fixed text: no value
+ * from the repo or the user goes into it, and the folder goes in `cwd` (#985).
+ */
+export function npmTestSpawn(platform: NodeJS.Platform): { command: string; args: string[]; options: { windowsVerbatimArguments?: boolean; windowsHide?: boolean } } {
+  if (platform !== 'win32') return { command: 'npm', args: ['test'], options: {} };
+  return { command: 'cmd.exe', args: ['/d', '/s', '/c', 'npm test'], options: { windowsVerbatimArguments: true, windowsHide: true } };
+}
+
+/**
  * Run the project's tests and `check` at `commit`, in a temporary worktree. It links the
  * main checkout's node_modules when there is one, because a worktree does not have it.
  * Returns null when both pass, or the first line of what failed.
@@ -453,8 +464,8 @@ export function verifyInWorktree({ root, commit, env, script, cwd }: { root: str
       }
     })();
     if (hasTests) {
-      const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-      const result = spawnSync(command, ['test'], { cwd: tree, env, encoding: 'utf8', timeout: VERIFY_TIMEOUT_MS });
+      const npm = npmTestSpawn(process.platform);
+      const result = spawnSync(npm.command, npm.args, { ...npm.options, cwd: tree, env, encoding: 'utf8', timeout: VERIFY_TIMEOUT_MS });
       if (result.status !== 0) return `the project's tests fail: ${firstLine(result.stdout || result.stderr || 'npm test gave no answer')}`;
     }
     const scriptPath = isAbsolute(script) ? script : resolve(cwd, script);
