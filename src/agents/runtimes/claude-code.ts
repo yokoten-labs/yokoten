@@ -19,13 +19,18 @@ import type { RuntimeDesk } from '../desk/desk.ts';
  * edit. A subagent is a worker only when its type is `worker`, or ends with `:worker`.
  */
 export function readToolCall(input: unknown): Action {
-  const call = (input ?? {}) as { cwd?: unknown; agent_type?: unknown; tool_input?: Record<string, unknown> };
+  const call = (input ?? {}) as { cwd?: unknown; agent_type?: unknown; tool_name?: unknown; tool_input?: Record<string, unknown> };
   const tool = call.tool_input ?? {};
   const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
+  // A call whose tool is named `PowerShell` carries PowerShell text: the guard reads it
+  // that way (#332). Another tool's command is read as a shell, as before.
+  const shell = text(call.tool_name)?.toLowerCase() === 'powershell' ? 'powershell' : undefined;
   return {
     command: typeof tool.command === 'string' ? tool.command : undefined,
     paths: [tool.file_path, tool.path, tool.notebook_path].map(text).filter((p) => p !== undefined),
     cwd: text(call.cwd),
+    // Only a named PowerShell call carries the field: another reader compares the whole object.
+    ...(shell ? { shell } : {}),
     worker: isWorkerType(text(call.agent_type) ?? ''),
   };
 }

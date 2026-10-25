@@ -15,6 +15,7 @@ export { commandWords } from './bash/read/read.ts';
 export { withoutShellRedirects, realPath, findProgramPlaces, findHeavyJob } from './bash/read/words.ts';
 export { ACCOUNT_PRINTERS, REDACT_MARKER, isRedacted, printsAccount, hardenRead, privateOutput, wrapForRedact } from './commands/accounts.ts';
 export { checkCommand } from './commands/check.ts';
+export { isPowerShell, readPowerShell, UnreadablePowerShell } from './commands/powershell.ts';
 export type { RuledRepo } from './commands/check.ts';
 export { hookFile, runsCheck } from './hooks/read.ts';
 export { checkEdit, stripWorktreeRoot, isLeadOnly, isGranted } from './lead-only/edit.ts';

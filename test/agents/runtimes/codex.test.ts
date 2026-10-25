@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectSandbox, blankedToml, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
+import { addProjectSandbox, blankedToml, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readToolCall, readTrust, readTrustTables, revertTrust, sandboxProblem, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 
 // Each call is shaped as the runtime's hook docs show it (#30): Codex's PreToolUse
@@ -88,6 +88,14 @@ test('hook --agent codex: shell calls by command, apply_patch by the files it to
   // A patch is not a command, and an unknown tool is neither.
   assert.equal((await call('apply_patch', 'git push --tags')).status, 0);
   assert.equal((await call('mcp__fs__write', 'git push --tags')).status, 0);
+});
+
+test('codex readToolCall: on Windows the shell tool names its command as PowerShell (#332)', () => {
+  const call = (tool_name: string) => ({ cwd: 'C:/w', tool_name, tool_input: { command: 'Get-ChildItem' } });
+  assert.equal(readToolCall(call('Bash'), 'win32').shell, 'powershell');
+  assert.equal(readToolCall(call('Bash'), 'linux').shell, undefined);
+  assert.equal(readToolCall(call('Bash'), 'darwin').shell, undefined, 'another platform keeps the shell reader');
+  assert.equal(readToolCall(call('apply_patch'), 'win32').shell, undefined, 'a patch is not a shell command');
 });
 
 test('codex config.toml: the model and provider it names, or null (#748)', () => {

@@ -19,8 +19,9 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
+import { isPowerShell, readPowerShell, UnreadablePowerShell } from './powershell.ts';
 
-export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
+export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[]; shell?: 'powershell' }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
   // never let through: an error here must not open the guard.
   const outerAnswers = gitAnswers.map;
@@ -29,7 +30,24 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
     // The file rules are looked up once per call, and only for a worker.
     const rules = isWorker ? fileRules(options.repos ?? []) : undefined;
-    return withBudget(command.length, () => checkEachCommand(command, { ...options, rules }));
+    const reason = withBudget(command.length, () => checkEachCommand(command, { ...options, rules }));
+    if (reason) return reason;
+    // Windows agents send PowerShell (#332): the same rules, read by the second parser.
+    // The PowerShell text is read as POSIX first (above), which only adds refusals; a
+    // finding from that pass keeps its shell id.
+    if (options.shell !== 'powershell' && !isPowerShell(command)) return null;
+    let statements: string[];
+    try {
+      statements = readPowerShell(command);
+    } catch (error) {
+      const why = error instanceof UnreadablePowerShell ? error.message : 'yokoten could not read it';
+      return finding('unreadable-command', `yokoten could not read this PowerShell command: ${why}`, 'split it into simpler commands, one per call');
+    }
+    for (const statement of statements) {
+      const inner = withBudget(statement.length, () => checkEachCommand(statement, { ...options, rules }));
+      if (inner) return inner;
+    }
+    return null;
   } catch {
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
