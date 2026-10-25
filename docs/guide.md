@@ -1160,11 +1160,14 @@ flowchart LR
   on Windows. It may run for two minutes. When it ends, or the time runs out, yokoten
   stops the command and the programs it started.
 - On Windows, `cmd.exe` runs in a job when Windows PowerShell is there. Closing the
-  job stops those programs after `cmd.exe` has exited. If PowerShell is missing,
-  blocked, or cannot start the job, the check runs `cmd.exe` alone. A program left
-  behind can then keep running. The host starts with `-ExecutionPolicy Bypass`,
-  so it can run the short script yokoten writes; nothing else runs there.
-  The two-minute budget includes starting that host.
+  job stops those programs after `cmd.exe` has exited. The command reaches the host
+  with `-EncodedCommand`, so the check's own text and quotes stay as they are. A
+  security policy on the machine can still block `Add-Type`, which compiles the short
+  job script. If PowerShell is missing, blocked, stops before it starts the check, or
+  cannot make the job, the check runs `cmd.exe` alone and says why on stderr. A program
+  left behind can then keep running. A host that stops after it started the check is
+  not detected: its exit code is read as the check's own. The two-minute budget
+  includes starting that host.
 - A program that has already started its own session is not stopped. `setsid` starts
   one. A new process group in the same session is stopped on Linux. On macOS, `ps` gives no
   session id, so only the check's own process group is stopped.

@@ -597,6 +597,13 @@ export function windowsTreeKillArgs(pid: number): string[] {
 const DONE_COMMAND_ENV = 'YOKOTEN_DONE_COMMAND';
 
 /**
+ * The line the job host writes to stderr once the check has started. A host that exits
+ * without it never ran the check, so its exit code is the host's, not the check's
+ * (#735). `runDoneWhen` removes the line from the output the worker reads.
+ */
+export const HOST_READY_LINE = 'yokoten: the check starts in its job';
+
+/**
  * The command text that follows `/d /s /c`. `/s` makes `cmd.exe` drop one pair of outer
  * quotes, so a command that starts with a quote gets a pair of ours; any other command
  * keeps its own text, and its quotes are never read as ours (#735).
@@ -610,8 +617,9 @@ export function windowsCommandTail(command: string): string {
  * `taskkill /T` finds a tree only while its root is still running, and the root is already
  * gone by the time a passing check returns (#735). The job holds the tree. No native module:
  * Windows PowerShell compiles this once per check. If PowerShell is missing, blocked, or
- * cannot start the job, the check runs `cmd.exe` the old way and says on stderr when the job
- * was the reason. A program it left behind can then keep running.
+ * cannot start the job, the check runs `cmd.exe` the old way and says on stderr why it has
+ * no job. A program it left behind can then keep running. The host writes the ready line
+ * after the check has started, so `runDoneWhen` can tell a host that never ran it (#735).
  */
 const WINDOWS_JOB_SCRIPT = `
 $ErrorActionPreference = 'Stop'
@@ -800,14 +808,21 @@ public class YokotenJob {
       throw new InvalidOperationException("job");
     }
     try {
-      if (ResumeThread(info.thread) == uint.MaxValue) throw new InvalidOperationException("resume");
-      WaitForSingleObject(info.process, uint.MaxValue);
-      uint code;
-      if (!GetExitCodeProcess(info.process, out code)) code = 1;
+      if (ResumeThread(info.thread) == uint.MaxValue) throw new InvalidOperationException("start");
+      Console.Error.WriteLine("${HOST_READY_LINE}");
+      int code = 1;
+      try {
+        WaitForSingleObject(info.process, uint.MaxValue);
+        uint exitCode;
+        if (GetExitCodeProcess(info.process, out exitCode)) code = unchecked((int)exitCode);
+      } catch {
+        // The check has started, so it must not run again: a second run repeats its side effects (#735).
+        code = 1;
+      }
       TerminateJobObject(job, 1);
-      return unchecked((int)code);
+      return code;
     } catch {
-      // The start never ran the command, so the caller can still run it another way.
+      // The check never started, so the caller can still run it another way.
       TerminateProcess(info.process, 1);
       throw;
     } finally {
@@ -823,14 +838,18 @@ try {
   $codeExit = [YokotenJob]::Run($comspec, $command)
   exit $codeExit
 } catch {
-  if ($_.Exception.InnerException -and $_.Exception.InnerException.Message -eq 'job') {
-    [Console]::Error.WriteLine('yokoten: the check could not be held in a job, so a program it leaves running may keep running')
+  $reason = 'the check could not be held in a job'
+  if ($_.Exception -and $_.Exception.Message) {
+    $first = ([string]$_.Exception.Message).Split([char]10)[0]
+    if ($first) { $reason = $reason + ': ' + $first }
   }
+  [Console]::Error.WriteLine('yokoten: ' + $reason + ', so a program it leaves running may keep running')
   $start = New-Object System.Diagnostics.ProcessStartInfo
   $start.FileName = $comspec
   $start.Arguments = '/d /s /c ' + $command
   $start.UseShellExecute = $false
   $run = [System.Diagnostics.Process]::Start($start)
+  [Console]::Error.WriteLine('${HOST_READY_LINE}')
   $run.WaitForExit()
   exit $run.ExitCode
 }
@@ -865,6 +884,24 @@ function windowsPowerShell(env: Env): string | null {
  */
 export function powerShellFallbackNote(code: string | undefined): string {
   return `yokoten: Windows PowerShell could not hold the check in a job${code ? ` (${code})` : ''}, so a program it leaves running may keep running`;
+}
+
+/**
+ * What to say when the job host started, then stopped before it started the check, so its
+ * exit code is not the check's result (#735). A host that stops after the ready line is not
+ * detected; its exit code is read as the check's own.
+ */
+export function hostDiedNote(code: number | null): string {
+  return `yokoten: Windows PowerShell stopped before it started the check${code === null ? '' : ` (exit ${code})`}, so the check ran without a job and a program it leaves running may keep running`;
+}
+
+/**
+ * What to say when Windows has no job host to run: `SystemRoot` is not set, or
+ * `powershell.exe` is not under it (#735). Both mean the check runs without a job.
+ */
+export function noJobHostNote(systemRoot: string | undefined): string {
+  const why = systemRoot ? 'Windows PowerShell was not found' : 'SystemRoot is not set, so Windows PowerShell was not found';
+  return `yokoten: ${why}, so the check runs without a job and a program it leaves running may keep running`;
 }
 
 /** The session id from one `/proc` stat line, or null when the line is not a stat. */
@@ -1448,7 +1485,8 @@ export function shortenOutput(text: string, env: Env = {}): string {
  * programs `cmd.exe` left behind (#735). A program that has already started its own session
  * is not stopped, and it cannot hold the check open. The check ends on the shell's own result.
  * `powerShellHost`, when set, is tried first. A host that does not start, for any reason,
- * runs the platform shell, and the output says why.
+ * runs the platform shell, and the output says why. A host that stops before it starts the
+ * check is treated the same way: its exit code is not the check's result (#735).
  * A short wait collects the last output, then the pipes are dropped. The result is given once.
  */
 export function runDoneWhen(
@@ -1463,6 +1501,8 @@ export function runDoneWhen(
   for (const [name, value] of Object.entries(env)) if (value !== undefined) childEnv[name] = value;
   // The hook passes no host. A test points it at a program that is not there (#735).
   const host = powerShellHost ?? windowsPowerShell(env);
+  // Windows with no host has no job, and the output says why (#735).
+  const hostNote = powerShellHost === undefined && host === null && process.platform === 'win32' ? noJobHostNote(env.SystemRoot) : '';
   return new Promise((resolvePromise) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1485,34 +1525,64 @@ export function runDoneWhen(
     }
     let stdout = '';
     let stderr = '';
+    // Why the check has no job. Said above the check's own output, never part of it (#735).
+    let notes = hostNote ? `${hostNote}\n` : '';
     let timedOut = false;
     const take = (have: string, chunk: string) => (have.length >= DONE_OUTPUT_CAP ? have : (have + chunk).slice(0, DONE_OUTPUT_CAP));
     const stoppedOutput = (output: string) => shortenOutput(output ? `${output}\nthe check ran too long and was stopped` : 'the check ran too long and was stopped', env);
+    // The host's ready line says the check started. It is not the check's output (#735).
+    const withoutHostLine = (text: string) => text.split('\n').filter((line) => line.trimEnd() !== HOST_READY_LINE).join('\n');
     const resultFor = (code: number | null, signal: NodeJS.Signals | null) => {
-      const output = `${stderr}${stdout}`.trimEnd();
+      const said = withoutHostLine(`${stderr}${stdout}`).trim();
+      const output = `${notes}${said}`.trimEnd();
       if (timedOut || signal === 'SIGTERM') return { ok: false, output: stoppedOutput(output) };
       const body = shortenOutput(output, env);
       if (code === 0) return { ok: true, output: body };
-      return { ok: false, output: body || `the check exited ${code}` };
+      // A note is not what the check said, so a silent failure still names its code.
+      if (!said) return { ok: false, output: `${body ? `${body}\n` : ''}the check exited ${code}` };
+      return { ok: false, output: body };
     };
     // Drop our end of the pipes. A grandchild that left the group can hold the other end.
     const dropPipes = (proc: ChildProcess) => {
       proc.stdout?.destroy();
       proc.stderr?.destroy();
     };
-    timer = setTimeout(() => {
-      timedOut = true;
-      try {
-        if (child.pid) killTree(child.pid);
-        dropPipes(child);
-      } catch {
-        // The tree kill can throw. The check still ends below.
-      } finally {
-        finish(resultFor(null, null));
-      }
-    }, timeoutMs);
+    const deadline = Date.now() + timeoutMs;
+    // A fall-back shell gets what is left of the two minutes, not a second two minutes.
+    const armTimer = () => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        try {
+          if (child.pid) killTree(child.pid);
+          dropPipes(child);
+        } catch {
+          // The tree kill can throw. The check still ends below.
+        } finally {
+          finish(resultFor(null, null));
+        }
+      }, Math.max(1, deadline - Date.now()));
+    };
+    armTimer();
     // `generation` drops events from a PowerShell that failed to start, after the shell takes over.
     let generation = 0;
+    let sawHostReady = false;
+    // The host is not the check: start the platform shell on the same command, and keep
+    // its result. The host's own output is dropped, because it is not the check's (#735).
+    const fallbackToShell = (why: string) => {
+      notes = take(notes, `${why}\n`);
+      stdout = '';
+      stderr = '';
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      try {
+        child = spawnDoneWhen(command, cwd, childEnv, null);
+      } catch (spawnError) {
+        finish({ ok: false, output: shortenOutput((spawnError as Error).message.split('\n')[0], env) });
+        return;
+      }
+      armTimer();
+      watchChild(child, false);
+    };
     const watchChild = (proc: ChildProcess, fromPowerShell: boolean) => {
       const generationHere = ++generation;
       const isCurrent = () => generationHere === generation && !settled;
@@ -1522,22 +1592,17 @@ export function runDoneWhen(
         if (isCurrent()) stdout = take(stdout, chunk);
       });
       proc.stderr?.on('data', (chunk: string) => {
-        if (isCurrent()) stderr = take(stderr, chunk);
+        if (!isCurrent()) return;
+        stderr = take(stderr, chunk);
+        if (fromPowerShell && stderr.includes(HOST_READY_LINE)) sawHostReady = true;
       });
       proc.once('error', (error) => {
         if (!isCurrent()) return;
         const code = (error as NodeJS.ErrnoException).code;
         // The host never ran the check: it was missing, blocked, or refused by the system.
-        // Run cmd.exe the old way and say why, so this is not read as the worker's failure (#735).
+        // Run the shell the old way and say why, so this is not read as the worker's failure (#735).
         if (fromPowerShell) {
-          stderr = take(stderr, `${powerShellFallbackNote(code)}\n`);
-          try {
-            child = spawnDoneWhen(command, cwd, childEnv, null);
-          } catch (spawnError) {
-            finish({ ok: false, output: shortenOutput((spawnError as Error).message.split('\n')[0], env) });
-            return;
-          }
-          watchChild(child, false);
+          fallbackToShell(powerShellFallbackNote(code));
           return;
         }
         finish({ ok: false, output: shortenOutput(error.message.split('\n')[0], env) });
@@ -1555,15 +1620,29 @@ export function runDoneWhen(
         }
         if (settled) return;
         grace = setTimeout(() => {
+          // A late close, or a fall-back that already started, owns the result by now (#735).
+          if (!isCurrent()) return;
           try {
             dropPipes(proc);
           } finally {
+            // A host that stopped without the ready line never ran the check, so its exit
+            // code is not a result. A host that stops after the line is not detected (#735).
+            if (fromPowerShell && !sawHostReady) {
+              fallbackToShell(hostDiedNote(code));
+              return;
+            }
             finish(resultFor(code, signal));
           }
         }, CLOSE_GRACE_MS);
       });
       proc.once('close', (status, signal) => {
-        if (isCurrent()) finish(resultFor(status, signal));
+        if (!isCurrent()) return;
+        // All output is in by now, so the ready line decides here too (#735).
+        if (fromPowerShell && !sawHostReady) {
+          fallbackToShell(hostDiedNote(status));
+          return;
+        }
+        finish(resultFor(status, signal));
       });
     };
     watchChild(child, host !== null);
