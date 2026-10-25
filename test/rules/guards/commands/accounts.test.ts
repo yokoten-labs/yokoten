@@ -58,6 +58,54 @@ test('printsAccount: anything more than one plain read is left to the normal flo
   for (const command of left) assert.equal(printsAccount(command), null, command);
 });
 
+// #1006: the plain `git config user.email` is a read too, as the guide says. A write is not.
+test('printsAccount: git config reads of an account key are caught, writes are not (#1006)', () => {
+  const cases: [command: string, isRead: boolean][] = [
+    // Reads: plain, with a scope or another read option, and explicit.
+    ['git config user.email', true],
+    ['git config user.name', true],
+    ['git config --global user.email', true],
+    ['git config --local user.name', true],
+    ['git config --show-origin user.email', true],
+    ['git config --show-scope --global user.email', true],
+    ['git config --type bool user.useConfigOnly', true],
+    ['git config --file=.git/config user.email', true],
+    ['git config -f .git/config user.email', true],
+    ['git config remote.origin.url', true],
+    ['git config --get user.email', true],
+    ['git config --global --get user.email', true],
+    ['git config --get-all user.email', true],
+    ['git config get user.email', true],
+    ['git config get --show-origin user.email', true],
+    ['git config --list', true],
+    ['git config --global -l', true],
+    ['git config list', true],
+    // Writes: a value after the key, or an option or subcommand that changes the config.
+    ['git config user.email x', false],
+    ['git config --global user.email x', false],
+    ['git config user.name "Sample Owner"', false],
+    ['git config --unset user.email', false],
+    ['git config --unset-all user.email', false],
+    ['git config --add user.email x', false],
+    ['git config --replace-all user.email x', false],
+    ['git config set user.email x', false],
+    ['git config set user.email', false],
+    ['git config unset user.email', false],
+    ['git config --remove-section user', false],
+    ['git config --rename-section user people', false],
+    ['git config --edit', false],
+    ['git config -e', false],
+    ['git config edit', false],
+    // Not an account key, or nothing named.
+    ['git config core.hooksPath', false],
+    ['git config --get core.hooksPath', false],
+    ['git config', false],
+    ['git config --global', false],
+    ['git config --list user.email', false],
+  ];
+  for (const [command, isRead] of cases) assert.equal(printsAccount(command) !== null, isRead, command);
+});
+
 test('hardenRead: a log, show or blame runs no textconv or external diff; other reads stay as they are (#413)', () => {
   assert.equal(hardenRead('git log -1'), 'git log --no-ext-diff --no-textconv --no-show-signature -1');
   assert.equal(hardenRead('git show'), 'git show --no-ext-diff --no-textconv --no-show-signature');

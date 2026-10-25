@@ -1862,11 +1862,11 @@ agent，守卫都拦下这些：
   邮箱（`<email>`）、git 的 user.name 和 Linux、Windows 的用户名（`<owner>`）、主目录（`~`）、
   私有远程仓库的主机名（`<host>`），还有私有
   词表里的词。像域名的词换成 `<host>`，其他的换成 `<mark>`。查词的办法和上面的检查一样。没有私有
-  词表也能用，这时只藏邮箱、密钥这类格式和 git 知道的信息。它要是启动不了、读不了词表，会用
-  一行字说明，然后原样输出：绝不会让命令停下来。
+  词表也能用，这时只藏邮箱、密钥这类格式和 git 知道的信息。它要是读不了词表，或者有一段藏不住，
+  后面的输出就一个字也不印，在 stderr 上用一行字说明，退出码是 1。
 - **在 Claude Code 里，守卫会过滤单纯的读命令。** 下面这些命令会打印账号信息：`git log`、`git show`、
   `git shortlog <revision>`、`git blame`、`git for-each-ref`（不管带什么格式），`git cat-file -p`；`git remote -v`、
-  `get-url`、`show`；`git config --list`，以及读 `user.*`、`remote.*`；`gh auth status`；用 `gh`
+  `get-url`、`show`；`git config --list`，以及读 `user.*`、`remote.*`（比如 `git config user.email`）；`gh auth status`；用 `gh`
   以 GET 查访问量和账号；`npm whoami`；`wrangler whoami`。整条命令只有其中一条、前后没有别的东西
   时，守卫会把它改成 `set -o pipefail # yokoten-redact`，再接
   `( <命令> ) 2>&1 | <node> <yokoten> redact`，退出码还是原命令的。redact 跑不起来时，输出整个藏起来，
