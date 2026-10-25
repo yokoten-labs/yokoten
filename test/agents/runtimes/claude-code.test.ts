@@ -20,7 +20,7 @@ import {
   PLUGIN_ROOT,
   ROOT,
 } from '../../repo/helpers.ts';
-import { addProjectSandbox, addProjectStopHook, formatRewrite, hasSessionInput, readSessionStart, readStop, sandboxProblem } from '../../../src/agents/runtimes/claude-code.ts';
+import { addProjectSandbox, addProjectStopHook, addUserHooks, agentFile, DESK, formatRewrite, hasSessionDoctor, hasSessionInput, hasUserGuard, readSessionStart, readStop, removeUserHooks, sandboxProblem, setProjectEnv, skillFile, userDir, userSettingsFile } from '../../../src/agents/runtimes/claude-code.ts';
 import { pluginHookCommand } from '../../../src/run/cli.ts';
 
 test('claude-code readStop: a Stop or SubagentStop event is checked; a worker subagent is a worker (#614)', () => {
@@ -278,4 +278,43 @@ test('sandbox problem: missing, off, and wider, each with its one fix', () => {
   assert.deepEqual(problem({ sandbox: 'yes' })?.what, '.claude/settings.json has an unexpected shape');
   assert.deepEqual(problem({ hooks: 'x' })?.what, '.claude/settings.json has an unexpected shape');
   assert.deepEqual(problem({ env: 'x' })?.what, '.claude/settings.json has an unexpected shape');
+});
+
+// #988: Claude Code reads its user folder from CLAUDE_CONFIG_DIR. The hooks, skills and
+// agents go there, and ~/.claude is never made. The positive control: the old userDir was
+// always ~/.claude, so the hooks landed where Claude Code never reads them.
+test('claude-code: the user hooks, skills and agents go to CLAUDE_CONFIG_DIR, never ~/.claude (#988)', () => {
+  const home = makeTempDir();
+  const config = makeTempDir();
+  const env = { HOME: home, CLAUDE_CONFIG_DIR: config };
+  assert.equal(userDir(env), config);
+  assert.equal(skillFile(env, 'yokoten'), join(config, 'skills', 'yokoten', 'SKILL.md'));
+  assert.equal(agentFile(env, 'worker.md'), join(config, 'agents', 'worker.md'));
+  assert.equal(userSettingsFile(env), '$CLAUDE_CONFIG_DIR/settings.json');
+  assert.deepEqual(addUserHooks(env, '"$HOME/.local/share/yokoten/bin/yokoten.mjs"', 'gone'), { doctor: 'added', guard: 'added' });
+  assert.ok(existsSync(join(config, 'settings.json')), 'the hooks are where Claude Code reads them');
+  assert.ok(!existsSync(join(home, '.claude')), '~/.claude is not made');
+  assert.equal(hasSessionDoctor(env), true);
+  assert.equal(hasUserGuard(env), true);
+  assert.equal(hasSessionDoctor({ HOME: home }), false, 'the default folder has no hooks');
+  assert.deepEqual(DESK.login(env), [{ from: join(config, '.credentials.json'), to: '.credentials.json' }], 'the desk shares the one folder');
+  assert.deepEqual(removeUserHooks(env), { doctor: 'removed', guard: 'removed' });
+  assert.ok(!existsSync(join(home, '.claude')));
+  // A relative CLAUDE_CONFIG_DIR is not a place: the default is used, never the current folder.
+  const relative = { HOME: home, CLAUDE_CONFIG_DIR: 'claude-here' };
+  assert.equal(userDir(relative), join(home, '.claude'));
+  assert.equal(userSettingsFile(relative), '~/.claude/settings.json');
+});
+
+// #988: init wants TZ=UTC for agent commits, but a TZ the user set stays as it is.
+test("claude-code setProjectEnv: adds a missing value, keeps the user's own (#988)", () => {
+  const root = makeTempDir();
+  const file = join(root, '.claude', 'settings.json');
+  assert.equal(setProjectEnv(root, 'TZ', 'UTC'), 'added');
+  assert.equal(setProjectEnv(root, 'TZ', 'UTC'), 'same');
+  writeFileSync(file, JSON.stringify({ env: { TZ: 'Europe/Paris', OTHER: '1' } }));
+  const before = readFileSync(file, 'utf8');
+  // The positive control: the old code answered 'updated' and wrote UTC over it.
+  assert.equal(setProjectEnv(root, 'TZ', 'UTC'), 'kept (yours)');
+  assert.equal(readFileSync(file, 'utf8'), before, 'the file is untouched');
 });

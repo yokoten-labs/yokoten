@@ -142,6 +142,11 @@ test('readLocalLogins: the user under each host in hosts.yml; none when the file
   const other = makeTempDir('yokoten-gh-');
   writeFileSync(join(other, 'hosts.yml'), 'github.com:\n    user: someone-else\n');
   assert.deepEqual(readLocalLogins({ HOME: home, GH_CONFIG_DIR: other }), ['someone-else'], 'GH_CONFIG_DIR first, as gh reads it');
+  // #988: a relative XDG_CONFIG_HOME is ignored, as the XDG spec says; a full one counts.
+  assert.deepEqual(readLocalLogins({ HOME: home, XDG_CONFIG_HOME: 'relative-config' }), ['octo-jane', 'jroe']);
+  mkdirSync(join(other, 'gh'));
+  writeFileSync(join(other, 'gh', 'hosts.yml'), 'github.com:\n    user: xdg-user\n');
+  assert.deepEqual(readLocalLogins({ HOME: home, XDG_CONFIG_HOME: other }), ['xdg-user']);
 });
 // #512: an issue's milestone, from one `gh issue view`; a fake gh stands in for GitHub.
 test('readIssueMilestone: the title, null for none, undefined when gh cannot read it (#512)', () => {

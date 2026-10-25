@@ -264,6 +264,12 @@ test('compile cache: bin/yokoten.mjs keeps it in the user cache folder, or in NO
   r = run({ XDG_CACHE_HOME: cache, NODE_COMPILE_CACHE: named });
   assert.equal(r.status, 0, r.stderr);
   assert.ok(existsSync(named), 'NODE_COMPILE_CACHE wins');
+  // #988: a relative XDG_CACHE_HOME is ignored, as the XDG spec says. The positive control:
+  // the old entry made the cache under the folder the command ran in.
+  r = run({ XDG_CACHE_HOME: 'relative-cache' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!existsSync(join(sandbox.repo, 'relative-cache')), 'nothing in the current folder');
+  if (process.platform === 'linux') assert.ok(readdirSync(join(sandbox.home, '.cache', 'yokoten')).length > 0, 'the default ~/.cache/yokoten');
 });
 
 test('help: the help table and the parser list the same commands and options (#207)', async () => {

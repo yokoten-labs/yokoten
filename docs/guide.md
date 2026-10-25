@@ -363,6 +363,7 @@ OpenCode gets the command guard in
 Grok's trust gate is off: `GROK_FOLDER_TRUST=0`, or `[folder_trust] enabled = false` in
 `~/.grok/config.toml`. In Codex, the guard checks the files
 of an `apply_patch`, also one run through the shell.
+When `CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `XDG_CONFIG_HOME` is a full path, `install` writes in that folder instead, where the tool reads.
 
 Each agent runs a project hook only after you trust it:
 
