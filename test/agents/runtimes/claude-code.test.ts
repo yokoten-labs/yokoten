@@ -162,7 +162,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   rmSync(join(sandbox.repo, '.yokoten', 'kit'), { recursive: true });
   const vendored = spawnSync('node', ['.yokoten/bin/yokoten.ts', 'update', '--write'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
   assert.equal(vendored.status, 1);
-  assert.match(vendored.stderr, /can't compare AGENTS\.md with the kit: this copy of yokoten has no kit.*\/yokoten:update/);
+  assert.match(vendored.stderr.replace(/\s+/g, ' '), /can't compare AGENTS\.md with the kit: this copy of yokoten has no kit.*\/yokoten:update/);
   assert.equal(readFileSync(path, 'utf8'), old);
 
   let result = run(commands[0]);

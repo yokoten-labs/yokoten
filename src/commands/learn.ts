@@ -11,7 +11,7 @@ import { HOME_DIR, VERSION } from '../setup/files.ts';
 import { isSelf } from '../setup/init.ts';
 import { machineMarks, machineUserNames } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, count, field, type Invocation, moreLine, nextLine, parse, type Parsed, print, rootOf, row, title, usage, wrap } from './shared.ts';
+import { count, field, type Invocation, moreLine, nextLine, parse, type Parsed, print, rootOf, row, title, usage, wrap } from './shared.ts';
 
 /**
  * A usage error for --upstream that repeats nothing typed (#392): a stray word or a note

@@ -253,7 +253,7 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   sandbox.git('add', 'leak.md');
   const secret = sandbox.git('commit', '-qm', 'leak');
   assert.notEqual(secret.status, 0, 'a secret is refused too (#8)');
-  assert.match(secret.stderr, /leak\.md:1: a secret \(AWS access key id\)/);
+  assert.match(secret.stderr, /leak\.md:1 +a secret \(AWS access key id\)/);
   sandbox.git('reset', '-q', 'leak.md');
   // init does all of stages 1 to 3 but the tests, so with tests the road goes on to the remote.
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: stage 1 of 5, safety net\. Next: no workflow runs a test command/);
@@ -1140,7 +1140,7 @@ test('init: the hand-off has no switch, and a .git/hooks link to .githooks does 
   sandbox.git('add', 'a.md');
   result = commit('a');
   assert.equal(result.status, 0, `${result.stderr} ${result.error ?? ''}`);
-  assert.equal((result.stderr.match(/yokoten check · clean/g) ?? []).length, 1, 'the check ran once');
+  assert.equal((result.stderr.match(/yokoten check --staged · clean/g) ?? []).length, 1, 'the check ran once');
   // The same for the file run with sh, or dash, from a relative path.
   sandbox.write('b.md', 'fine\n');
   sandbox.git('add', 'b.md');
@@ -1271,7 +1271,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const kitCore = fresh.slice(0, fresh.indexOf('## This project'));
   assert.match((await sandbox.call(['doctor', '--all'])).stdout, /\n {2}ok +core-rules\n/, 'init wrote the kit, so it is up to date');
   let result: { status: number | null; stdout: string; stderr: string } = sandbox.run(['update']); // a real process: the entry point of update
-  assert.deepEqual([result.status, result.stdout], [0, `yokoten update: the core rules in AGENTS.md are up to date with yokoten ${VERSION}; nothing to change\n`]);
+  assert.deepEqual([result.status, result.stdout], [0, 'yokoten update · the core rules are up to date, nothing changed\n']);
 
   // An older kit had no rule 12, and someone edited a line by hand. The project's own
   // part has trailing spaces and a CRLF line end, to show it is kept byte for byte.
@@ -1341,7 +1341,7 @@ test('update: init writes the kit version; a newer project is refused, an older 
   for (const args of [['update'], ['update', '--write']]) {
     const result = await sandbox.call(args);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, new RegExp(String.raw`^yokoten update: AGENTS\.md was written by yokoten ${newerPattern}, newer than this yokoten ${versionPattern}\. Nothing was written`));
+    assert.match(result.stderr.replace(/\s+/g, ' '), new RegExp(String.raw`^yokoten update · nothing changed MISSING AGENTS\.md was written by yokoten ${newerPattern}, newer than this yokoten ${versionPattern}\. Nothing was written`));
   }
   assert.equal(readFileSync(path, 'utf8'), newer, 'a newer project is not downgraded');
   const doctor = await sandbox.call(['doctor', '--all']);

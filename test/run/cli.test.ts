@@ -132,7 +132,7 @@ test('exit codes: 0 ok, 1 problems or a usage error, 2 the hook blocked (#42)', 
   assert.equal((await run(['explain', 'nope'])).code, 1);
   assert.equal(hook('git push --tags').status, 2);
   // A usage error is refused, never ignored: no fake success.
-  for (const args of [['nope'], ['check', '--stagd'], ['check', '--staged', '--pr'], ['check', 'extra'], ['doctor', '--all', '--sesion'], ['hook', '--agent'], ['explain', 'a', 'b']]) {
+  for (const args of [['nope'], ['check', '--stagd'], ['check', '--staged', '--pr'], ['check', 'extra'], ['doctor', '--sesion'], ['hook', '--agent'], ['explain', 'a', 'b']]) {
     const r = await run(args);
     assert.equal(r.code, 1, args.join(' '));
     assert.equal(r.stdout, '', `${args.join(' ')}: nothing on stdout`);
@@ -300,7 +300,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
     [['docter'], 'yokoten: unknown command "docter". Did you mean "doctor"? Run `yokoten help`.\n'],
     [['help', 'chek'], 'yokoten: unknown command "chek". Did you mean "check"? Run `yokoten help`.\n'],
     [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run `yokoten check --help`.\n'],
-    [['doctor', '--all', '--hepl'], 'yokoten doctor: unknown option --hepl. Did you mean --help? Run `yokoten doctor --help`.\n'],
+    [['doctor', '--hepl'], 'yokoten doctor: unknown option --hepl. Did you mean --help? Run `yokoten doctor --help`.\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -310,7 +310,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
   assert.deepEqual([far.code, far.stdout], [1, '']);
   assert.match(far.stderr, /^yokoten: unknown command "zzzzzz"\. Commands: install, init, .*version\. Run `yokoten help`\.\n$/);
   assert.equal(editDistance('docter', 'doctor'), 1);
-  assert.equal(closestWord('xyz', ['doctor', '--all', 'check']), undefined, 'more than two edits: no guess');
+  assert.equal(closestWord('xyz', ['doctor', 'check']), undefined, 'more than two edits: no guess');
 });
 
 // A guard that crashes, runs out of memory or is killed must refuse the call: the agents
@@ -745,7 +745,7 @@ test('demo: scripts/demo/loop.ts walks the loop from an incident to a doctor not
   const before = readFileSync(kitTable, 'utf8');
   const result = spawnSync('node', [join(dirname(CLI), '..', 'scripts', 'demo', 'loop.ts')], { env: { PATH: process.env.PATH, HOME: join(temp, 'home'), TMPDIR: temp }, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /\n\$ yokoten learn https:\/\/github\.com\/octo-org\/project-a\/issues\/12\nyokoten learn: a check draft from issue #12, /);
+  assert.match(result.stdout, /\n\$ yokoten learn https:\/\/github\.com\/octo-org\/project-a\/issues\/12\nyokoten learn · a check draft from issue #12/);
   assert.match(result.stdout, /\nWrote:\n- lessons\/incident-12\/lesson\.ts\n/);
   assert.match(result.stdout, /\nyokoten learn --ship: 2 problem\(s\); nothing was moved:\n- lessons\/incident-12\/lesson\.ts still has 1 TODO\(reviewer\)/);
   assert.match(result.stdout, /\n\+ {2}what: 'a test calls a server on this machine and does not set NO_PROXY',\n/);

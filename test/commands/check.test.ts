@@ -27,6 +27,9 @@ import { borrowedIssue, hasOpenIssue, prSyncEnv, pullLine } from '../../src/comm
 import { type BorrowedHost, watchBorrowed } from '../../src/run/check.ts';
 import { REDACT_FAILED, wrapForRedact } from '../../src/rules/guards/index.ts';
 
+/** The screen as one line of words: rows wrap at 80 columns (#1027), and a match reads the words. */
+const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
 // On run, not call: one real child keeps the check entry point (exit code and output through the binary) tested (#475).
 test('check --pr: reads the CI event, lists the changed files from git, notes long prose (#47)', () => {
   const sandbox = makeSandbox();
@@ -45,16 +48,16 @@ test('check --pr: reads the CI event, lists the changed files from git, notes lo
     return { GITHUB_EVENT_PATH: file };
   };
   const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nMade with worker (opus)\n';
-  let result = sandbox.run(['check', '--pr'], { extra: event(body) });
+  let result = sandbox.run(['check', '--pr', '--all'], { extra: event(body) });
   assert.equal(result.status, 1, 'src/a.ts changed with no changelog line');
   assert.match(result.stderr, /changelog: 1 changed file/);
   assert.match(result.stdout, /note: 1 long sentence\(s\)\n- README\.md:2: a sentence of 30 words/);
-  result = sandbox.run(['check', '--pr'], { extra: event(body.replace('Made with worker', 'No changelog: a test\n\nMade with worker')) });
+  result = sandbox.run(['check', '--pr', '--all'], { extra: event(body.replace('Made with worker', 'No changelog: a test\n\nMade with worker')) });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems/);
   assert.doesNotMatch(result.stdout, /lines, over 400/, 'a small diff gets no size note (#57)');
   // Outside a pull request run, there is nothing to check.
-  result = sandbox.run(['check', '--pr']);
+  result = sandbox.run(['check', '--pr', '--all']);
   assert.equal(result.status, 0);
   assert.match(result.stdout, /no pull request in this run/);
 });
@@ -81,11 +84,11 @@ test('check --pr: a long sentence is noted only on a line the pull request adds 
     return { GITHUB_EVENT_PATH: file };
   };
   // The old long sentence is on a line this commit does not touch: no note.
-  let result = await sandbox.call(['check', '--pr'], { extra: event(head('Shorter.')) });
+  let result = await sandbox.call(['check', '--pr', '--all'], { extra: event(head('Shorter.')) });
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /long sentence/);
   // A second long sentence on the line this commit adds is noted, and the old one still is not.
-  result = await sandbox.call(['check', '--pr'], { extra: event(head('Shorter.', newSentence)) });
+  result = await sandbox.call(['check', '--pr', '--all'], { extra: event(head('Shorter.', newSentence)) });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /note: 1 long sentence\(s\)\n- README\.md:3: a sentence of 30 words/);
 });
@@ -110,11 +113,11 @@ test('check --pr: a change file counts as the changelog entry, and its form is c
     writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
     return { GITHUB_EVENT_PATH: file };
   };
-  let result = await sandbox.call(['check', '--pr'], { extra: event(good) });
+  let result = await sandbox.call(['check', '--pr', '--all'], { extra: event(good) });
   assert.equal(result.status, 0, result.stderr);
-  result = await sandbox.call(['check', '--pr'], { extra: event(bad) });
+  result = await sandbox.call(['check', '--pr', '--all'], { extra: event(bad) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /MISSING     changes\/1-a\.md:1 line 1 is not a section\n +make line 1 one of: Added, Changed/);
+  assert.match(flat(result.stderr), /MISSING changes\/1-a\.md:1 line 1 is not a section .*Make line 1 one of: Added, Changed/);
   assert.doesNotMatch(result.stderr, /changelog: /, 'the file still counts as the entry');
 });
 
@@ -137,10 +140,10 @@ test('check --pr: CODEOWNERS comes from the base branch, so a pull request canno
     writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: `tier ${tier}` }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
     return { GITHUB_EVENT_PATH: file };
   };
-  let r = await sandbox.call(['check', '--pr'], { extra: event('B') });
+  let r = await sandbox.call(['check', '--pr', '--all'], { extra: event('B') });
   assert.equal(r.status, 1, r.stdout);
   assert.match(r.stderr, /this changes 1 file\(s\) that CODEOWNERS owns\n +\(read from the base branch\): kit\/a\.md/);
-  r = await sandbox.call(['check', '--pr'], { extra: event('A') });
+  r = await sandbox.call(['check', '--pr', '--all'], { extra: event('A') });
   assert.equal(r.status, 0, r.stderr);
 });
 
@@ -166,10 +169,10 @@ test('check --pr: a large pull request gets a note, never a failure; lock files 
     writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
     return { GITHUB_EVENT_PATH: file };
   };
-  let r = await sandbox.call(['check', '--pr'], { extra: event(small) });
+  let r = await sandbox.call(['check', '--pr', '--all'], { extra: event(small) });
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stdout, /lines, over 400/, '300 lines; the lock file does not count');
-  r = await sandbox.call(['check', '--pr'], { extra: event(large) });
+  r = await sandbox.call(['check', '--pr', '--all'], { extra: event(large) });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: this pull request changes 500 lines, over 400\. Smaller pull requests are easier to review/);
   assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
@@ -190,7 +193,7 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
   const file = join(sandbox.home, 'event.json');
   const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nNo changelog: a test\nMade with worker (opus)\n';
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
-  const r = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true' } });
+  const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true' } });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: 2 ignore\(s\) added by this pull request/);
   assert.match(r.stdout, /::notice file=src\/a\.ts,line=2,title=yokoten ignore-added::this pull request lets a secret hit through on this line \[ignored: a test fixture\]/);
@@ -200,7 +203,7 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
 
 test('check --issue: reads the issue from the CI event; a bad title fails, a good one passes', async () => {
   const sandbox = makeSandbox();
-  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all', 'check'] }));
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', 'check'] }));
   const event = (issue: object) => {
     const file = join(sandbox.home, 'event.json');
     writeFileSync(file, JSON.stringify({ action: 'opened', issue }));
@@ -211,11 +214,11 @@ test('check --issue: reads the issue from the CI event; a bad title fails, a goo
   assert.match(result.stdout, /check --issue · no problems in this issue/);
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'The review step is missing.', labels: [{ name: 'incident' }] }) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue · 2 problems\n\n  MISSING     title:?\s+it does not start with an area\n +write it as `area: symptom`[^\n]*\n?[^\n]*\n  MISSING     title:?\s+a full stop at the end/);
+  assert.match(result.stderr, /check --issue · 2 problems\n\n  MISSING     title:?\s+it does not start with an area\n +The area tells a reader[^]*Write it as `area: symptom`[^]*\n  MISSING     title:?\s+a full stop at the end/);
   assert.doesNotMatch(result.stderr, /The review step is missing/, 'the title is user input; it is not printed back');
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'site: a page', labels: [] }) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /use one of: doctor, check/);
+  assert.match(flat(result.stderr), /Use one of: doctor, check/);
   result = await sandbox.call(['check', '--issue', '--json'], { extra: event({ title: 'site: a page.', labels: [] }) });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');
@@ -241,7 +244,7 @@ test('check --issue: reads the issue from the CI event; a bad title fails, a goo
 // when the repo has those labels. A repo without a kind gets no line for it.
 test('check --issue: an issue needs the type and tier labels its repo has (#544)', async () => {
   const sandbox = makeSandbox();
-  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all'] }));
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor'] }));
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   // A gh first on PATH that answers `label list` from labels.json; every other call fails.
   const bin = join(sandbox.home, 'bin');
@@ -267,13 +270,13 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   // No type label: one line (the positive control).
   result = await sandbox.call(['check', '--issue'], { extra: event(['tier B']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no type label\n +add one type label, such as feat, bug, docs/);
-  assert.match(result.stderr, /add one type label, such as feat, bug, docs/);
+  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no type label\n +A reviewer filters on labels[^]*Add one type label, such as feat, bug, docs/);
+  assert.match(flat(result.stderr), /Add one type label, such as feat, bug, docs/);
   assert.doesNotMatch(result.stderr, /tier B.*no tier label/, 'the tier label it has is not named');
   // No tier label: one line (the positive control).
   result = await sandbox.call(['check', '--issue'], { extra: event(['bug']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no tier label\n +add one tier label: `tier A`, `tier B` or `tier C`/);
+  assert.match(flat(result.stderr), /check --issue · 1 problem MISSING labels:? no tier label .*Add one tier label: `tier A`, `tier B` or `tier C`/);
   // Both missing: one line each.
   result = await sandbox.call(['check', '--issue'], { extra: event(['kit']) });
   assert.equal(result.status, 1);
@@ -288,7 +291,7 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   assert.equal(result.status, 0, result.stderr);
   // gh can't list the labels: only the title is checked.
   const bare = makeSandbox();
-  bare.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all'] }));
+  bare.write('yokoten.json', JSON.stringify({ areas: ['doctor'] }));
   const bareEvent = join(bare.home, 'event.json');
   writeFileSync(bareEvent, JSON.stringify({ action: 'opened', issue: { title: 'doctor: add the review step', labels: [] } }));
   result = await bare.call(['check', '--issue'], { extra: { GITHUB_EVENT_PATH: bareEvent } });
@@ -337,7 +340,7 @@ test('check in GitHub Actions: annotations and a job summary, place but never co
   rmSync(join(sandbox.repo, 'notes'), { recursive: true });
   const ok = await sandbox.call(['check', '--staged'], { extra: actions });
   assert.equal(ok.status, 0, ok.stderr);
-  assert.equal(ok.stdout, 'yokoten check --staged · clean: the staged changes pass layout, privacy,\n                         lead-only files\n', 'no findings, no annotations');
+  assert.equal(ok.stdout, 'yokoten check --staged · clean: layout, privacy, lead-only files\n', 'no findings, no annotations');
   assert.match(readFileSync(summary, 'utf8'), /### yokoten check --staged: ok\n\n$/);
 });
 
@@ -349,7 +352,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n[^\n]+\n[^\n]+\n[^\n]+\n[^\n]+\n\nNext: fix them, then `yokoten check`\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n(?:[^\n]+\n){5,9}\nNext: fix them, then `yokoten check`\nMore: \S+#privacy\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -375,12 +378,12 @@ test('check --pr: notes hard-to-read names on added code lines, and the exit cod
   const file = join(project.home, 'event.json');
   const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nNo changelog: a test\nMade with worker (opus)\n';
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
-  const r = await project.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file } });
+  const r = await project.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file } });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: 2 hard-to-read name\(s\)\n- src\/cart\.js:1: "s" is used for 14 lines\. A reader must scroll back to learn what it holds\. Name what it is, e\.g\. "text"\.\n  docs: \S+#naming\n- src\/cart\.js:2: "loadTheWholeUserList" has 5 words, over 4\. /);
   assert.doesNotMatch(r.stdout, /"i"|old\.ts|renamed\.ts/, 'no note for `i` in a short loop, for unchanged lines, or for a moved file');
   assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
-  const json = JSON.parse((await project.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: file } })).stdout);
+  const json = JSON.parse((await project.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: file } })).stdout);
   assert.equal(json.ok, true, 'notes never fail the check');
   assert.deepEqual(json.notes.map((note: { id: string; file: string; line: number }) => `${note.id} ${note.file}:${note.line}`), ['name-short src/cart.js:1', 'name-long src/cart.js:2']);
 });
@@ -398,7 +401,7 @@ test('check --pr in GitHub Actions: notes are warnings, in their own section (#9
   const file = join(sandbox.home, 'event.json');
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body: 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nMade with worker (opus)\n', labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: null, base: { sha: base }, head: { sha: head } } }));
   const summary = join(sandbox.home, 'summary.md');
-  const r = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
+  const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(r.status, 1, 'no milestone');
   assert.match(r.stdout, /^::error title=yokoten pr-milestone::/m, 'a finding with no place has no file');
   assert.match(r.stdout, /^::warning file=README\.md,line=2,title=yokoten long-sentence::a sentence of 30 words\. /m);
@@ -443,23 +446,23 @@ test('check --pr: a Dependabot pull request passes with notes; the same body fro
     return file;
   };
   const summary = join(sandbox.home, 'summary.md');
-  let result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]') } });
+  let result = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]') } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /check --pr: note: 9 pull request rule\(s\) Dependabot does not meet\n- body: the first line is not a tier\. .*Dependabot opened this pull request, so it is a note\./);
   assert.match(result.stdout, /\n- milestone: none set\./);
-  assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
-  result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]'), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
+  assert.match(result.stdout, /^yokoten check --pr · (PR #\d+, )?no problems[^\n]*\n\n/);
+  result = await sandbox.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]'), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
   assert.deepEqual([report.ok, report.findings, report.notes.map((note: { id: string }) => note.id)], [true, [], ['pr-tier', 'pr-section', 'pr-section', 'pr-section', 'pr-issue', 'pr-made-with', 'pr-milestone', 'pr-labels', 'pr-labels']]);
   assert.match(readFileSync(summary, 'utf8'), /#### Notes \(9\): these never fail the check\n[^]*\| \[pr-tier\]\(\S+\) \| body: the first line is not a tier \|/);
 
   // The same body from anyone else fails as before.
-  result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: event('someone') } });
+  result = await sandbox.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: event('someone') } });
   assert.equal(result.status, 1);
   assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string }) => f.id), ['pr-tier', 'pr-section', 'pr-section', 'pr-section', 'pr-issue', 'pr-made-with', 'pr-milestone', 'pr-labels', 'pr-labels']);
   // A bad title from Dependabot still fails.
-  result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]', 'Bump the actions group with 1 update') } });
+  result = await sandbox.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]', 'Bump the actions group with 1 update') } });
   assert.equal(result.status, 1);
   assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string }) => f.id), ['pr-title']);
 });
@@ -521,45 +524,45 @@ test('check --pr with YOKOTEN_PR_LIVE: judges the pull request as it is now, a d
   try {
     // Without YOKOTEN_PR_LIVE, a token alone changes nothing: the event file is read, and
     // it has no labels and no milestone, so it fails. No request is made.
-    let result = await call(['check', '--pr', '--json'], { GITHUB_EVENT_PATH: file, GITHUB_TOKEN: token, YOKOTEN_GITHUB_API: api });
+    let result = await call(['check', '--pr', '--all', '--json'], { GITHUB_EVENT_PATH: file, GITHUB_TOKEN: token, YOKOTEN_GITHUB_API: api });
     assert.equal(result.status, 1);
     assert.deepEqual(ids(result.stdout).sort(), ['pr-labels', 'pr-labels', 'pr-milestone']);
     assert.deepEqual(requests, [], 'no opt-in, no read');
 
     // With it, the labels and milestone the pull request has now win over the event's.
-    result = await call(['check', '--pr']);
+    result = await call(['check', '--pr', '--all']);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
     assert.deepEqual(requests, ['GET /repos/octo/app/pulls/7 token']);
 
     // A label taken off since: the same old event file now fails, as a rerun would.
     now = { ...now, labels: [{ name: 'feat' }] };
-    result = await call(['check', '--pr', '--json']);
+    result = await call(['check', '--pr', '--all', '--json']);
     assert.equal(result.status, 1);
     assert.deepEqual(ids(result.stdout), ['pr-labels']);
 
     // A draft is judged in full: missing a label it fails, with its labels it passes.
     now = { ...now, draft: true };
-    result = await call(['check', '--pr', '--json']);
+    result = await call(['check', '--pr', '--all', '--json']);
     assert.equal(result.status, 1);
     assert.deepEqual(ids(result.stdout), ['pr-labels']);
     now = { ...now, labels: [{ name: 'feat' }, { name: 'tier B' }] };
-    result = await call(['check', '--pr']);
+    result = await call(['check', '--pr', '--all']);
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
 
     // A read that fails fails the check; the old event file is never the answer.
     status = 403;
-    result = await call(['check', '--pr', '--json']);
+    result = await call(['check', '--pr', '--all', '--json']);
     assert.equal(result.status, 1);
     assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string; what: string }) => [f.id, f.what]), [['pr-current', "pull request 7 can't be read as it is now: GitHub answered 403"]]);
     assert.match(readFileSync(summary, 'utf8'), /\| \[pr-current\]\(\S+\) \| pull request 7 can't be read as it is now: GitHub answered 403 \|/);
     // Asked for, with no token: it fails too, and asks for the token.
     status = 200;
     requests.length = 0;
-    result = await call(['check', '--pr'], { ...ci, GITHUB_TOKEN: '' });
+    result = await call(['check', '--pr', '--all'], { ...ci, GITHUB_TOKEN: '' });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /MISSING     GITHUB_TOKEN is not set, so the pull request as it is now can't be\n +read\n +give the step `GITHUB_TOKEN: \$\{\{ github\.token \}\}` and the job\n +`pull-requests: read`, then run the job again/);
+    assert.match(flat(result.stderr), /MISSING GITHUB_TOKEN is not set, so the pull request as it is now can't be read .*Give the step `GITHUB_TOKEN: \$\{\{ github\.token \}\}` and the job `pull-requests: read`, then run the job again/);
     assert.deepEqual(requests, []);
   } finally {
     server.close();
@@ -831,42 +834,42 @@ console.log(${JSON.stringify(JSON.stringify({ title, body: prBody, labels: [{ na
     );
   const extra = { PATH: `${bin}:${process.env.PATH}` };
   answer('feat: a', head);
-  let result = await sandbox.call(['check', '--pr', '12'], { extra });
+  let result = await sandbox.call(['check', '--pr', '--all', '12'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten check --pr · (PR #\d+, )?no problems$/m);
   // The control: a bad title fails, as in CI.
   answer('a', head);
-  result = await sandbox.call(['check', '--pr', '12', '--json'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', '12', '--json'], { extra });
   assert.equal(result.status, 1);
   assert.ok(JSON.parse(result.stdout).findings.some((f: { id: string }) => f.id === 'pr-title'), result.stdout);
   // gh names Dependabot `app/dependabot`; it counts as dependabot[bot], as in CI, so its body rules are notes.
   const dependabotBody = async (author: object) => {
     // Dependabot writes its own body: no tier line, no sections.
     answer('ci: bump the actions group', head, author, 'Bumps the actions group.');
-    const report = JSON.parse((await sandbox.call(['check', '--pr', '12', '--json'], { extra })).stdout);
+    const report = JSON.parse((await sandbox.call(['check', '--pr', '--all', '12', '--json'], { extra })).stdout);
     return report.notes.some((f: { why: string }) => /Dependabot opened this pull request/.test(f.why));
   };
   assert.equal(await dependabotBody({ login: 'app/dependabot', is_bot: true }), true);
   assert.equal(await dependabotBody({ login: 'octo', is_bot: false }), false, 'the control: a person is held to every rule');
   // A head commit this clone has not fetched: the fix names what to fetch.
   answer('feat: a', 'f'.repeat(40));
-  result = await sandbox.call(['check', '--pr', '12'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', '12'], { extra });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /the pull request's head commit is not in this checkout\n +run `git fetch origin` and `git fetch origin pull\/12\/head`, then\n +run it again/);
+  assert.match(flat(result.stderr), /the pull request's head commit is not in this checkout .*Run `git fetch origin` and `git fetch origin pull\/12\/head`, then run it again/);
   // gh can't read it: one finding, never a crash.
-  result = await sandbox.call(['check', '--pr', '13', '--json'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', '13', '--json'], { extra });
   assert.equal(result.status, 1);
   assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string; what: string }) => [f.id, f.what]), [['pr-read', 'no pull request 13 in octo/app']]);
-  result = await sandbox.call(['check', '--pr', '14', '--json'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', '14', '--json'], { extra });
   assert.equal(result.status, 1);
   assert.match(JSON.parse(result.stdout).findings[0].what, /^pull request 14 can't be read: /, 'any other gh failure keeps its own reason');
   // A number goes with --pr only, and must be a number.
   result = await sandbox.call(['check', '12'], { extra });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /a number goes with --pr/);
-  result = await sandbox.call(['check', '--pr', '--x'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', '--x'], { extra });
   assert.equal(result.status, 1);
-  result = await sandbox.call(['check', '--pr', 'main', '--json'], { extra });
+  result = await sandbox.call(['check', '--pr', '--all', 'main', '--json'], { extra });
   assert.equal(result.status, 1);
   assert.match(JSON.parse(result.stdout).findings[0].what, /"main" is not a pull request number/);
 
@@ -878,7 +881,7 @@ console.log(${JSON.stringify(JSON.stringify({ title, body: prBody, labels: [{ na
   const withWorker = (model: string) => body.replace('Made with worker (opus)', `Made with worker (${model})`);
   const notesOf = async (prBody: string) => {
     answer('feat: a', head, { login: 'octo' }, prBody, 'pr-12');
-    return JSON.parse((await sandbox.call(['check', '--pr', '12', '--json'], { extra })).stdout).notes as { id: string; what: string }[];
+    return JSON.parse((await sandbox.call(['check', '--pr', '--all', '12', '--json'], { extra })).stdout).notes as { id: string; what: string }[];
   };
   const wrong = await notesOf(withWorker('gpt-6.1-sol'));
   assert.ok(wrong.some((f) => f.id === 'pr-made-with' && /status file of pr-12 says the worker ran deepseek-flash/.test(f.what)), JSON.stringify(wrong));
@@ -1397,7 +1400,7 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   sandbox.write('fine.md', 'hello\n');
   sandbox.git('add', 'fine.md');
   const clean = await sandbox.call(['check', '--staged']);
-  assert.equal(clean.stdout, 'yokoten check --staged · clean: the staged changes pass layout, privacy,\n                         lead-only files\n');
+  assert.equal(clean.stdout, 'yokoten check --staged · clean: layout, privacy, lead-only files\n');
   sandbox.write('a.md', `me${at}gmail.com\n`);
   sandbox.git('add', '.');
   const found = await sandbox.call(['check']);
@@ -1406,7 +1409,8 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   assert.equal(lines[0], 'yokoten check · 1 problem');
   assert.equal(lines[1], '');
   assert.match(lines[2] ?? '', /^ {2}MISSING {5}a\.md:1 {6}an email address$/);
-  assert.match(lines[3] ?? '', /^ {26}use your GitHub noreply address, or a placeholder at$/);
-  assert.equal(lines[lines.length - 2], 'Next: fix them, then `yokoten check`');
+  assert.match(lines[3] ?? '', /^ {26}An email address points at a person, and git keeps it$/);
+  assert.equal(lines[lines.length - 3], 'Next: fix them, then `yokoten check`');
+  assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

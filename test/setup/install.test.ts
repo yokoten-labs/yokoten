@@ -887,9 +887,9 @@ test('launcher: runs the installed runtime with each argument kept whole (#433)'
   setUpLauncher(env, runtime, home);
   assert.equal(readFileSync(launcher, 'utf8'), sealManaged(launcherText(runtime, 'linux')));
   assert.match(readFileSync(launcher, 'utf8'), /^#!\/bin\/sh\n# managed by yokoten/);
-  const run = spawnSync(launcher, ['doctor', '--all', 'two words', '$HOME'], { env, encoding: 'utf8' });
+  const run = spawnSync(launcher, ['doctor', 'two words', '$HOME'], { env, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(JSON.parse(run.stdout), ['doctor', '--all', 'two words', '$HOME']);
+  assert.deepEqual(JSON.parse(run.stdout), ['doctor', 'two words', '$HOME']);
   // A runtime path with a quote and a dollar sign still works.
   assert.match(launcherText("/home/o'neil/$x/yokoten", 'linux'), /exec node '\/home\/o'\\''neil\/\$x\/yokoten\/bin\/yokoten\.mjs' "\$@"\n$/);
 });

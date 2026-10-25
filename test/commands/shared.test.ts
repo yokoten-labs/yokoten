@@ -42,7 +42,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   mkdirSync(away);
   const said = (command: string) => new RegExp(`^yokoten ${command}: ~/away is not inside a git repo\\. The checks read commits, so yokoten needs git history\\. Run it inside your project, or \`git init\` first\\.\\n  docs: \\S+#commands\\n$`);
   const runs: [string[], string, Record<string, string>?][] = [
-    [['doctor', '--all'], 'doctor'],
+    [['doctor'], 'doctor'],
     [['check'], 'check'],
     [['check', '--staged'], 'check'],
     [['check', '--history'], 'check'],
@@ -299,7 +299,7 @@ const PERSON_COMMANDS: { name: string; args: string[] }[] = [
   { name: 'help', args: ['help'] },
   { name: 'install', args: ['install'] },
   { name: 'init', args: ['init'] },
-  { name: 'doctor', args: ['doctor', '--all'] },
+  { name: 'doctor', args: ['doctor'] },
   { name: 'conflicts', args: ['conflicts'] },
   { name: 'train', args: ['train', '--next'] },
   { name: 'check', args: ['check'] },

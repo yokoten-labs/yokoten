@@ -325,6 +325,8 @@ export type RowMark = 'ok' | 'done' | 'next' | 'to do' | 'MISSING' | 'note' | "c
 
 /** One row: the mark, an optional label in a 12-column field, then the text, wrapped under itself. */
 export function row(mark: RowMark, text: string, label?: string): string[] {
+  // A label wider than its column (a long path) takes its own line, so every text starts in one column.
+  if (label !== undefined && label.length > 11) return [`  ${mark.padEnd(11)} ${label}`, ...wrap(' '.repeat(26), text)];
   const head = `  ${mark.padEnd(11)} ${label === undefined ? '' : `${label.padEnd(11)} `}`;
   return wrap(head, text);
 }
