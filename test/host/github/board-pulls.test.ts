@@ -4,7 +4,7 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { type Gh } from '../../../src/host/github/planning.ts';
-import { readBoardPulls, readBoardPullsLater } from '../../../src/host/github/board-pulls.ts';
+import { readBoardPulls, readBoardPullsLater, readOpenPullBranches } from '../../../src/host/github/board-pulls.ts';
 
 // #601, #688, #693: the board's pull requests, from three `gh pr list`: the open ones
 // with their checks, then the last few merged and the last few closed, without checks.
@@ -135,4 +135,18 @@ test('readBoardPulls: each check counts by its latest run, so a green rerun read
   assert.equal(checksOf([{ name: 'tests', conclusion: 'SUCCESS', status: 'COMPLETED', completedAt: 'not a date' }]), 'pass', 'an odd date reads as no date');
   // Distinct names still each count.
   assert.equal(checksOf([newPass, { name: 'lint', conclusion: 'FAILURE', status: 'COMPLETED', completedAt: '2026-10-20T10:00:00Z' }]), 'fail');
+});
+
+// #708: the sweep's root is an open pull request's branch. A full answer is a doubt, not a list (#802 review).
+test('readOpenPullBranches: the open branches, and a list at the limit is a doubt', () => {
+  const rows = [{ headRefName: '708-desk' }, { headRefName: 'draft-work' }, { headRefName: '' }];
+  assert.deepEqual(readOpenPullBranches(() => JSON.stringify(rows), 'o/r'), ['708-desk', 'draft-work']);
+  // At its own limit gh may have stopped: a desk on a later branch must not be removed.
+  const full = Array.from({ length: 1000 }, (_, index) => ({ headRefName: `b${index}` }));
+  assert.equal(typeof readOpenPullBranches(() => JSON.stringify(full), 'o/r'), 'string');
+  assert.match(readOpenPullBranches(() => JSON.stringify(full), 'o/r') as string, /may stop there/);
+  const refused: Gh = () => {
+    throw Object.assign(new Error('Command failed'), { stderr: 'HTTP 401: Bad credentials\nmore' });
+  };
+  assert.match(readOpenPullBranches(refused, 'o/r') as string, /gh auth login/);
 });
