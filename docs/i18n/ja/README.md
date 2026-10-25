@@ -24,6 +24,31 @@ npx yokoten
 
 これだけです。いつでももう一度実行できます。足りないものだけを入れます。
 
+初回は一画面です。何を入れたか、いまどこにいるか、次に打つコマンド一つ。
+
+<!-- The first run in a new repo, from `yokoten` 0.1.1; regenerate it when the screen changes. -->
+```text
+yokoten 0.1.1 · set up; stage 1 of 5, safety net
+
+  ok          computer    guard on for Claude Code
+  ok          project     18 files written, none of yours changed
+  done        12 of 26 steps
+  MISSING     ~/.config/yokoten/private-marks is missing or has no marks; run
+              `npx yokoten marks add` and type your name, your city or a domain;
+              it is not shown
+  next        Run your tests on every push
+  to do       Put the project on GitHub or Gitea
+  to do       Name the owner (CODEOWNERS)
+  to do       Set up the bot account
+  to do       Add a license and a security policy
+  can't check 9 steps read the code host; doctor checks them after a push
+  note        this project has 16 uncommitted files, the oldest changed 1 minute
+              ago
+
+Next: `git add -A && git commit -m "chore: add yokoten"`
+More: `yokoten doctor --all` shows every check and 5 notes
+```
+
 ## 見えるもの
 
 エージェントが危ないことをしようとすると、yokoten が止めて、代わりに何をすべきかを伝えます。
@@ -89,7 +114,7 @@ npx yokoten doctor      # いまどこにいて、次に何をするか
 
 ## これからの道
 
-- **いま、v0.1.1**：五つの保護をすべての人に；一つのリポジトリで複数の AI セッション。
+- **いま、v0.1.1**：五つの保護をすべての人に；一つのリポジトリで複数の AI セッション；どのコマンドも一画面。
 - **次、v0.1.2**：コマンドラインでエージェントのチームを動かす（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
 - **その先**：一つのプロジェクトが学んだことを、すべてのプロジェクトのチェックにする。
 

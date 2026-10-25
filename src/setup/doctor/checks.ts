@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, type RuleId } from '../../rules/message.ts';
-import { homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
+import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
 import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
@@ -226,7 +226,7 @@ export function machineChecks(env: Env): Practice[] {
     // Any mark counts, the ones install found too: only a file with none is missing (#522).
     marksNow === 'unreadable'
       ? practice('private-marks', 'private-marks', false, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX)
-      : practice('private-marks', 'private-marks', marksNow === 'some', `${target.marks} is missing or has no marks`, EMPTY_MARKS_FIX),
+      : practice('private-marks', 'private-marks', marksNow === 'some', `${hideHome(target.marks, env)} is missing or has no marks`, EMPTY_MARKS_FIX),
   ];
 }
 
