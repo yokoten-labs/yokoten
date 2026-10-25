@@ -178,9 +178,22 @@ const MARK_GLYPH: Record<string, string> = {
   ok: '✔', done: '✔', wrote: '✔', linked: '✔', added: '✔', removed: '✔', kept: '✔', updated: '✔',
   MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
 };
+// log-symbols' fallbacks (issue #1027, R11): the classic Windows console draws these from its code page.
+const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼', '?': '?' };
+
+/**
+ * Whether the terminal draws Unicode marks (is-unicode-supported's rules): every system but
+ * Windows, except the Linux console; on Windows only the terminals known to (record 0040: the
+ * system is passed in).
+ */
+export function isUnicodeTerminal(env: Env, platform: NodeJS.Platform = 'linux'): boolean {
+  if (platform !== 'win32') return env.TERM !== 'linux';
+  return Boolean(env.WT_SESSION) || Boolean(env.TERMINUS_SUBLIME) || env.ConEmuTask === '{cmd::Cmder}' || env.TERM_PROGRAM === 'Terminus-Sublime' || env.TERM_PROGRAM === 'vscode' || env.TERM === 'xterm-256color' || env.TERM === 'alacritty' || env.TERM === 'rxvt-unicode' || env.TERMINAL_EMULATOR === 'JetBrains-JediTerm';
+}
+
 /** The padding after a mark, two columns shorter, so the text after it keeps its column. */
 const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
-const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
+const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten [a-z][a-z -]* · |yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
 // The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
 const COMMAND = /`[^`\n]+`/g;
@@ -192,7 +205,7 @@ const COMMAND_ROW = /^(\s{2})([a-z][a-z-]*)(\s{2,})(.*)$/;
  * red, a command in cyan. Everything else stays as it is. The columns do not move: the
  * code goes around the mark, not in place of its padding.
  */
-export function styleLine(line: string, isColour: boolean): string {
+export function styleLine(line: string, isColour: boolean, isUnicode = true): string {
   if (!isColour) return line;
   const mark = MARK.exec(line);
   // The style of the whole line, when one covers it. A command's reset would end that
@@ -206,7 +219,8 @@ export function styleLine(line: string, isColour: boolean): string {
     // A file kept because the user changed it was not updated: a note, not done (#964).
     const yours = word === 'kept' && KEPT_YOURS.test(mark[4] ?? '');
     const colour = GREEN_MARKS.has(word) && !yours ? GREEN : word === 'MISSING' ? RED : YELLOW;
-    const glyph = yours ? MARK_GLYPH.note : MARK_GLYPH[word];
+    const drawn = yours ? MARK_GLYPH.note : MARK_GLYPH[word];
+    const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
     const said = glyph === undefined ? word : `${glyph} ${word}`;
     const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
     styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
@@ -229,7 +243,7 @@ export function styleLine(line: string, isColour: boolean): string {
 }
 
 /** A whole text, line by line. */
-export const styleText = (text: string, isColour: boolean): string => (isColour ? text.split('\n').map((line) => styleLine(line, true)).join('\n') : text);
+export const styleText = (text: string, isColour: boolean, isUnicode = true): string => (isColour ? text.split('\n').map((line) => styleLine(line, true, isUnicode)).join('\n') : text);
 
 /**
  * Whether a command may colour its text on this stream (#707): a terminal, no `NO_COLOR`,
@@ -243,7 +257,7 @@ export const canColour = (invocation: Invocation, stream: Output): boolean => in
 export function print(invocation: Invocation, lines: string[], stream: Output = invocation.stdout): void {
   if (!lines.length) return;
   const text = lines.join('\n');
-  say(invocation, `${canColour(invocation, stream) ? styleText(text, true) : text}\n`, stream);
+  say(invocation, `${canColour(invocation, stream) ? styleText(text, true, isUnicodeTerminal(invocation.env, invocation.platform)) : text}\n`, stream);
 }
 export function say(invocation: Invocation, text: string, stream: Output): void {
   stream.write(hideHome(text, invocation.env));
@@ -276,3 +290,49 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
     say(invocation, `${name}: the job summary was not written: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
   }
 }
+
+// One screen per command (issue #1027, the CLI design the owner approved 2026-10-25): a title line,
+// groups of rows, and the command to type last. Lines stay within SCREEN_WIDTH, so an 80-column
+// terminal never breaks a word. Rows carry the mark words `styleLine` already draws: a terminal
+// sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
+
+/** The widest line a screen prints (Heroku's CLI style guide; Claude Code's help wraps here too). */
+export const SCREEN_WIDTH = 80;
+
+/** One text as lines no wider than `width`; later lines start under the first line's text. */
+export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string[] {
+  const lines: string[] = [];
+  const indent = ' '.repeat(prefix.length);
+  let line = prefix;
+  let isEmpty = true;
+  for (const word of text.split(' ')) {
+    if (!isEmpty && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = indent + word;
+    } else line += isEmpty ? word : ` ${word}`;
+    isEmpty = false;
+  }
+  lines.push(line);
+  return lines;
+}
+
+/** A screen's first line: `yokoten <command> · <what is true now>`. */
+export const title = (command: string, summary: string): string[] => wrap(`yokoten ${command} · `, summary);
+
+/** The state words a row starts with; `print` draws ✔ ● ✘ ⚠ ? for them on a terminal. */
+export type RowMark = 'ok' | 'done' | 'next' | 'to do' | 'MISSING' | 'note' | "can't check" | 'skipped';
+
+/** One row: the mark, an optional label in a 12-column field, then the text, wrapped under itself. */
+export function row(mark: RowMark, text: string, label?: string): string[] {
+  const head = `  ${mark.padEnd(11)} ${label === undefined ? '' : `${label.padEnd(11)} `}`;
+  return wrap(head, text);
+}
+
+/** The last line: the one command to type next. */
+export const nextLine = (command: string): string[] => wrap('Next: ', `\`${command}\``);
+
+/** Where the rest is: the flag that shows it all. */
+export const moreLine = (text: string): string[] => wrap('More: ', text);
+
+/** "1 file", "3 files": a count with its noun in the right number. */
+export const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

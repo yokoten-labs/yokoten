@@ -19,9 +19,11 @@ import { hideHome } from '../../rules/privacy.ts';
 import { draft, facts, table } from '../../setup/advice/adopt.ts';
 import { explain, explainLines, ids } from '../../setup/advice/explain.ts';
 import { cleanOlderInstall, PROFILE_MARK } from '../../setup/install.ts';
-import { blocksToSay, doctor, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
+import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
+import { STAGES } from '../../setup/road.ts';
+import type { Finding } from '../../rules/message.ts';
 import { READERS } from '../hook.ts';
-import { type Invocation, noRootFinding, parse, print, printJson, requireRoot, rootOf, say, usage } from '../shared.ts';
+import { count, type Invocation, moreLine, nextLine, noRootFinding, parse, print, printJson, requireRoot, rootOf, row, say, title, usage } from '../shared.ts';
 import { writeLeadSession } from './board/feed/read/logs.ts';
 
 /** What full doctor says while the slow reads run: the server read and (in WSL) the drive read. */
@@ -57,7 +59,9 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const start = root && session && agent === 'claude-code' ? readSessionStart(invocation) : null;
   if (root && session) noteSessionStart(cwd, env, agent, start?.model ?? '', start?.transcriptPath ?? '');
   // A compaction start repeats only what changed (#405); any other start says all.
-  const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : allLines;
+  // Full doctor shows one screen unless --all asks for the whole map (#1027); a broken self-test still leads.
+  const isShort = root && !session && !options.flags.has('--all') && !options.flags.has('--json');
+  const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : isShort ? shortLines(report, report.selfTest.ok ? undefined : allLines[0]) : allLines;
   // One line, and only when an older install's copies were there (#935). The edit that
   // stays is named on that first start; a later start finds nothing and says nothing.
   if (cleanup?.files && !options.flags.has('--json')) {
@@ -179,4 +183,70 @@ export function runAdopt(invocation: Invocation): number | Promise<number> {
     } else print(invocation, table(drafted));
     return 0;
   });
+}
+
+// What `yokoten doctor` shows by default (issue #1027): one screen. Owner 2026-10-25, after running it
+// himself: "我是新手，看到这么一堆文字，就被劝退了" (as a beginner, this wall of text made me give up).
+// Flutter's doctor shows a summary unless asked for detail; Homebrew's shows only what is wrong.
+// `yokoten doctor --all` keeps the full map. The same text for a person and an agent.
+
+/** Each road step as a task, in plain words for a beginner. A test keeps it in step with the road. */
+export const STEP_TITLES: Record<string, string> = {
+  rules: 'Write the rules for your agents (AGENTS.md)',
+  'tool-hook': "Turn on the guard for your agents' commands",
+  'commit-check': 'Check each commit before it is made',
+  runtime: 'Add the yokoten runtime to the project',
+  tests: 'Run your tests on every push',
+  remote: 'Put the project on GitHub or Gitea',
+  ci: 'Run the checks on every pull request',
+  issues: 'Turn on issues',
+  templates: 'Add issue and pull request templates',
+  labels: 'Add the standard labels',
+  milestone: 'Add a first milestone',
+  'no-build-output': 'Keep build output out of git',
+  changelog: 'Keep a changelog',
+  titles: 'Check pull request titles',
+  codeowners: 'Name the owner (CODEOWNERS)',
+  bot: 'Set up the bot account',
+  skills: 'Install the yokoten skills',
+  sandbox: 'Keep your agents in a sandbox',
+  review: 'Ask for a review before a merge',
+  'security-files': 'Add a license and a security policy',
+  protection: 'Protect the main branch',
+  'merge-settings': 'Set the merge settings',
+  'security-settings': 'Turn on the security settings',
+  'tag-bypass': 'Let only you create release tags',
+  'release-reviewer': 'Approve each release yourself',
+  'release-tag-rule': 'Limit releases to version tags',
+};
+
+/** The command to type for a step: one its fix names, or else `yokoten explain`, which says what to do. */
+export function nextCommand(next: Finding): string {
+  const named = [...next.fix.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? '').find((c) => /^(yokoten|npx yokoten|git) /.test(c));
+  return named ?? `yokoten explain ${next.id}`;
+}
+
+/** The default screen of `yokoten doctor`, from its report; a broken self-test line leads. */
+export function shortLines(report: DoctorReport, brokenLine?: string): string[] {
+  const lines: string[] = brokenLine ? [brokenLine, ''] : [];
+  const steps = report.steps ?? [];
+  const stepIds = new Set(steps.map((s) => s.id));
+  const left = steps.filter((s) => s.mark === 'next' || s.mark === 'to do').sort((a, b) => (a.mark === 'next' ? -1 : b.mark === 'next' ? 1 : 0));
+  const problems = report.findings.filter((x) => !stepIds.has(x.id));
+  if (report.stage === null && !problems.length) return [...lines, ...title('doctor', `all ${STAGES.length} stages done, nothing to do`)];
+  lines.push(...title('doctor', report.stage === null ? `all ${STAGES.length} stages done` : `stage ${report.stage} of ${STAGES.length}, ${STAGES[report.stage - 1]}`), '');
+  const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
+  if (steps.length) lines.push(...row('done', `${done} of ${count(steps.length, 'step')}`));
+  // A problem fails doctor, so it is never folded: each one with its fix.
+  for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`, f.id));
+  for (const s of left) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  const unchecked = steps.filter((s) => s.mark === "can't check").length;
+  if (unchecked) lines.push(...row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
+  // Work only on this machine can be lost, so it shows too, one line each.
+  for (const f of (report.notes ?? []).filter((n) => n.id === 'uncommitted-changes' || n.id === 'unpushed-commits')) lines.push(...row('note', f.what.split(';')[0]?.replace(/^\. has /, 'this project has ') ?? f.what));
+  lines.push('');
+  if (report.next) lines.push(...nextLine(nextCommand(report.next)));
+  const notes = (report.notes ?? []).length;
+  lines.push(...moreLine(`\`yokoten doctor --all\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`));
+  return lines;
 }

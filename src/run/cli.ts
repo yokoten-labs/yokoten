@@ -249,9 +249,10 @@ export const COMMANDS: Command[] = [
   {
     name: 'doctor',
     summary: 'the road: where this project is and its next step',
-    usage: '[--session] [--json] [--agent <name>]',
-    text: ['Shows every stage and step of the road, and what this machine is missing.', 'It exits 1 on a problem: a failed self-test, or a core-rules, tree or machine line', 'marked MISSING. Steps left on the road are to do, not problems. Always 0 with --session.'],
+    usage: '[--all] [--session] [--json] [--agent <name>]',
+    text: ['Shows where the project is, what is left to do, and the next command, on one screen.', 'With --all it shows every stage and step of the road, and what this machine is missing.', 'It exits 1 on a problem: a failed self-test, or a core-rules, tree or machine line', 'marked MISSING. Steps left on the road are to do, not problems. Always 0 with --session.'],
     options: [
+      { name: '--all', text: 'every check: the whole road, the project, unsaved work, this machine and the server' },
       { name: '--session', text: 'only the next step, for the start of a session' },
       { name: '--json', text: 'the report as JSON on stdout' },
       { name: '--agent', value: 'name', text: 'with --session: claude-code (the default), codex, muse, or gemini for Gemini CLI JSON' },
