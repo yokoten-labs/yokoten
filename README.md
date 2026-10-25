@@ -54,8 +54,23 @@ to a file that another open change is moving.
 
 ## Works with
 
-- **Agents**: Claude Code, GitHub Copilot CLI, Antigravity CLI, Codex CLI, Muse Code, DeepSeek Harness, Grok CLI and OpenCode are verified end to end. Gemini CLI is in the code but not run end to end. Codex CLI, Copilot CLI, Muse Code and Grok CLI run the guard only after you trust the folder: run `npx yokoten trust` once. See the [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with).
-- **Languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
+Any AI model works. The guard checks the commands the agent runs, not the model.
+
+- **Agents**: the guard runs with each agent below. The [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with) in the guide holds the evidence: the date, how each run went, and what to know first.
+
+| Agent | Verified end to end | Needs `npx yokoten trust` first | Models tested |
+|---|---|---|---|
+| Claude Code | yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | yes | yes | `deepseek-flash` |
+| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | yes | yes | the default model |
+| Gemini CLI | not yet | no | — |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+
+- **Programming languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
 
 ## More ways to install
 
