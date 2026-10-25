@@ -2,9 +2,10 @@
 // no server and no network. The rules are in src/agents/desk/team/.
 
 import { hideHome } from '../../rules/privacy.ts';
-import { messageProblem, senderLine, wrapMessage } from '../../agents/desk/team/deliver.ts';
+import type { Env } from '../../rules/config.ts';
+import { CLAIM_WARNING, messageProblem, readableMessage, senderLine, wrapMessage } from '../../agents/desk/team/deliver.ts';
 import { appendMessage, changedSinceRead, keepReadState, loadReadState, outboxNames, readOutbox, sendProblem, unread } from '../../agents/desk/team/outbox.ts';
-import { LEAD, makeTeam, readRoster } from '../../agents/desk/team/team.ts';
+import { LEAD, makeTeam, oneLine, readRoster } from '../../agents/desk/team/team.ts';
 import { type Me, whoAmI } from '../../agents/desk/team/who.ts';
 import { field, type Invocation, parse, print, readInput, rootOf, row, title, usage, wrap } from '../shared.ts';
 
@@ -31,7 +32,7 @@ export function runMsg(invocation: Invocation): number {
   if (action === 'inbox') {
     const found = unread(me, INBOX_MAX);
     keepReadState(me, found.state);
-    print(invocation, inboxLines(me, found));
+    print(invocation, inboxLines(me, found, invocation.env, rootOf(invocation.cwd, invocation.env)));
     return 0;
   }
   if (action === 'who') return who(invocation, me);
@@ -50,14 +51,17 @@ function send(invocation: Invocation, me: Me, to: string, raw: string, fail: (li
 }
 
 /** `msg inbox` as one screen (#1027): from, the time in UTC, and the text, then how to reply. */
-function inboxLines(me: Me, found: ReturnType<typeof unread>): string[] {
+function inboxLines(me: Me, found: ReturnType<typeof unread>, env: Env, root: string | null): string[] {
   const messages = found.messages;
   if (!messages.length && !found.problems.length) return title('msg', `no new messages for ${me.name}`);
   const lines = [...title('msg', `${messages.length} new ${messages.length === 1 ? 'message' : 'messages'}`), ''];
   for (const message of messages) {
     const time = `${message.time.slice(11, 16)}Z`;
-    const text = message.withheld ? `[withheld: ${message.withheld}; tell the lead]` : message.text.replace(/\s*\n\s*/g, ' ');
-    lines.push(...field(message.from, `${time}   ${text}`));
+    // The same scan as every delivery: a secret is withheld, hidden characters go, a claim is flagged.
+    const seen = readableMessage(message, env, root);
+    const text = 'withheld' in seen ? `[withheld: ${seen.withheld}; tell the lead]` : seen.text.replace(/\s*\n\s*/g, ' ');
+    lines.push(...field(oneLine(message.from, 32), `${time}   ${text}`));
+    if ('claims' in seen && seen.claims) lines.push(...row('MISSING', CLAIM_WARNING));
   }
   for (const problem of found.problems) lines.push(...row('note', `a message was withheld: ${problem}`));
   if (found.waiting) lines.push(...row('note', `${found.waiting} more waiting; run \`yokoten msg inbox\` again`));
