@@ -1,7 +1,7 @@
 // `yokoten learn` and `yokoten changelog`: what the project learned, and what it changed.
 
 import { ghIn, readIncident, readLocalLogins, repoOf, repoPageOf } from '../host/github/index.ts';
-import { formatChanges, readChanges, releaseNotes, writeChanges } from '../run/changelog.ts';
+import { readChanges, releaseNotes, writeChanges } from '../run/changelog.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { loadConfig } from '../rules/config.ts';
@@ -11,7 +11,7 @@ import { HOME_DIR, VERSION } from '../setup/files.ts';
 import { isSelf } from '../setup/init.ts';
 import { machineMarks, machineUserNames } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, count, field, type Invocation, nextLine, type Parsed, parse, print, rootOf, title, usage } from './shared.ts';
+import { bullets, count, field, type Invocation, moreLine, nextLine, parse, type Parsed, print, rootOf, row, title, usage, wrap } from './shared.ts';
 
 /**
  * A usage error for --upstream that repeats nothing typed (#392): a stray word or a note
@@ -46,12 +46,29 @@ export function runChangelog(invocation: Invocation): number {
   const isWrite = options.flags.has('--write');
   const { changes, problems } = isWrite ? writeChanges(root) : readChanges(root);
   if (problems.length) {
-    print(invocation, [`yokoten changelog: ${problems.length} problem(s); nothing was written:`, ...bullets(problems)], invocation.stderr);
+    // The same screen as `yokoten check` (issue #1027): the count, each file with its fix, and
+    // nothing was written, so the title says that too.
+    const lines = [...title('changelog', `${count(problems.length, 'problem')}; nothing was written`), ''];
+    for (const problem of problems) {
+      const where = problem.file === undefined ? undefined : `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
+      lines.push(...row('MISSING', problem.what, where), ...wrap(' '.repeat(where === undefined ? 14 : Math.max(26, where.length + 15)), problem.fix));
+    }
+    print(invocation, lines, invocation.stderr);
     return 1;
   }
-  if (!changes.length) print(invocation, ['yokoten changelog: no change files in changes/; nothing to add']);
-  else if (isWrite) print(invocation, [`yokoten changelog: wrote ${changes.length} change(s) under [Unreleased] in CHANGELOG.md, and deleted:`, ...changes.map((change) => `- ${change.file}`)]);
-  else print(invocation, [`yokoten changelog: ${changes.length} change(s); \`--write\` adds these under [Unreleased] in CHANGELOG.md:`, '', ...formatChanges(changes)]);
+  if (!changes.length) {
+    print(invocation, title('changelog', 'no change files in changes/, nothing to add'));
+    return 0;
+  }
+  // One row per entry, with its section as the label (issue #1027). An entry that was written
+  // over several lines reads as one sentence on the screen; CHANGELOG.md keeps its lines.
+  const lines = [...title('changelog', isWrite ? `wrote ${count(changes.length, 'entry', 'entries')} under [Unreleased]` : `${count(changes.length, 'entry', 'entries')} for the next release`), ''];
+  for (const change of changes) {
+    const text = change.lines.map((line) => line.replace(/^[-*+]\s+/, '').trim()).filter(Boolean).join(' ');
+    lines.push(...wrap(`  ${change.section.padEnd(11)} `, text));
+  }
+  lines.push('', ...moreLine('before a release: `yokoten changelog --write`'));
+  print(invocation, lines);
   return 0;
 }
 

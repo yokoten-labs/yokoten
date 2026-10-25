@@ -27,7 +27,7 @@ import { finding, type Finding, formatFinding, isWarningFinding } from '../rules
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from './advice/board/agents.ts';
 import { parseChange } from '../run/changelog.ts';
-import { borrowedFiles, type BorrowedChange, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../run/check.ts';
+import { borrowedFiles, type BorrowedChange, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, type SyncOutcome, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../run/check.ts';
 import { readBranchDesks } from '../run/hook.ts';
 import { isCodeFile, nameNotes } from '../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../rules/privacy.ts';
@@ -62,11 +62,55 @@ export async function runCheck(invocation: Invocation): Promise<number> {
     problems = [gitReadFinding(err)];
   }
   if (problems === SKIPPED) return 0;
+  const command = `check${mode === 'tree' ? '' : ` --${mode}`}`;
   if (json) printJson(invocation, { check: mode, ok: !problems.length, findings: problems, notes });
-  else if (!problems.length) print(invocation, [`${name}: ok${mode === 'history' ? ' (every commit on every branch)' : ''}`]);
-  else print(invocation, [`${name}: ${problems.length} problem(s)`, ...bullets(problems), ...unstageLines(root, invocation.env, mode, problems)], invocation.stderr);
+  else if (!problems.length) print(invocation, title(command, cleanSummary(mode, number)));
+  else print(invocation, problemScreen(command, problems, unstageLines(root, invocation.env, mode, problems)), invocation.stderr);
   showOnPullRequest(invocation, `yokoten check${mode === 'tree' ? '' : ` --${mode}`}`, problems, notes, { json, isPlaceAFile: mode !== 'history' });
   return problems.length ? 1 : 0;
+}
+
+/** Where a problem's text starts: the mark column, then the label column (`row`'s own layout). */
+/** Where a problem's text starts: `row`'s mark and label columns, so a fix sits under the text. */
+function textColumn(where: string | undefined): number {
+  if (where === undefined) return 14;
+  return Math.max(26, where.length + 15);
+}
+
+/** What a clean check is true of, in the mode's own words. */
+function cleanSummary(mode: string, number?: string): string {
+  if (mode === 'history') return 'clean: every commit on every branch';
+  if (mode === 'staged') return 'clean: the staged changes pass layout, privacy, lead-only files';
+  if (mode === 'pr') return number === undefined ? 'no problems in this pull request' : `PR #${number}, no problems`;
+  if (mode === 'issue') return 'no problems in this issue';
+  if (mode === 'anchor') return 'clean: every anchored day checks out';
+  return 'clean: layout, privacy, lead-only files';
+}
+
+/** The place a problem names, as editors and agents read it: `path:line`, with no colon after. */
+function locationOf(problem: Finding): string | undefined {
+  if (problem.file === undefined) return undefined;
+  return `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
+}
+
+/**
+ * The screen for a check that found problems (issue #1027): the count first, one row per
+ * problem with its place first and the fix under it, then the one command to type.
+ * Problems are never folded; the fix is never left out.
+ */
+function problemScreen(command: string, problems: Finding[], hints: string[]): string[] {
+  const lines = [...title(command, count(problems.length, 'problem')), ''];
+  for (const problem of problems) {
+    const where = locationOf(problem);
+    lines.push(...row('MISSING', problem.what, where));
+    lines.push(...wrap(' '.repeat(textColumn(where)), problem.fix));
+  }
+  if (hints.length) {
+    lines.push('');
+    for (const hint of hints) lines.push(...row('note', hint));
+  }
+  lines.push('', ...wrap('Next: ', 'fix them, then `yokoten check`'));
+  return lines;
 }
 
 /** For a stopped commit, the line that says how to unstage the files it names (#503). Nothing for other modes. */
@@ -1537,9 +1581,12 @@ export async function runPr(invocation: Invocation): Promise<number> {
   };
 
   let needsAgent = false;
+  // The screen's title first, then one row per pull request as its sync finishes (issue #1027):
+  // progress without an animation, so a log stays readable.
+  print(invocation, [...title('pr sync', count(open.pulls.length, 'open pull request')), '']);
   for (const pull of open.pulls) {
     if (pull.isFork) {
-      print(invocation, [`#${pull.number} ${pull.branch}: needs an agent (the branch is in a fork, which yokoten does not push)`]);
+      print(invocation, row('note', 'needs an agent: the branch is in a fork, which yokoten does not push', `PR #${pull.number}`));
       needsAgent = true;
       continue;
     }
@@ -1553,7 +1600,7 @@ export async function runPr(invocation: Invocation): Promise<number> {
       verify: (worktree, files) => verifyMerge(worktree, files, env),
       tempRoot: join(root, '.tmp', 'yokoten-pr-sync'),
     });
-    print(invocation, [pullLine({ ...outcome, base: pull.base })]);
+    print(invocation, pullLine({ ...outcome, base: pull.base }));
     if (outcome.files?.length) print(invocation, ['', 'Files:', ...outcome.files.map((file) => `- ${file}`)]);
     if (outcome.hunksText?.length) print(invocation, ['', 'Conflict hunks:', ...outcome.hunksText.flatMap((hunk) => hunk.split('\n'))]);
     if (outcome.brief) print(invocation, ['', 'Dispatch brief:', ...outcome.brief.split('\n')]);
@@ -1562,11 +1609,16 @@ export async function runPr(invocation: Invocation): Promise<number> {
   return needsAgent ? 1 : 0;
 }
 
-/** The one line a pull request gets in the sync's report, naming the base it merged. */
-export function pullLine(outcome: { number: number; branch: string; base: string; state: string; hunks?: number }): string {
-  const head = `#${outcome.number} ${outcome.branch}: `;
-  if (outcome.state === 'up-to-date') return `${head}up to date with ${outcome.base}`;
-  if (outcome.state === 'merged') return `${head}merged ${outcome.base}`;
-  if (outcome.state === 'resolved') return `${head}resolved ${outcome.hunks ?? 0} hunk${outcome.hunks === 1 ? '' : 's'} then merged ${outcome.base}`;
-  return `${head}needs an agent`;
+/**
+ * The rows a pull request gets in the sync's report (#432, #1027): its state in plain words,
+ * and for one that needs an agent, the file it conflicts on and what to do next.
+ */
+export function pullLine(outcome: SyncOutcome & { base: string }): string[] {
+  const label = `PR #${outcome.number}`;
+  if (outcome.state === 'up-to-date') return row('ok', `up to date with ${outcome.base}`, label);
+  if (outcome.state === 'merged') return row('ok', `${outcome.base} merged in, tests pass, pushed`, label);
+  if (outcome.state === 'resolved') return row('ok', `${outcome.base} merged in (${outcome.hunks ?? 0} hunk${outcome.hunks === 1 ? '' : 's'} resolved), tests pass, pushed`, label);
+  const lines = outcome.files?.length ? row('MISSING', `conflict in ${outcome.files.join(', ')}`, label) : row('MISSING', 'needs an agent', label);
+  lines.push(...wrap(' '.repeat(26), 'not mechanical: the hunks and the brief are below'));
+  return lines;
 }

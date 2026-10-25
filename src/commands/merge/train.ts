@@ -29,7 +29,7 @@ import { runGit } from '../../run/check.ts';
 import { runBot } from './bot.ts';
 import { listPullRequests, nextPick } from './conflicts/order.ts';
 import { MAP_FILE, MAP_MAX_AGE_MS, type ConflictMap } from './conflicts/types.ts';
-import { type Invocation, type Output, parse, print, requireRoot, usage } from '../shared.ts';
+import { type Invocation, nextLine, type Output, parse, print, requireRoot, row, title, usage } from '../shared.ts';
 
 /** How long one test or check run may take, in ms. */
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -648,11 +648,12 @@ export async function runTrain(invocation: Invocation): Promise<number> {
   if (map && isNext) {
     const pick = nextPick(map);
     if (!pick) {
-      print(invocation, ['yokoten train: no open change to merge in the conflict map']);
+      print(invocation, title('train', 'no open change to merge in the conflict map'));
       return 0;
     }
     const label = map.changes.find((change) => change.id === pick.id)?.label ?? pick.id;
-    print(invocation, [`yokoten train: next is ${label}: ${pick.why}`]);
+    // One screen (issue #1027): which one goes next and why, then the command that merges it.
+    print(invocation, [...title('train', `next: ${label}`), '', ...row('next', pick.why), '', ...nextLine(`yokoten train ${pick.id.replace(/^pr:/, '')}`)]);
     return 0;
   }
   const prs = given.length ? given : map ? listPullRequests(map) : [];
