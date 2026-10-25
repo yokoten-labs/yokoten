@@ -11,7 +11,7 @@
 import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { homeIn } from '../../../rules/privacy.ts';
+import { homeIn, isLink } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
 import { type Added, type HookState, isObject, type Problem, UnreadableHooksFile } from '../../hooks-file.ts';
@@ -171,7 +171,9 @@ export function removeUserHooks(env: Env): 'removed' | 'not there' | null {
   if ('problem' in read) return null;
   if (!(NAME in read.entries)) return 'not there';
   delete read.entries[NAME];
+  // A linked file keeps its link: it gets the empty object, written through to its target (#984).
   if (Object.keys(read.entries).length) writeFileSync(path, `${JSON.stringify(read.entries, null, 2)}\n`);
+  else if (isLink(path)) writeFileSync(path, '{}\n');
   else rmSync(path, { force: true });
   return 'removed';
 }

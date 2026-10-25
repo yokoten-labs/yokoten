@@ -39,9 +39,9 @@ import * as grok from '../agents/runtimes/grok.ts';
 import * as muse from '../agents/runtimes/muse.ts';
 import * as opencode from '../agents/runtimes/small/opencode.ts';
 import { type Added, skippedBecause, UnreadableHooksFile } from '../agents/hooks-file.ts';
-import { copyRuntime, describeWrite, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, writeManaged, writeNew } from './files.ts';
+import { copyRuntime, describeWrite, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, writeManaged, writeNew } from './files.ts';
 import { type Gh, readLocalLogins, readLogin } from '../host/github/index.ts';
-import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
+import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
 
 /**
  * Where yokoten keeps its runtime, its config and the private marks. With no absolute home
@@ -454,7 +454,7 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // OpenCode gets the command guard only, and only when its config folder is already there.
   if (opencode.hasUserDir(env)) {
     const file = opencode.userPluginFile(env);
-    const openCodeHooks = agentHooks('OpenCode', file, () => [describeWrite(opencode.addUserPlugin(env, USER_CLI, USER_MISSING), `the OpenCode command guard in ${file}`)]);
+    const openCodeHooks = agentHooks('OpenCode', file, () => [openCodePluginLine(writeOpenCodePlugin(opencode.userPluginPath(env), opencode.userPluginSource(USER_CLI, USER_MISSING)), `the OpenCode command guard in ${file}`, 'install')]);
     ok &&= openCodeHooks.ok;
     report.push(...openCodeHooks.lines);
   } else report.push(`skipped OpenCode: ${opencode.userPluginFile(env).replace(/\/plugins\/yokoten\.ts$/, '')} not found (run \`yokoten install\` again after installing OpenCode)`);
@@ -510,6 +510,23 @@ function installPlan(env: Env, runtime: string, plugin: boolean, needsRuntime: b
 
 const kitSkills = (): string[] => readdirSync(join(KIT, 'user', 'skills'));
 const kitAgents = (): string[] => readdirSync(join(KIT, 'user', 'agents'));
+
+/**
+ * Write an OpenCode plugin (the user's here, the project's in init) as a file yokoten owns:
+ * a file without the mark, or one the user edited, stays (#984). A file yokoten can't read
+ * throws `UnreadableHooksFile` and stays as it was.
+ */
+export function writeOpenCodePlugin(path: string, source: string): 'added' | 'updated' | 'same' | 'kept (yours)' | 'kept (your edit)' {
+  if (managedState(path, source) === 'unreadable') throw new UnreadableHooksFile(path, opencode.UNREADABLE_PLUGIN);
+  const state = writeManaged(path, source);
+  return state === 'wrote' ? 'added' : state;
+}
+
+/** The one line for an OpenCode plugin write; a plugin yokoten kept says how to get yokoten's (#984). */
+export function openCodePluginLine(state: ReturnType<typeof writeOpenCodePlugin>, what: string, command: 'install' | 'init'): string {
+  const line = describeWrite(state, what);
+  return state === 'kept (yours)' || state === 'kept (your edit)' ? `${line}; yokoten would write its own: to get it, move that file away and run \`yokoten ${command}\`` : line;
+}
 
 /** A managed file's text: `missing` when no file is there, `yours` when the file is not ours. */
 const managedFileText = (path: string): { text: string } | 'missing' | 'yours' => {
@@ -573,13 +590,18 @@ export function hookRunsYokoten(env: Env): boolean {
 }
 
 /** Remove a file yokoten owns, and its folder when that is left empty. A file without the mark is the user's, and so is a marked file the user edited. */
-function removeManaged(path: string, { folder = false }: { folder?: boolean } = {}): 'removed' | 'kept (yours)' | 'kept (your edit)' | 'not there' {
+function removeManaged(path: string, { folder = false, keepLink = false }: { folder?: boolean; keepLink?: boolean } = {}): 'removed' | 'kept (yours)' | 'kept (your edit)' | 'not there' {
   // One read decides all three: missing, ours, or the user's. A check before the read would
   // leave a gap where the file changes (CodeQL js/file-system-race).
   const found = managedFileText(path);
   if (found === 'missing') return 'not there';
   if (found === 'yours') return 'kept (yours)';
   if (isEditedManaged(found.text)) return 'kept (your edit)';
+  // A linked file keeps its link: its target gets empty text in place of yokoten's (#984).
+  if (keepLink && isLink(path)) {
+    writeFileSync(path, '');
+    return 'removed';
+  }
   rmSync(path);
   if (folder) {
     try {
@@ -739,14 +761,14 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
   else report.push(`kept ${settings}: it is not JSON, so the two hooks are still in it; take them out by hand`);
   // The user-level guards outside Claude Code's settings (#342). Each is touched only
   // when its tool is on this machine; an unreadable file stays as it is.
-  const extras: [string, 'removed' | 'not there' | 'kept (yours)' | null | { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' }][] = [
+  const extras: [string, 'removed' | 'not there' | 'kept (yours)' | 'kept (your edit)' | null | { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' }][] = [
     ['Antigravity CLI', antigravity.hasUserDir(env) ? antigravity.removeUserHooks(env) : 'not there'],
     ['Copilot CLI', copilot.hasUserDir(env) ? copilot.removeUserHooks(env) : 'not there'],
     ['Codex CLI', codex.hasUserDir(env) ? codex.removeUserHooks(env) : 'not there'],
     ['Gemini CLI', gemini.hasUserDir(env) ? gemini.removeUserHooks(env) : 'not there'],
     ['Grok CLI', grok.hasUserDir(env) ? grok.removeUserHooks(env) : 'not there'],
     ['Muse Code', muse.hasUserDir(env) ? muse.removeUserHooks(env) : 'not there'],
-    ['OpenCode', opencode.hasUserDir(env) ? opencode.removeUserPlugin(env, USER_CLI, USER_MISSING) : 'not there'],
+    ['OpenCode', opencode.hasUserDir(env) ? removeManaged(opencode.userPluginPath(env), { keepLink: true }) : 'not there'],
   ];
   for (const [name, removed] of extras) {
     if (removed === null) report.push(`kept the ${name} hooks: the file is not JSON; take them out by hand`);

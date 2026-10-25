@@ -275,3 +275,20 @@ export function readWorkflowHashes(file: string = WORKFLOW_HASHES): Record<strin
     return {};
   }
 }
+
+/**
+ * What `writeManaged` would do with `content` at `path`, read-only: `wrote` for a missing
+ * file, and `unreadable` for one it can't read (a folder, no permission). Init and doctor
+ * use it for the OpenCode plugin (#984).
+ */
+export function managedState(path: string, content: string): 'wrote' | 'updated' | 'same' | 'kept (yours)' | 'kept (your edit)' | 'unreadable' {
+  let old: string;
+  try {
+    old = readFileSync(path, 'utf8');
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'wrote' : 'unreadable';
+  }
+  if (managedMark(old) === null) return 'kept (yours)';
+  if (old === sealManaged(content)) return 'same';
+  return isEditedManaged(old) ? 'kept (your edit)' : 'updated';
+}

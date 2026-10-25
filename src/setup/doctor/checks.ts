@@ -19,7 +19,7 @@ import * as muse from '../../agents/runtimes/muse.ts';
 import * as opencode from '../../agents/runtimes/small/opencode.ts';
 import { TRUST_COMMAND, type FolderTrust } from '../../agents/folder-trust.ts';
 import { commentedFile, HAND_ADD, handAddJson, type HookState, mergeHandAdds } from '../../agents/hooks-file.ts';
-import { runtimeVersion, VERSION } from '../files.ts';
+import { managedState, runtimeVersion, VERSION } from '../files.ts';
 import { compareVersions, hookCliPath, isSelf, readCoreRules, summarizeUpdate } from '../init.ts';
 import { EMPTY_MARKS_FIX, editedKitCopies, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, OFFER_MARKS_FIX, offerMarkKinds, launcherFile, PROFILE_LINE, installedPieces, installedSkillDirs, projectSkillDirs, isOnPath, launcherDir, machineMarks, mailmapState, MAILMAP_SETTING, missingMarkKinds, paths, USER_CLI, USER_MISSING } from '../install.ts';
 
@@ -122,13 +122,16 @@ export function agentHooks(root: string, env: Env, platform: string = process.pl
  */
 export function openCodePluginNote(root: string, cli: string): Practice | null {
   if (!opencode.usesOpenCode(root)) return null;
-  const state = opencode.projectPluginState(root, cli);
+  const state = managedState(opencode.projectPluginPath(root), opencode.projectPluginSource(cli));
   const file = opencode.PLUGIN_FILE;
   if (state === 'same') return null;
-  if (typeof state === 'object') {
-    const hint = state.kind === 'shape' ? state.hint : 'the plugin file should be readable text';
+  if (state === 'unreadable') {
+    const problem = opencode.UNREADABLE_PLUGIN;
+    const hint = problem.kind === 'shape' ? problem.hint : 'the plugin file should be readable text';
     return practice('opencode-hook', 'opencode-hook', false, `${file} has an unexpected shape`, `${hint}; fix it, then run \`yokoten init\``);
   }
+  // A plugin without yokoten's mark, or one the user edited, is theirs: init keeps it (#984).
+  if (state === 'kept (yours)' || state === 'kept (your edit)') return practice('opencode-hook', 'opencode-hook', false, `${file} is ${state === 'kept (yours)' ? 'not yokoten\'s plugin' : 'yokoten\'s plugin with your edits'}, so yokoten leaves it`, 'to get yokoten\'s, move that file away and run `yokoten init`');
   if (state === 'updated') return practice('opencode-hook', 'opencode-hook', false, `the tool-call plugin in ${file} is out of date`, '`yokoten init` updates it');
   return practice('opencode-hook', 'opencode-hook', false, 'OpenCode is set up here, but the yokoten plugin is not in .opencode/plugins/', '`yokoten init` adds it');
 }
@@ -346,7 +349,13 @@ export function userAgentHooks(env: Env): Practice[] {
   if (gemini.hasUserDir(env)) checks.push(report('gemini-user-hook', gemini.userHooksState(env, USER_CLI, USER_MISSING), '~/.gemini/settings.json'));
   if (grok.hasUserDir(env)) checks.push(report('grok-user-hook', grok.userHooksState(env, USER_CLI, USER_MISSING), grok.userHooksFile(env)));
   if (muse.hasUserDir(env)) checks.push(report('muse-user-hook', muse.userHooksState(env, USER_CLI, USER_MISSING), muse.userSettingsFile(env)));
-  if (opencode.hasUserDir(env)) checks.push(report('opencode-user-hook', { guard: opencode.userPluginState(env, USER_CLI, USER_MISSING) }, opencode.userPluginFile(env)));
+  if (opencode.hasUserDir(env)) {
+    const file = opencode.userPluginFile(env);
+    const state = managedState(opencode.userPluginPath(env), opencode.userPluginSource(USER_CLI, USER_MISSING));
+    // A plugin without yokoten's mark, or one the user edited, is theirs: install keeps it (#984).
+    if (state === 'kept (yours)' || state === 'kept (your edit)') checks.push(practice('opencode-user-hook', 'opencode-user-hook', false, `${file} is ${state === 'kept (yours)' ? 'not yokoten\'s plugin' : 'yokoten\'s plugin with your edits'}, so yokoten leaves it`, 'to get yokoten\'s, move that file away and run `yokoten install`'));
+    else checks.push(report('opencode-user-hook', { guard: state === 'unreadable' ? opencode.UNREADABLE_PLUGIN : state === 'wrote' ? 'added' : state }, file));
+  }
   return checks;
 }
 

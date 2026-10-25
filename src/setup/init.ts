@@ -35,7 +35,7 @@ import { homeOf, systemHome } from '../rules/privacy.ts';
 import { CODEOWNERS_PLACES, type Gh, ghIn, isOrganization, isPrivateRepo, repoOf } from '../host/github/index.ts';
 import { readOriginUrl } from './plan.ts';
 import { writeTestsJob } from './advice/tests-job.ts';
-import { type Ask, isYes } from './install.ts';
+import { type Ask, isYes, openCodePluginLine, writeOpenCodePlugin } from './install.ts';
 import { copyRuntime, describeWrite, fileHash, HOME_DIR, KIT, lfText, normalizeText, readWorkflowHashes, render, textHash, VERSION, writeNew } from './files.ts';
 
 /** yokoten's own repo runs its own bin; every other project runs a vendored copy. */
@@ -226,7 +226,7 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask): { ok
   });
   // OpenCode has no trust step in the docs we have. The plugin loads when OpenCode starts.
   const openCodePlugin = agentHooks('the OpenCode plugin', opencode.PLUGIN_FILE, () => [
-    describeWrite(opencode.addProjectPlugin(root, hookCli), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`),
+    openCodePluginLine(writeOpenCodePlugin(opencode.projectPluginPath(root), opencode.projectPluginSource(hookCli)), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`, 'init'),
   ]);
   const museHooks = agentHooks('the Muse Code hooks', '.muse/hooks.json', () => {
     const added = muse.addProjectHooks(root, hookCli);

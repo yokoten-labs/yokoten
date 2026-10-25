@@ -2,7 +2,7 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { addProjectHook, addUserHooks, hasUserDir, KEPT_OFF, keptOffLine, projectHookState, readToolCall, removeUserHooks, userHooksFile, userHooksState } from '../../../../src/agents/runtimes/small/antigravity.ts';
@@ -122,6 +122,16 @@ test('antigravity user hook: install writes the guard in ~/.gemini/config/hooks.
   writeFileSync(file, '{ not json');
   assert.equal(removeUserHooks(env), null);
   assert.equal(readFileSync(file, 'utf8'), '{ not json', 'a file yokoten cannot read stays as it was');
+  // #984: a linked hooks file keeps its link when the last entry goes. The positive control
+  // is the plain file above, removed.
+  rmSync(file);
+  const target = join(sandbox.home, 'dotfiles-hooks.json');
+  writeFileSync(target, '{}\n');
+  symlinkSync(target, file);
+  addUserHooks(env, cli, missing);
+  assert.equal(removeUserHooks(env), 'removed');
+  assert.equal(lstatSync(file).isSymbolicLink(), true, 'the link stays');
+  assert.equal(readFileSync(target, 'utf8'), '{}\n');
 });
 
 // #984: the user's `enabled: false` is kept by init, install and doctor, each with one line
