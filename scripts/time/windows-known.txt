@@ -2,15 +2,15 @@
 # Fix a test, then remove its line: the Windows job fails while a listed test passes.
 # `? ` before a line: the test may pass or fail.
 test/agents/copilot.test.ts :: copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trusted parent folder counts
-test/agents/desk/desk.test.ts :: findProgram: a name on PATH, a path as it is, null when missing
-test/agents/desk/desk.test.ts :: isInside: the folder itself and what is under it, not a name that only starts the same
+? test/agents/desk/desk.test.ts :: findProgram: a name on PATH, a path as it is, null when missing
+? test/agents/desk/desk.test.ts :: isInside: the folder itself and what is under it, not a name that only starts the same
 test/agents/desk/desk.test.ts :: planDesk: a command model wins over the config, for the roster and the env (#748)
 test/agents/desk/desk.test.ts :: planDesk: a desk that cannot be marked does not start, with the plain reason (#672)
 test/agents/desk/desk.test.ts :: planDesk: on a team, the team folder read-only, only the own outbox writable, the desk file locked (#674)
 test/agents/desk/desk.test.ts :: planDesk: the desk and its own state writable, a token dropped, role and time zone fixed
-test/agents/desk/network/proxy.test.ts :: (timed out)
-test/agents/desk/network/proxy.test.ts :: startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed
-test/agents/desk/network/proxy.test.ts :: startProxy: tunnels to an allowed host, refuses others and anything not CONNECT
+? test/agents/desk/network/proxy.test.ts :: (timed out)
+? test/agents/desk/network/proxy.test.ts :: startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed
+? test/agents/desk/network/proxy.test.ts :: startProxy: tunnels to an allowed host, refuses others and anything not CONNECT
 test/agents/desk/seatbelt.test.ts :: seatbeltProfile: git may look for its config in a hidden home, and finds nothing
 test/agents/desk/start.test.ts :: signalEnd: the real signal number, the signal named, and the sandbox hint when quiet
 test/agents/desk/team/outbox.test.ts :: unread: a FIFO as an outbox or as the read state does not hang
@@ -139,7 +139,7 @@ test/run/cli.test.ts :: demo: scripts/demo/loop.ts walks the loop from an incide
 test/run/cli.test.ts :: hooks: a missing runtime says one plain line with no path, never a stack trace (#204)
 test/run/cli.test.ts :: hooks: a tool-call guard that fails refuses the call; the stop check does not (#260)
 test/run/cli.test.ts :: plugin launcher: a safe cache copy runs, and any other path does not (#706)
-test/run/hook.test.ts :: done-when: a passing check stops a background writer on Windows (#735)
+? test/run/hook.test.ts :: done-when: a passing check stops a background writer on Windows (#735)
 test/run/hook.test.ts :: hook: a key with the wrong shape gets its default and one line; check names the key; an unknown key is a note (#228)
 test/run/hook.test.ts :: hook: a repo reached through a symlink gets the same file rules (#1)
 test/run/hook.test.ts :: hook: blocks with exit 2 and a reason, allows with exit 0
