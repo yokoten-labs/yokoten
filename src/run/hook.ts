@@ -871,10 +871,19 @@ export function windowsPowerShellPath(systemRoot: string | undefined): string | 
   return existsSync(path) ? path : null;
 }
 
+/**
+ * The Windows folder: the check's `SystemRoot`, else its `windir`, else `C:\Windows`. An
+ * agent may hand the hook a trimmed environment with no `SystemRoot`; that must not
+ * turn the job off (10-25: the #735 test ran so on Windows and the writer lived).
+ */
+export function windowsSystemRoot(env: Env): string {
+  return env.SystemRoot || env.SYSTEMROOT || env.windir || env.WINDIR || 'C:\\Windows';
+}
+
 /** `powershell.exe` when this is Windows and that file is there. Null means the caller runs `cmd.exe`. */
 function windowsPowerShell(env: Env): string | null {
   if (process.platform !== 'win32') return null;
-  return windowsPowerShellPath(env.SystemRoot);
+  return windowsPowerShellPath(windowsSystemRoot(env));
 }
 
 /**
@@ -1502,7 +1511,7 @@ export function runDoneWhen(
   // The hook passes no host. A test points it at a program that is not there (#735).
   const host = powerShellHost ?? windowsPowerShell(env);
   // Windows with no host has no job, and the output says why (#735).
-  const hostNote = powerShellHost === undefined && host === null && process.platform === 'win32' ? noJobHostNote(env.SystemRoot) : '';
+  const hostNote = powerShellHost === undefined && host === null && process.platform === 'win32' ? noJobHostNote(windowsSystemRoot(env)) : '';
   return new Promise((resolvePromise) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
