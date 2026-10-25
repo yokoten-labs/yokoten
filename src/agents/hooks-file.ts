@@ -3,9 +3,10 @@
 // Each adapter names its own file, event, matcher and command; this file only edits the
 // table, and keeps everything else in the file as it was.
 
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { runs, subcommand } from '../run/cli.ts';
+import { randomBytes } from 'node:crypto';
+import { chmodSync, constants, copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { runs, runsByPath, subcommand } from '../run/cli.ts';
 
 export type Added = 'same' | 'updated' | 'added';
 /**
@@ -81,11 +82,112 @@ function readText(path: string, options: ReadOptions): { text: string; commented
   return { text, commented: text !== raw };
 }
 
+/** The suffix of the one copy `writeSafely` keeps of a file as it was before yokoten first changed it. */
+export const BACKUP_SUFFIX = '.before-yokoten';
+
+/** `path` with the symlinks in its folders resolved. A part that does not exist yet is kept as it is. */
+function realFolder(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : join(realFolder(parent), basename(path));
+  }
+}
+
+/**
+ * The file a write to `path` changes: symlinks followed, a dangling one too, so a link stays
+ * a link and the file it points at gets the new text. A part that does not exist yet is
+ * kept as it is.
+ */
+export function writeTarget(path: string): string {
+  let at = resolve(path);
+  // A loop of links stops after 40 hops, as the system's own lookup does; that path is then written.
+  for (let hop = 0; hop < 40; hop++) {
+    let isLink: boolean;
+    try {
+      isLink = lstatSync(at).isSymbolicLink();
+    } catch {
+      return join(realFolder(dirname(at)), basename(at));
+    }
+    if (!isLink) return realFolder(at);
+    at = resolve(dirname(at), readlinkSync(at));
+  }
+  return at;
+}
+
+/**
+ * Write `text` to another tool's settings file without risking what is there (#984):
+ * - a symlink stays a link, and the file it points at is written;
+ * - the text goes to a temp file in the same folder, which then takes the file's place in
+ *   one rename, so a crash or a full disk leaves the old bytes, never half a file;
+ * - the file keeps its mode (a 0600 file stays private);
+ * - the first time yokoten changes a file that is there, a copy of it is kept as
+ *   `<file>.before-yokoten`. A copy already there is never overwritten: it holds the
+ *   version from before yokoten. `isOurs` says from the old text that the file holds only
+ *   what yokoten wrote, so it needs no copy: uninstall can then leave the folder as it was (#904).
+ * `rename` is there for a test to make the last step fail; the temp file is then removed
+ * and the error thrown.
+ */
+export function writeSafely(path: string, text: string, { rename = renameSync, isOurs }: { rename?: typeof renameSync; isOurs?: (old: string) => boolean } = {}): void {
+  const target = writeTarget(path);
+  const folder = dirname(target);
+  mkdirSync(folder, { recursive: true });
+  let mode: number | null = null;
+  try {
+    mode = statSync(target).mode & 0o7777;
+  } catch {
+    // A new file: it gets the default mode, and there is nothing to back up.
+  }
+  if (mode !== null && !(isOurs && isOurs(readFileSync(target, 'utf8')))) {
+    try {
+      copyFileSync(target, `${target}${BACKUP_SUFFIX}`, constants.COPYFILE_EXCL);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
+  }
+  const temp = join(folder, `.${basename(target)}.yokoten-${process.pid}-${randomBytes(4).toString('hex')}.tmp`);
+  try {
+    writeFileSync(temp, text, { flag: 'wx', mode: mode ?? 0o666 });
+    if (mode !== null) chmodSync(temp, mode);
+    rename(temp, target);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
 export const readSettings = (path: string, options: ReadOptions = {}): Settings => JSON.parse(readText(path, options).text);
 
+/**
+ * Whether a settings file's text holds only what yokoten writes: hooks that each run a yokoten
+ * file by path, and an `env` with only `TZ=UTC` (a project's Claude Code settings). Such a file
+ * needs no `.before-yokoten` copy (#984).
+ */
+export function hasOnlyOurHooks(text: string): boolean {
+  let settings: unknown;
+  try {
+    settings = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  if (!isObject(settings)) return false;
+  const { env, ...rest } = settings;
+  if (env !== undefined && !(isObject(env) && Object.entries(env).every(([key, value]) => key === 'TZ' && value === 'UTC'))) return false;
+  if (Object.keys(rest).some((key) => key !== 'hooks')) return false;
+  const { hooks } = settings;
+  if (hooks === undefined) return true;
+  if (!isObject(hooks)) return false;
+  return Object.values(hooks).every(
+    (groups) =>
+      isObjectList(groups) &&
+      groups.every((group) => Object.keys(group).every((key) => key === 'matcher' || key === 'hooks') && isObjectList(group.hooks) && group.hooks.every((hook) => typeof hook.command === 'string' && subcommand(hook.command) !== undefined)),
+  );
+}
+
+/** Write the settings with `writeSafely`: a link stays a link, and the user's own file is copied once first (#984). */
 export function writeSettings(path: string, settings: Settings): void {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(settings, null, 2)}\n`);
+  writeSafely(path, `${JSON.stringify(settings, null, 2)}\n`, { isOurs: hasOnlyOurHooks });
 }
 
 /**
@@ -207,7 +309,9 @@ function newGroup(matcher: string | undefined, command: string, extra: Record<st
 
 /**
  * Put a command hook in `settings`, once, and say what that took. A hook that runs the
- * same yokoten `<sub>` counts as already there (an older path is updated in place).
+ * same yokoten `<sub>` by the path of a yokoten file counts as already there (an older path is
+ * updated in place). A hook that runs it by a package runner (`npx yokoten <sub>`) is the
+ * user's own: it stays as it is, and yokoten adds its own beside it (#984).
  * `extra` holds more handler fields, such as Gemini CLI's `name` or Grok CLI's `timeout`. Only `settings` in
  * memory changes; `addHook` writes it and `hookState` throws it away.
  */
@@ -216,7 +320,7 @@ function placeHook(settings: Settings, event: string, matcher: string | undefine
   const groups = ((settings.hooks ??= {})[event] ??= []);
   for (const group of groups) {
     for (const hook of group.hooks ?? []) {
-      if (sub && runs(sub).test(hook.command ?? '')) {
+      if (sub && runsByPath(sub).test(hook.command ?? '')) {
         if (hook.command === command && (group.matcher ?? '') === (matcher ?? '') && Object.entries(extra).every(([k, v]) => hook[k] === v)) return 'same';
         Object.assign(hook, extra, { command });
         if (matcher !== undefined) group.matcher = matcher;
@@ -266,8 +370,9 @@ export function hasHook(path: string, event: string, sub: string, options: ReadO
 }
 
 /**
- * Take out every hook for `event` that runs yokoten's `<sub>`, and the groups and events
- * left empty. Everything else in the file stays. A file that is not JSON throws, so the
+ * Take out every hook for `event` that runs yokoten's `<sub>` by the path of a yokoten file,
+ * as yokoten writes it, and the groups and events left empty. Everything else in the file
+ * stays, a user's own `npx yokoten <sub>` hook too (#984). A file that is not JSON throws, so the
  * caller can leave it alone and say so.
  */
 export function removeHook(path: string, event: string, sub: string): 'removed' | 'not there' {
@@ -278,7 +383,7 @@ export function removeHook(path: string, event: string, sub: string): 'removed' 
   let removed = false;
   const kept: HookGroup[] = [];
   for (const group of groups) {
-    const handlers = (group.hooks ?? []).filter((hook) => !runs(sub).test(hook.command ?? ''));
+    const handlers = (group.hooks ?? []).filter((hook) => !runsByPath(sub).test(hook.command ?? ''));
     if (handlers.length === (group.hooks ?? []).length) {
       kept.push(group);
       continue;
