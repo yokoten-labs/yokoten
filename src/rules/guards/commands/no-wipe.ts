@@ -178,6 +178,7 @@ function findWipePlace(word: string, cwd: string | null, home: string | null, ho
   }
   if (/^[A-Za-z]:[\\/]?$/s.test(word)) return 'root'; // `C:\`, `C:/`, `C:`
   if (/[$%`]/.test(word)) return 'unreadable'; // a value the shell fills in
+  if (word.startsWith('~')) return 'unreadable'; // `~user`: another account's home folder
   if (/^[A-Za-z]:[\\/]/.test(word) || isAbsolute(word)) return findPlaceInPath(word, home, homeReal);
   // A relative path is read from the folder the command runs in; without it the guard cannot read the target.
   if (cwd === null) return 'unreadable';

@@ -29,7 +29,7 @@ test('guard: no wipe of the home folder or a top-level system folder (#969)', ()
     'rm -rf ~', 'rm -rf ~/', 'rm -rf ~/*', 'rm -rf ~',
     'rm -rf $HOME', 'rm -rf ${HOME}', 'rm -rf "$HOME"', 'rm -rf $HOME/*', 'rm -rf $HOME/',
     // A path with a piece the guard cannot read is refused too.
-    'rm -rf $(pwd)', 'rm -rf $DIR/x', 'rm -rf ~/*/x', 'rm -rf /*/*',
+    'rm -rf $(pwd)', 'rm -rf $DIR/x', 'rm -rf ~/*/x', 'rm -rf /*/*', 'rm -rf ~user', 'rm -rf ~root/x',
     'Remove-Item -Recurse -Force $env:USERPROFILE', 'Remove-Item -Recurse ~', 'Remove-Item -r %USERPROFILE%',
     'rd /s /q ~', 'rd /s ~',
     'rmdir ~', 'rmdir /etc',
