@@ -561,8 +561,12 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
       assert.ok(hasHook(goodPath, 'SessionStart', 'doctor'), `${what}: no ${good.name} hooks`);
       assert.match(result.stdout, /^added the user-level command guard$/m, what);
       assert.match(result.stdout, /^wrote ~\/\S*private-marks /m, what);
-      // Doctor names the same problem.
-      assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  note {4}${bad.id}: ${escape(doctor)}`, 'm'), what);
+      // Doctor names the same problem. A doctor call walks the sandbox like a whole install,
+      // so it runs once per file pair, for the parse error where the wording differs most;
+      // an unexpected shape names the same place and hint on install's own print (#943).
+      if (content === '{ not json') {
+        assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  note {4}${bad.id}: ${escape(doctor)}`, 'm'), what);
+      }
     }
   }
 });

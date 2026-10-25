@@ -48,17 +48,31 @@ test('bash: a heredoc pipeline is read in linear time (#226)', () => {
 });
 
 test('bash: nested constructs are read in linear time and never throw (#226)', () => {
-  // From 256 repeats to 2048. A loop that reads the text again for each character
-  // counts many times over 8x here.
-  assertLinearEach(nestedCases, 256);
+  // From 128 repeats to 1024. A loop that reads the text again for each character counts
+  // many times over 8x here (a full quadratic counts 64x, the limit is 12). 128 keeps the
+  // margin and stays under half the runner cost of 256 (#943).
+  assertLinearEach(nestedCases, 128);
 });
 
 test('bash: nested constructs up to 1000 repeats never throw, and a force push before them blocks (#226)', () => {
   // At 1000 repeats some shapes already run out of the work budget and are refused (more do at
   // 8000, which took 10 s here): that path, too, must not throw. The reader goes only 8 levels
   // deep (MAX_DEPTH), so more repeats than this test the budget again, not the stack. One read
-  // each; the work is proved at the sizes above.
-  for (const { make, read } of nestedCases) read(make(1000));
+  // per shape alone and per shape after a force push: the remaining form adds only a no-throw
+  // check for the same text, so the linear reads above carry it at their sizes (#943). The work
+  // is proved at the sizes above.
+  const afterForce = nestedForms.find(([form]) => form === 'after a force push')![1];
+  for (const shape of nestedShapes) {
+    const read = (command: string) => {
+      let result: ReturnType<typeof checkCommand> = null;
+      assert.doesNotThrow(() => {
+        result = checkCommand(command, { cwd: process.cwd(), env: {}, config: pythonBlocked });
+      }, shape);
+      if (command.startsWith(force)) assert.ok(result, `${shape} after a force push should block`);
+    };
+    read(shape.repeat(1000));
+    read(afterForce(shape.repeat(1000)));
+  }
 });
 
 test('bash and hooks: loops that never spent the budget read a thousand repeats in linear time (#226)', () => {
