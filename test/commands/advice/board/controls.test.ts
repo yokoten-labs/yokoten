@@ -2,7 +2,7 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -187,10 +187,15 @@ test('board controls: a start is refused when the hooks will not run', () => {
   mkdirSync(join(sandbox.home, '.codex'), { recursive: true });
   codexHooks.addProjectHook(sandbox.repo, 'bin/yokoten.mjs');
   codexHooks.addProjectStopHook(sandbox.repo, 'bin/yokoten.mjs');
-  writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects."${sandbox.repo}"]\ntrust_level = "trusted"\n`);
-  assert.match(boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '', /\/hooks/, 'untrusted hooks name the trust step');
+  // The key as Codex finds it on every system: the real path, quoted so a Windows
+  // backslash stays a backslash in TOML.
+  const key = JSON.stringify(realpathSync.native(sandbox.repo));
+  writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects.${key}]\ntrust_level = "trusted"\n`);
+  const hooksOnly = boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '';
+  assert.match(hooksOnly, /the hooks there are not trusted/, hooksOnly);
+  assert.match(hooksOnly, /\/hooks/, 'untrusted hooks name the trust step');
   // A folder the user set untrusted on purpose: the board names their own step, not `yokoten trust` (#984).
-  writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects."${sandbox.repo}"]\ntrust_level = "untrusted"\n`);
+  writeFileSync(join(sandbox.home, '.codex', 'config.toml'), `[projects.${key}]\ntrust_level = "untrusted"\n`);
   const own = boardGuardReady('codex', sandbox.repo, sandbox.env) ?? '';
   assert.match(own, /not trusted/);
   assert.match(own, /set trust_level = "trusted" for this folder/, own);

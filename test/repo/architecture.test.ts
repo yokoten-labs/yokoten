@@ -67,6 +67,7 @@ const NO_TEST_FILE = [
   'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
+  'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
 ];
 
 const filesUnder = (folder: string) =>

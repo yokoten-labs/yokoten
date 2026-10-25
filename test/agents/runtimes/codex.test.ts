@@ -2,12 +2,14 @@
 
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectSandbox, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
+import { addProjectHook, addProjectSandbox, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, trustProject, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
+import { codexCanonicalForms, codexCurrentFolder, codexFindKey, codexKeyFold, codexLookupReadings } from '../../../src/platform/folder-keys.ts';
+import type { Env } from '../../../src/rules/config.ts';
 
 // Each call is shaped as the runtime's hook docs show it (#30): Codex's PreToolUse
 // (developers.openai.com/codex/hooks) and Gemini CLI's BeforeTool (geminicli.com/docs/hooks).
@@ -450,4 +452,140 @@ test('codex: the user hooks go to CODEX_HOME, the folder trust reads, never ~/.c
   assert.equal(userHooksFile(relative), '~/.codex/hooks.json');
   assert.equal(readTrust(makeTempDir(), relative).store, '~/.codex/config.toml');
   assert.equal(hasUserDir(relative), false);
+});
+
+// ---- Folder keys on each system (record 0040) ----
+//
+// How Codex spells and compares a trusted folder's key, read in openai/codex at commit
+// 970111f (codex-rs/config/src/loader/mod.rs). Codex writes the key with toml_edit, which
+// quotes a key with a backslash as a literal string: `[projects.'c:\users\x\repo']`.
+
+test('codex folder keys: Windows compares in ASCII lower case; separators and other systems stay exact (record 0040)', () => {
+  const cases: [NodeJS.Platform, string, string][] = [
+    ['linux', '/home/X/Repo', '/home/X/Repo'],
+    ['darwin', '/Users/X/Repo', '/Users/X/Repo'],
+    ['win32', 'C:\\Users\\X\\Repo', 'c:\\users\\x\\repo'],
+    ['win32', 'C:/Users/X', 'c:/users/x'],
+    ['win32', 'C:\\Ünï\\X', 'c:\\Ünï\\x'],
+  ];
+  for (const [platform, key, folded] of cases) assert.equal(codexKeyFold(key, platform), folded, `${platform} ${key}`);
+});
+
+test('codex folder keys: an exact key wins, else the first in byte order of the keys equal in Codex case (record 0040)', () => {
+  const saved = ['C:\\Users\\x\\repo', 'c:\\Users\\x\\repo', 'C:/users/x/repo'];
+  assert.equal(codexFindKey([...saved, 'c:\\users\\x\\repo'], 'c:\\users\\x\\repo', 'win32'), 'c:\\users\\x\\repo', 'the exact key, as Codex writes it');
+  assert.equal(codexFindKey(saved, 'c:\\users\\x\\repo', 'win32'), 'C:\\Users\\x\\repo', 'byte order: upper case first');
+  assert.equal(codexFindKey(['C:/users/x/repo'], 'c:\\users\\x\\repo', 'win32'), undefined, 'a forward slash is another key');
+  for (const platform of ['linux', 'darwin'] as const) {
+    assert.equal(codexFindKey(['/home/X/repo'], '/home/x/repo', platform), undefined, `${platform} is exact`);
+    assert.equal(codexFindKey(['/home/x/repo'], '/home/x/repo', platform), '/home/x/repo');
+  }
+});
+
+test('codex folder keys: the current folder and each reading, on each system (record 0040)', () => {
+  // Linux and macOS: getcwd resolves symlinks, so Codex sees the real path.
+  for (const platform of ['linux', 'darwin'] as const) {
+    assert.equal(codexCurrentFolder('/link/repo', '/real/repo', platform), '/real/repo');
+    assert.equal(codexCurrentFolder('/gone', null, platform), '/gone');
+    assert.deepEqual(codexLookupReadings('/link/repo', '/real/repo', platform), [['/real/repo']]);
+    assert.deepEqual(codexCanonicalForms('/real/repo', platform), ['/real/repo']);
+  }
+  // Windows: the folder as given, looked up after its canonical path, both in lower case.
+  assert.equal(codexCurrentFolder('C:\\Link\\Repo', 'D:\\Real\\Repo', 'win32'), 'C:\\Link\\Repo');
+  assert.deepEqual(codexLookupReadings('C:\\Link\\Repo', 'D:\\Real\\Repo', 'win32'), [['d:\\real\\repo', 'c:\\link\\repo']]);
+  assert.deepEqual(codexLookupReadings('C:\\Repo', 'C:\\Repo', 'win32'), [['c:\\repo']]);
+  // dunce keeps `\\?\` on a share, and maybe on a long path or a reserved name: each is read.
+  assert.deepEqual(codexCanonicalForms('\\\\server\\share\\repo', 'win32'), ['\\\\?\\UNC\\server\\share\\repo']);
+  assert.deepEqual(codexCanonicalForms('C:\\Repo', 'win32'), ['C:\\Repo']);
+  assert.deepEqual(codexCanonicalForms('C:\\a\\con', 'win32'), ['C:\\a\\con', '\\\\?\\C:\\a\\con']);
+  assert.deepEqual(codexCanonicalForms('C:\\a\\x.', 'win32'), ['C:\\a\\x.', '\\\\?\\C:\\a\\x.']);
+  const long = `C:\\${'a'.repeat(250)}`;
+  assert.deepEqual(codexCanonicalForms(long, 'win32'), [long, `\\\\?\\${long}`]);
+  assert.deepEqual(codexLookupReadings(long, long, 'win32'), [[long.toLowerCase()], [`\\\\?\\${long}`.toLowerCase(), long.toLowerCase()]]);
+});
+
+test('codex config.toml: a key reads as TOML reads it; a bad escape trusts nothing (record 0040)', () => {
+  const read = (text: string) => Object.fromEntries([...readTrustTables(text).projects].map(([key, fields]) => [key, fields.trust_level]));
+  // Codex's own form on Windows: a literal string.
+  assert.deepEqual(read("[projects.'c:\\users\\x\\repo']\ntrust_level = \"trusted\"\n"), { 'c:\\users\\x\\repo': 'trusted' });
+  // A basic string with each backslash escaped, and TOML's own escapes.
+  assert.deepEqual(read('[projects."C:\\\\Users\\\\x"]\ntrust_level = "trusted"\n'), { 'C:\\Users\\x': 'trusted' });
+  assert.deepEqual(read('[projects."/a\\U0001F600\\u00e9"]\ntrust_level = "trusted"\n'), { '/a\u{1F600}\u00e9': 'trusted' });
+  // Single backslashes are no TOML: Codex can't read it, so it trusts nothing, and the
+  // trust_level below is no other table's.
+  assert.deepEqual(read('[projects."C:\\Users\\x"]\ntrust_level = "trusted"\n'), {});
+  assert.deepEqual(read('[projects."/a\\/b"]\ntrust_level = "trusted"\n'), {}, 'JSON allows \\/, TOML does not');
+  assert.deepEqual(read('[projects."/a\\uD800"]\ntrust_level = "trusted"\n'), {}, 'a lone surrogate is no character');
+});
+
+/** A project with yokoten's guard hook, at a folder with upper case in it, and its hook trusted as `hooks`. */
+function codexProject(): { root: string; env: Env; write: (text: string) => void; hooks: (root: string) => string } {
+  const sandbox = makeSandbox();
+  const root = join(realpathSync(makeTempDir('yokoten-codex-case-')), 'Repo-X');
+  mkdirSync(root, { recursive: true });
+  addProjectHook(root, 'bin/yokoten.mjs');
+  const config = join(sandbox.home, '.codex', 'config.toml');
+  mkdirSync(dirname(config), { recursive: true });
+  const saved = JSON.parse(readFileSync(join(root, '.codex', 'hooks.json'), 'utf8')).hooks;
+  const guard = hookHash('pre_tool_use', saved.PreToolUse[0].matcher, saved.PreToolUse[0].hooks[0]);
+  const hooks = (folder: string) => `[hooks.state.${JSON.stringify(`${join(folder, '.codex', 'hooks.json')}:pre_tool_use:0:0`)}]\ntrusted_hash = "${guard}"\n`;
+  return { root, env: { HOME: sandbox.home }, write: (text: string) => writeFileSync(config, text), hooks };
+}
+
+const projectKey = (folder: string, level: string) => `[projects.${JSON.stringify(folder)}]\ntrust_level = "${level}"\n`;
+
+test('codex trust on Windows: the key Codex writes reads as trusted, and a key Codex does not pick never does (record 0040)', () => {
+  const { root, env, write, hooks } = codexProject();
+  // Codex's own key, in lower case: trusted on Windows, a stranger elsewhere.
+  write(projectKey(root.toLowerCase(), 'trusted') + hooks(root));
+  assert.equal(readTrust(root, env, 'win32').state, 'trusted');
+  assert.equal(readTrust(root, env, 'linux').state, 'untrusted');
+  // Two keys for one folder: Codex picks its own lower-case key, so its "untrusted" wins
+  // over the trusted key in the folder's own case. The old reader said trusted here.
+  write(projectKey(root, 'trusted') + projectKey(root.toLowerCase(), 'untrusted') + hooks(root));
+  const both = readTrust(root, env, 'win32');
+  assert.equal(both.state, 'untrusted');
+  assert.match(both.userChoiceFix ?? '', /set trust_level = "trusted"/);
+  assert.equal(trustProject(root, env, 'win32').state, 'kept', 'yokoten trust keeps the choice');
+  assert.equal(readTrust(root, env, 'linux').state, 'trusted', 'on Linux the exact key is the one');
+  // A key with the other separator trusts nothing: Codex keeps separators as written.
+  write(projectKey(root.replace(/\//g, '\\'), 'trusted') + hooks(root));
+  assert.equal(readTrust(root, env, 'win32').state, 'untrusted');
+  // A hook keyed in another case is another hook to Codex.
+  write(projectKey(root, 'trusted') + hooks(root.toLowerCase()));
+  assert.equal(readTrust(root, env, 'win32').state, 'hooks untrusted');
+  // yokoten trust fills in the table already there in another case, never a second one.
+  write(`[projects.${JSON.stringify(root.toUpperCase())}]\nnote = 1\n`);
+  assert.deepEqual(trustProject(root, env, 'win32').changes.find((change) => change.key === 'trust_level')?.path, ['projects', root.toUpperCase()]);
+  // No table yet: the folder as Codex sees it.
+  write('');
+  assert.deepEqual(trustProject(root, env, 'win32').changes.find((change) => change.key === 'trust_level')?.path, ['projects', root]);
+});
+
+test('codex trust through a symlink: Codex reads the real path first, and on Linux and macOS only that (record 0040)', (context) => {
+  const { root, env, write, hooks } = codexProject();
+  const link = join(realpathSync(makeTempDir('yokoten-codex-link-')), 'link');
+  try {
+    symlinkSync(root, link, 'junction');
+  } catch {
+    context.skip('no symlinks here');
+    return;
+  }
+  // The link trusted, the real folder not: Codex tries the real path first. The old
+  // reader tried the link first and said trusted.
+  write(projectKey(link, 'trusted') + projectKey(root, 'untrusted') + hooks(link) + hooks(root));
+  for (const platform of ['linux', 'darwin', 'win32'] as const) assert.equal(readTrust(link, env, platform).state, 'untrusted', platform);
+  // Only the link saved: Linux and macOS start Codex in the real path, so nothing trusts it.
+  write(projectKey(link, 'trusted') + hooks(link));
+  for (const platform of ['linux', 'darwin'] as const) assert.equal(readTrust(link, env, platform).state, 'untrusted', platform);
+  // The real path trusted, but the hook saved under the link: Codex keys hooks by the real path there.
+  write(projectKey(root, 'trusted') + hooks(link));
+  assert.equal(readTrust(link, env, 'linux').state, 'hooks untrusted');
+  // yokoten trust writes the real path there, and the hook under it.
+  write('');
+  const plan = trustProject(link, env, 'linux');
+  assert.deepEqual(plan.changes.find((change) => change.key === 'trust_level')?.path, ['projects', root]);
+  assert.ok(plan.changes.some((change) => change.key === 'trusted_hash' && change.path[2].startsWith(join(root, '.codex'))), 'the hook keyed by the real path');
+  write(projectKey(root, 'trusted') + hooks(root));
+  assert.equal(readTrust(link, env, 'linux').state, 'trusted', 'the real path trusted: trusted through the link too');
 });
