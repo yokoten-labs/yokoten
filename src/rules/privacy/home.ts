@@ -2,7 +2,7 @@
 // rule reads it from the env it is given, never from the process.
 
 import { homedir, userInfo } from 'node:os';
-import { isAbsolute } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import type { Env } from '../config.ts';
 
 /** Where the system says the home folder is, with no $HOME: the password file. Empty when it can't tell. */
@@ -78,3 +78,38 @@ export function withHome(env: Env, system: () => string = systemHome): Env {
 
 /** Thrown when there is no home folder, so nothing outside the repo can be read or written. */
 export const NO_HOME = 'yokoten finds no home folder (HOME is empty or not a full path), so it has no place outside the repo';
+
+// ---- Config folders a variable moves (#988) ----
+//
+// A tool's config folder can move: CLAUDE_CONFIG_DIR, CODEX_HOME, XDG_CONFIG_HOME. yokoten
+// reads and writes where the tool itself looks, so a hook lands in the file the tool reads.
+// A value that is not a full path is ignored and the default is used, as the XDG spec says:
+// a relative folder would land in the folder the command runs in.
+
+/** The folder `$name` names when it is a full path; else null. */
+export function envFolder(env: Env, name: string): string | null {
+  const value = env[name];
+  return value && isAbsolute(value) ? value : null;
+}
+
+/** `$name` when it is a full path, else `parts` under the home folder. Null with neither. */
+export function folderOf(env: Env, name: string, ...parts: string[]): string | null {
+  const named = envFolder(env, name);
+  if (named) return named;
+  const home = homeOf(env);
+  return home ? join(home, ...parts) : null;
+}
+
+/** As folderOf; with neither it throws NO_HOME, so nothing is written. */
+export function folderIn(env: Env, name: string, ...parts: string[]): string {
+  const folder = folderOf(env, name, ...parts);
+  if (!folder) throw new Error(NO_HOME);
+  return folder;
+}
+
+/** The user's config folder: `$XDG_CONFIG_HOME` when it is a full path, else `.config` in the home folder. Null with neither. */
+export const configHomeOf = (env: Env): string | null => folderOf(env, 'XDG_CONFIG_HOME', '.config');
+/** As configHomeOf; with neither it throws NO_HOME. */
+export const configHomeIn = (env: Env): string => folderIn(env, 'XDG_CONFIG_HOME', '.config');
+/** A path in the config folder as the user would type it: `$XDG_CONFIG_HOME/rest` when that is used, else `~/.config/rest`. */
+export const configHomeShown = (env: Env, rest: string): string => `${envFolder(env, 'XDG_CONFIG_HOME') ? '$XDG_CONFIG_HOME' : '~/.config'}/${rest}`;

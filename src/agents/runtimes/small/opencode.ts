@@ -36,7 +36,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { homeIn, homeOf } from '../../../rules/privacy.ts';
+import { configHomeIn, configHomeOf, configHomeShown } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import type { Action } from '../../../run/hook.ts';
 import { GUARD_PROTOCOL_ID } from '../../../run/protocol.ts';
@@ -446,10 +446,10 @@ export const addProjectPlugin = (root: string, cli: string): Added => writePlugi
 export const usesOpenCode = (root: string): boolean => existsSync(join(root, 'opencode.json')) || existsSync(join(root, '.opencode'));
 
 /** OpenCode's config folder: `$XDG_CONFIG_HOME/opencode`, or `~/.config/opencode`. */
-const configDir = (env: Env): string => join(env.XDG_CONFIG_HOME || join(homeIn(env), '.config'), 'opencode');
+const configDir = (env: Env): string => join(configHomeIn(env), 'opencode');
 
 /** The user plugin, as the user would type it. */
-export const userPluginFile = (env: Env): string => (env.XDG_CONFIG_HOME ? '$XDG_CONFIG_HOME/opencode/plugins/yokoten.ts' : '~/.config/opencode/plugins/yokoten.ts');
+export const userPluginFile = (env: Env): string => configHomeShown(env, 'opencode/plugins/yokoten.ts');
 
 /** The user plugin's path on disk. With no home folder, and no XDG dir, it throws NO_HOME. */
 const userPluginPath = (env: Env): string => join(configDir(env), 'plugins', 'yokoten.ts');
@@ -457,9 +457,8 @@ const userPluginPath = (env: Env): string => join(configDir(env), 'plugins', 'yo
 /** Whether OpenCode looks used on this machine: its config folder is there. */
 export function hasUserDir(env: Env): boolean {
   try {
-    const home = homeOf(env);
-    const base = env.XDG_CONFIG_HOME || (home ? join(home, '.config') : '');
-    return base !== '' && isFolder(join(base, 'opencode'));
+    const base = configHomeOf(env);
+    return base !== null && isFolder(join(base, 'opencode'));
   } catch {
     return false;
   }

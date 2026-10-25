@@ -9,7 +9,7 @@ import { type Finding, finding, type RuleId } from '../../rules/message.ts';
 import { homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
-import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
+import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
 import * as copilot from '../../agents/copilot.ts';
 import * as dsh from '../../agents/runtimes/small/deepseek-harness.ts';
@@ -202,9 +202,9 @@ export function machineChecks(env: Env): Practice[] {
   const problem = userSettingsProblem(env);
   const session =
     problem?.kind === 'json'
-      ? practice('session-doctor', 'session-doctor', false, "can't read ~/.claude/settings.json", 'make it valid JSON, then run `yokoten install`')
+      ? practice('session-doctor', 'session-doctor', false, `can't read ${userSettingsFile(env)}`, 'make it valid JSON, then run `yokoten install`')
       : problem?.kind === 'shape'
-        ? practice('session-doctor', 'session-doctor', false, '~/.claude/settings.json has an unexpected shape', `${problem.hint}; fix it, then run \`yokoten install\``)
+        ? practice('session-doctor', 'session-doctor', false, `${userSettingsFile(env)} has an unexpected shape`, `${problem.hint}; fix it, then run \`yokoten install\``)
         : practice('session-doctor', 'session-doctor', plugin || hasSessionDoctor(env), 'sessions do not start with doctor', 'run `yokoten install`, or install the Claude Code plugin');
   // The guard of every session on this machine (#904). While the plugin is on it brings the
   // guard, and install writes none; when the plugin goes away, nothing is left to stop a
@@ -331,7 +331,7 @@ export function userAgentHooks(env: Env): Practice[] {
   };
   const checks: Practice[] = [];
   if (antigravity.hasUserDir(env)) checks.push(report('antigravity-user-hook', antigravity.userHooksState(env, USER_CLI, USER_MISSING), antigravity.userHooksFile(env)));
-  if (codex.hasUserDir(env)) checks.push(report('codex-user-hook', codex.userHooksState(env, USER_CLI, USER_MISSING), '~/.codex/hooks.json'));
+  if (codex.hasUserDir(env)) checks.push(report('codex-user-hook', codex.userHooksState(env, USER_CLI, USER_MISSING), codex.userHooksFile(env)));
   if (copilot.hasUserDir(env)) checks.push(report('copilot-user-hook', copilot.userHooksState(env, USER_CLI, USER_MISSING), copilot.userHooksFile(env)));
   if (gemini.hasUserDir(env)) checks.push(report('gemini-user-hook', gemini.userHooksState(env, USER_CLI, USER_MISSING), '~/.gemini/settings.json'));
   if (grok.hasUserDir(env)) checks.push(report('grok-user-hook', grok.userHooksState(env, USER_CLI, USER_MISSING), grok.userHooksFile(env)));

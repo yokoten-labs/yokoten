@@ -31,7 +31,7 @@ import type { Env } from '../rules/config.ts';
 import { STOPS_FILE, STOPS_OFF_FILE } from '../rules/guards/index.ts';
 import { skillFile as sharedSkillFile } from '../agents/agent-skills.ts';
 import * as copilot from '../agents/copilot.ts';
-import { addUserHooks, agentFile, hasPlugin, hasSessionDoctor, hasUserGuard, removeUserHooks, skillFile as claudeSkillFile, userDir } from '../agents/runtimes/claude-code.ts';
+import { addUserHooks, agentFile, hasPlugin, hasSessionDoctor, hasUserGuard, removeUserHooks, skillFile as claudeSkillFile, userDir, userSettingsFile as claudeSettingsFile } from '../agents/runtimes/claude-code.ts';
 import * as codex from '../agents/runtimes/codex.ts';
 import * as gemini from '../agents/runtimes/gemini.ts';
 import * as antigravity from '../agents/runtimes/small/antigravity.ts';
@@ -393,12 +393,12 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   if (plugin) {
     if (!hooks) {
       // The plugin check reads only enabledPlugins, so a file with a broken hooks shape gets here too.
-      report.push("kept the Claude Code hooks in ~/.claude/settings.json: it is not JSON, or its hooks have an unexpected shape; fix it, then run `yokoten install` again");
+      report.push(`kept the Claude Code hooks in ${claudeSettingsFile(env)}: it is not JSON, or its hooks have an unexpected shape; fix it, then run \`yokoten install\` again`);
       ok = false;
     } else if (hooks.doctor === 'removed' || hooks.guard === 'removed') report.push('removed the Claude Code user hooks: the yokoten plugin brings them');
     else report.push('skipped Claude Code hooks: the yokoten plugin brings them');
   } else {
-    const claudeHooks = agentHooks('Claude Code', '~/.claude/settings.json', () => {
+    const claudeHooks = agentHooks('Claude Code', claudeSettingsFile(env), () => {
       const hooks = addUserHooks(env, USER_CLI, USER_MISSING);
       return [describeWrite(hooks.doctor, 'the SessionStart doctor'), describeWrite(hooks.guard, 'the user-level command guard')];
     });
@@ -410,10 +410,10 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // A file that won't parse, or has the wrong shape, is named and skipped, never rewritten (#248).
   const otherHooks = (name: string, file: string, hooks: { doctor: Added; guard: Added }) => [describeWrite(hooks.doctor, `the ${name} SessionStart doctor in ${file}`), describeWrite(hooks.guard, `the ${name} command guard in ${file}`)];
   if (codex.hasUserDir(env)) {
-    const codexHooks = agentHooks('Codex CLI', '~/.codex/hooks.json', () => otherHooks('Codex', '~/.codex/hooks.json', codex.addUserHooks(env, USER_CLI, USER_MISSING)));
+    const codexHooks = agentHooks('Codex CLI', codex.userHooksFile(env), () => otherHooks('Codex', codex.userHooksFile(env), codex.addUserHooks(env, USER_CLI, USER_MISSING)));
     ok &&= codexHooks.ok;
     report.push(...codexHooks.lines);
-  } else report.push('skipped Codex CLI: ~/.codex not found (run `yokoten install` again after installing Codex)');
+  } else report.push(`skipped Codex CLI: ${dirname(codex.userHooksFile(env))} not found (run \`yokoten install\` again after installing Codex)`);
   if (gemini.hasUserDir(env)) {
     const geminiHooks = agentHooks('Gemini CLI', '~/.gemini/settings.json', () => otherHooks('Gemini CLI', '~/.gemini/settings.json', gemini.addUserHooks(env, USER_CLI, USER_MISSING)));
     ok &&= geminiHooks.ok;
@@ -496,7 +496,7 @@ function installPlan(env: Env, runtime: string, plugin: boolean, needsRuntime: b
     for (const file of readdirSync(join(KIT, 'user', 'agents'))) plan.push(`  ${shown(agentFile(env, file))}`);
     plan.push(`  ${shown(join(userDir(env), 'settings.json'))}: hooks.SessionStart, hooks.PreToolUse`);
   }
-  if (codex.hasUserDir(env)) plan.push('  ~/.codex/hooks.json: hooks.SessionStart, hooks.PreToolUse');
+  if (codex.hasUserDir(env)) plan.push(`  ${codex.userHooksFile(env)}: hooks.SessionStart, hooks.PreToolUse`);
   if (gemini.hasUserDir(env)) plan.push('  ~/.gemini/settings.json: hooks.SessionStart, hooks.BeforeTool');
   if (antigravity.hasUserDir(env)) plan.push(`  ${antigravity.userHooksFile(env)}: hooks.yokoten`);
   if (copilot.hasUserDir(env)) plan.push(`  ${copilot.userHooksFile(env)}: hooks.yokoten`);

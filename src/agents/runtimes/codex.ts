@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileS
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { homeIn, homeOf } from '../../rules/privacy.ts';
+import { envFolder, folderIn, folderOf, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -113,7 +113,15 @@ export const checkProjectHooks = (root: string): void => checkHooksFile(projectH
 /** A Stop event: the same fields as Claude Code's (`cwd`, `stop_hook_active`). */
 export { readStop };
 
-const userHooks = (env: Env) => join(homeIn(env), '.codex', 'hooks.json');
+/** Codex's user folder: `$CODEX_HOME` when it is a full path, as Codex reads it, else ~/.codex (#988). One folder for the hooks, the trust and the login. */
+const codexHome = (env: Env): string | null => folderOf(env, 'CODEX_HOME', '.codex');
+/** As codexHome; with neither it throws NO_HOME, so nothing is written. */
+const codexHomeIn = (env: Env): string => folderIn(env, 'CODEX_HOME', '.codex');
+/** The user's config.toml as the user would type it. */
+const configShown = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml');
+const userHooks = (env: Env) => join(codexHomeIn(env), 'hooks.json');
+/** The user's hooks file, as the user would type it. */
+export const userHooksFile = (env: Env): string => (envFolder(env, 'CODEX_HOME') ? '$CODEX_HOME/hooks.json' : '~/.codex/hooks.json');
 
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
@@ -431,8 +439,7 @@ function mainCheckout(root: string): string | null {
  * names no model: the harness then keeps its own default. Read-only, no git.
  */
 export function readModelIdentity(env: Env): { model: string; provider: string } | null {
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const home = codexHome(env) ?? '';
   if (!home) return null;
   let parsed: Record<string, unknown>;
   try {
@@ -452,9 +459,8 @@ export function readModelIdentity(env: Env): { model: string; provider: string }
  * yokoten's flags is not yokoten's.
  */
 export function readTrust(root: string, env: Env): CodexTrust {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store };
   const file = join(home, 'config.toml');
   if (!isFolder(home)) return { state: 'no home', store };
@@ -509,9 +515,8 @@ export function readTrust(root: string, env: Env): CodexTrust {
  * is reported instead (`changed`), for `yokoten init` to put back.
  */
 export function trustProject(root: string, env: Env): TrustPlan {
-  const store = env.CODEX_HOME ? '$CODEX_HOME/config.toml' : '~/.codex/config.toml';
-  const user = homeOf(env);
-  const home = env.CODEX_HOME || (user ? join(user, '.codex') : '');
+  const store = configShown(env);
+  const home = codexHome(env) ?? '';
   if (!home) return { state: 'no home', store, changes: [] };
   const file = join(home, 'config.toml');
   let text = '';
@@ -1149,8 +1154,8 @@ export const AGENT_ENV: RuntimeEnv = { login: ['OPENAI_API_KEY', 'CODEX_API_KEY'
  * its own sandbox blocks `.git` and the pipes tests use.
  */
 export const DESK: RuntimeDesk = {
-  leadState: (env) => [env.CODEX_HOME || join(homeIn(env), '.codex')],
-  login: (env) => [{ from: join(env.CODEX_HOME || join(homeIn(env), '.codex'), 'auth.json'), to: 'auth.json' }],
+  leadState: (env) => [codexHomeIn(env)],
+  login: (env) => [{ from: join(codexHomeIn(env), 'auth.json'), to: 'auth.json' }],
   stateEnv: (state) => ({ CODEX_HOME: state }),
   hosts: ['api.openai.com', 'api.deepseek.com'],
   identity: readModelIdentity,
