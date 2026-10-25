@@ -12,11 +12,16 @@
 //   node scripts/time/windows-known.ts --out <file>        also write this run's failures
 //   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file, files at once
 //
+// Each entry in the --out file has its reason above it, as a `# why:` comment: the first
+// line of the test's error, with the home and the repo folders hidden. The job's summary counts
+// the failures by reason, so a cause shared by many tests shows at the top (owner 2026-10-25).
+//
 // An entry is `<test file> :: <test name>`, the file from `test/` on with `/`. A file that
 // passed its cap is `<test file> :: (timed out)`. To write the list from a run, copy its
 // `--out` file over scripts/time/windows-known.txt.
 import { spawn } from 'node:child_process';
 import { appendFileSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -39,6 +44,60 @@ export function readFailures(tap: string): string[] {
     if (failed) names.add(failed[1].replace(/\\#/g, '#'));
   }
   return [...names];
+}
+
+/**
+ * Each failed top-level test's reason: the first line of its error in the TAP YAML block
+ * (`error: 'text'` or `error: |-` and the next line). A test with no error line has none.
+ */
+export function readReasons(tap: string): Map<string, string> {
+  const reasons = new Map<string, string>();
+  const lines = tap.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const failed = /^not ok \d+ - (.*?)(?: # .*)?$/.exec(lines[i]);
+    if (!failed) continue;
+    const name = failed[1].replace(/\\#/g, '#');
+    for (let j = i + 1; j < lines.length && /^\s/.test(lines[j]); j++) {
+      const error = /^ {2}error: (.*)$/.exec(lines[j]);
+      if (!error) continue;
+      const value = /^[|>][-+]?$/.test(error[1].trim()) ? (lines[j + 1] ?? '').trim() : error[1].trim().replace(/^(['"])(.*)\1$/, '$2');
+      if (value && !reasons.has(name)) reasons.set(name, value);
+      break;
+    }
+  }
+  return reasons;
+}
+
+/**
+ * A reason as it may be shown in a public CI log: the repo folder as `.`, the home folder
+ * and any `Users\<name>` or `/home/<name>` as `~`, and at most 200 characters.
+ */
+export function maskReason(reason: string, folders: { root: string; home: string }): string {
+  let text = reason;
+  for (const [folder, mark] of [[folders.root, '.'], [folders.home, '~']] as const) {
+    if (folder.length < 2) continue;
+    for (const form of new Set([folder, folder.replace(/\\/g, '/'), folder.replace(/\\/g, '\\\\')])) text = text.split(form).join(mark);
+  }
+  text = text.replace(/([\\/])Users([\\/]+)[^\\/\s'"`]+/gi, '$1Users$2~').replace(/\/home\/[^/\s'"`]+/g, '~');
+  return text.length > 200 ? `${text.slice(0, 199)}…` : text;
+}
+
+/** A reason's kind, for counting: numbers and quoted text taken out, so the same cause groups. */
+export function reasonKind(reason: string): string {
+  return reason.replace(/(['"`]).*?\1/g, '…').replace(/\d+/g, 'N').slice(0, 120);
+}
+
+/** The --out file's text: each entry with its reason above it as a `# why:` comment. */
+export function knownText(entries: string[], reasons: Map<string, string>): string {
+  const body = entries.flatMap((entry) => (reasons.has(entry) ? [`# why: ${reasons.get(entry)}`, entry] : [entry]));
+  return `${[...HEADER, ...body].join('\n')}\n`;
+}
+
+/** The reasons counted by kind, most first, as summary lines. */
+export function reasonCounts(reasons: Iterable<string>, top = 15): string[] {
+  const counts = new Map<string, number>();
+  for (const reason of reasons) counts.set(reasonKind(reason), (counts.get(reasonKind(reason)) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, top).map(([kind, n]) => `${String(n).padStart(4)}  ${kind}`);
 }
 
 /** One file's entries: each failed test, and the time-out when the file passed its cap. */
@@ -105,6 +164,8 @@ async function main(): Promise<number> {
   const { values } = parseArgs({ options: { out: { type: 'string' }, cap: { type: 'string', default: '240' }, jobs: { type: 'string', default: '4' } } });
   const files = testFiles();
   const failures: string[] = [];
+  const reasons = new Map<string, string>();
+  const folders = { root: ROOT, home: homedir() };
   let next = 0;
   const worker = async () => {
     while (next < files.length) {
@@ -113,15 +174,18 @@ async function main(): Promise<number> {
       const { tap, timedOut } = await runFile(file, Number(values.cap) * 1000);
       const found = entriesOf(file, tap, timedOut);
       failures.push(...found);
+      const name = file.replace(/\\/g, '/');
+      for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
       process.stdout.write(`${found.length ? 'fail' : 'ok  '} ${file.replace(/\\/g, '/')} (${Math.round((Date.now() - started) / 1000)} s${found.length ? `, ${found.length} failing` : ''})\n`);
     }
   };
   await Promise.all(Array.from({ length: Number(values.jobs) }, worker));
   failures.sort();
-  if (values.out) writeFileSync(values.out, `${[...HEADER, ...failures].join('\n')}\n`);
+  if (values.out) writeFileSync(values.out, knownText(failures, reasons));
   const { added, fixed } = judgeKnown(failures, readKnown(readFileSync(KNOWN_FILE, 'utf8')));
   const lines = [`windows-known: ${files.length} files, ${failures.length} failing, ${added.length} new, ${fixed.length} fixed.`];
-  if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}`));
+  if (reasons.size) lines.push('Failures by reason (first line of the error):', ...reasonCounts(reasons.values()));
+  if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}${reasons.has(a) ? `\n      why: ${reasons.get(a)}` : ''}`));
   if (fixed.length) lines.push('These pass now. Remove their lines from scripts/time/windows-known.txt:', ...fixed.map((f) => `  ${f}`));
   process.stdout.write(`${lines.join('\n')}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Windows known failures\n\n${lines.join('\n')}\n`);

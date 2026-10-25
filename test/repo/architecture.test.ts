@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, readFailures, readKnown, TIMED_OUT } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, TIMED_OUT } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1801,6 +1801,47 @@ test('windows known: a new failure and a fixed entry both fail the job; a flaky 
   for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
     assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
   }
+});
+
+test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {
+  const tap = [
+    'TAP version 13',
+    'not ok 1 - quoted error',
+    '  ---',
+    "  error: 'spawn sh ENOENT'",
+    '  code: ENOENT',
+    '  ...',
+    'not ok 2 - block error',
+    '  ---',
+    '  error: |-',
+    '    Expected values to be strictly equal:',
+    '    + actual - expected',
+    '  ...',
+    'not ok 3 - no error line',
+    'ok 4 - fine',
+    'not ok 5 - another spawn',
+    '  ---',
+    "  error: 'spawn sh ENOENT'",
+    '  ...',
+  ].join('\r\n');
+  assert.deepEqual([...readReasons(tap)], [['quoted error', 'spawn sh ENOENT'], ['block error', 'Expected values to be strictly equal:'], ['another spawn', 'spawn sh ENOENT']]);
+  // The repo, the home and any other user folder never reach the public log.
+  const folders = { root: 'D:\\a\\yokoten', home: 'C:\\Users\\sample' };
+  for (const [raw, shown] of [
+    ['ENOENT D:\\a\\yokoten\\test\\x.ts', 'ENOENT .\\test\\x.ts'],
+    ['open D:/a/yokoten/x', 'open ./x'],
+    ['cannot read C:\\Users\\sample\\AppData\\x', 'cannot read ~\\AppData\\x'],
+    ['cannot read C:\\Users\\other\\x', 'cannot read C:\\Users\\~\\x'],
+    ['cannot read /home/other/x', 'cannot read ~/x'],
+    ['no folder named here', 'no folder named here'],
+  ]) assert.equal(maskReason(raw, folders), shown, raw);
+  assert.equal(maskReason('x'.repeat(300), folders).length, 200);
+  // The out file puts each reason above its entry, as a comment the list reader skips.
+  const text = knownText(['test/a.test.ts :: one', 'test/a.test.ts :: two'], new Map([['test/a.test.ts :: one', 'spawn sh ENOENT']]));
+  assert.match(text, /# why: spawn sh ENOENT\ntest\/a\.test\.ts :: one\ntest\/a\.test\.ts :: two\n$/);
+  assert.deepEqual(readKnown(text).required, ['test/a.test.ts :: one', 'test/a.test.ts :: two']);
+  // Counts group a cause across tests: numbers and quoted parts do not split it.
+  assert.deepEqual(reasonCounts(["spawn sh ENOENT", "spawn sh ENOENT", "timed out after 120 ms", "timed out after 300 ms", "got 'a'"]), ['   2  spawn sh ENOENT', '   2  timed out after N ms', "   1  got …"]);
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {
