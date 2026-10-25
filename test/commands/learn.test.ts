@@ -38,13 +38,13 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   sandbox.write('changes/1-a.md', 'Added\n\nA thing.\n');
   result = await sandbox.call(['changelog']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /2 change\(s\); `--write` adds these under \[Unreleased\] in CHANGELOG\.md:\n\n### Added\n\n- A thing\.\n\n### Fixed\n\n- A fix\.\n$/);
+  assert.match(result.stdout, /^yokoten changelog · 2 entries for the next release\n\n {2}Added {7}A thing\.\n {2}Fixed {7}A fix\.\n\nMore: before a release: `yokoten changelog --write`\n$/);
   assert.ok(existsSync(join(sandbox.repo, 'changes/1-a.md')), 'a preview writes nothing');
   // A bad file stops the write, and says so on stderr.
   sandbox.write('changes/3-c.md', 'Added\n');
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /1 problem\(s\); nothing was written:\n- changes\/3-c\.md:1: no entry after the section/);
+  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {5}changes\/3-c\.md:1 no entry after the section/);
   rmSync(join(sandbox.repo, 'changes/3-c.md'));
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 0, result.stderr);

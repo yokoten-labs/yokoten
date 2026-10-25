@@ -500,7 +500,7 @@ test('init: writes .github/CODEOWNERS for every lead-only path, owned by the Git
   };
   const tierB = await sandbox.call(['check', '--pr'], { extra: event('B') });
   assert.equal(tierB.status, 1, tierB.stdout);
-  assert.match(tierB.stderr, /this changes 1 file\(s\) that CODEOWNERS owns \(read from the base branch\): \.yokoten\/extra\.md/);
+  assert.match(tierB.stderr, /this changes 1 file\(s\) that CODEOWNERS owns\n +\(read from the base branch\): \.yokoten\/extra\.md/);
   assert.doesNotMatch((await sandbox.call(['check', '--pr'], { extra: event('A') })).stderr, /CODEOWNERS owns/);
 });
 
@@ -1140,14 +1140,14 @@ test('init: the hand-off has no switch, and a .git/hooks link to .githooks does 
   sandbox.git('add', 'a.md');
   result = commit('a');
   assert.equal(result.status, 0, `${result.stderr} ${result.error ?? ''}`);
-  assert.equal((result.stderr.match(/yokoten check: ok/g) ?? []).length, 1, 'the check ran once');
+  assert.equal((result.stderr.match(/yokoten check · clean/g) ?? []).length, 1, 'the check ran once');
   // The same for the file run with sh, or dash, from a relative path.
   sandbox.write('b.md', 'fine\n');
   sandbox.git('add', 'b.md');
   for (const shell of SHELLS) {
     const run = runChild(shell, ['.git/hooks/pre-commit'], { cwd: sandbox.repo, env: sandbox.env });
     assert.equal(run.status, 0, `${shell}: ${run.stderr}`);
-    assert.equal((`${run.stdout}${run.stderr}`.match(/yokoten check: ok/g) ?? []).length, 1, `${shell}: the check ran once`);
+    assert.equal((`${run.stdout}${run.stderr}`.match(/yokoten check · clean/g) ?? []).length, 1, `${shell}: the check ran once`);
   }
 });
 

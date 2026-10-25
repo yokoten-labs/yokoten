@@ -51,7 +51,7 @@ test('check --pr: reads the CI event, lists the changed files from git, notes lo
   assert.match(result.stdout, /note: 1 long sentence\(s\)\n- README\.md:2: a sentence of 30 words/);
   result = sandbox.run(['check', '--pr'], { extra: event(body.replace('Made with worker', 'No changelog: a test\n\nMade with worker')) });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check --pr: ok/);
+  assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems/);
   assert.doesNotMatch(result.stdout, /lines, over 400/, 'a small diff gets no size note (#57)');
   // Outside a pull request run, there is nothing to check.
   result = sandbox.run(['check', '--pr']);
@@ -114,7 +114,7 @@ test('check --pr: a change file counts as the changelog entry, and its form is c
   assert.equal(result.status, 0, result.stderr);
   result = await sandbox.call(['check', '--pr'], { extra: event(bad) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /- changes\/1-a\.md:1: line 1 is not a section\. .*Make line 1 one of: Added, Changed/);
+  assert.match(result.stderr, /MISSING     changes\/1-a\.md:1 line 1 is not a section\n +make line 1 one of: Added, Changed/);
   assert.doesNotMatch(result.stderr, /changelog: /, 'the file still counts as the entry');
 });
 
@@ -139,7 +139,7 @@ test('check --pr: CODEOWNERS comes from the base branch, so a pull request canno
   };
   let r = await sandbox.call(['check', '--pr'], { extra: event('B') });
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stderr, /this changes 1 file\(s\) that CODEOWNERS owns \(read from the base branch\): kit\/a\.md/);
+  assert.match(r.stderr, /this changes 1 file\(s\) that CODEOWNERS owns\n +\(read from the base branch\): kit\/a\.md/);
   r = await sandbox.call(['check', '--pr'], { extra: event('A') });
   assert.equal(r.status, 0, r.stderr);
 });
@@ -172,7 +172,7 @@ test('check --pr: a large pull request gets a note, never a failure; lock files 
   r = await sandbox.call(['check', '--pr'], { extra: event(large) });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: this pull request changes 500 lines, over 400\. Smaller pull requests are easier to review/);
-  assert.match(r.stdout, /check --pr: ok/);
+  assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
 });
 
 test('check --pr: each ignore the pull request adds is a notice on the page, never a failure (#616)', async () => {
@@ -208,14 +208,14 @@ test('check --issue: reads the issue from the CI event; a bad title fails, a goo
   };
   let result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'doctor: add the review step', labels: [{ name: 'feat' }] }) });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check --issue: ok/);
+  assert.match(result.stdout, /check --issue · no problems in this issue/);
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'The review step is missing.', labels: [{ name: 'incident' }] }) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue: 2 problem\(s\)\n- title: it does not start with an area\. .+`area: symptom`.+\n  docs: \S+#issue-titles\n- title: a full stop at the end\./);
+  assert.match(result.stderr, /check --issue · 2 problems\n\n  MISSING     title:?\s+it does not start with an area\n +write it as `area: symptom`[^\n]*\n?[^\n]*\n  MISSING     title:?\s+a full stop at the end/);
   assert.doesNotMatch(result.stderr, /The review step is missing/, 'the title is user input; it is not printed back');
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'site: a page', labels: [] }) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /Use one of: doctor, check\./);
+  assert.match(result.stderr, /use one of: doctor, check/);
   result = await sandbox.call(['check', '--issue', '--json'], { extra: event({ title: 'site: a page.', labels: [] }) });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');
@@ -263,21 +263,21 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   // Both: none.
   let result = await sandbox.call(['check', '--issue'], { extra: event(['bug', 'tier B']) });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check --issue: ok/);
+  assert.match(result.stdout, /check --issue · no problems in this issue/);
   // No type label: one line (the positive control).
   result = await sandbox.call(['check', '--issue'], { extra: event(['tier B']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue: 1 problem\(s\)\n- labels: no type label\. .*Add one type label, such as feat, bug, docs\./);
-  assert.match(result.stderr, /docs: \S+#issue-titles/);
+  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no type label\n +add one type label, such as feat, bug, docs/);
+  assert.match(result.stderr, /add one type label, such as feat, bug, docs/);
   assert.doesNotMatch(result.stderr, /tier B.*no tier label/, 'the tier label it has is not named');
   // No tier label: one line (the positive control).
   result = await sandbox.call(['check', '--issue'], { extra: event(['bug']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue: 1 problem\(s\)\n- labels: no tier label\. .*Add one tier label/);
+  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no tier label\n +add one tier label: `tier A`, `tier B` or `tier C`/);
   // Both missing: one line each.
   result = await sandbox.call(['check', '--issue'], { extra: event(['kit']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue: 2 problem\(s\)/);
+  assert.match(result.stderr, /check --issue · 2 problems/);
   // A repo without tier labels: no line for the tier.
   setLabels(['feat', 'bug', 'docs']);
   result = await sandbox.call(['check', '--issue'], { extra: event(['bug']) });
@@ -293,7 +293,7 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   writeFileSync(bareEvent, JSON.stringify({ action: 'opened', issue: { title: 'doctor: add the review step', labels: [] } }));
   result = await bare.call(['check', '--issue'], { extra: { GITHUB_EVENT_PATH: bareEvent } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check --issue: ok/);
+  assert.match(result.stdout, /check --issue · no problems in this issue/);
 });
 
 // #91: in GitHub Actions, the findings show on the pull request page: an annotation per
@@ -337,7 +337,7 @@ test('check in GitHub Actions: annotations and a job summary, place but never co
   rmSync(join(sandbox.repo, 'notes'), { recursive: true });
   const ok = await sandbox.call(['check', '--staged'], { extra: actions });
   assert.equal(ok.status, 0, ok.stderr);
-  assert.equal(ok.stdout, 'yokoten check: ok\n', 'no findings, no annotations');
+  assert.equal(ok.stdout, 'yokoten check --staged · clean: the staged changes pass layout, privacy,\n                         lead-only files\n', 'no findings, no annotations');
   assert.match(readFileSync(summary, 'utf8'), /### yokoten check --staged: ok\n\n$/);
 });
 
@@ -349,7 +349,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check: 1 problem\(s\)\n- a\.md:1: an email address\. [^\n]+\.\n  docs: https:\/\/\S+#privacy\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n[^\n]+\n[^\n]+\n[^\n]+\n[^\n]+\n\nNext: fix them, then `yokoten check`\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -379,7 +379,7 @@ test('check --pr: notes hard-to-read names on added code lines, and the exit cod
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note: 2 hard-to-read name\(s\)\n- src\/cart\.js:1: "s" is used for 14 lines\. A reader must scroll back to learn what it holds\. Name what it is, e\.g\. "text"\.\n  docs: \S+#naming\n- src\/cart\.js:2: "loadTheWholeUserList" has 5 words, over 4\. /);
   assert.doesNotMatch(r.stdout, /"i"|old\.ts|renamed\.ts/, 'no note for `i` in a short loop, for unchanged lines, or for a moved file');
-  assert.match(r.stdout, /check --pr: ok/);
+  assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
   const json = JSON.parse((await project.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: file } })).stdout);
   assert.equal(json.ok, true, 'notes never fail the check');
   assert.deepEqual(json.notes.map((note: { id: string; file: string; line: number }) => `${note.id} ${note.file}:${note.line}`), ['name-short src/cart.js:1', 'name-long src/cart.js:2']);
@@ -447,7 +447,7 @@ test('check --pr: a Dependabot pull request passes with notes; the same body fro
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /check --pr: note: 9 pull request rule\(s\) Dependabot does not meet\n- body: the first line is not a tier\. .*Dependabot opened this pull request, so it is a note\./);
   assert.match(result.stdout, /\n- milestone: none set\./);
-  assert.match(result.stdout, /check --pr: ok\n$/);
+  assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
   result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]'), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(result.status, 0, result.stderr);
   const report = JSON.parse(result.stdout);
@@ -529,7 +529,7 @@ test('check --pr with YOKOTEN_PR_LIVE: judges the pull request as it is now, a d
     // With it, the labels and milestone the pull request has now win over the event's.
     result = await call(['check', '--pr']);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /check --pr: ok\n$/);
+    assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
     assert.deepEqual(requests, ['GET /repos/octo/app/pulls/7 token']);
 
     // A label taken off since: the same old event file now fails, as a rerun would.
@@ -546,7 +546,7 @@ test('check --pr with YOKOTEN_PR_LIVE: judges the pull request as it is now, a d
     now = { ...now, labels: [{ name: 'feat' }, { name: 'tier B' }] };
     result = await call(['check', '--pr']);
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /check --pr: ok\n$/);
+    assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems[^\n]*\n$/);
 
     // A read that fails fails the check; the old event file is never the answer.
     status = 403;
@@ -559,7 +559,7 @@ test('check --pr with YOKOTEN_PR_LIVE: judges the pull request as it is now, a d
     requests.length = 0;
     result = await call(['check', '--pr'], { ...ci, GITHUB_TOKEN: '' });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /- GITHUB_TOKEN is not set, so the pull request as it is now can't be read\. .+GITHUB_TOKEN: \$\{\{ github\.token \}\}/);
+    assert.match(result.stderr, /MISSING     GITHUB_TOKEN is not set, so the pull request as it is now can't be\n +read\n +give the step `GITHUB_TOKEN: \$\{\{ github\.token \}\}` and the job\n +`pull-requests: read`, then run the job again/);
     assert.deepEqual(requests, []);
   } finally {
     server.close();
@@ -833,7 +833,7 @@ console.log(${JSON.stringify(JSON.stringify({ title, body: prBody, labels: [{ na
   answer('feat: a', head);
   let result = await sandbox.call(['check', '--pr', '12'], { extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten check --pr: ok$/m);
+  assert.match(result.stdout, /^yokoten check --pr · (PR #\d+, )?no problems$/m);
   // The control: a bad title fails, as in CI.
   answer('a', head);
   result = await sandbox.call(['check', '--pr', '12', '--json'], { extra });
@@ -852,7 +852,7 @@ console.log(${JSON.stringify(JSON.stringify({ title, body: prBody, labels: [{ na
   answer('feat: a', 'f'.repeat(40));
   result = await sandbox.call(['check', '--pr', '12'], { extra });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /the pull request's head commit is not in this checkout\. .+ Run `git fetch origin` and `git fetch origin pull\/12\/head`, then run it again\./);
+  assert.match(result.stderr, /the pull request's head commit is not in this checkout\n +run `git fetch origin` and `git fetch origin pull\/12\/head`, then\n +run it again/);
   // gh can't read it: one finding, never a crash.
   result = await sandbox.call(['check', '--pr', '13', '--json'], { extra });
   assert.equal(result.status, 1);
@@ -1013,11 +1013,11 @@ test('check: a stopped line names the kind of private mark, never the mark (#523
   sandbox.git('add', '.');
   const text = await sandbox.call(['check']);
   assert.equal(text.status, 1);
-  assert.match(text.stderr, /notes\.md:1: matches your git name \(a private mark yokoten added by itself\)/);
-  assert.match(text.stderr, /notes\.md:2: matches your git email \(a private mark yokoten added by itself\)/);
-  assert.match(text.stderr, /notes\.md:3: matches your forge login \(a private mark yokoten added by itself\)/);
-  assert.match(text.stderr, /notes\.md:4: matches the name of a private server in your git remotes/);
-  assert.match(text.stderr, /notes\.md:5: matches a word you added to your private marks/);
+  assert.match(text.stderr, /notes\.md:1\s+matches your git name \(a private mark yokoten added\s+by\s+itself\)/);
+  assert.match(text.stderr, /notes\.md:2:?\s+matches your git email \(a private mark yokoten added\s+by\s+itself\)/);
+  assert.match(text.stderr, /notes\.md:3:?\s+matches your forge login \(a private mark yokoten added\s+by\s+itself\)/);
+  assert.match(text.stderr, /notes\.md:4:?\s+matches the name of a private server in your git\s+remotes/);
+  assert.match(text.stderr, /notes\.md:5:?\s+matches a word you added to your private marks/);
   assert.match(text.stderr, /`yokoten marks off git-name`/);
   const json = await sandbox.call(['check', '--json']);
   const stopped = (JSON.parse(json.stdout).findings as { id: string; line: number; what: string }[]).filter((found) => found.id === 'private-mark').map((found) => [found.line, found.what]);
@@ -1372,10 +1372,10 @@ test('pr sync: every git call runs as UTC, so the merge commit does too (#809)',
   assert.equal(prSyncEnv({ ...process.env, TZ: 'America/New_York' }).TZ, 'UTC');
 });
 
-test('pr sync: each report line names the real base branch (#809)', () => {
-  assert.equal(pullLine({ number: 1, branch: 'work', base: 'release', state: 'merged' }), '#1 work: merged release');
-  assert.equal(pullLine({ number: 2, branch: 'fix', base: 'main', state: 'resolved', hunks: 2 }), '#2 fix: resolved 2 hunks then merged main');
-  assert.equal(pullLine({ number: 3, branch: 'docs', base: 'next', state: 'up-to-date' }), '#3 docs: up to date with next');
+test('pr sync: each report row names the real base branch (#809, #1027)', () => {
+  assert.deepEqual(pullLine({ number: 1, branch: 'work', base: 'release', state: 'merged' }), ['  ok          PR #1       release merged in, tests pass, pushed']);
+  assert.deepEqual(pullLine({ number: 2, branch: 'fix', base: 'main', state: 'resolved', hunks: 2 }), ['  ok          PR #2       main merged in (2 hunks resolved), tests pass, pushed']);
+  assert.deepEqual(pullLine({ number: 3, branch: 'docs', base: 'next', state: 'up-to-date' }), ['  ok          PR #3       up to date with next']);
 });
 
 test('pr sync: a list that stops at the limit says so (#809)', async () => {

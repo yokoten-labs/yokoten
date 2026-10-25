@@ -90,8 +90,8 @@ export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
   }
   // The title counts the changes in a collision, as the owner's screen does: two changes
   // that collide are one row, and the row says which of them goes first.
-  const colliding = new Set(pairs.flatMap(({ pair }) => pair.map((change) => change.id)));
-  const summary = withMain.length || pairs.length ? `${count(map.changes.length, 'open change')}, ${colliding.size} collide` : `${count(map.changes.length, 'open change')}, none collide`;
+  const colliding = new Set([...pairs.flatMap(({ pair }) => pair.map((change) => change.id)), ...withMain.map((change) => change.id)]);
+  const summary = colliding.size ? `${count(map.changes.length, 'open change')}, ${colliding.size} collide` : `${count(map.changes.length, 'open change')}, none collide`;
   const lines = [...title('conflicts', summary), ''];
   for (const { files, first, second } of pairs) {
     const why = order.find((pick) => pick.id === first.id)?.why;
@@ -101,7 +101,7 @@ export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
   for (const change of withMain) {
     lines.push(...row('note', `${change.label} collides with main: ${pathsText(change.mainConflicts ?? [])}`));
   }
-  const rest = map.changes.length - colliding.size - withMain.filter((change) => !colliding.has(change.id)).length;
+  const rest = map.changes.length - colliding.size;
   if (rest > 0) lines.push(...row('ok', `${count(rest, 'change')} ${rest === 1 ? 'touches' : 'touch'} no shared file`));
   else if (!pairs.length && !withMain.length) lines.push(...row('ok', 'no open change touches a file main or another open change touches'));
   const moving = movers(map);

@@ -305,7 +305,8 @@ export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string
   const indent = ' '.repeat(prefix.length);
   let line = prefix;
   let isEmpty = true;
-  for (const word of text.split(' ')) {
+  // A command in backticks is one word, so a line never breaks it in two (#1027).
+  for (const word of text.match(/`[^`]*`\S*|\S+/g) ?? []) {
     if (!isEmpty && line.length + 1 + word.length > width) {
       lines.push(line);
       line = indent + word;
