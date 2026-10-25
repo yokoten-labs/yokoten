@@ -14,6 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
+import { entriesOf, judgeKnown, readFailures, readKnown, TIMED_OUT } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -515,7 +516,7 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   }
 });
 
-test('ci: a docs-only pull request runs one test job, skips typecheck and action, and `ci` is green (#438)', () => {
+test('ci: a docs-only pull request runs one test job, skips typecheck, action and Windows, and `ci` is green (#438)', () => {
   const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
   const testJob = jobBlock(text, 'test');
   const matrix = (docsOnly: string, event: string) => {
@@ -555,7 +556,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   }
   assert.deepEqual(matrix('', 'pull_request').setups, full, '`changes` failed: the full run');
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
-  for (const name of ['typecheck', 'action']) {
+  for (const name of ['typecheck', 'action', 'windows']) {
     const condition = jobCondition(jobBlock(text, name));
     assert.equal(evaluate(condition, results('true', {})), false, `${name} is skipped on a docs-only pull request`);
     assert.equal(evaluate(condition, results('false', {})), true, `${name} runs in full`);
@@ -564,8 +565,8 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   for (const name of ['check', 'lint']) assert.doesNotMatch(jobBlock(text, name), /^ {4}(?:if|needs):/m, `${name} runs as before, on every pull request`);
   // `ci` is red when this is true.
   const isRed = (docsOnly: string, jobResults: Record<string, string>) => evaluate(ciRule(text), results(docsOnly, jobResults));
-  const green = { test: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
-  const docsRun = { ...green, typecheck: 'skipped', action: 'skipped' };
+  const green = { test: 'success', windows: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
+  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped' };
   assert.equal(isRed('true', docsRun), false, 'docs-only: typecheck and action skipped on purpose');
   assert.equal(isRed('false', green), false);
   assert.equal(isRed('false', docsRun), true, 'skipped on a full run is red');
@@ -573,6 +574,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   assert.equal(isRed('true', { ...docsRun, lint: 'skipped' }), true, 'lint always runs');
   assert.equal(isRed('true', { ...docsRun, check: 'failure' }), true);
   assert.equal(isRed('true', { ...docsRun, test: 'cancelled' }), true);
+  assert.equal(isRed('false', { ...green, windows: 'failure' }), true, 'a Windows failure is red (record 0040)');
   assert.equal(isRed('', green), true, '`changes` failed: red, though the rest ran in full');
 });
 
@@ -1764,6 +1766,39 @@ test('suite time: it reads the report node --test writes on this Node (#475)', (
   const { ms, tests } = readReport(readFileSync(report, 'utf8'));
   assert.ok(ms > 0);
   assert.deepEqual(tests.map((test) => test.name), ['one: it runs']);
+});
+
+// ---- The Windows job's known failures (record 0040) ----
+
+test('windows known: a failure is named by its test file and name, and a file past its cap by the time-out', () => {
+  const tap = [
+    'TAP version 13',
+    '# Subtest: install: the copy runs',
+    'ok 1 - install: the copy runs',
+    '    not ok 1 - a subtest is its parent',
+    'not ok 2 - install: writes ~/.claude',
+    '  ---',
+    '  ...',
+    'not ok 3 - names: a \\# in a name # TODO later',
+  ].join('\r\n');
+  assert.deepEqual(readFailures(tap), ['install: writes ~/.claude', 'names: a # in a name']);
+  assert.deepEqual(entriesOf('test\\setup\\install.test.ts', tap, true), [
+    'test/setup/install.test.ts :: install: writes ~/.claude',
+    'test/setup/install.test.ts :: names: a # in a name',
+    `test/setup/install.test.ts :: ${TIMED_OUT}`,
+  ]);
+  // Positive control: a passing file in time has no entry.
+  assert.deepEqual(entriesOf('test/a.test.ts', 'TAP version 13\nok 1 - fine\n', false), []);
+});
+
+test('windows known: a new failure and a fixed entry both fail the job; a flaky entry may do either', () => {
+  const known = readKnown(['# a comment', '', 'test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', '? test/b.test.ts :: flaky'].join('\n'));
+  assert.deepEqual(known, { required: ['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now'], flaky: ['test/b.test.ts :: flaky'] });
+  assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/c.test.ts :: new'], known), { added: ['test/c.test.ts :: new'], fixed: ['test/a.test.ts :: fixed now'] });
+  // Positive control: the list matches the run, with the flaky test passing or failing.
+  for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
+    assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
+  }
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {

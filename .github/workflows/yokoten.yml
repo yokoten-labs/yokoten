@@ -116,6 +116,37 @@ jobs:
       # all tests passing, so the suite fails only past 600 s with the room for a busy runner.
       # The slow tests behind that growth are #943's second half (record 0016).
       - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 400' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
+  # Windows has the most users (owner 2026-10-25), and the hook's job host there broke once
+  # with no Windows run to see it (#735, PR #982). The whole suite in one job, on the current
+  # LTS. Each test file runs on its own with a four-minute cap, since a few files never ended
+  # on Windows and one `node --test` run passed the job's limit (10-25). Tests known to fail
+  # there are listed in scripts/time/windows-known.txt (record 0040): a new failure fails the
+  # job, and so does a listed test that passes, so the list only gets shorter.
+  windows:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '^24.22.1'
+      - run: node scripts/time/windows-known.ts --out "${{ runner.temp }}/windows-failures.txt"
+        shell: bash
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+      # This run's failures, in the list's own form: copy it over the list to rewrite it.
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-failures
+          path: ${{ runner.temp }}/windows-failures.txt
+          retention-days: 7
   # Types are checked here and nowhere else: Node runs the .ts files without them.
   # Skipped on a docs-only pull request.
   typecheck:
@@ -211,7 +242,7 @@ jobs:
   # "no runner was free", not as a test failure (#568).
   ci:
     if: always()
-    needs: [changes, test, typecheck, check, lint, action]
+    needs: [changes, test, windows, typecheck, check, lint, action]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -235,5 +266,6 @@ jobs:
           contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') ||
           (contains(needs.*.result, 'skipped') && needs.changes.outputs.docs_only != 'true') ||
           needs.changes.result != 'success' || needs.test.result != 'success' ||
+          (needs.windows.result != 'success' && needs.changes.outputs.docs_only != 'true') ||
           needs.check.result != 'success' || needs.lint.result != 'success'
         run: exit 1
