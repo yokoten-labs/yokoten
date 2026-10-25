@@ -35,7 +35,7 @@ import { homeOf, systemHome } from '../rules/privacy.ts';
 import { CODEOWNERS_PLACES, type Gh, ghIn, isOrganization, isPrivateRepo, repoOf } from '../host/github/index.ts';
 import { readOriginUrl } from './plan.ts';
 import { writeTestsJob } from './advice/tests-job.ts';
-import { type Ask, isYes } from './install.ts';
+import { type Ask, isYes, openCodePluginLine, writeOpenCodePlugin } from './install.ts';
 import { copyRuntime, describeWrite, fileHash, HOME_DIR, KIT, lfText, normalizeText, readWorkflowHashes, render, textHash, VERSION, writeNew } from './files.ts';
 
 /** yokoten's own repo runs its own bin; every other project runs a vendored copy. */
@@ -223,12 +223,14 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask): { ok
       describeWrite(gemini.addProjectStopHook(root, hookCli), 'the Gemini CLI stop check in .gemini/settings.json (AfterAgent)'),
     ];
   });
-  const antigravityHooks = agentHooks('the Antigravity CLI hook', '.agents/hooks.json', () => [
-    describeWrite(antigravity.addProjectHook(root, hookCli), 'the Antigravity CLI tool-call hook in .agents/hooks.json'),
-  ]);
+  const antigravityHooks = agentHooks('the Antigravity CLI hook', '.agents/hooks.json', () => {
+    const added = antigravity.addProjectHook(root, hookCli);
+    // A guard the user turned off stays off, and the line says how to turn it on (#984).
+    return [added === antigravity.KEPT_OFF ? antigravity.keptOffLine('.agents/hooks.json') : describeWrite(added, 'the Antigravity CLI tool-call hook in .agents/hooks.json')];
+  });
   // OpenCode has no trust step in the docs we have. The plugin loads when OpenCode starts.
   const openCodePlugin = agentHooks('the OpenCode plugin', opencode.PLUGIN_FILE, () => [
-    describeWrite(opencode.addProjectPlugin(root, hookCli), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`),
+    openCodePluginLine(writeOpenCodePlugin(opencode.projectPluginPath(root), opencode.projectPluginSource(hookCli)), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`, 'init'),
   ]);
   const museHooks = agentHooks('the Muse Code hooks', '.muse/hooks.json', () => {
     const added = muse.addProjectHooks(root, hookCli);
@@ -1887,12 +1889,19 @@ interface TrustWork {
   edited: string[];
   blocked: Planned[];
   unsafe: { name: string; problem: { what: string; fix: string } }[];
+  /** What the user set on purpose, and trust leaves as it is (#984). */
+  kept: { name: string; what: string; fix: string }[];
 }
 
 function trustWork(root: string, env: Env): TrustWork {
-  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], unsafe: [] };
+  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], unsafe: [], kept: [] };
   for (const plannedAgent of planned(root, env)) {
     work.found++;
+    const kept = plannedAgent.plan.kept ?? [];
+    work.kept.push(...kept.map((choice) => ({ name: plannedAgent.name, ...choice })));
+    if (plannedAgent.plan.state === 'kept') continue;
+    // Nothing to write, but a hook the user turned off: the guard is not all on.
+    if (plannedAgent.plan.state === 'same' && kept.length > 0) continue;
     if (plannedAgent.plan.state === 'same') work.same.push(plannedAgent.name);
     else if (plannedAgent.plan.state === 'changed') work.edited.push(plannedAgent.name);
     else if (plannedAgent.plan.state === 'trusted' && plannedAgent.problem) work.unsafe.push({ name: plannedAgent.name, problem: plannedAgent.problem });
@@ -1913,6 +1922,8 @@ function refusedLines(work: TrustWork): { ok: boolean; lines: string[] } {
   // problem doctor finds is a reason to leave trust off, not to write it and look on.
   for (const { name, problem } of work.unsafe) lines.push(`left yokoten's guard off in ${name}: ${problem.what}; ${problem.fix}`);
   for (const { name, plan } of work.blocked) lines.push(`couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`);
+  // The user's own choice is a note, not a failure: it stays, and the line says how to change it (#984).
+  for (const { name, what, fix } of work.kept) lines.push(`kept your choice in ${name}: ${what}; ${fix}`);
   return { ok: work.edited.length === 0 && work.unsafe.length === 0 && work.blocked.length === 0, lines };
 }
 

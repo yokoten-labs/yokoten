@@ -2,10 +2,10 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectHook, addUserHooks, hasUserDir, projectHookState, readToolCall, removeUserHooks, userHooksFile, userHooksState } from '../../../../src/agents/runtimes/small/antigravity.ts';
+import { addProjectHook, addUserHooks, hasUserDir, KEPT_OFF, keptOffLine, projectHookState, readToolCall, removeUserHooks, userHooksFile, userHooksState } from '../../../../src/agents/runtimes/small/antigravity.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
 /** A PreToolUse payload as agy 1.4.2 sent it in a real run (#30): camelCase, the call under `toolCall`. */
@@ -52,7 +52,7 @@ test('antigravity readToolCall: the cwd is the call\'s Cwd, else the first works
   }
 });
 
-test('antigravity project hook: init writes the yokoten entry, keeps the others, and turns an old or disabled one back on', () => {
+test('antigravity project hook: init writes the yokoten entry, keeps the others, updates an old one, and keeps one the user turned off (#984)', () => {
   const sandbox = makeSandbox();
   const file = join(sandbox.repo, '.agents', 'hooks.json');
   const cli = '.yokoten/bin/yokoten.ts';
@@ -64,10 +64,20 @@ test('antigravity project hook: init writes the yokoten entry, keeps the others,
   assert.equal(written.yokoten.PreToolUse[0].matcher, 'run_command|write_to_file|replace_file_content|multi_replace_file_content');
   assert.match(written.yokoten.PreToolUse[0].hooks[0].command, /"\$\(git rev-parse --show-toplevel\)\/\.yokoten\/bin\/yokoten\.ts" hook --agent antigravity/);
   assert.equal(addProjectHook(sandbox.repo, cli), 'same');
-  sandbox.write('.agents/hooks.json', JSON.stringify({ yokoten: { ...written.yokoten, enabled: false } }));
-  assert.equal(projectHookState(sandbox.repo, cli), 'updated', 'a disabled guard is not the guard');
+  // The positive control: an old guard is updated.
+  sandbox.write('.agents/hooks.json', JSON.stringify({ yokoten: { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: 'old' }] }] } }));
+  assert.equal(projectHookState(sandbox.repo, cli), 'updated');
   assert.equal(addProjectHook(sandbox.repo, cli), 'updated');
-  assert.equal(JSON.parse(readFileSync(file, 'utf8')).yokoten.enabled, undefined);
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).yokoten, written.yokoten);
+  // #984: a guard the user turned off, old or not, stays as the user left it.
+  for (const off of [{ ...written.yokoten, enabled: false }, { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: 'old' }] }], enabled: false }]) {
+    const text = JSON.stringify({ yokoten: off });
+    sandbox.write('.agents/hooks.json', text);
+    assert.equal(projectHookState(sandbox.repo, cli), KEPT_OFF, 'a disabled guard is the user\'s choice');
+    assert.equal(addProjectHook(sandbox.repo, cli), KEPT_OFF);
+    assert.equal(readFileSync(file, 'utf8'), text, 'the file stays byte for byte');
+  }
+  assert.equal(keptOffLine('.agents/hooks.json'), 'kept your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): to turn it on, delete `"enabled": false` from its `"yokoten"` entry');
   sandbox.write('.agents/hooks.json', '{ not json');
   assert.deepEqual(projectHookState(sandbox.repo, cli), { kind: 'json' });
   assert.throws(() => addProjectHook(sandbox.repo, cli), /can't read/);
@@ -100,14 +110,59 @@ test('antigravity user hook: install writes the guard in ~/.gemini/config/hooks.
   assert.ok(command.startsWith(`[ -f ${cli} ] 2>/dev/null || { echo '${missing}' >&2; exit 1; };`), 'a missing runtime refuses the call');
   assert.match(command, / hook --agent antigravity --commands-only /);
   assert.match(command, /node --max-old-space-size=256/);
-  writeFileSync(file, JSON.stringify({ yokoten: { ...written.yokoten, enabled: false } }));
-  assert.deepEqual(userHooksState(env, cli, missing), { guard: 'updated' }, 'a disabled guard is not the guard');
-  assert.equal(addUserHooks(env, cli, missing).guard, 'updated');
-  assert.equal(JSON.parse(readFileSync(file, 'utf8')).yokoten.enabled, undefined);
+  // #984: the user turned the guard off; it stays off, and the file stays as it was.
+  const off = JSON.stringify({ ...written, yokoten: { ...written.yokoten, enabled: false } });
+  writeFileSync(file, off);
+  assert.deepEqual(userHooksState(env, cli, missing), { guard: KEPT_OFF });
+  assert.equal(addUserHooks(env, cli, missing).guard, KEPT_OFF);
+  assert.equal(readFileSync(file, 'utf8'), off);
   assert.equal(removeUserHooks(env), 'removed');
   assert.equal(userHooksState(env, cli, missing).guard, 'added');
   assert.equal(removeUserHooks(env), 'not there');
   writeFileSync(file, '{ not json');
   assert.equal(removeUserHooks(env), null);
   assert.equal(readFileSync(file, 'utf8'), '{ not json', 'a file yokoten cannot read stays as it was');
+  // #984: a linked hooks file keeps its link when the last entry goes. The positive control
+  // is the plain file above, removed.
+  rmSync(file);
+  const target = join(sandbox.home, 'dotfiles-hooks.json');
+  writeFileSync(target, '{}\n');
+  symlinkSync(target, file);
+  addUserHooks(env, cli, missing);
+  assert.equal(removeUserHooks(env), 'removed');
+  assert.equal(lstatSync(file).isSymbolicLink(), true, 'the link stays');
+  assert.equal(readFileSync(target, 'utf8'), '{}\n');
+});
+
+// #984: the user's `enabled: false` is kept by init, install and doctor, each with one line
+// that says how to turn the guard on. The positive control is the guard added where the
+// user set nothing.
+test('antigravity: init, install and doctor keep a guard the user turned off, and say how to turn it on (#984)', async () => {
+  const sandbox = makeSandbox();
+  const userFile = join(sandbox.home, '.gemini', 'config', 'hooks.json');
+  mkdirSync(dirname(userFile), { recursive: true });
+  let result = await sandbox.call(['install']);
+  assert.match(result.stdout, /^added the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m, 'no user value: set as before');
+  result = await sandbox.call(['init', '--no-ci']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^added the Antigravity CLI tool-call hook in \.agents\/hooks\.json$/m, 'no user value: set as before');
+  const projectFile = join(sandbox.repo, '.agents', 'hooks.json');
+  const turnOff = (path: string): string => {
+    const saved = JSON.parse(readFileSync(path, 'utf8'));
+    const text = `${JSON.stringify({ ...saved, yokoten: { ...saved.yokoten, enabled: false } }, null, 2)}\n`;
+    writeFileSync(path, text);
+    return text;
+  };
+  const userText = turnOff(userFile);
+  const projectText = turnOff(projectFile);
+  const how = 'to turn it on, delete `"enabled": false` from its `"yokoten"` entry';
+  result = await sandbox.call(['install']);
+  assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in ~/.gemini/config/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
+  assert.equal(readFileSync(userFile, 'utf8'), userText, 'install kept the user file');
+  result = await sandbox.call(['init', '--no-ci']);
+  assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
+  assert.equal(readFileSync(projectFile, 'utf8'), projectText, 'init kept the project file');
+  const doctor = (await sandbox.call(['doctor'])).stdout;
+  assert.ok(doctor.includes(`antigravity-hook: you turned off the tool-call guard in .agents/hooks.json; ${how}`), doctor);
+  assert.ok(doctor.includes(`antigravity-user-hook: you turned off the command guard in ~/.gemini/config/hooks.json; ${how}`), doctor);
 });
