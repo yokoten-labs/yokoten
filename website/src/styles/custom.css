@@ -1,0 +1,5 @@
+/* yokoten brand: one indigo family for light and dark, so both read well. */
+:root {
+  --sl-hue: 253;
+  --sl-hue-accent: 264;
+}

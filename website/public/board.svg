@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img">
+  <!-- Board placeholder (#631): a real screenshot comes with the copy phase. -->
+  <rect width="640" height="360" fill="hsl(253, 60%, 97%)" />
+  <g font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="hsl(253, 40%, 30%)">
+    <text x="24" y="40">Draft</text>
+    <text x="148" y="40">Team</text>
+    <text x="272" y="40">Review</text>
+    <text x="396" y="40">Owner</text>
+    <text x="520" y="40">Done</text>
+  </g>
+  <g stroke="hsl(253, 25%, 88%)" stroke-width="1">
+    <line x1="138" y1="24" x2="138" y2="336" />
+    <line x1="262" y1="24" x2="262" y2="336" />
+    <line x1="386" y1="24" x2="386" y2="336" />
+    <line x1="510" y1="24" x2="510" y2="336" />
+  </g>
+  <g fill="hsl(253, 55%, 96%)" stroke="hsl(253, 45%, 72%)" stroke-width="1.5">
+    <rect x="24" y="64" width="100" rx="10" />
+    <rect x="148" y="64" width="100" rx="10" />
+    <rect x="272" y="64" width="100" rx="10" />
+    <rect x="396" y="64" width="100" rx="10" />
+  </g>
+  <g fill="hsl(253, 60%, 48%)">
+    <rect x="24" y="64" width="6" height="100" rx="3" />
+    <rect x="148" y="64" width="6" height="100" rx="3" />
+    <rect x="272" y="64" width="6" height="100" rx="3" />
+    <rect x="396" y="64" width="6" height="100" rx="3" />
+  </g>
+  <text x="74" y="118" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="hsl(253, 40%, 30%)">#631</text>
+  <text x="198" y="118" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="hsl(253, 40%, 30%)">#631</text>
+  <text x="322" y="118" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="hsl(253, 40%, 30%)">#631</text>
+  <text x="446" y="118" text-anchor="middle" font-family="system-ui, sans-serif" font-size="13" fill="hsl(253, 40%, 30%)">#631</text>
+</svg>

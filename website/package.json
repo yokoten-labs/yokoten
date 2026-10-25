@@ -1,0 +1,16 @@
+{
+  "name": "yokoten-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "links": "node scripts/links.ts",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.42.7",
+    "astro": "7.4.2"
+  }
+}
