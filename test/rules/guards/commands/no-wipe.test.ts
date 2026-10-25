@@ -79,6 +79,32 @@ test('guard: no wipe of the home folder or a top-level system folder (#969)', ()
   assert.equal(checkCommand(`rm -rf ${TEST_HOME}/*`, { cwd: process.cwd(), env: withHome })?.id, 'wipe-home-or-system');
 });
 
+test('guard: a project one or two folders below the root is the project (#969)', () => {
+  // A container keeps the project at /app, /src or /workspace, so its own folders are no
+  // system folder. The folder the command runs in stays refused, and so does the system.
+  const at = (cwd: string, command: string) => checkCommand(command, { cwd, env: withHome });
+  for (const command of ['rm -rf node_modules', 'rm -rf dist', 'rm -rf coverage/*', 'rm -rf ./build', 'rm -rf /app/dist', 'chmod -R 755 ./src']) {
+    assert.equal(at('/app', command), null, `should allow at /app: ${command}`);
+  }
+  assert.equal(at('/workspace', 'rm -rf ./build'), null);
+  assert.equal(at('/src', 'chmod -R 755 ./src'), null);
+  // `/opt` holds projects too: homebrew and app folders are no system folder from inside one.
+  assert.equal(at('/opt/app', 'rm -rf dist'), null);
+  for (const [cwd, command] of [
+    ['/app', '/'],
+    ['/app', '/app'],
+    ['/app', '/usr'],
+    ['/app', '/opt'],
+    ['/', '/usr'],
+    ['/usr', '/usr/lib'],
+  ]) {
+    assert.equal(checkDamage(['rm', '-rf', command], cwd, withHome)?.id, 'wipe-home-or-system', `should refuse at ${cwd}: rm -rf ${command}`);
+  }
+  assert.match(checkDamage(['rm', '-rf', '/app'], '/app', withHome)?.what ?? '', /this command runs in/);
+  // At `/app`, a wipe of `/` is a wipe of the whole checkout too, and that rule answers first.
+  assert.equal(at('/app', 'rm -rf /')?.id, 'delete-checkout');
+});
+
 test('guard: no disk commands (#969)', () => {
   for (const command of [
     'mkfs.ext4 /dev/sda1', 'mkfs /dev/sdb', 'mkfs.vfat /dev/sdc',

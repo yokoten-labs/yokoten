@@ -14,9 +14,10 @@ import { FIND_LEAD_OPTIONS } from '../worker/mark.ts';
 //    `Start-Process -Verb RunAs`. The owner runs what needs root.
 // 2. No wipe of home or system folders: a recursive delete, and a recursive mode or owner
 //    change, whose target is `/`, the home folder, a top-level system folder, or a glob over
-//    one of them (`/*`, `~/*`). `find` with a delete action counts by its start folder. A
-//    target the guard cannot read is refused too; one that arrives on stdin (`xargs rm -rf`)
-//    is not read, and stays allowed.
+//    one of them (`/*`, `~/*`). `find` with a delete action counts by its start folder. The
+//    folder the command runs in counts as the project, so a container's `/app` is no system
+//    folder; the folder itself still counts as a wipe. A target the guard cannot read is
+//    refused too; one that arrives on stdin (`xargs rm -rf`) is not read, and stays allowed.
 // 3. No disk commands: `mkfs*`, `wipefs`, `fdisk`, `parted`, `diskutil`, `dd` with
 //    `of=/dev/…`, a redirect into `/dev/…`, `format` and `diskpart`.
 //
@@ -30,7 +31,7 @@ const NO_ROOT_FIX = 'tell the owner what needs root and why; the owner runs it';
 const noRootFinding = (word: string): Finding => ({ id: 'no-root', what: `\`${word}\` would run this command as root`, why: NO_ROOT_WHY, fix: NO_ROOT_FIX, docs: SAFEGUARD_DOCS });
 
 const WIPE_WHY = 'one command from an agent that lost its context can wipe the home folder or the system, and nothing brings the files back';
-const WIPE_FIX = 'delete or change only files inside this project, and name each one';
+const WIPE_FIX = 'delete or change only files inside this project, and name each one. The guard refuses a wipe of home, of the system, or of a target it cannot read';
 const wipeFindingOf = (what: string): Finding => ({ id: 'wipe-home-or-system', what, why: WIPE_WHY, fix: WIPE_FIX, docs: SAFEGUARD_DOCS });
 
 const DISK_WHY = 'a disk command can erase a whole disk, and nothing brings the files back';
@@ -100,7 +101,8 @@ function checkWipe(programs: ProgramPlace[], words: string[], cwd: string | null
       // is read at its own word.
       if (!FIND_DELETES.some((action) => args.includes(action))) continue;
       for (const start of findStartFolders(args)) {
-        const place = findWipePlace(start, cwd, home, homeReal);
+        // `find` walks the tree under its start folder: it reads the folder, and does not take it away.
+        const place = findWipePlace(start, cwd, home, homeReal, false);
         if (place !== null) return wipeFinding(program, start, place);
       }
       continue;
@@ -119,6 +121,7 @@ function wipeFinding(program: string, target: string, place: Place): Finding {
   if (place === 'root') return wipeFindingOf(`\`${program}\` would wipe the root folder`);
   if (place === 'home') return wipeFindingOf(`\`${program}\` would wipe your home folder`);
   if (place === 'system') return wipeFindingOf(`\`${program}\` would wipe the system folder \`${target}\``);
+  if (place === 'cwd') return wipeFindingOf(`\`${program}\` would wipe \`${target}\`, the folder this command runs in`);
   return wipeFindingOf(`\`${program}\` may wipe your home folder or the system: the guard cannot read the target \`${target}\``);
 }
 
@@ -169,7 +172,7 @@ function wipeTargets(name: string, args: string[]): string[] {
 
 // ---- The places a wipe may reach ----
 
-type Place = 'root' | 'home' | 'system' | 'unreadable';
+type Place = 'root' | 'home' | 'system' | 'cwd' | 'unreadable';
 
 // The forms of the home folder a command may name. Bash reads `$HOME` and `${HOME}`;
 // PowerShell reads `$env:USERPROFILE` and cmd reads `%USERPROFILE%`. Case aside: Windows
@@ -182,9 +185,13 @@ const PWD_FORM = /^(?:\$PWD|\$\{PWD\})(?=[\\/]|$)/;
 // The top-level folders on Linux and macOS (`/System`, `/Library`, `/Applications`, `/opt`,
 // `/srv`, `/usr`, `/etc` and the rest) belong to the system, not to a project. The guard
 // reads every one- or two-part absolute path as the system, except a temp folder and what
-// it holds. Windows has its own tree under a drive, read below (`C:\Windows`, `C:\Users`).
+// it holds, and except the project the command runs in (a container keeps it at `/app`,
+// `/src` or `/workspace`). Windows has its own tree under a drive, read below (`C:\Windows`,
+// `C:\Users`).
 const TEMP_TOPS = new Set(['/tmp']);
 const WINDOWS_TOPS = new Set(['windows', 'users']);
+// A command that runs in one of these tops is not in a project: no project allowance.
+const SYSTEM_TOPS = new Set(['usr', 'etc', 'bin', 'sbin', 'lib', 'lib64', 'boot', 'dev', 'proc', 'sys', 'var', 'run', 'root', 'home', 'Users', 'System', 'Library', 'Applications', 'private', 'Volumes', 'cores', 'Network']);
 
 /** Whether an unquoted drive path lost its `\` and left a system top behind: `C:Users` for `C:\Users`. */
 function isDriveSystemTop(word: string): boolean {
@@ -192,19 +199,34 @@ function isDriveSystemTop(word: string): boolean {
   return WINDOWS_TOPS.has(top.replace(/[*?[]+$/, '').toLowerCase());
 }
 
-/** The dangerous place the target `word` names, or null when the guard can read it as a safe one. */
-function findWipePlace(word: string, cwd: string | null, home: string | null, homeReal: string | null): Place | null {
+/** The folder a command runs in, as a plain absolute path without a trailing slash. */
+function projectFolder(cwd: string): string {
+  const abs = resolve(cwd);
+  return abs === '/' ? abs : abs.replace(/\/+$/, '');
+}
+
+/** Whether `abs` sits strictly inside the project the command runs in. The project folder itself stays refused. */
+function isInProject(abs: string, cwd: string | null): boolean {
+  if (cwd === null) return false;
+  const project = projectFolder(cwd);
+  if (project === '/') return false;
+  if (SYSTEM_TOPS.has(project.split('/').filter(Boolean)[0] ?? '')) return false;
+  return abs.startsWith(`${project}/`);
+}
+
+/** The dangerous place the target `word` names, or null when the guard can read it as a safe one. `isExactTarget` is false for a walk of a folder's contents. */
+function findWipePlace(word: string, cwd: string | null, home: string | null, homeReal: string | null, isExactTarget = true): Place | null {
   const lead = HOME_FORM.exec(word);
   if (lead) {
     // The home folder must be known for any of its forms to be read.
     if (home === null) return 'unreadable';
-    return findPlaceInPath(join(home, word.slice(lead[0].length)), home, homeReal);
+    return findPlaceInPath(join(home, word.slice(lead[0].length)), cwd, home, homeReal, isExactTarget);
   }
   // `$PWD` names the folder the command runs in; the guard reads it from `cwd`.
   const pwd = PWD_FORM.exec(word);
   if (pwd) {
     if (cwd === null) return 'unreadable';
-    return findPlaceInPath(join(cwd, word.slice(pwd[0].length)), home, homeReal);
+    return findPlaceInPath(join(cwd, word.slice(pwd[0].length)), cwd, home, homeReal, isExactTarget);
   }
   if (/^[A-Za-z]:[\\/]?$/s.test(word)) return 'root'; // `C:\`, `C:/`, `C:`
   // An unquoted Windows path loses its `\` in the guard's read (`C:\Users` becomes
@@ -212,14 +234,14 @@ function findWipePlace(word: string, cwd: string | null, home: string | null, ho
   if (isDriveSystemTop(word)) return 'system';
   if (/[$%`]/.test(word)) return 'unreadable'; // a value the shell fills in
   if (word.startsWith('~')) return 'unreadable'; // `~user`: another account's home folder
-  if (/^[A-Za-z]:[\\/]/.test(word) || isAbsolute(word)) return findPlaceInPath(word, home, homeReal);
+  if (/^[A-Za-z]:[\\/]/.test(word) || isAbsolute(word)) return findPlaceInPath(word, cwd, home, homeReal, isExactTarget);
   // A relative path is read from the folder the command runs in; without it the guard cannot read the target.
   if (cwd === null) return 'unreadable';
-  return findPlaceInPath(resolve(cwd, word), home, homeReal);
+  return findPlaceInPath(resolve(cwd, word), cwd, home, homeReal, isExactTarget);
 }
 
 /** The dangerous place a full path, a glob allowed, can name, or null. */
-function findPlaceInPath(path: string, home: string | null, homeReal: string | null): Place | null {
+function findPlaceInPath(path: string, cwd: string | null, home: string | null, homeReal: string | null, isExactTarget: boolean): Place | null {
   for (const form of braceForms(path, 0)) {
     const parts = form.split(/[\\/]+/);
     // Windows keeps its own tree under a drive, which resolve does not follow here.
@@ -230,22 +252,25 @@ function findPlaceInPath(path: string, home: string | null, homeReal: string | n
     }
     const globAt = parts.findIndex((part) => /[*?[{]/.test(part));
     const before = globAt === -1 ? form : parts.slice(0, globAt).join('/');
-    const place = findPlainPlace(before, home, homeReal);
+    const place = findPlainPlace(before, cwd, home, homeReal, isExactTarget && globAt === -1);
     if (place !== null) return place;
   }
   return null;
 }
 
-/** The dangerous place a glob-free full path names, or null. An empty path is a glob at the root. */
-function findPlainPlace(text: string, home: string | null, homeReal: string | null): Place | null {
+/** The dangerous place a glob-free full path names, or null. An empty path is a glob at the root. `isExact` says the path had no glob of its own. */
+function findPlainPlace(text: string, cwd: string | null, home: string | null, homeReal: string | null, isExact: boolean): Place | null {
   if (text === '') return 'root';
   if (!isAbsolute(text)) return null;
   const abs = resolve(text);
   if (/^\/{1,2}$/.test(abs)) return 'root';
   // The home folder counts by real path too, so a symlink to it counts.
   if (home !== null && (abs === home || realPath(abs) === homeReal)) return 'home';
+  // Wiping the project folder would take the command's own working folder away with it. A
+  // glob over its contents (`rm -rf ./*.log`) is a wipe of the contents, not of the folder.
+  if (isExact && cwd !== null && abs === projectFolder(cwd)) return 'cwd';
   const parts = abs.split('/').filter(Boolean);
-  if (parts.length <= 2 && !TEMP_TOPS.has(`/${parts[0]}`)) return 'system';
+  if (parts.length <= 2 && !TEMP_TOPS.has(`/${parts[0]}`) && !isInProject(abs, cwd)) return 'system';
   return null;
 }
 

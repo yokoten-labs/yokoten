@@ -1251,6 +1251,16 @@ The guard reads command text. It does not see a program that a script, a `make` 
 an npm script or a shell function runs. Name each version you want to stop:
 `python3.12` is not `python3`.
 
+The safeguard's own refusals are fixed, not a setting: a wipe of home or the system,
+a disk command, and root. Two of them can surprise you.
+
+- A wipe of a target the guard cannot read is refused, such as `$OUT_DIR` or `$(pwd)`.
+  Name the folder with a plain path instead.
+- A disk tool is refused even when it only reads: `fdisk -l`, `parted -l`,
+  `diskutil list` and `gpt -r show disk0`. Ask the owner to run it.
+
+The folder the command runs in counts as the project, so `rm -rf dist` passes there.
+
 ### yokoten.json
 
 `yokoten.json` at the repo root holds the project's settings. Every key is optional. A
