@@ -84,6 +84,13 @@ exist here. Also start it with its role in the environment:
   it checks the changed files.
 - A subagent: use the `worker` agent. The guard counts a type as a worker only when it
   is `worker`, or when it ends with `:worker`.
+- Start a subagent inside its worktree. In Claude Code, pass `isolation: "worktree"` to the
+  Agent tool: the subagent gets a new worktree from your current commit and works there.
+  A subagent started in your folder stays in it: the guard keeps a worker inside the
+  folder it started in, so it can't reach a worktree named in the brief (#990). Bring
+  your folder up to date first, so the new worktree starts from the right commit.
+- Put the issue text in a subagent's brief. A worker can't set variables such as
+  `GH_REPO`, so it may not be able to read the issue itself.
 - A subagent shares the lead's folder and environment. It does not get its own
   `YOKOTEN_DONE_WHEN`. The stop check runs in the lead's folder. It runs in the
   worker's worktree only when the stop event names that worktree. Then it reads
