@@ -44,7 +44,6 @@ test/agents/runtimes/small/opencode.test.ts :: OpenCode 2 with no folder: the se
 test/agents/runtimes/small/opencode.test.ts :: hook --agent opencode: a force push and a .git edit match Claude Code; ls passes
 test/agents/runtimes/small/opencode.test.ts :: the plugin refuses the tag push the issue names, and a subagent call it cannot read
 test/commands/advice/board/agents.test.ts :: board worktrees: the repo lists its own; outside a repo git cannot list them
-test/commands/advice/board/controls.test.ts :: board controls: a start is refused when the hooks will not run
 test/commands/advice/board/feed/read/logs.test.ts :: board stream logs: Claude Code, its own newest session, or a subagent whose task names the worktree
 test/commands/advice/board/feed/route.test.ts :: board feed route: a home path, an email, a token and a private mark never reach /feed
 test/commands/advice/board/feed/route.test.ts :: board feed route: a mask that fails sends no line
