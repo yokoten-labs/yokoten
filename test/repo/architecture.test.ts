@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, readTimes, shardOf, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, shardOf, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1861,6 +1861,18 @@ test('windows known: shards split the files by seconds, longest first, and each 
   assert.deepEqual([...times], [['test/setup/init.test.ts', 240], ['test/a.test.ts', 3], ['test/b.test.ts', 5]]);
   assert.deepEqual(weightsOf(['test\\setup\\init.test.ts', 'test/new.test.ts'], times), [{ name: 'test\\setup\\init.test.ts', weight: 240 }, { name: 'test/new.test.ts', weight: 5 }]);
   assert.deepEqual(weightsOf(['test/a.test.ts'], new Map()), [{ name: 'test/a.test.ts', weight: 1 }]);
+});
+
+test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads apart from a new failure', () => {
+  const known = readKnown(['test/a.test.ts :: old', 'test/a.test.ts :: gone', '? test/b.test.ts :: flaky', 'test/c.test.ts :: old'].join('\n'));
+  for (const [file, found, line] of [
+    ['test/d.test.ts', [], 'ok      test/d.test.ts (3 s)'],
+    ['test/c.test.ts', ['test/c.test.ts :: old'], 'waived  test/c.test.ts (3 s, 1 waived)'],
+    ['test/b.test.ts', ['test/b.test.ts :: flaky'], 'waived  test/b.test.ts (3 s, 1 waived)'],
+    ['test/b.test.ts', [], 'ok      test/b.test.ts (3 s)'],
+    ['test/a.test.ts', ['test/a.test.ts :: old'], 'FIXED   test/a.test.ts (3 s, 1 on the list passes now, 1 waived)'],
+    ['test\\c.test.ts', ['test/c.test.ts :: old', 'test/c.test.ts :: brand new'], 'NEW     test/c.test.ts (3 s, 1 new: brand new, 1 waived)'],
+  ] as const) assert.equal(fileLine(file, [...found], known, 3), line, line);
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {

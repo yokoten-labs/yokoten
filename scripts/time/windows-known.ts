@@ -136,6 +136,26 @@ export function judgeKnown(failures: string[], known: { required: string[]; flak
   };
 }
 
+/**
+ * One file's line in the log, so a reader tells a waived failure from a new one at a glance
+ * (owner 2026-10-25: "目前的CI，看不出哪些是waiver"):
+ *   ok      every test passed
+ *   waived  it failed, and every failure is on the list (a waiver)
+ *   NEW     a failure that is not on the list: this fails the job
+ *   FIXED   a listed failure passes now: this fails the job too, until its line goes
+ */
+export function fileLine(file: string, found: string[], known: { required: string[]; flaky: string[] }, seconds: number): string {
+  const name = file.replace(/\\/g, '/');
+  const { added, fixed } = judgeKnown(found, knownFor(known, [name]));
+  const waived = found.length - added.length;
+  const parts = [`${seconds} s`];
+  if (added.length) parts.push(`${added.length} new: ${added.map((entry) => entry.split(' :: ')[1]).join('; ')}`);
+  if (fixed.length) parts.push(`${fixed.length} on the list ${fixed.length === 1 ? 'passes' : 'pass'} now`);
+  if (waived) parts.push(`${waived} waived`);
+  const word = added.length ? 'NEW' : fixed.length ? 'FIXED' : found.length ? 'waived' : 'ok';
+  return `${word.padEnd(7)} ${name} (${parts.join(', ')})`;
+}
+
 /** Every `*.test.ts` under test/, from the repo root, sorted. */
 function testFiles(dir = join(ROOT, 'test')): string[] {
   return readdirSync(dir)
@@ -223,6 +243,7 @@ async function main(): Promise<number> {
   const failures: string[] = [];
   const reasons = new Map<string, string>();
   const folders = { root: ROOT, home: homedir() };
+  const known = readKnown(readFileSync(KNOWN_FILE, 'utf8'));
   let next = 0;
   const worker = async () => {
     while (next < files.length) {
@@ -234,15 +255,15 @@ async function main(): Promise<number> {
       took.push(`${Math.max(1, Math.round((Date.now() - started) / 1000))} ${file.replace(/\\/g, '/')}`);
       const name = file.replace(/\\/g, '/');
       for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
-      process.stdout.write(`${found.length ? 'fail' : 'ok  '} ${file.replace(/\\/g, '/')} (${Math.round((Date.now() - started) / 1000)} s${found.length ? `, ${found.length} failing` : ''})\n`);
+      process.stdout.write(`${fileLine(file, found, known, Math.round((Date.now() - started) / 1000))}\n`);
     }
   };
   await Promise.all(Array.from({ length: Number(values.jobs) }, worker));
   failures.sort();
   if (values.out) writeFileSync(values.out, knownText(failures, reasons));
   if (values.times) writeFileSync(values.times, `${took.sort((a, b) => a.split(' ')[1].localeCompare(b.split(' ')[1])).join('\n')}\n`);
-  const { added, fixed } = judgeKnown(failures, knownFor(readKnown(readFileSync(KNOWN_FILE, 'utf8')), files));
-  const lines = [`windows-known: shard ${index}/${count}, ${files.length} files, ${failures.length} failing, ${added.length} new, ${fixed.length} fixed.`];
+  const { added, fixed } = judgeKnown(failures, knownFor(known, files));
+  const lines = [`windows-known: shard ${index}/${count}, ${files.length} files, ${failures.length} failing (${failures.length - added.length} waived), ${added.length} new, ${fixed.length} fixed.`];
   if (reasons.size) lines.push('Failures by reason (first line of the error):', ...reasonCounts(reasons.values()));
   if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}${reasons.has(a) ? `\n      why: ${reasons.get(a)}` : ''}`));
   if (fixed.length) lines.push('These pass now. Remove their lines from scripts/time/windows-known.txt:', ...fixed.map((f) => `  ${f}`));
