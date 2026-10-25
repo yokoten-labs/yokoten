@@ -516,7 +516,7 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   }
 });
 
-test('ci: a docs-only pull request runs one test job, skips typecheck and action, and `ci` is green (#438)', () => {
+test('ci: a docs-only pull request runs one test job, skips typecheck, action and Windows, and `ci` is green (#438)', () => {
   const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
   const testJob = jobBlock(text, 'test');
   const matrix = (docsOnly: string, event: string) => {
@@ -556,7 +556,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   }
   assert.deepEqual(matrix('', 'pull_request').setups, full, '`changes` failed: the full run');
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
-  for (const name of ['typecheck', 'action']) {
+  for (const name of ['typecheck', 'action', 'windows']) {
     const condition = jobCondition(jobBlock(text, name));
     assert.equal(evaluate(condition, results('true', {})), false, `${name} is skipped on a docs-only pull request`);
     assert.equal(evaluate(condition, results('false', {})), true, `${name} runs in full`);
@@ -565,8 +565,8 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   for (const name of ['check', 'lint']) assert.doesNotMatch(jobBlock(text, name), /^ {4}(?:if|needs):/m, `${name} runs as before, on every pull request`);
   // `ci` is red when this is true.
   const isRed = (docsOnly: string, jobResults: Record<string, string>) => evaluate(ciRule(text), results(docsOnly, jobResults));
-  const green = { test: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
-  const docsRun = { ...green, typecheck: 'skipped', action: 'skipped' };
+  const green = { test: 'success', windows: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
+  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped' };
   assert.equal(isRed('true', docsRun), false, 'docs-only: typecheck and action skipped on purpose');
   assert.equal(isRed('false', green), false);
   assert.equal(isRed('false', docsRun), true, 'skipped on a full run is red');
@@ -574,6 +574,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck and action
   assert.equal(isRed('true', { ...docsRun, lint: 'skipped' }), true, 'lint always runs');
   assert.equal(isRed('true', { ...docsRun, check: 'failure' }), true);
   assert.equal(isRed('true', { ...docsRun, test: 'cancelled' }), true);
+  assert.equal(isRed('false', { ...green, windows: 'failure' }), true, 'a Windows failure is red (record 0040)');
   assert.equal(isRed('', green), true, '`changes` failed: red, though the rest ran in full');
 });
 
