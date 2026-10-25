@@ -108,9 +108,12 @@ function reportedSkills(lines: string[]): string[] {
 const absentAgents = (lines: string[]): string[] =>
   lines.map((line) => /^skipped (.+?): .*not found/.exec(line)?.[1]).filter((name): name is string => name !== undefined);
 
-/** Why a line is a problem: a step that failed, never one that found nothing to do. */
+/** A line that leaves a step for the person: the commit check not on yet, or a line to add by hand (#1027 review). */
+const NEEDS_HAND = /core\.hooksPath|not on yet|Add this line|by hand/;
+
+/** Why a line is a problem: a step that failed, or one left for the person; never one that found nothing to do. */
 const isProblem = (line: string): boolean =>
-  /^(couldn't|kept the Claude Code hooks)/.test(line) || (/^skipped /.test(line) && !/ not found|the global git setting/.test(line));
+  /^(couldn't|kept the Claude Code hooks)/.test(line) || NEEDS_HAND.test(line) || (/^skipped /.test(line) && !/ not found|the global git setting|"notNow"/.test(line));
 
 /** The home folder as `~`, so a screen measures what a reader sees (#1027, R9). */
 const shownPath = (invocation: Invocation, path: string): string => {
@@ -156,7 +159,8 @@ function installScreen(invocation: Invocation, lines: string[], ok: boolean, isF
   const out = title(isFirstRun ? VERSION : 'install', isFirstRun ? 'first run' : ok ? 'this computer is set up' : 'this computer is partly set up');
   out.push('');
   const guarded = guardedAgents(lines);
-  out.push(...row('ok', guarded.length ? `on for ${guarded.join(', ')}` : 'on for Claude Code', 'guard'));
+  // No agent guarded is never "ok": the row says so, and the problem rows below say why (#1027 review).
+  out.push(...(guarded.length ? row('ok', `on for ${guarded.join(', ')}`, 'guard') : row('MISSING', 'not on for any agent yet', 'guard')));
   const skills = reportedSkills(lines);
   if (skills.length) out.push(...row('ok', skills.join(', '), 'skills'));
   const absent = absentAgents(lines);
@@ -284,7 +288,7 @@ export function runInit(invocation: Invocation): number {
   } else {
     // A plain init never asks GitHub, so its skip is not news on the screen (#1027); --github shows rows.
     const plan = options.flags.has('--github') ? planScreen(planning.lines) : [];
-    print(invocation, initScreen(done.lines, plan), planning.ok && !isRefused ? invocation.stdout : invocation.stderr);
+    print(invocation, initScreen(done.lines, plan, done.ok), planning.ok && !isRefused ? invocation.stdout : invocation.stderr);
   }
   if (isRefused) print(invocation, ['yokoten init: --github --yes changed nothing on GitHub (the reason is above). The project files are as listed above.'], invocation.stderr);
   return planning.ok && !isRefused && done.ok ? 0 : 1;
@@ -353,7 +357,7 @@ function groupText(group: 'rules' | 'CI' | 'GitHub' | 'agents', items: InitItem[
 }
 
 /** The default screen of `yokoten init`, from its report lines and the GitHub rows when asked. */
-export function initScreen(lines: string[], plan: string[] = []): string[] {
+export function initScreen(lines: string[], plan: string[] = [], ok = true): string[] {
   const items = lines.map(initItem);
   const isRuntimeCopy = (item: InitItem): boolean => item.path === '.yokoten/';
   const written = new Set(items.filter((item) => item.isWritten && !isRuntimeCopy(item) && item.path !== null).map((item) => item.path ?? ''));
@@ -364,12 +368,16 @@ export function initScreen(lines: string[], plan: string[] = []): string[] {
     .filter((item) => isYours(item.line) || /^(?:skipped |could not )/.test(item.line) || (!/^(?:wrote|updated|linked|added|kept) /.test(item.line) && !item.line.startsWith('git hook:') && item.line !== 'other agents: see the guide'))
     .map((item) => item.line)
     .filter((line, at, all) => all.indexOf(line) === at);
+  // A step left for the person is a MISSING row, never a note or a file count (#1027 review).
+  const handRows = lines.filter((line, at) => NEEDS_HAND.test(line) && lines.indexOf(line) === at).flatMap((line) => row('MISSING', line.replace(/^kept /, '')));
+  const otherNotes = notes.filter((line) => !NEEDS_HAND.test(line));
   const more = moreLine('`yokoten init --list` shows every file');
-  if (written.size === 0) return [...title('init', 'already set up here, nothing changed'), ...(plan.length ? ['', ...plan] : []), ...notes.flatMap(noteLine), ...more];
+  if (written.size === 0 && !handRows.length) return [...title('init', 'already set up here, nothing changed'), ...(plan.length ? ['', ...plan] : []), ...notes.flatMap(noteLine), ...more];
   const groups = (['rules', 'CI', 'GitHub', 'agents'] as const).filter((group) => items.some((item) => initGroup(item) === group));
   // Partly new: list only the groups that got something on this run.
   const shown = groups.filter((group) => items.some((item) => initGroup(item) === group && item.isWritten));
-  const screen = [...title('init', 'this project is set up'), ''];
+  const isPartly = !ok || handRows.length > 0;
+  const screen = [...title('init', isPartly ? 'this project is partly set up' : 'this project is set up'), ''];
   const isPartlyNew = kept.size > 0;
   // Partly new: a group names only what this run added, so an old file is not news.
   const listed = isPartlyNew ? items.filter((item) => item.isWritten) : items;
@@ -378,7 +386,7 @@ export function initScreen(lines: string[], plan: string[] = []): string[] {
     ? `${count(written.size, 'file')} added, ${count(kept.size, 'file')} already there`
     : `${count(written.size, 'file')} written, ${notes.some(isYours) ? 'your own files kept' : 'none of yours changed'}`;
   screen.push(...wrap('  ', summary));
-  screen.push(...plan, ...notes.flatMap(noteLine));
+  screen.push(...handRows, ...plan, ...otherNotes.flatMap(noteLine));
   screen.push('', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more);
   return screen;
 }

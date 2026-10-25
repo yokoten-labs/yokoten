@@ -994,11 +994,12 @@ export async function runDesk(invocation: Invocation): Promise<number> {
     ...title('desk', `${runtime} in ${shown}`),
     '',
     ...field('writes', `${shown} only`),
-    ...field('network', "the agent's API only"),
+    // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
+    ...field('network', plan.hosts.join(', ') || 'none'),
     ...field('role', 'worker, TZ=UTC, no tokens'),
     '',
     'Starting… (stop with Ctrl+C)',
-  ]);
+  ], invocation.stderr);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
   if (unlisted) print(invocation, [`yokoten desk: the board won't show this desk: ${unlisted}.`], invocation.stderr);
