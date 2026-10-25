@@ -113,3 +113,25 @@ export const configHomeOf = (env: Env): string | null => folderOf(env, 'XDG_CONF
 export const configHomeIn = (env: Env): string => folderIn(env, 'XDG_CONFIG_HOME', '.config');
 /** A path in the config folder as the user would type it: `$XDG_CONFIG_HOME/rest` when that is used, else `~/.config/rest`. */
 export const configHomeShown = (env: Env, rest: string): string => `${envFolder(env, 'XDG_CONFIG_HOME') ? '$XDG_CONFIG_HOME' : '~/.config'}/${rest}`;
+
+// ---- A Windows home that bash ran together (#1017) ----
+
+/**
+ * The forms a Windows home takes when bash reads it unquoted and drops each backslash:
+ * `C:\Users\name` becomes `C:Usersname`, or `Usersname` without the drive. Only a drive
+ * path with two or more folders under the drive has them, so `C:` or `C:\Users` alone
+ * gives none. A POSIX home gives none either: bash keeps `/`. Each form comes with the
+ * path it stands for, with `\` between its folders. A pure function of the path.
+ */
+export function gluedHomes(home: string | undefined): { glued: string; path: string }[] {
+  const drive = home ? /^([A-Za-z]:)[\\/](.*)$/.exec(home) : null;
+  if (!drive) return [];
+  const parts = drive[2].split(/[\\/]+/).filter(Boolean);
+  if (parts.length < 2) return [];
+  const joined = parts.join('');
+  const path = `\\${parts.join('\\')}`;
+  return [
+    { glued: `${drive[1]}${joined}`, path: `${drive[1]}${path}` },
+    { glued: joined, path },
+  ];
+}

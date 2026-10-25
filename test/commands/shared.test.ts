@@ -16,8 +16,22 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { canColour, isColourTerminal, paint, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
+import { canColour, isColourTerminal, paint, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
+import { finding, formatRefusal } from '../../src/rules/message.ts';
+
+// #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
+// dropped the backslashes, and the home mask looked only for the written path.
+test('guard message: a Windows home bash ran together is hidden in a refusal (#1017)', () => {
+  const written: string[] = [];
+  const stream = { write: (text: string) => written.push(text) } as unknown as Invocation['stderr'];
+  const invocation = { env: { HOME: 'C:\\Users\\sample' } } as unknown as Invocation;
+  const refusal = formatRefusal(finding('lead-only', `this commit changes C:${'Users'}${'sample'}AppDataLocalx.json, which is lead-only`, 'unstage it'));
+  say(invocation, `${refusal}\n`, stream);
+  const text = written.join('');
+  assert.match(text, /this commit changes ~AppDataLocalx\.json/);
+  assert.doesNotMatch(text, /sample/i);
+});
 
 test('outside a git repo: every command that needs one says so plainly, exits 1 and writes nothing (#205)', async () => {
   const sandbox = makeSandbox();

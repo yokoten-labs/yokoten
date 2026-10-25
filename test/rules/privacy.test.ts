@@ -517,6 +517,40 @@ test('output: a home written in a URL, with %2F or %5C for its slashes, is hidde
   assert.equal(hideHome('%2Fhome%2Fjdoex and x%2Fhome%2Fjdoe%2F', {}, options), '%2Fhome%2Fjdoex and x%2Fhome%2Fjdoe%2F', 'another folder stays');
 });
 
+// #1017: bash drops the backslashes of an unquoted Windows path, so `C:\Users\<name>\AppData`
+// reaches a message as `C:Users<name>AppData`, with the user name inside it.
+const GLUED_HOME = { HOME: 'C:\\Users\\sample' };
+const GLUED_PATH = `C:${'Users'}${'sample'}AppDataLocalTemp`;
+
+test('output: a Windows home bash ran together is hidden, with the folders after it (#1017)', () => {
+  const options = { platform: 'win32', systemHome: '' };
+  assert.equal(hideHome(`this commit changes ${GLUED_PATH}`, GLUED_HOME, options), 'this commit changes ~AppDataLocalTemp');
+  assert.equal(hideHome('at c:userssample and USERSSAMPLEdocs', GLUED_HOME, options), 'at ~ and ~docs', 'case does not count on Windows');
+  assert.equal(hideHome('at C:Userssample', {}, { platform: 'win32', systemHome: 'C:\\Users\\sample' }), 'at ~', "the system's home too");
+  // Positive controls: the written forms are still hidden, and a word with the name in it stays.
+  assert.equal(hideHome('C:\\Users\\sample\\a, c:/users/sample/b', GLUED_HOME, options), '~\\a, ~/b');
+  assert.equal(hideHome('a sample, samples, MyUserssample, C:Users', GLUED_HOME, options), 'a sample, samples, MyUserssample, C:Users');
+  // A POSIX home has no such form: bash keeps `/`.
+  assert.equal(hideHome('/home/sample and homesample', { HOME: '/home/sample' }, { systemHome: '' }), '~ and homesample');
+});
+
+test('redact: a Windows home bash ran together is hidden before the names (#1017)', () => {
+  const redact = makeRedactor({ owners: ['sample'] }, GLUED_HOME);
+  const out = redact(`error: ${GLUED_PATH}\nby sample in samples`);
+  assert.equal(out, 'error: ~AppDataLocalTemp\nby <owner> in samples');
+  assert.ok(!out.includes('sample\n') && !/Users.?sample/i.test(out));
+});
+
+test('privacy check: the user name in a Windows home bash ran together is a mark hit (#1017)', () => {
+  const ids = (text: string, env: Record<string, string> = GLUED_HOME) => scanText(text, { file: 'commit (message)', marks: ['sample'], env }).map((found) => found.id);
+  assert.deepEqual(ids(`fix: path ${GLUED_PATH}`), ['private-mark']);
+  assert.deepEqual(ids(`fix: path c:userssampledocs`), ['private-mark'], 'case does not count, and lower-case folders may follow');
+  // Positive controls: the written home still hits, and a word with the name inside does not.
+  assert.deepEqual(ids('fix: path C:\\Users\\sample\\x'), ['private-mark']);
+  assert.deepEqual(ids('fix: samples and examples'), []);
+  assert.deepEqual(ids(`fix: homesample`, { HOME: '/home/sample' }), [], 'a POSIX home has no glued form');
+});
+
 // ---- Hiding the owner in command output (#390) ----
 
 test('makeRedactor: patterns only, with no marks: private emails go, noreply and team ones stay', () => {
