@@ -55,16 +55,22 @@ source) is a decision for the copy issues, not the skeleton issue.
 
 ## What is still open
 
-The layout guard caps a folder at 7 entries. `docs/site` needs 9 top entries: home and
-404 at the root, four section folders, three language folders — the shape Starlight
-requires, and it grows with every page. Either `layout.exempt` takes `docs/site` (the
-checker's own remedy for an upstream structure), or the shape changes; the skeleton
-cannot commit until that decision lands, because the commit check fails the tree.
+The layout guard caps a folder at 7 entries, and both folders the site touches are
+over it: `docs/` already held exactly 7 entries (assets/, facts.json, guide.md,
+i18n/, records/, server.md, standard.md) and the site adds `docs/site`, which itself
+needs 9 top entries — home and 404 at the root, four section folders, three language
+folders, the shape Starlight's slugs require (a nested `langs/` folder would break
+Starlight's slug-to-locale mapping). The checker's own remedy fits: `layout.exempt`
+takes `docs/site` (an upstream structure the files must keep) and `docs` or — the
+lead's choice — one existing docs file moves into an exempt or grouped folder. The
+skeleton cannot commit until that decision lands, because the commit check fails the
+tree; the work is staged and described below.
 
 The workflow job that builds the site on each pull request is drafted but not written
-into `.github/workflows/yokoten.yml`: workflows are lead-only, so the lead applies it.
-Everything it needs is in `website/` (`npm run build` and `npm run links`, which fails
-on a broken internal link).
+into `.github/workflows/yokoten.yml`: `.github/**` is lead-only, so the lead applies
+it. Everything it needs is in `website/` (`npm run build`, then `npm run links`,
+which fails on a broken internal link; the build is offline, and nothing fetches the
+outside).
 
 The 404 override (`docs/site/404.mdx`) works through Starlight's own injected route,
 but the build logs one warning: the `[...slug]` route also tries to render the same
