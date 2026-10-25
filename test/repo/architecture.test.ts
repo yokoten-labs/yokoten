@@ -934,10 +934,14 @@ test('docs: README images and links use full URLs, so the npm page can show them
   assert.deepEqual(found, [], found.join('\n'));
 });
 
-/** Whether `text` from `start` is an autolink target, such as `https://example.com` or `a@example.com`. */
+/**
+ * Whether `text` from `start` is an autolink target, such as `https://example.com` or `a@example.com`.
+ * A scheme is 2 to 32 characters (CommonMark), so `<o:p>` stays a tag: Word pastes it, and a
+ * one-letter scheme would hide it from this check (#966).
+ */
 function isAutolinkTarget(text: string, start: number): boolean {
   const rest = text.slice(start);
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:[^\s<>]*>/.test(rest)) return true;
+  if (/^[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*>/.test(rest)) return true;
   return /^[^\s<>@]+@[^\s<>@]+>/.test(rest);
 }
 
@@ -965,7 +969,15 @@ function stripNonTagText(text: string): string {
       }
     }
     if (text[index] === '<' && isAutolinkTarget(text, index + 1)) {
-      index = text.indexOf('>', index + 1) + 1;
+      // An autolink target ends with `>`, so the guard is belt and braces: a `-1` here
+      // would loop on the same character forever if that regex ever changed.
+      const close = text.indexOf('>', index + 1);
+      if (close === -1) {
+        plain += text[index];
+        index++;
+        continue;
+      }
+      index = close + 1;
       continue;
     }
     plain += text[index];
@@ -994,6 +1006,9 @@ test('docs: the READMEs are plain Markdown, so npm and GitHub show the same page
   assert.deepEqual(htmlTagLines('# a\n<div align="center">\n`<b>` is code\n```\n<b>\n```\n<!-- note -->'), [2]);
   // An autolink and a comment holding a tag are not HTML; a real tag beside them still is (#966).
   assert.deepEqual(htmlTagLines('see <https://example.com>\n<!-- <b> -->\nmail <a@example.com>\n<b>bold</b> <https://x.dev>'), [4]);
+  // A namespaced tag is a tag, not an autolink: its scheme is one letter, and CommonMark
+  // asks for at least two. A two-letter scheme is still an autolink (#966).
+  assert.deepEqual(htmlTagLines('<o:p>\n<b:foo> x\n<o:p></o:p>\n<mailto:a@b>'), [1, 2, 3]);
   const found: string[] = [];
   for (const file of ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md']) {
     for (const line of htmlTagLines(readFileSync(join(ROOT, file), 'utf8'))) found.push(`${file}:${line}`);

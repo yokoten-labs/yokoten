@@ -239,6 +239,7 @@ test('redteam #865: the host API routes that create a repo or change one are ref
     'gh api -X POST user/repos -f name=x -f private=false',
     'gh api -X POST orgs/acme/repos -f name=x -f visibility=public',
     'gh api -X PATCH repos/$OWNER/$REPO -f visibility=public',
+    'gh api -X POST repos/$OWNER/$REPO -f visibility=public',
     'gh api graphql -f query=$(cat /tmp/m.graphql)',
     'gh api graphql -f query=`cat /tmp/m.graphql`',
     'gh repo create demo --public=true',
