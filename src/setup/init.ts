@@ -1697,7 +1697,7 @@ export function summarizeUpdate(rules: { changes: LineChange[]; sections: Sectio
  * `yokoten update`: replace the core part of AGENTS.md with the kit's. Without `write`
  * it only shows the change. `ok` is false when there is nothing it can compare.
  */
-export function updateCoreRules(root: string, { write }: { write: boolean }, env: Env = process.env): { ok: boolean; lines: string[] } {
+export function updateCoreRules(root: string, { write }: { write: boolean }, env: Env): { ok: boolean; lines: string[] } {
   const rules = readCoreRules(root);
   if (rules === null) return { ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one'] };
   if (rules.state === "can't compare") return { ok: false, lines: [`can't compare AGENTS.md with the kit: ${rules.why}. Nothing was written. To fix it, ${rules.fix}`] };
