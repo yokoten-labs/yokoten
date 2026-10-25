@@ -55,7 +55,10 @@ test('the summary puts the next pick first, then one headed block for each thing
     '',
     'Next: `yokoten train --next`',
   ]);
+  // One screen: no line passes 80 columns (issue #1027).
+  for (const line of summaryLines(issueExample())) assert.ok(line.length <= 80, `over 80: ${line}`);
 });
+
 
 test('a map with nothing to say is one short line', () => {
   const quiet = mapOf([change('pr:12', 'PR #12', ['src/app.ts']), change('pr:15', 'PR #15', ['src/b.ts'])]);

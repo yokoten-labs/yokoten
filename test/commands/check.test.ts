@@ -1389,3 +1389,24 @@ test('pr sync: a list that stops at the limit says so (#809)', async () => {
   const result = await sandbox.call(['pr', 'sync'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.match(result.stdout, /the open pull request list stops at 100/);
 });
+
+// #1027: the default screens. A clean check is one line; a problem names its place first,
+// its fix under it, and one command to type last. No line passes 80 columns.
+test('check: one screen for a clean check and one for a problem (#1027)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('fine.md', 'hello\n');
+  sandbox.git('add', 'fine.md');
+  const clean = await sandbox.call(['check', '--staged']);
+  assert.equal(clean.stdout, 'yokoten check --staged · clean: the staged changes pass layout, privacy,\n                         lead-only files\n');
+  sandbox.write('a.md', `me${at}gmail.com\n`);
+  sandbox.git('add', '.');
+  const found = await sandbox.call(['check']);
+  assert.equal(found.status, 1, found.stdout + found.stderr);
+  const lines = found.stderr.split('\n');
+  assert.equal(lines[0], 'yokoten check · 1 problem');
+  assert.equal(lines[1], '');
+  assert.match(lines[2] ?? '', /^ {2}MISSING {5}a\.md:1 {6}an email address$/);
+  assert.match(lines[3] ?? '', /^ {26}use your GitHub noreply address, or a placeholder at$/);
+  assert.equal(lines[lines.length - 2], 'Next: fix them, then `yokoten check`');
+  for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
+});

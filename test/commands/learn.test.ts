@@ -39,6 +39,8 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   result = await sandbox.call(['changelog']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten changelog · 2 entries for the next release\n\n {2}Added {7}A thing\.\n {2}Fixed {7}A fix\.\n\nMore: before a release: `yokoten changelog --write`\n$/);
+  // One screen: no line passes 80 columns (issue #1027).
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, `over 80: ${line}`);
   assert.ok(existsSync(join(sandbox.repo, 'changes/1-a.md')), 'a preview writes nothing');
   // A bad file stops the write, and says so on stderr.
   sandbox.write('changes/3-c.md', 'Added\n');
@@ -48,7 +50,7 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   rmSync(join(sandbox.repo, 'changes/3-c.md'));
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /wrote 2 change\(s\) under \[Unreleased\] in CHANGELOG\.md, and deleted:\n- changes\/1-a\.md\n- changes\/2-b\.md/);
+  assert.match(result.stdout, /^yokoten changelog · wrote 2 entries under \[Unreleased\]\n\n {2}Added {7}A thing\.\n {2}Fixed {7}A fix\.\n\nMore: before a release: `yokoten changelog --write`\n$/);
   assert.equal(readFileSync(join(sandbox.repo, 'CHANGELOG.md'), 'utf8'), '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- A thing.\n\n### Fixed\n\n- A fix.\n\n## [0.1.0] - 2026-10-18\n\n### Added\n\n- The first release.\n');
   assert.deepEqual(readdirSync(join(sandbox.repo, 'changes')), ['README.md']);
   assert.equal((await sandbox.call(['changelog', '--wrote'])).status, 1, 'an unknown option is refused');
