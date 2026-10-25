@@ -320,24 +320,26 @@ export function boardStartParts(vendor: string, brief: string, model = ''): stri
  * there: the plain reason the start is refused, or null when it may start. A vendor
  * whose hooks need no trust (Claude Code, Antigravity) always passes: whether its hooks
  * file is there is the lead's repo setup, which `doctor` reports. The rest refuse when
- * the board can tell the hooks will not run, and pass when it cannot tell (no trust
- * store on this machine): a bare test folder is not proof of a missing guard.
- * Codex names its trust step, since nothing the board passes trusts it. Muse and grok
+ * the board can tell the hooks will not run. Codex passes only when its trust store says
+ * the hooks run, and names its trust step, since nothing the board passes trusts it. Muse and grok
  * are trusted at the start (`--trust-workspace`, `--trust`), so only missing hooks
  * refuse them. DeepSeek Harness fails open without a word, so a missing guard, patch
  * or bridge refuses it.
  */
 export function boardGuardReady(vendor: string, dir: string, env: Env): string | null {
   if (vendor === 'codex') {
+    // Codex is the one vendor the board can't trust at the start, so it starts only when its
+    // trust store says the hooks run. No home or no store is no trust: Codex would run, make
+    // its home, and skip the hooks. Fail closed.
     if (!codex.hasProjectHook(dir) || !codex.hasProjectStopHook(dir)) {
-      if (!codex.hasUserDir(env)) return null;
       return `codex would run with no guard in ${hideHome(dir, env)}: no tool-call guard or stop check there. Run \`yokoten init\` in the repo, commit the hooks, and start again`;
     }
     const trust = codex.readTrust(dir, env);
-    if (trust.state === 'trusted' || trust.state === 'no home' || trust.state === 'no store' || trust.state === 'unreadable') return null;
+    if (trust.state === 'trusted') return null;
+    if (trust.state === 'no home') return `codex would skip the guard hooks in ${hideHome(dir, env)}: Codex is not set up on this machine (no ${trust.store}), so nothing trusts that folder. Run codex once, then ${codex.TRUST_STEP}`;
     // A folder or hook the user set off on purpose: `yokoten trust` keeps that choice, so the
     // board names the user's own step (#984).
-    const why = trust.state === 'untrusted' ? 'that folder is not trusted' : trust.state === 'hooks off' ? 'a yokoten hook there is turned off' : 'the hooks there are not trusted';
+    const why = { 'no store': `nothing trusts that folder (no ${trust.store})`, unreadable: `yokoten can't read ${trust.store}, so it can't tell`, untrusted: 'that folder is not trusted', 'hooks off': 'a yokoten hook there is turned off' }[trust.state as string] ?? 'the hooks there are not trusted';
     const fix = trust.userChoiceFix ?? (trust.state === 'hooks off' ? codex.HOOK_OFF_FIX : codex.TRUST_STEP);
     return `codex would skip the guard hooks in ${hideHome(dir, env)}: ${why}. ${fix.charAt(0).toUpperCase()}${fix.slice(1)}`;
   }

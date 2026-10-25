@@ -38,7 +38,6 @@ test/agents/runtimes/small/antigravity.test.ts :: hook --agent antigravity: run_
 test/agents/runtimes/small/deepseek-harness.test.ts :: deepseek-harness project files: init writes the guard and the launch patch, keeps other hooks, and doctor says only a real deny proves it
 test/agents/runtimes/small/deepseek-harness.test.ts :: hook --agent deepseek-harness: lowercase bash by command, write and edit by a file_path relative to cwd; a refusal is exit 2 with the reason on stderr (#334)
 test/commands/advice/board/agents.test.ts :: board worktrees: the repo lists its own; outside a repo git cannot list them
-test/commands/advice/board/controls.test.ts :: board controls: a start is refused when the hooks will not run
 test/commands/advice/board/feed/read/logs.test.ts :: board stream logs: Claude Code, its own newest session, or a subagent whose task names the worktree
 test/commands/advice/board/feed/route.test.ts :: board feed route: a home path, an email, a token and a private mark never reach /feed
 test/commands/advice/board/feed/route.test.ts :: board feed route: a mask that fails sends no line
