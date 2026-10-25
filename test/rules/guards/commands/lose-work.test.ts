@@ -1,7 +1,8 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { rmSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { makeTempDir, makeSandbox, allowed, refusedAs } from '../../../../test/repo/helpers.ts';
@@ -302,6 +303,31 @@ function makeTrunkRepo(): string {
   execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk'], { cwd: root });
   return root;
 }
+
+// #994: in a linked worktree `.git` is a file that names the git folder elsewhere. A walk
+// from the worktree does not reach that folder, but it deletes the file, and the worktree breaks.
+test('guard: in a linked worktree, a find that deletes keeps the .git file (#994)', () => {
+  const base = makeTempDir('yokoten-linked-');
+  const common = join(base, 'main', '.git');
+  const gitDir = join(common, 'worktrees', 'wt');
+  const tree = join(base, 'wt');
+  mkdirSync(gitDir, { recursive: true });
+  mkdirSync(join(common, 'objects'), { recursive: true });
+  mkdirSync(join(common, 'refs'), { recursive: true });
+  writeFileSync(join(common, 'HEAD'), 'ref: refs/heads/main\n');
+  writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/wt\n');
+  writeFileSync(join(gitDir, 'commondir'), '../..\n');
+  mkdirSync(join(tree, 'src'), { recursive: true });
+  writeFileSync(join(tree, '.git'), `gitdir: ${gitDir}\n`);
+  for (const env of [{ YOKOTEN_ROLE: 'worker' }, {}]) {
+    for (const command of ['find . -delete', 'find . -exec rm -rf {} +', "find . -name '*' -delete", 'find . -type f -delete']) {
+      assert.ok(checkCommand(command, { cwd: tree, env }) !== null, `${command} in a linked worktree`);
+    }
+    // Positive control: a find whose names keep .git out still runs there.
+    for (const command of ["find . -name '*.log' -delete", 'find src -delete']) assert.equal(checkCommand(command, { cwd: tree, env }), null, command);
+  }
+  rmSync(base, { recursive: true, force: true });
+});
 
 // #744: `find . -delete` walks into `.git`. Refuse a deleting find unless a prune, an
 // exclusion, or the start folder keeps this repo's history out of the walk.
