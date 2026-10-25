@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, shardOf, TIMED_OUT } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, readTimes, shardOf, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1844,8 +1844,8 @@ test('windows known: each failure keeps the first line of its error, with folder
   assert.deepEqual(reasonCounts(["spawn sh ENOENT", "spawn sh ENOENT", "timed out after 120 ms", "timed out after 300 ms", "got 'a'"]), ['   2  spawn sh ENOENT', '   2  timed out after N ms', "   1  got …"]);
 });
 
-test('windows known: shards split the files by size, biggest first, and each judges only its own', () => {
-  const files = [['a', 90], ['b', 50], ['c', 40], ['d', 30], ['e', 20], ['f', 10]].map(([name, size]) => ({ name: `test/${name}.test.ts`, size: Number(size) }));
+test('windows known: shards split the files by seconds, longest first, and each judges only its own', () => {
+  const files = [['a', 90], ['b', 50], ['c', 40], ['d', 30], ['e', 20], ['f', 10]].map(([name, weight]) => ({ name: `test/${name}.test.ts`, weight: Number(weight) }));
   const shards = [1, 2, 3].map((index) => shardOf(files, index, 3));
   assert.deepEqual(shards, [['test/a.test.ts'], ['test/b.test.ts', 'test/e.test.ts', 'test/f.test.ts'], ['test/c.test.ts', 'test/d.test.ts']]);
   // Every file runs once, in exactly one shard; one shard is the whole suite.
@@ -1856,6 +1856,11 @@ test('windows known: shards split the files by size, biggest first, and each jud
   const known = readKnown(['test/a.test.ts :: broken', 'test/c.test.ts :: broken', '? test/b.test.ts :: flaky'].join('\n'));
   assert.deepEqual(knownFor(known, ['test\\c.test.ts', 'test/d.test.ts']), { required: ['test/c.test.ts :: broken'], flaky: [] });
   assert.deepEqual(judgeKnown([], knownFor(known, shards[1])), { added: [], fixed: [] });
+  // The times file gives each file its weight; a new file counts as the median, so it still runs.
+  const times = readTimes(['# a comment', '240 test/setup/init.test.ts', '3 test/a.test.ts', '5 test/b.test.ts', 'not a line'].join('\r\n'));
+  assert.deepEqual([...times], [['test/setup/init.test.ts', 240], ['test/a.test.ts', 3], ['test/b.test.ts', 5]]);
+  assert.deepEqual(weightsOf(['test\\setup\\init.test.ts', 'test/new.test.ts'], times), [{ name: 'test\\setup\\init.test.ts', weight: 240 }, { name: 'test/new.test.ts', weight: 5 }]);
+  assert.deepEqual(weightsOf(['test/a.test.ts'], new Map()), [{ name: 'test/a.test.ts', weight: 1 }]);
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {

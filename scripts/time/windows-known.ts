@@ -14,8 +14,10 @@
 //   node scripts/time/windows-known.ts --shard 2/3         this machine's third of the files
 //
 // Speed (owner 2026-10-25: a fast answer is worth more, even a failing one): the job runs on
-// several machines at once, each with a share of the files by size, and each machine starts
-// with its biggest files, so no long file is left to run alone at the end.
+// several machines at once, each with a share of the files by the seconds they took last time
+// (scripts/time/windows-times.txt), and each machine starts with its longest files, so no long
+// file is left to run alone at the end. `--times <file>` writes this run's seconds; copy the
+// shards' files together over windows-times.txt when the shards drift apart.
 //
 // Each entry in the --out file has its reason above it, as a `# why:` comment: the first
 // line of the test's error, with the home and the repo folders hidden. The job's summary counts
@@ -33,6 +35,7 @@ import { parseArgs } from 'node:util';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const KNOWN_FILE = join(ROOT, 'scripts', 'time', 'windows-known.txt');
+export const TIMES_FILE = join(ROOT, 'scripts', 'time', 'windows-times.txt');
 export const TIMED_OUT = '(timed out)';
 
 const HEADER = [
@@ -144,19 +147,36 @@ function testFiles(dir = join(ROOT, 'test')): string[] {
 }
 
 /**
- * Shard `index` of `count` (from 1): files dealt by size, biggest first, each to the shard
- * with the least so far, so the shards take about the same time. Each shard's files come
- * biggest first, so the long ones start at once. Every file is in exactly one shard.
+ * Shard `index` of `count` (from 1): files dealt by weight (seconds), heaviest first, each
+ * to the shard with the least so far, so the shards take about the same time. Each shard's
+ * files come heaviest first, so the long ones start at once. Every file is in exactly one shard.
  */
-export function shardOf(files: { name: string; size: number }[], index: number, count: number): string[] {
-  const shards = Array.from({ length: count }, () => ({ size: 0, names: [] as string[] }));
-  const bySize = [...files].sort((a, b) => b.size - a.size || a.name.localeCompare(b.name));
-  for (const file of bySize) {
-    const least = shards.reduce((min, shard) => (shard.size < min.size ? shard : min));
-    least.size += file.size;
+export function shardOf(files: { name: string; weight: number }[], index: number, count: number): string[] {
+  const shards = Array.from({ length: count }, () => ({ weight: 0, names: [] as string[] }));
+  const byWeight = [...files].sort((a, b) => b.weight - a.weight || a.name.localeCompare(b.name));
+  for (const file of byWeight) {
+    const least = shards.reduce((min, shard) => (shard.weight < min.weight ? shard : min));
+    least.weight += file.weight;
     least.names.push(file.name);
   }
   return shards[index - 1]?.names ?? [];
+}
+
+/** The times file: `<seconds> <test file>` per line; `#` lines are comments. */
+export function readTimes(text: string): Map<string, number> {
+  const times = new Map<string, number>();
+  for (const line of text.split(/\r?\n/)) {
+    const entry = /^(\d+(?:\.\d+)?) +(\S+)$/.exec(line.trim());
+    if (entry) times.set(entry[2], Number(entry[1]));
+  }
+  return times;
+}
+
+/** Each file's weight: its last time, or the median of the known times for a new file (1 with none). */
+export function weightsOf(files: string[], times: Map<string, number>): { name: string; weight: number }[] {
+  const known = [...times.values()].sort((a, b) => a - b);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  return files.map((name) => ({ name, weight: times.get(name.replace(/\\/g, '/')) ?? median }));
 }
 
 /** The list's entries whose test file this run covered: a shard judges only its own files. */
@@ -189,10 +209,17 @@ function runFile(file: string, capMs: number): Promise<{ tap: string; timedOut: 
 }
 
 async function main(): Promise<number> {
-  const { values } = parseArgs({ options: { out: { type: 'string' }, cap: { type: 'string', default: '240' }, jobs: { type: 'string', default: '4' }, shard: { type: 'string', default: '1/1' } } });
+  const { values } = parseArgs({ options: { out: { type: 'string' }, cap: { type: 'string', default: '240' }, jobs: { type: 'string', default: '4' }, shard: { type: 'string', default: '1/1' }, times: { type: 'string' } } });
   const [index, count] = values.shard.split('/').map(Number);
   if (!(count >= 1 && index >= 1 && index <= count)) throw new Error(`--shard takes <index>/<count>, such as 2/3, not ${values.shard}`);
-  const files = shardOf(testFiles().map((name) => ({ name, size: statSync(join(ROOT, name)).size })), index, count);
+  let times = new Map<string, number>();
+  try {
+    times = readTimes(readFileSync(TIMES_FILE, 'utf8'));
+  } catch {
+    // No times yet: every file weighs the same, and the shards still cover every file once.
+  }
+  const files = shardOf(weightsOf(testFiles(), times), index, count);
+  const took: string[] = [];
   const failures: string[] = [];
   const reasons = new Map<string, string>();
   const folders = { root: ROOT, home: homedir() };
@@ -204,6 +231,7 @@ async function main(): Promise<number> {
       const { tap, timedOut } = await runFile(file, Number(values.cap) * 1000);
       const found = entriesOf(file, tap, timedOut);
       failures.push(...found);
+      took.push(`${Math.max(1, Math.round((Date.now() - started) / 1000))} ${file.replace(/\\/g, '/')}`);
       const name = file.replace(/\\/g, '/');
       for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
       process.stdout.write(`${found.length ? 'fail' : 'ok  '} ${file.replace(/\\/g, '/')} (${Math.round((Date.now() - started) / 1000)} s${found.length ? `, ${found.length} failing` : ''})\n`);
@@ -212,6 +240,7 @@ async function main(): Promise<number> {
   await Promise.all(Array.from({ length: Number(values.jobs) }, worker));
   failures.sort();
   if (values.out) writeFileSync(values.out, knownText(failures, reasons));
+  if (values.times) writeFileSync(values.times, `${took.sort((a, b) => a.split(' ')[1].localeCompare(b.split(' ')[1])).join('\n')}\n`);
   const { added, fixed } = judgeKnown(failures, knownFor(readKnown(readFileSync(KNOWN_FILE, 'utf8')), files));
   const lines = [`windows-known: shard ${index}/${count}, ${files.length} files, ${failures.length} failing, ${added.length} new, ${fixed.length} fixed.`];
   if (reasons.size) lines.push('Failures by reason (first line of the error):', ...reasonCounts(reasons.values()));
