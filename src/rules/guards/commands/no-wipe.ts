@@ -4,6 +4,7 @@ import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
 import { plainArgs, WRITE_REDIRECT } from '../lead-only/targets.ts';
 import { braceForms, findProgramPlaces, programName, realPath, unquotedRedirects, withoutShellRedirects } from '../bash/read/words.ts';
+import { FIND_LEAD_OPTIONS } from '../worker/mark.ts';
 
 // ---- Damage outside the project (#969) ----
 //
@@ -13,9 +14,11 @@ import { braceForms, findProgramPlaces, programName, realPath, unquotedRedirects
 //    `Start-Process -Verb RunAs`. The owner runs what needs root.
 // 2. No wipe of home or system folders: a recursive delete, and a recursive mode or owner
 //    change, whose target is `/`, the home folder, a top-level system folder, or a glob over
-//    one of them (`/*`, `~/*`). A target the guard cannot read is refused too.
-// 3. No disk commands: `mkfs*`, `wipefs`, `fdisk`, `parted`, `dd` with `of=/dev/…`, a
-//    redirect into `/dev/…`, `format` and `diskpart`.
+//    one of them (`/*`, `~/*`). `find` with a delete action counts by its start folder. A
+//    target the guard cannot read is refused too; one that arrives on stdin (`xargs rm -rf`)
+//    is not read, and stays allowed.
+// 3. No disk commands: `mkfs*`, `wipefs`, `fdisk`, `parted`, `diskutil`, `dd` with
+//    `of=/dev/…`, a redirect into `/dev/…`, `format` and `diskpart`.
 //
 // These answer after the rules that name the case more exactly: a worker's own rules, the
 // git folder, a blocked program, a post that leaks a secret. The first rule found is kept.
@@ -59,20 +62,28 @@ function checkNoRoot(programs: ProgramPlace[], words: string[]): Finding | null 
 }
 
 // PowerShell's `-Verb RunAs` asks for the elevation prompt, which is root. `-Verb` takes
-// the next word as its value.
+// the next word, or a `:` or `=` and the value in one word (`-Verb:RunAs`).
 function startsRunAs(words: string[], from: number): boolean {
   for (let index = from + 1; index < words.length; index++) {
-    if (words[index].toLowerCase() !== '-verb') continue;
-    return /^runas$/i.test(words[index + 1] ?? '');
+    const word = words[index].toLowerCase();
+    if (word === '-verb') {
+      if (/^runas$/i.test(words[index + 1] ?? '')) return true;
+      continue;
+    }
+    if (/^-verb[:=]runas$/.test(word)) return true;
   }
   return false;
 }
 
 // ---- Rule 2: no wipe of home or system folders ----
 
-const WIPE_PROGRAMS = new Set(['rm', 'rmdir', 'remove-item', 'rd']);
-// cmd's own flags of `rd`; every other `/…` word is a target.
-const CMD_FLAGS = new Set(['/s', '/q']);
+const WIPE_PROGRAMS = new Set(['rm', 'rmdir', 'remove-item', 'rd', 'del', 'erase']);
+// cmd's own flags of `rd`, `del` and `erase`; every other `/…` word is a target.
+const CMD_PROGRAMS = new Set(['rd', 'del', 'erase']);
+const CMD_FLAGS = new Set(['/s', '/q', '/f', '/p', '/a']);
+// A find action that deletes or runs a command on each hit. The start folder is what it
+// reaches, so a dangerous start with one of these is a wipe.
+const FIND_DELETES = ['-delete', '-exec', '-execdir', '-ok', '-okdir'];
 
 /** A recursive delete or a recursive mode or owner change on a dangerous place (#969). */
 function checkWipe(programs: ProgramPlace[], words: string[], cwd: string | null, env: Env): Finding | null {
@@ -85,8 +96,9 @@ function checkWipe(programs: ProgramPlace[], words: string[], cwd: string | null
     const name = programName(program).toLowerCase();
     const args = withoutShellRedirects(words, index + 1);
     if (name === 'find') {
-      // `find <start> … -delete`: the start folder is the target; an inner `rm` is read at its own word.
-      if (!args.includes('-delete')) continue;
+      // `find <starts> … -delete` or `-exec rm …`: the starts are the target; an inner `rm`
+      // is read at its own word.
+      if (!FIND_DELETES.some((action) => args.includes(action))) continue;
       for (const start of findStartFolders(args)) {
         const place = findWipePlace(start, cwd, home, homeReal);
         if (place !== null) return wipeFinding(program, start, place);
@@ -115,22 +127,26 @@ function findStartFolders(args: string[]): string[] {
   const starts: string[] = [];
   for (let index = 0; index < args.length; index++) {
     const word = args[index];
-    if (word.startsWith('-')) {
-      if (FIND_GLOBALS.has(word)) index++;
-      break;
+    // find's global options come before the start folders: `-H`, `-L`, `-P`, `-O2` and
+    // `-D <opt>` name no folder, and the depth and regex options take a value (#969).
+    if (FIND_LEAD_OPTIONS.test(word)) continue;
+    if (word === '-D' || FIND_GLOBAL_VALUES.has(word)) {
+      index++;
+      continue;
     }
+    if (word.startsWith('-')) break;
     starts.push(word);
   }
   return starts.length === 0 ? ['.'] : starts;
 }
 
-const FIND_GLOBALS = new Set(['-maxdepth', '-mindepth', '-regextype']);
+const FIND_GLOBAL_VALUES = new Set(['-maxdepth', '-mindepth', '-regextype']);
 
-/** Whether the command removes folders: `rm -r`, `Remove-Item -Recurse`, `rd /s`, `chmod -R`, `chown -R`. `rmdir` always does. */
+/** Whether the command removes folders: `rm -r`, `Remove-Item -Recurse`, `rd /s`, `del /s`, `chmod -R`, `chown -R`. `rmdir` always does. */
 function isWipeRecursive(name: string, args: string[]): boolean {
   if (name === 'rmdir') return true;
   for (const arg of args) {
-    if (name === 'rd') {
+    if (CMD_PROGRAMS.has(name)) {
       if (/^\/s/i.test(arg)) return true;
       continue;
     }
@@ -146,7 +162,7 @@ function isWipeRecursive(name: string, args: string[]): boolean {
 
 /** The paths the command may remove or change. cmd's flags are no targets; the mode and the owner are no targets. */
 function wipeTargets(name: string, args: string[]): string[] {
-  if (name === 'rd') return args.filter((word) => !CMD_FLAGS.has(word.toLowerCase()) && !word.startsWith('-'));
+  if (CMD_PROGRAMS.has(name)) return args.filter((word) => !CMD_FLAGS.has(word.toLowerCase()) && !word.startsWith('-'));
   const targets = plainArgs(args);
   return name === 'chmod' || name === 'chown' ? targets.slice(1) : targets;
 }
@@ -163,10 +179,18 @@ const HOME_FORM = /^(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[\
 // `$PWD` names the folder the command runs in, so the guard reads it as `cwd`.
 const PWD_FORM = /^(?:\$PWD|\$\{PWD\})(?=[\\/]|$)/;
 
-// The top-level system folders on Linux and macOS, by exact path. Windows has its own
-// tree under a drive, read below (`C:\Windows`, `C:\Users`).
-const SYSTEM_TOPS = new Set(['/etc', '/usr', '/var', '/bin', '/boot', '/home', '/Users']);
+// The top-level folders on Linux and macOS (`/System`, `/Library`, `/Applications`, `/opt`,
+// `/srv`, `/usr`, `/etc` and the rest) belong to the system, not to a project. The guard
+// reads every one- or two-part absolute path as the system, except a temp folder and what
+// it holds. Windows has its own tree under a drive, read below (`C:\Windows`, `C:\Users`).
+const TEMP_TOPS = new Set(['/tmp']);
 const WINDOWS_TOPS = new Set(['windows', 'users']);
+
+/** Whether an unquoted drive path lost its `\` and left a system top behind: `C:Users` for `C:\Users`. */
+function isDriveSystemTop(word: string): boolean {
+  const top = /^[A-Za-z]:([^\\/]+)$/.exec(word)?.[1] ?? '';
+  return WINDOWS_TOPS.has(top.replace(/[*?[]+$/, '').toLowerCase());
+}
 
 /** The dangerous place the target `word` names, or null when the guard can read it as a safe one. */
 function findWipePlace(word: string, cwd: string | null, home: string | null, homeReal: string | null): Place | null {
@@ -183,6 +207,9 @@ function findWipePlace(word: string, cwd: string | null, home: string | null, ho
     return findPlaceInPath(join(cwd, word.slice(pwd[0].length)), home, homeReal);
   }
   if (/^[A-Za-z]:[\\/]?$/s.test(word)) return 'root'; // `C:\`, `C:/`, `C:`
+  // An unquoted Windows path loses its `\` in the guard's read (`C:\Users` becomes
+  // `C:Users`), so a drive-relative word that names a system top counts as one (#969).
+  if (isDriveSystemTop(word)) return 'system';
   if (/[$%`]/.test(word)) return 'unreadable'; // a value the shell fills in
   if (word.startsWith('~')) return 'unreadable'; // `~user`: another account's home folder
   if (/^[A-Za-z]:[\\/]/.test(word) || isAbsolute(word)) return findPlaceInPath(word, home, homeReal);
@@ -217,12 +244,14 @@ function findPlainPlace(text: string, home: string | null, homeReal: string | nu
   if (/^\/{1,2}$/.test(abs)) return 'root';
   // The home folder counts by real path too, so a symlink to it counts.
   if (home !== null && (abs === home || realPath(abs) === homeReal)) return 'home';
-  return SYSTEM_TOPS.has(abs) ? 'system' : null;
+  const parts = abs.split('/').filter(Boolean);
+  if (parts.length <= 2 && !TEMP_TOPS.has(`/${parts[0]}`)) return 'system';
+  return null;
 }
 
 // ---- Rule 3: no disk commands ----
 
-const DISK_PROGRAMS = new Set(['wipefs', 'fdisk', 'sfdisk', 'cfdisk', 'parted', 'diskpart', 'format']);
+const DISK_PROGRAMS = new Set(['wipefs', 'fdisk', 'sfdisk', 'cfdisk', 'parted', 'diskpart', 'format', 'diskutil', 'hdparm', 'gpt', 'sgdisk', 'nvme', 'blkdiscard']);
 // The /dev nodes that are not disks: a redirect or `dd` may still write to these.
 const QUIET_DEV = new Set(['/dev/null', '/dev/stdout', '/dev/stderr', '/dev/tty']);
 
@@ -232,6 +261,12 @@ function checkDisk(programs: ProgramPlace[], words: string[]): Finding | null {
     const name = programName(word).toLowerCase();
     if (name.startsWith('mkfs')) return diskFindingOf(`\`${word}\` would write a filesystem on a disk`);
     if (DISK_PROGRAMS.has(name)) return diskFindingOf(`\`${word}\` would change a disk`);
+    // `shred` wipes a file, and a disk when it names one: only the disk is this rule's.
+    if (name === 'shred') {
+      const disk = words.slice(index + 1).find((arg) => /^\/dev\//i.test(arg) && !QUIET_DEV.has(arg.toLowerCase()));
+      if (disk !== undefined) return diskFindingOf(`\`shred\` would write to the disk \`${disk}\``);
+      continue;
+    }
     if (name !== 'dd') continue;
     for (const arg of words.slice(index + 1)) {
       const disk = /^of=(\/dev\/.*)$/i.exec(arg)?.[1];
