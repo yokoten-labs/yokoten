@@ -7,6 +7,7 @@ import { WORKER_MARK, protectedGitDirs, markFinding, FIND_WRITES } from './mark.
 import { configFolder, configFinding, namesConfigFolder, withHomeRead, UNKNOWN_PART, ANY_PART } from './config.ts';
 import { GIT_PLAIN_OPTIONS, isLongOption, hasShortOption } from './box.ts';
 import { isAssignment, withoutShellRedirects, realPath, placedPath, FIND_ACTIONS, REDIRECT, programName, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
+import { withoutCmdSwitches } from '../bash/read/run.ts';
 import { writesFile } from '../bash/body.ts';
 import { plainArgs } from '../lead-only/targets.ts';
 
@@ -269,7 +270,7 @@ export function configReach(words: string[], { folder, home, forms }: { folder: 
   if (!forms.length || onlyReads(words)) return null;
   const names = (shown: string) =>
     `this command does more than read and works on ${shown}, which ${/[$\`]/.test(shown) ? 'may be or hold' : 'is or holds'} yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`;
-  for (const word of words) {
+  for (const word of withoutCmdSwitches(words)) {
     if (word.includes('\n')) continue;
     for (const cand of pathCandidates(word, folder, home)) {
       if (reachesConfig(cand, folder, forms)) return configFinding(names(REDIRECT.exec(word)?.[1] ?? word));

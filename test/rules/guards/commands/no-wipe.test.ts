@@ -15,12 +15,20 @@ import { allowed, blocked, refusedAs } from '../../../../test/repo/helpers.ts';
 const withHome = { HOME: TEST_HOME };
 
 test('guard: an agent never gets root (#969)', () => {
-  for (const command of ['sudo', 'sudo -n true', 'sudo -i', 'sudo -u root true', 'sudo rm -rf /var', 'sudo git status', 'doas true', 'su root', 'su - root', 'pkexec true', 'runas /user:admin cmd', 'runas cmd', 'Start-Process -Verb RunAs cmd', 'Start-Process pwsh -Verb RunAs', 'Start-Process -Verb:RunAs cmd', 'Start-Process -Verb=RunAs cmd', 'env sudo true', 'nice sudo true', 'xargs sudo true', 'find . -exec sudo true \\;']) {
+  for (const command of ['sudo', 'sudo -n true', 'sudo -i', 'sudo -u root true', 'sudo git status', 'doas true', 'su root', 'su - root', 'pkexec true', 'runas /user:admin cmd', 'runas cmd', 'Start-Process -Verb RunAs cmd', 'Start-Process pwsh -Verb RunAs', 'Start-Process -Verb:RunAs cmd', 'Start-Process -Verb=RunAs cmd', 'env sudo true', 'nice sudo true', 'xargs sudo true', 'find . -exec sudo true \\;']) {
     refusedAs(command, 'no-root');
   }
   for (const command of ['git commit -m "no sudo"', 'echo sudo', 'grep sudo README.md', 'cat sudo.md', 'npm run sudo', 'git sudo-x', 'sudoers.txt', 'cat /etc/sudoers', 'Start-Process -Verb Open cmd']) {
     allowed(command);
   }
+  // `/var` reads on each system as that system reads it. On Windows Git Bash keeps it for
+  // itself and the guard can't place it, so the checkout rule answers first, and says why (#1015).
+  for (const platform of ['linux', 'darwin'] as const) {
+    assert.equal(checkCommand('sudo rm -rf /var', { cwd: process.cwd(), env: {}, place: { platform, tmp: '/tmp' } })?.id, 'no-root', platform);
+  }
+  const onWindows = checkCommand('sudo rm -rf /var', { cwd: 'C:\\work\\app', env: {}, place: { platform: 'win32', tmp: 'C:\\tmp' } });
+  assert.equal(onWindows?.id, 'delete-checkout');
+  assert.match(onWindows?.what ?? '', /can't tell where this path is/);
   const finding = checkCommand('sudo -n true', { cwd: process.cwd(), env: {} });
   assert.match(finding?.what ?? '', /root/);
   assert.match(finding?.fix ?? '', /tell the owner/);
