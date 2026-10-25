@@ -326,6 +326,8 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- On Windows, a done-when check stops programs it left running after `cmd.exe` exits (#735). On Linux, a check that ends also stops a program in a new process group in its session; one that started its own session, such as `setsid`, is still left running. If Windows has no job host, the check runs without one and says why on stderr.
+- The Windows job host is found even when an agent hands the hook an environment with no `SystemRoot`: yokoten falls back to `windir`, then `C:\Windows`. Tested on Windows with Node 24.22.1.
 - `yokoten init`, `yokoten doctor` and the hooks setup no longer stop with a RangeError on a very long line of package-runner flags, such as `npx -y -y ... yokoten check`. They now read the flags one word at a time (#431).
 - The guard no longer reads a quoted `~` after `cd` as your home folder. Bash keeps `cd "~/x"` as a folder named `~`, so the guard now treats where that `cd` goes as unknown. A worker that writes a lead-only file after such a `cd` is stopped again (#465).
 - `yokoten bot --` runs its command with `TZ=UTC`. Then `gh` sends `Time-Zone: UTC`, and the commits GitHub makes, such as a merge, stay on UTC. The tool-call guard trusts `TZ=UTC` next to a post, as an `export` or a prefix. Any other zone or name is still refused (#488).

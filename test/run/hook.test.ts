@@ -60,6 +60,7 @@ import {
   windowsCommandTail,
   windowsJobArgs,
   windowsPowerShellPath,
+  windowsSystemRoot,
   windowsTreeKillArgs,
   writeAgentChecks,
 } from '../../src/run/hook.ts';
@@ -1010,4 +1011,13 @@ test('stop log: the cap drops the oldest lines (#621)', () => {
   trimStopsLog(file, cap);
   assert.deepEqual(readFileSync(file, 'utf8').trim().split('\n'), [lines[3], lines[4]]);
   assert.equal(STOPS_MAX_BYTES, 5 * 1024 * 1024);
+});
+
+// A trimmed environment from an agent must not turn the job off (10-25: on Windows the test
+// sandbox had no SystemRoot, the check ran without a job, and the writer lived on).
+test('windowsSystemRoot: the check\'s SystemRoot, then windir, then C:\\Windows (#735)', () => {
+  assert.equal(windowsSystemRoot({ SystemRoot: 'D:\\Win', windir: 'E:\\Windows' }), 'D:\\Win');
+  assert.equal(windowsSystemRoot({ SYSTEMROOT: 'D:\\Win' }), 'D:\\Win');
+  assert.equal(windowsSystemRoot({ windir: 'F:\\Windows' }), 'F:\\Windows');
+  assert.equal(windowsSystemRoot({}), 'C:\\Windows', 'a trimmed env still finds the usual folder');
 });
