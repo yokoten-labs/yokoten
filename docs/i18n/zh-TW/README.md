@@ -51,7 +51,22 @@ v0.1.1 新增：幾個 AI 工作階段在同一個儲存庫裡工作時，`yokot
 
 ## 支援範圍
 
-- **Agent**：Claude Code、GitHub Copilot CLI、Antigravity CLI、Codex CLI、Muse Code、DeepSeek Harness、Grok CLI 和 OpenCode 都做了端對端驗證。Gemini CLI 已經寫進程式，但還沒有做端對端執行。Codex CLI、Copilot CLI、Muse Code 和 Grok CLI 要先信任這個資料夾才會執行守衛：跑一次 `npx yokoten trust`。見 [agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+任何 AI 模型都可以。守衛檢查的是 agent 要跑的指令，不是模型。
+
+- **Agent**：守衛和下面每一個 agent 一起工作。每一行的證據（日期、執行方式、先要知道什麼）見 [agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+
+| Agent | 已做端對端驗證 | 要先跑 `npx yokoten trust` | 測試過的模型 |
+|---|---|---|---|
+| Claude Code | yes | no | `deepseek-flash` |
+| GitHub Copilot CLI | yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity CLI (`agy`) | yes | no | `gemini-3.8-flash-high` |
+| Codex CLI | yes | yes | `deepseek-flash` |
+| Muse Code | yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek Harness (`dsh`) | yes | no | the default DeepSeek model |
+| Grok CLI (`grok`) | yes | yes | the default model |
+| Gemini CLI | not yet | no | — |
+| OpenCode | yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+
 - **語言**：什麼語言都可以。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的測試指令。
 
 ## 其他安裝方式

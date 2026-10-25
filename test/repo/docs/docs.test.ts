@@ -2,16 +2,16 @@
 // The open standard names every field the code already has (#755). A new field fails here
 // until docs/standard.md and the zh-CN copy both name it. The event log is specified
 // before the code writes it, so those words are listed here by hand.
-import './home.ts';
+import '../home.ts';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { longSentences } from '../../src/rules/pr.ts';
-import { parseSourceMarker } from '../../src/run/notes/translations.ts';
+import { longSentences } from '../../../src/rules/pr.ts';
+import { parseSourceMarker } from '../../../src/run/notes/translations.ts';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 type ManifestoPage = {
   file: string;
