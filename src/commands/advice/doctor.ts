@@ -196,8 +196,11 @@ function explainScreen(invocation: Invocation, found: Explained): string[] {
 /** The first, usable part of a fix: the rest is a command or a link, and the screen stays short. */
 function shortFix(fix: string): string {
   const first = fix.split(', then ')[0] ?? fix;
-  if (first.length <= 160) return first;
-  return `${first.slice(0, first.lastIndexOf(' ', 158))}…`;
+  // A cut fix says where the rest is, so "paste this" never points at nothing.
+  const rest = '; the whole fix: `yokoten doctor --all`';
+  if (first === fix && first.length <= 160) return first;
+  if (first.length <= 160) return `${first}${rest}`;
+  return `${first.slice(0, first.lastIndexOf(' ', 158))}…${rest}`;
 }
 
 /** A step's fix, computed where it can be; a step that needs a code host reads none here. */
