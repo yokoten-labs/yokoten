@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
+import { claudeCommand } from '../../src/commands/setup.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
 test('update: a folder that does not exist is said plainly (#208)', () => {
@@ -211,4 +212,26 @@ test('help: upgrade is in the Start group', async () => {
   const help = (await makeSandbox().call(['help'])).stdout;
   const start = help.slice(help.indexOf('Start:'), help.indexOf('Every day:'));
   assert.match(start, /^ {2}upgrade +yokoten itself, to the newest version$/m);
+});
+
+test('upgrade on Windows (#1002): finds claude.exe, or claude.cmd, on the PATH', () => {
+  const sandbox = makeSandbox();
+  const folder = (name: string, ...files: string[]) => {
+    const dir = join(sandbox.home, name);
+    mkdirSync(dir, { recursive: true });
+    for (const file of files) writeFileSync(join(dir, file), '');
+    return dir;
+  };
+  const exeOnly = folder('native', 'claude.exe');
+  const cmdOnly = folder('npm', 'claude.cmd');
+  const empty = folder('empty');
+  // The native installer: only claude.exe, which runs without the shell.
+  assert.deepEqual(claudeCommand({ PATH: `${empty};${exeOnly}` }, 'win32'), { file: join(exeOnly, 'claude.exe'), shell: false });
+  // An npm install: only claude.cmd, which the shell finds by its name.
+  assert.deepEqual(claudeCommand({ PATH: `${empty};${cmdOnly}` }, 'win32'), { file: 'claude.cmd', shell: true });
+  // Both in one folder: .exe first.
+  assert.equal(claudeCommand({ Path: folder('both', 'claude.cmd', 'claude.exe') }, 'win32').shell, false);
+  // Positive control: neither found falls back to the shell; Linux never uses it.
+  assert.deepEqual(claudeCommand({ PATH: empty }, 'win32'), { file: 'claude.cmd', shell: true });
+  assert.deepEqual(claudeCommand({ PATH: exeOnly }, 'linux'), { file: 'claude', shell: false });
 });

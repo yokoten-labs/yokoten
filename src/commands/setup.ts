@@ -1,7 +1,7 @@
 // `yokoten` with no command, `init`, `update`, `install`, `uninstall` and `upgrade`: they write yokoten into a project or a machine, or bring it up to date.
 
 import { existsSync, readSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ghIn } from '../host/github/index.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
@@ -229,16 +229,31 @@ export interface UpgradeDone {
   lines: string[];
 }
 
-/** Claude Code's command. Windows has no `claude` without a suffix: the shell finds `claude.cmd`. */
-const claudeFile = (): string => (process.platform === 'win32' ? 'claude.cmd' : 'claude');
+/**
+ * How to start Claude Code. On Windows the native installer puts only `claude.exe` on the PATH,
+ * and an npm install puts `claude.cmd`: the first one found in PATH order wins, `.exe` before
+ * `.cmd` in the same folder. An `.exe` runs by itself; a `.cmd` needs the shell, which finds it
+ * by its name. With neither found, the shell is asked for `claude.cmd`, as before (#1002).
+ */
+export function claudeCommand(env: Env, platform: NodeJS.Platform = process.platform): { file: string; shell: boolean } {
+  if (platform !== 'win32') return { file: 'claude', shell: false };
+  const path = env.PATH ?? env.Path ?? '';
+  for (const dir of path.split(';').filter(Boolean)) {
+    const exe = join(dir, 'claude.exe');
+    if (existsSync(exe)) return { file: exe, shell: false };
+    if (existsSync(join(dir, 'claude.cmd'))) return { file: 'claude.cmd', shell: true };
+  }
+  return { file: 'claude.cmd', shell: true };
+}
 
 /**
  * Runs `claude <args>` with `env`. A failure keeps the last line it said, so the user reads
  * Claude Code's own words, and the command to run by hand for the rest. Every word is a fixed
  * one or a name PLAIN_NAME passed, so the Windows shell line holds nothing it reads.
  */
-function runClaude(args: string[], env: Env): { ok: boolean; said: string } {
-  const result = spawnSync(claudeFile(), args, { env, encoding: 'utf8', windowsHide: true, shell: process.platform === 'win32', timeout: CLAUDE_TIMEOUT });
+function runClaude(args: string[], env: Env, platform: NodeJS.Platform): { ok: boolean; said: string } {
+  const { file, shell } = claudeCommand(env, platform);
+  const result = spawnSync(file, args, { env, encoding: 'utf8', windowsHide: true, shell, timeout: CLAUDE_TIMEOUT });
   if (result.error) return { ok: false, said: result.error.message };
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
   const said = output.split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
@@ -251,7 +266,7 @@ function runClaude(args: string[], env: Env): { ok: boolean; said: string } {
  * failed step leaves the plugin as it was (#950). Without the plugin it names the one command
  * that installs the newest yokoten and runs nothing.
  */
-export function upgrade(env: Env): UpgradeDone {
+export function upgrade(env: Env, platform: NodeJS.Platform = process.platform): UpgradeDone {
   const plugin = enabledPlugin(env);
   if (plugin === null) {
     return {
@@ -274,7 +289,7 @@ export function upgrade(env: Env): UpgradeDone {
   const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
   // Each step says one line. A failed step stops the rest: the next one needs it.
   const step = (label: string, args: string[]): boolean => {
-    const done = runClaude(args, httpsEnv);
+    const done = runClaude(args, httpsEnv, platform);
     lines.push(done.ok ? ok(label) : failed(label));
     if (done.ok) return true;
     if (done.said) lines.push(`  ${done.said}`);
