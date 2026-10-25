@@ -117,12 +117,12 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'version': {
       const options = parse('version', args);
       if (typeof options === 'string') return usage(invocation, options);
-      print(invocation, [`yokoten ${VERSION} (stable)`]);
+      print(invocation, [VERSION]);
       return 0;
     }
     case '--version':
     case '-v':
-      print(invocation, [`yokoten ${VERSION} (stable)`]);
+      print(invocation, [VERSION]);
       return 0;
     case 'help': {
       const options = parse('help', args);

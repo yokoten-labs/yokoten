@@ -36,7 +36,7 @@ function trustFolders(home: string, ...folders: string[]): string {
 
 test('copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trusted parent folder counts', async () => {
   const sandbox = makeSandbox();
-  const doctor = async () => (await sandbox.call(['doctor'])).stdout;
+  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
   // No Copilot home: Copilot looks unused here, so no line at all.
   assert.doesNotMatch(await doctor(), /copilot-hook/);
   mkdirSync(join(sandbox.home, '.copilot'));
@@ -61,7 +61,7 @@ test('copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trus
   // COPILOT_HOME moves the store, and the note names the variable, not the path.
   const elsewhere = join(sandbox.home, 'elsewhere');
   assert.deepEqual(readTrust(root, { HOME: sandbox.home, COPILOT_HOME: elsewhere }), { state: 'no home', store: '$COPILOT_HOME/config.json' });
-  assert.doesNotMatch((await sandbox.call(['doctor'], { extra: { COPILOT_HOME: elsewhere } })).stdout, /copilot-hook/, 'after init too: no home, no line');
+  assert.doesNotMatch((await sandbox.call(['doctor', '--all'], { extra: { COPILOT_HOME: elsewhere } })).stdout, /copilot-hook/, 'after init too: no home, no line');
   mkdirSync(elsewhere);
   assert.deepEqual(readTrust(root, { HOME: sandbox.home, COPILOT_HOME: elsewhere }), { state: 'no store', store: '$COPILOT_HOME/config.json' });
 });

@@ -42,7 +42,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   mkdirSync(away);
   const said = (command: string) => new RegExp(`^yokoten ${command}: ~/away is not inside a git repo\\. The checks read commits, so yokoten needs git history\\. Run it inside your project, or \`git init\` first\\.\\n  docs: \\S+#commands\\n$`);
   const runs: [string[], string, Record<string, string>?][] = [
-    [['doctor'], 'doctor'],
+    [['doctor', '--all'], 'doctor'],
     [['check'], 'check'],
     [['check', '--staged'], 'check'],
     [['check', '--history'], 'check'],
@@ -279,12 +279,12 @@ test('output colour: a mark in green, red or yellow, a heading in bold, a comman
 // #707: doctor on a terminal, through the command, gets colour; a pipe or NO_COLOR does not.
 test('output colour: doctor colours a terminal report and never a pipe or NO_COLOR (#707)', async () => {
   const sandbox = makeSandbox();
-  const colour = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
+  const colour = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
   assert.match(colour.stdout, /\u001b\[1m/, 'a heading is bold');
   assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:✔ ok|✔ done|✘ MISSING|⚠ note|● next|● to do|\? can't check)\u001b\[0m/, 'a mark has its glyph, its word and its colour');
   assert.ok(!/^[ ]*(?:✔|✘|●|⚠|\?)/m.test(colour.stdout), 'the glyph sits inside the colour, so a plain line never shows one');
-  const plain = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
-  const piped = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
+  const plain = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
+  const piped = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
   for (const [name, result] of [['NO_COLOR', plain], ['a pipe', piped]] as const) {
     assert.ok(!result.stdout.includes('\u001b'), `${name}: no ANSI code`);
     assert.ok(result.stdout.includes('yokoten '), `${name}: the report still reads`);
@@ -299,7 +299,7 @@ const PERSON_COMMANDS: { name: string; args: string[] }[] = [
   { name: 'help', args: ['help'] },
   { name: 'install', args: ['install'] },
   { name: 'init', args: ['init'] },
-  { name: 'doctor', args: ['doctor'] },
+  { name: 'doctor', args: ['doctor', '--all'] },
   { name: 'conflicts', args: ['conflicts'] },
   { name: 'train', args: ['train', '--next'] },
   { name: 'check', args: ['check'] },

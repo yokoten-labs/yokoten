@@ -200,7 +200,7 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
 
 test('check --issue: reads the issue from the CI event; a bad title fails, a good one passes', async () => {
   const sandbox = makeSandbox();
-  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', 'check'] }));
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all', 'check'] }));
   const event = (issue: object) => {
     const file = join(sandbox.home, 'event.json');
     writeFileSync(file, JSON.stringify({ action: 'opened', issue }));
@@ -241,7 +241,7 @@ test('check --issue: reads the issue from the CI event; a bad title fails, a goo
 // when the repo has those labels. A repo without a kind gets no line for it.
 test('check --issue: an issue needs the type and tier labels its repo has (#544)', async () => {
   const sandbox = makeSandbox();
-  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor'] }));
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all'] }));
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   // A gh first on PATH that answers `label list` from labels.json; every other call fails.
   const bin = join(sandbox.home, 'bin');
@@ -288,7 +288,7 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   assert.equal(result.status, 0, result.stderr);
   // gh can't list the labels: only the title is checked.
   const bare = makeSandbox();
-  bare.write('yokoten.json', JSON.stringify({ areas: ['doctor'] }));
+  bare.write('yokoten.json', JSON.stringify({ areas: ['doctor', '--all'] }));
   const bareEvent = join(bare.home, 'event.json');
   writeFileSync(bareEvent, JSON.stringify({ action: 'opened', issue: { title: 'doctor: add the review step', labels: [] } }));
   result = await bare.call(['check', '--issue'], { extra: { GITHUB_EVENT_PATH: bareEvent } });

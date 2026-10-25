@@ -161,7 +161,7 @@ test('codex trust (#341): doctor says when Codex skips the hooks, and ok only wh
     mkdirSync(dirname(config), { recursive: true });
     writeFileSync(config, text);
   };
-  const doctor = async () => (await sandbox.call(['doctor'])).stdout;
+  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
   // No Codex home: Codex looks unused here, so no trust line, and no claim that it is trusted.
   assert.match(await doctor(), /ok +codex-hook: \.codex\/hooks\.json is in place; trust not checked, no ~\/\.codex\n/);
   assert.doesNotMatch(await doctor(), /Codex trusts|codex-hook: can't check/);

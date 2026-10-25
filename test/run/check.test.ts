@@ -978,7 +978,7 @@ test('check: a stale exempt glob is a note for the tree and the doctor, never at
   assert.equal(tree.status, 0, 'a note never fails the check');
   const staged = await sandbox.call(['check', '--staged']);
   assert.doesNotMatch(staged.stdout + staged.stderr, /matches no folder/);
-  assert.match((await sandbox.call(['doctor'])).stdout, /note +yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/);
   // Once a crate has the folder, the note goes.
   for (let index = 0; index < 9; index++) sandbox.write(`crates/app-core/tests/data/f${index}.xls`, 'x\n');
   sandbox.git('add', '.');
@@ -1025,10 +1025,10 @@ test('check and the commit hook: a mark allowed in one repo is stopped in anothe
   // doctor counts the allowed marks, never names them.
   own.write('README.md', 'QuietVale ships\n');
   own.git('add', '.');
-  const doctor = (await own.call(['doctor'], { extra })).stdout;
+  const doctor = (await own.call(['doctor', '--all'], { extra })).stdout;
   assert.match(doctor, /own-marks: 1 of your private marks allowed here by privacy\.allow/);
   assert.ok(!/quietvale/i.test(doctor));
-  assert.doesNotMatch((await other.call(['doctor'], { extra })).stdout, /own-marks/);
+  assert.doesNotMatch((await other.call(['doctor', '--all'], { extra })).stdout, /own-marks/);
 });
 
 test('check: an added forge login is fine where a file names accounts, and found everywhere else (#410)', async () => {
@@ -1301,10 +1301,10 @@ test('marks allow --here: the machine allows a mark in one repo with no yokoten.
     assert.equal(stopped.status, 1, `${args.join(' ')} in the other repo`);
     assert.match(stopped.stderr, /README\.md:1: matches a word you added to your private marks/);
   }
-  const doctor = (await run(own, ['doctor'])).stdout;
+  const doctor = (await run(own, ['doctor', '--all'])).stdout;
   assert.match(doctor, /own-marks: 1 of your private marks allowed here by this machine/);
   assert.doesNotMatch(doctor, /by privacy\.allow/);
-  assert.doesNotMatch((await run(other, ['doctor'])).stdout, /own-marks/);
+  assert.doesNotMatch((await run(other, ['doctor', '--all'])).stdout, /own-marks/);
   assert.equal(commit(own, 'start').status, 0, 'the commit hook lets the allowed repo commit');
   assert.notEqual(commit(other, 'start').status, 0, 'the commit hook stops the other repo');
 
@@ -1324,7 +1324,7 @@ test('marks allow --here: the machine allows a mark in one repo with no yokoten.
   const kept = readFileSync(allowFile, 'utf8');
   writeFileSync(allowFile, JSON.stringify({ repos: [{ remote: 'example.com/octo/app', allow: ['quietvale'] }, { remote: 'EXAMPLE.com/octo/app', allow: ['quietvale'] }] }));
   assert.equal((await run(own, ['check', '--staged'])).status, 1, 'two matching entries allow nothing');
-  assert.match((await run(own, ['doctor'])).stdout, /own-marks: this machine allows no private mark here, because two entries in this machine's allow file match this repo/);
+  assert.match((await run(own, ['doctor', '--all'])).stdout, /own-marks: this machine allows no private mark here, because two entries in this machine's allow file match this repo/);
   assert.equal((await run(own, ['marks', 'allow', 'quietvale', '--here'])).status, 1, 'and the command will not guess which to change');
   writeFileSync(allowFile, kept);
   assert.equal((await run(own, ['check', '--staged'])).status, 0);
@@ -1358,21 +1358,21 @@ test('check and doctor: a mark that names the repo is skipped there, counted by 
     sandbox.git('add', 'README.md');
   }
   for (const args of [['check'], ['check', '--staged']]) assert.equal((await run(own, args)).status, 0, `${args.join(' ')} in the repo the mark names`);
-  const doctor = (await run(own, ['doctor'])).stdout;
+  const doctor = (await run(own, ['doctor', '--all'])).stdout;
   assert.match(doctor, /own-marks: 1 of your private marks skipped here because they name this repo/);
 
   // CI's repo name is not read: a checkout whose origin is stranger/other is stopped, faked or not.
   const ci = { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'octo/quiet-vale' };
   for (const args of [['check'], ['check', '--staged']]) assert.equal((await run(stranger, args, ci)).status, 1, `${args.join(' ')} with a faked CI repo`);
-  assert.doesNotMatch((await run(stranger, ['doctor'])).stdout, /own-marks/);
+  assert.doesNotMatch((await run(stranger, ['doctor', '--all'])).stdout, /own-marks/);
 
   // The way back: off in yokoten.json looks for the mark again, and doctor no longer counts it.
   own.write('yokoten.json', JSON.stringify({ privacy: { skipOwnName: false } }));
   assert.equal((await run(own, ['check', '--staged'])).status, 1, 'off: stopped');
-  assert.doesNotMatch((await run(own, ['doctor'])).stdout, /name this repo/);
+  assert.doesNotMatch((await run(own, ['doctor', '--all'])).stdout, /name this repo/);
   own.write('yokoten.json', JSON.stringify({ privacy: { skipOwnName: true } }));
   assert.equal((await run(own, ['check', '--staged'])).status, 0, 'on again');
-  assert.match((await run(own, ['doctor'])).stdout, /own-marks: 1 of your private marks skipped here because they name this repo/);
+  assert.match((await run(own, ['doctor', '--all'])).stdout, /own-marks: 1 of your private marks skipped here because they name this repo/);
 
   // The machine's switch, kept when `marks allow` writes the file.
   // The allow file is beside the default marks file, never the setting's (#656).
@@ -1381,7 +1381,7 @@ test('check and doctor: a mark that names the repo is skipped there, counted by 
   // The switch alone, with no repos key, as the guide shows it: read as no repos.
   writeFileSync(allowFile, JSON.stringify({ skipOwnName: false }));
   assert.equal((await run(own, ['check', '--staged'])).status, 1, 'off on this machine');
-  const switchedOff = (await run(own, ['doctor'])).stdout;
+  const switchedOff = (await run(own, ['doctor', '--all'])).stdout;
   assert.doesNotMatch(switchedOff, /name this repo/);
   assert.doesNotMatch(switchedOff, /allow file/, 'doctor reads the switch alone as a good file');
   assert.equal((await run(own, ['marks', 'allow', 'secondmark', '--here'])).status, 0);
@@ -1427,7 +1427,7 @@ test('marks allow --here: a repo with no origin gets no machine allow; a held lo
   assert.doesNotMatch(dangling.stderr, /gone\.json/);
   assert.ok(lstatSync(allowFile).isSymbolicLink());
   assert.equal((await sandbox.call(['check'])).status, 1, 'a dangling link allows nothing');
-  assert.match((await sandbox.call(['doctor'])).stdout, /own-marks: this machine allows no private mark here, because this machine's allow file can't be read/);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /own-marks: this machine allows no private mark here, because this machine's allow file can't be read/);
 });
 
 test('marks allow: no mark is echoed, -- takes a mark that starts with -, a linked file stays a link, and a failed save says so plainly (#447)', async () => {

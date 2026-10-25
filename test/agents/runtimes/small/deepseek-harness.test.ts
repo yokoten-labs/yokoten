@@ -58,7 +58,7 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   const file = join(sandbox.repo, '.dsh', 'hooks.json');
   const cli = '.yokoten/bin/yokoten.mjs';
   const dshHome = join(sandbox.home, 'dsh-home');
-  const doctor = async () => (await sandbox.call(['doctor'], { extra: { DSH_HOME: dshHome } })).stdout;
+  const doctor = async () => (await sandbox.call(['doctor', '--all'], { extra: { DSH_HOME: dshHome } })).stdout;
   assert.match(await doctor(), /note +deepseek-harness-hook: no tool-call guard in \.dsh\/hooks\.json/, 'reported, not counted as missing');
   sandbox.write('.dsh/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
   const result = await sandbox.call(['init', '--list'], { extra: { DSH_HOME: dshHome } });

@@ -103,7 +103,7 @@ test('doctor --session: a worker hears that lead-only files are guarded; the lea
   const has = (result: { stdout: string }) => result.stdout.split('\n').includes(line);
   assert.ok(has(await sandbox.call(['doctor', '--session'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'YOKOTEN_ROLE=worker');
   assert.ok(!has(await sandbox.call(['doctor', '--session'])), 'the lead');
-  assert.ok(!has(await sandbox.call(['doctor'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'only at session start');
+  assert.ok(!has(await sandbox.call(['doctor', '--all'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'only at session start');
   // A compaction drops what the session heard, never the worker's role (#405).
   const start = (source: string) => sandbox.call(['doctor', '--session'], { extra: { YOKOTEN_ROLE: 'worker', CLAUDE_PROJECT_DIR: sandbox.repo }, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'w-1', source }) });
   assert.ok(has(await start('startup')));
@@ -157,8 +157,8 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
 });
 
 test('every road step has a plain task title (#1027)', async () => {
-  const { STEP_TITLES } = await import('../../../src/commands/advice/doctor.ts');
-  const { ROAD } = await import('../../../src/setup/road.ts');
-  assert.deepEqual(ROAD.map((s) => s.key).filter((key) => !STEP_TITLES[key]), []);
-  for (const t of Object.values(STEP_TITLES)) assert.ok(t.length <= 60, t);
+  const { STEP_TITLES: stepTitles } = await import('../../../src/commands/advice/doctor.ts');
+  const { ROAD: road } = await import('../../../src/setup/road.ts');
+  assert.deepEqual(road.map((s) => s.key).filter((key) => !stepTitles[key]), []);
+  for (const t of Object.values(stepTitles)) assert.ok(t.length <= 60, t);
 });

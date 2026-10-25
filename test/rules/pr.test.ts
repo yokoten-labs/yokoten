@@ -101,7 +101,7 @@ const dependabotPr = (): PullRequest => ({
   author: 'dependabot[bot]',
 });
 
-const AREAS = { areas: ['doctor', 'check', 'kit'] };
+const AREAS = { areas: ['doctor', '--all', 'check', 'kit'] };
 
 test('pull request: a good one passes (#47)', () => {
   assert.deepEqual(checkPullRequest(goodPr(), DEFAULTS), []);

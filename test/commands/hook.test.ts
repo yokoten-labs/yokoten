@@ -246,7 +246,7 @@ test('hook --stop --agent codex|gemini: the end-of-turn event sends the agent ba
   const hooks = JSON.parse(readFileSync(codexFile, 'utf8'));
   delete hooks.hooks.Stop;
   writeFileSync(codexFile, JSON.stringify(hooks));
-  assert.match((await sandbox.call(['doctor'])).stdout, /note +codex-hook: no stop check in \.codex\/hooks\.json/);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +codex-hook: no stop check in \.codex\/hooks\.json/);
 });
 
 // The release refusal is the same plain sentence for every runtime (#931): the approval way
@@ -919,7 +919,7 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   result = await refused('git push -u origin task', /worker does not push/);
   // The refusal says the role came from the mark, and where the lead works (L4).
   assert.match(result.stderr, /carries the worker mark/);
-  assert.ok(result.stderr.includes(`the lead works in the main checkout, ${realpathSync(sandbox.repo)}`), result.stderr);
+  assert.ok(result.stderr.replace(/\s+/g, ' ').includes(`the lead works in the main checkout, ${realpathSync(sandbox.repo)}`), result.stderr);
   // A call that names another folder (Muse's workdir) is still the worker's: the hook runs in the worktree.
   result = await sandbox.call(['hook', '--agent', 'muse'], { cwd: tree, input: JSON.stringify({ cwd: tree, tool_name: 'bash', tool_input: { command: 'git push', workdir: sandbox.repo } }) });
   assert.equal(result.status, 2);
@@ -1153,7 +1153,7 @@ test('worker list: mark keeps the role with .git moved away; unmark clears it (#
   const top = realpathSync(tree);
   const workers = readFileSync(join(sandbox.home, '.config', 'yokoten', 'workers'), 'utf8');
   assert.ok(workers.includes(top), workers);
-  assert.match(result.stdout, /`yokoten worker unmark/);
+  assert.match(result.stdout.replace(/\s+/g, ' '), /`yokoten worker unmark/);
   // Positive control: with `.git` moved away, the session is still a worker.
   renameSync(join(tree, '.git'), join(tree, 'dot-git-moved'));
   result = await muse({ command: 'git push' });

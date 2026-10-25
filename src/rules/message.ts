@@ -913,7 +913,10 @@ export const refusalParts = (f: Finding): Refusal => ({
   docs: f.docs ?? DOCS_URL,
 });
 
-/** One aligned refusal row (issue #1027): a label, then its text. */
+/**
+ * One aligned refusal row (issue #1027): a label, then its text, on one line. It is not
+ * wrapped: an Instead row can hold a command to copy, and a line break would change it.
+ */
 const refusalRow = (label: string, text: string): string[] => [`  ${label.padEnd(10)}${text}`];
 
 /**

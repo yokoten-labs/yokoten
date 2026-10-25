@@ -84,5 +84,5 @@ test('doctor: the note reaches a session for an SSH source, and not for the HTTP
 });
 
 test('doctor: the full report names the note as plugin-source', () => {
-  assert.match(sandboxWith(githubSource).run(['doctor']).stdout, /^ {2}note {4}plugin-source: Claude Code fetches the yokoten marketplace over SSH; update with/m);
+  assert.match(sandboxWith(githubSource).run(['doctor', '--all']).stdout, /^ {2}note {4}plugin-source: Claude Code fetches the yokoten marketplace over SSH; update with/m);
 });

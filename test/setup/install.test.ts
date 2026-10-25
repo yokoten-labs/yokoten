@@ -118,7 +118,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   assert.match(doctor.stdout, /~\/\.config\/yokoten\/private-marks/);
   // The skills check wants the one entry skill in both folders, and names what is missing.
   // Skills are a step on the road, stage 4.
-  const skillsLine = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((l) => / skills/.test(l)) ?? '';
+  const skillsLine = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / skills/.test(l)) ?? '';
   assert.match(await skillsLine(), /^\s+done\s+skills$/);
   rmSync(join(shared, 'skills', 'yokoten'), { recursive: true });
   assert.match(await skillsLine(), /^\s+(next|to do)\s+skills: the yokoten skills are not in ~\/\.agents\/skills \(yokoten\); run `npx yokoten install`, or install the Claude Code plugin$/);
@@ -281,7 +281,7 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   assert.equal(JSON.parse(readFileSync(join(claude, 'settings.json'), 'utf8')).hooks, undefined, 'the plugin brings the hooks');
   assert.match(result.stdout, /no runtime: the yokoten plugin brings its own/);
   assert.doesNotMatch(result.stdout, /nothing to remove/, 'a skill that was never there is not named');
-  assert.doesNotMatch((await sandbox.call(['doctor'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
+  assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
 });
 
 // #988: Claude Code reads its user folder from CLAUDE_CONFIG_DIR. Install, uninstall and a
@@ -299,7 +299,7 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
   assert.ok(existsSync(join(config, 'skills', 'yokoten', 'SKILL.md')), 'the entry skill');
   assert.ok(existsSync(join(config, 'agents', 'worker.md')), 'the agents');
   assert.ok(!existsSync(join(sandbox.home, '.claude')), '~/.claude is not made');
-  assert.match((await sandbox.call(['doctor'], { extra })).stdout, /ok +session-doctor/, 'doctor reads the same folder');
+  assert.match((await sandbox.call(['doctor', '--all'], { extra })).stdout, /ok +session-doctor/, 'doctor reads the same folder');
   // A session with the plugin on takes back what install left, in the same folder.
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   writeFileSync(settingsFile, JSON.stringify(settings));
@@ -548,7 +548,7 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   mkdirSync(dirname(copilotFile), { recursive: true });
   writeFileSync(agyFile, JSON.stringify({ lint: { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } }));
   writeFileSync(copilotFile, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine' }] }] } }));
-  const before = await sandbox.call(['doctor']);
+  const before = await sandbox.call(['doctor', '--all']);
   assert.match(before.stdout, /note {4}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
   assert.match(before.stdout, /note {4}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
   let result = await sandbox.call(['install', '--list']);
@@ -558,7 +558,7 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^same the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m);
   assert.match(result.stdout, /^same the Copilot CLI command guard in ~\/\.copilot\/hooks\/yokoten\.json$/m);
-  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  ok {6}${id}$`, 'm'));
+  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  ok {6}${id}$`, 'm'));
   const saved = JSON.parse(readFileSync(agyFile, 'utf8'));
   assert.ok(saved.lint, "another entry stays");
   assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command');
@@ -657,7 +657,7 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
       // so it runs once per file pair, for the parse error where the wording differs most;
       // an unexpected shape names the same place and hint on install's own print (#943).
       if (content === '{ not json') {
-        assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  note {4}${bad.id}: ${escape(doctor)}`, 'm'), what);
+        assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  note {4}${bad.id}: ${escape(doctor)}`, 'm'), what);
       }
     }
   }
@@ -684,7 +684,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   // The rest still ran.
   assert.match(result.stdout, /^added the user-level command guard$/m);
   // Doctor gives the same hooks to add, on one line.
-  assert.deepEqual(doctorHandAdd((await sandbox.call(['doctor'])).stdout, 'gemini-user-hook', '~/.gemini/settings.json'), add);
+  assert.deepEqual(doctorHandAdd((await sandbox.call(['doctor', '--all'])).stdout, 'gemini-user-hook', '~/.gemini/settings.json'), add);
 
   // Added by hand, comments and all: install finds them the same and leaves the file.
   const after = commentedGemini(JSON.stringify(add, null, 2));
@@ -694,7 +694,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   assert.match(again.stdout, /^kept the Gemini CLI SessionStart doctor in ~\/\.gemini\/settings\.json$/m);
   assert.match(again.stdout, /^kept the Gemini CLI command guard in ~\/\.gemini\/settings\.json$/m);
   assert.equal(readFileSync(file, 'utf8'), after, 'the file changed');
-  assert.match((await sandbox.call(['doctor'])).stdout, /^ {2}ok {6}gemini-user-hook$/m);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {2}ok {6}gemini-user-hook$/m);
 });
 
 test('install: Gemini CLI allows comments but not trailing commas, and Codex allows neither (#258)', async () => {
@@ -730,7 +730,7 @@ test('install: an unreadable ~/.claude/settings.json is skipped, the rest goes o
     assert.match(result.stdout, /^added the Gemini CLI command guard in ~\//m, what);
     assert.match(result.stdout, /^wrote ~\/\S*private-marks /m, what);
     // Doctor names the same problem, never that the hook is missing, and doesn't crash.
-    const doctor = await sandbox.call(['doctor']);
+    const doctor = await sandbox.call(['doctor', '--all']);
     const said = content.startsWith('{ not') ? "can't read ~/.claude/settings.json" : '~/.claude/settings.json has an unexpected shape';
     assert.ok(doctor.stdout.split('\n').some((line) => line.startsWith(`  MISSING session-doctor: ${said}`)), `${what}: ${doctor.stdout}${doctor.stderr}`);
     assert.doesNotMatch(doctor.stderr, /SyntaxError|TypeError|at /, what);
@@ -755,7 +755,7 @@ test('install: keys in ~/.claude/settings.json that install does not edit are ke
     assert.equal(key === 'env' ? settings.env : settings.hooks.Notification, value, content);
     assert.ok(hasHook(file, 'SessionStart', 'doctor'), `${content}: no doctor hook`);
     assert.ok(hasHook(file, 'PreToolUse', 'hook'), `${content}: no guard`);
-    assert.match((await sandbox.call(['doctor'])).stdout, /^  ok {6}session-doctor$/m, content);
+    assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^  ok {6}session-doctor$/m, content);
   }
 });
 
@@ -774,7 +774,7 @@ test('install: other keys under hooks, such as Gemini CLI hooks.disabled, are ke
     assert.equal(settings.hooks.Other, 5, dir);
     assert.ok(hasHook(path, 'SessionStart', 'doctor'), `${dir}: no doctor hook`);
     assert.ok(hasHook(path, guard, 'hook'), `${dir}: no guard`);
-    assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  ok {6}${dir.slice(1)}-user-hook$`, 'm'), dir);
+    assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  ok {6}${dir.slice(1)}-user-hook$`, 'm'), dir);
   }
 });
 
@@ -809,7 +809,7 @@ test('install: a project copy carries the kit lessons, and doctor from it runs t
   assert.ok(existsSync(join(dest, 'kit', 'lessons', 'README.md')), 'the lessons table');
   assert.ok(!existsSync(join(dest, 'kit', 'user')), 'only the project parts of the kit');
   sandbox.write('test/api.test.js', "await fetch('http://127.0.0.1:8080/health');\n");
-  const doctor = spawnSync('node', [join(dest, 'bin', 'yokoten.ts'), 'doctor'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
+  const doctor = spawnSync('node', [join(dest, 'bin', 'yokoten.ts'), 'doctor', '--all'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
   assert.match(doctor.stdout, /\n {2}note {4}lesson incident-138: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; /);
 });
 
@@ -887,9 +887,9 @@ test('launcher: runs the installed runtime with each argument kept whole (#433)'
   setUpLauncher(env, runtime, home);
   assert.equal(readFileSync(launcher, 'utf8'), sealManaged(launcherText(runtime, 'linux')));
   assert.match(readFileSync(launcher, 'utf8'), /^#!\/bin\/sh\n# managed by yokoten/);
-  const run = spawnSync(launcher, ['doctor', 'two words', '$HOME'], { env, encoding: 'utf8' });
+  const run = spawnSync(launcher, ['doctor', '--all', 'two words', '$HOME'], { env, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
-  assert.deepEqual(JSON.parse(run.stdout), ['doctor', 'two words', '$HOME']);
+  assert.deepEqual(JSON.parse(run.stdout), ['doctor', '--all', 'two words', '$HOME']);
   // A runtime path with a quote and a dollar sign still works.
   assert.match(launcherText("/home/o'neil/$x/yokoten", 'linux'), /exec node '\/home\/o'\\''neil\/\$x\/yokoten\/bin\/yokoten\.mjs' "\$@"\n$/);
 });
