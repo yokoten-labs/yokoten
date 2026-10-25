@@ -66,7 +66,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'yokoten install: unknown option --dry-run. Run `yokoten install --help`.\n']);
   assert.deepEqual(readdirSync(sandbox.home, { recursive: true }).sort(), homeBefore, 'install --dry-run writes nothing');
   // A real child, for the entry: the exit code and output through bin/yokoten.ts.
-  result = sandbox.run(['install']);
+  result = sandbox.run(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^kept agent reviewer \(yours, not yokoten's\)$/m);
   assert.equal(readFileSync(join(claude, 'agents', 'reviewer.md'), 'utf8'), 'my own reviewer\n');
@@ -100,7 +100,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   assert.equal(statSync(marks).mode & 0o777, 0o600);
   // The git display name is no mark: a common name would flag every file holding the word.
   assert.ok(!readFileSync(marks, 'utf8').includes('Jane Example'));
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^kept skill yokoten in ~\/\.claude\/skills$/m);
   assert.match(result.stdout, /^kept skill yokoten in ~\/\.agents\/skills$/m);
   assert.match(result.stdout, /^kept skill rca in ~\/\.agents\/skills \(yours, not yokoten's\)$/m);
@@ -127,7 +127,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
 test('isMachineSetUp: false before install, true after, false when the runtime is gone (#548)', async () => {
   const sandbox = makeSandbox();
   assert.equal(isMachineSetUp(sandbox.env), false, 'a fresh machine is not set up');
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.equal(isMachineSetUp(sandbox.env), true, 'install set the machine up');
   // The runtime the user hooks run is the one piece that must be there.
   rmSync(join(paths(sandbox.env).runtime, 'bin'), { recursive: true });
@@ -144,12 +144,12 @@ test('uninstall: takes back what install wrote, keeps the user\'s own files and 
   writeFileSync(join(sandbox.home, '.agents', 'skills', 'rca', 'SKILL.md'), 'my own rca\n');
   const own = { model: 'x', hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'other' }] }] } };
   writeFileSync(join(claude, 'settings.json'), JSON.stringify(own));
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   writeFileSync(join(claude, 'skills', 'yokoten', 'notes.txt'), 'mine\n');
   const before = readdirSync(join(sandbox.home, '.local/share/yokoten/kit/user/skills'));
 
   // A real child, for the entry.
-  const result = sandbox.run(['uninstall']);
+  const result = sandbox.run(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^removed skill yokoten in ~\/\.claude\/skills$/m);
   for (const name of before.filter((n) => n !== 'yokoten')) assert.match(result.stdout, new RegExp(`^nothing to remove: skill ${name} in ~/\\.claude/skills$`, 'm'));
@@ -175,7 +175,7 @@ test('uninstall: takes back what install wrote, keeps the user\'s own files and 
 
   // A second run finds nothing to remove and changes nothing.
   const homeBefore = readdirSync(sandbox.home, { recursive: true }).sort();
-  const again = await sandbox.call(['uninstall']);
+  const again = await sandbox.call(['uninstall', '--list']);
   assert.equal(again.status, 0, again.stderr);
   assert.doesNotMatch(again.stdout, /^removed/m);
   assert.match(again.stdout, /^nothing to remove: the SessionStart doctor$/m);
@@ -183,7 +183,7 @@ test('uninstall: takes back what install wrote, keeps the user\'s own files and 
 
   // A settings file that is not JSON is left as it is, and the report says so.
   writeFileSync(join(claude, 'settings.json'), 'not json');
-  const broken = await sandbox.call(['uninstall']);
+  const broken = await sandbox.call(['uninstall', '--list']);
   assert.equal(broken.status, 0, broken.stderr);
   assert.match(broken.stdout, /^kept ~\/\.claude\/settings\.json: it is not JSON/m);
   assert.equal(readFileSync(join(claude, 'settings.json'), 'utf8'), 'not json');
@@ -199,16 +199,16 @@ test('install: a symlinked ~/.claude/settings.json stays a link, through install
   const link = join(sandbox.home, '.claude', 'settings.json');
   writeFileSync(real, '{"model":"x"}\n');
   symlinkSync(real, link);
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(lstatSync(link).isSymbolicLink(), 'install keeps the link');
   assert.ok(hasHook(real, 'PreToolUse', 'hook'), 'the hooks went into the file the link points at');
-  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall', '--list'])).status, 0);
   assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps the link');
   assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), { model: 'x' });
   // A linked file that only holds yokoten's hooks is emptied, not unlinked: the link is the user's.
   writeFileSync(real, '{}\n');
-  assert.equal((await sandbox.call(['install'])).status, 0);
-  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall', '--list'])).status, 0);
   assert.ok(lstatSync(link).isSymbolicLink(), 'uninstall keeps a link to a file it emptied');
   assert.deepEqual(JSON.parse(readFileSync(real, 'utf8')), {});
 });
@@ -218,19 +218,19 @@ test('install: the first change to the user\'s settings keeps one .before-yokote
   const file = join(sandbox.home, '.claude', 'settings.json');
   mkdirSync(dirname(file));
   writeFileSync(file, '{"model":"x"}\n');
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.equal(readFileSync(`${file}.before-yokoten`, 'utf8'), '{"model":"x"}\n');
   // The user changes the file, and install changes it again: the copy still holds the first version.
   const settings = JSON.parse(readFileSync(file, 'utf8'));
   settings.model = 'y';
   settings.hooks.SessionStart[0].hooks[0].command += ' ';
   writeFileSync(file, JSON.stringify(settings));
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.equal(readFileSync(`${file}.before-yokoten`, 'utf8'), '{"model":"x"}\n', 'the copy is never overwritten');
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).model, 'y');
   // A home with no settings file before install gets no copy: install made the file.
   const empty = makeSandbox();
-  assert.equal((await empty.call(['install'])).status, 0);
+  assert.equal((await empty.call(['install', '--list'])).status, 0);
   assert.ok(!existsSync(join(empty.home, '.claude', 'settings.json.before-yokoten')));
 });
 
@@ -241,12 +241,12 @@ test("install and uninstall: a user's own npx yokoten hook stays (#984)", async 
   const own = { matcher: 'Bash', hooks: [{ type: 'command', command: 'npx yokoten hook --agent claude-code' }] };
   const doctor = { hooks: [{ type: 'command', command: 'npx --yes yokoten doctor --session' }] };
   writeFileSync(file, JSON.stringify({ hooks: { PreToolUse: [own], SessionStart: [doctor] } }));
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   let hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
   assert.deepEqual(hooks.PreToolUse[0], own, 'install keeps the user\'s guard');
   assert.deepEqual(hooks.SessionStart[0], doctor, 'install keeps the user\'s doctor');
   assert.equal(hooks.PreToolUse.length, 2, 'and adds its own beside it');
-  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall', '--list'])).status, 0);
   hooks = JSON.parse(readFileSync(file, 'utf8')).hooks;
   assert.deepEqual(hooks, { PreToolUse: [own], SessionStart: [doctor] }, 'uninstall takes out only yokoten\'s own hooks');
 });
@@ -267,7 +267,7 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   mkdirSync(join(claude, 'skills', 'mine'), { recursive: true });
   writeFileSync(join(claude, 'skills', 'mine', 'SKILL.md'), 'my own skill\n');
   writeFileSync(join(claude, 'settings.json'), JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true } }));
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /no global skills or agents: the yokoten plugin brings them/);
   assert.match(result.stdout, /^removed skill dispatch in ~\/\.claude\/skills$/m);
@@ -291,7 +291,7 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
   const sandbox = makeSandbox();
   const config = join(sandbox.home, 'claude-elsewhere');
   const extra = { CLAUDE_CONFIG_DIR: config };
-  const result = await sandbox.call(['install'], { extra });
+  const result = await sandbox.call(['install', '--list'], { extra });
   assert.equal(result.status, 0, result.stderr);
   const settingsFile = join(config, 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
@@ -309,7 +309,7 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
   assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).hooks, undefined, 'the hooks went from CLAUDE_CONFIG_DIR');
   assert.ok(!existsSync(join(sandbox.home, '.claude')));
   // Uninstall reads the same folder, and leaves the user's settings file.
-  assert.equal((await sandbox.call(['uninstall'], { extra })).status, 0);
+  assert.equal((await sandbox.call(['uninstall', '--list'], { extra })).status, 0);
   assert.ok(existsSync(settingsFile));
   assert.ok(!existsSync(join(sandbox.home, '.claude')));
 });
@@ -319,14 +319,14 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
 // and no hook is left asking for a runtime that is gone.
 test('install: with the plugin on, the hooks an older install added go too (#904)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   assert.ok(settings.hooks?.PreToolUse, 'the older install added the guard');
   settings.hooks.PreToolUse.push({ matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] });
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   writeFileSync(settingsFile, JSON.stringify(settings));
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^removed the Claude Code user hooks: the yokoten plugin brings them$/m);
   const after = readFileSync(settingsFile, 'utf8');
@@ -339,46 +339,46 @@ test('install: with the plugin on, a hooks shape it cannot walk fails the run an
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   mkdirSync(join(sandbox.home, '.claude'), { recursive: true });
   writeFileSync(settingsFile, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true }, hooks: { PreToolUse: [{ hooks: 5 }] } }));
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.notEqual(result.status, 0);
   assert.match(result.stdout, /its hooks have an unexpected shape/);
 });
 
 test('install: with the plugin on, a hooks file it cannot walk keeps the runtime its hooks run (#904)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   settings.hooks.PreToolUse.push({ hooks: 5 });
   writeFileSync(settingsFile, JSON.stringify(settings));
-  assert.notEqual((await sandbox.call(['install'])).status, 0);
+  assert.notEqual((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the old hooks still run the runtime, so it stays');
 });
 
 test("install: with the plugin on, a user's own hook that runs yokoten keeps the runtime (#904)", async () => {
   for (const command of ['"$HOME/.local/bin/yokoten" check', 'yokoten check', '$(yokoten check)', 'echo hi;yokoten check', 'yokoten|tee out']) {
     const sandbox = makeSandbox();
-    assert.equal((await sandbox.call(['install'])).status, 0);
+    assert.equal((await sandbox.call(['install', '--list'])).status, 0);
     const settingsFile = join(sandbox.home, '.claude', 'settings.json');
     const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
     settings.enabledPlugins = { 'yokoten@yokoten': true };
     settings.hooks.Stop = [{ hooks: [{ type: 'command', command }] }];
     writeFileSync(settingsFile, JSON.stringify(settings));
-    assert.equal((await sandbox.call(['install'])).status, 0);
+    assert.equal((await sandbox.call(['install', '--list'])).status, 0);
     assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), `the runtime stays while ${command} runs it`);
   }
 });
 
 test('install: with the plugin on, a hook that only looks like yokoten lets the runtime go (#904)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'my-yokoten check; node ~/.local/share/yokoten-old/run.mjs' }] }];
   writeFileSync(settingsFile, JSON.stringify(settings));
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(!existsSync(join(sandbox.home, '.local/share/yokoten')), 'nothing runs the runtime, so it goes');
 });
 
@@ -388,7 +388,7 @@ test("install: a user's own link under a skill's name in ~/.agents stays (#904)"
   mkdirSync(mine, { recursive: true });
   mkdirSync(join(sandbox.home, '.agents', 'skills'), { recursive: true });
   symlinkSync(mine, join(sandbox.home, '.agents', 'skills', 'dispatch'), 'dir');
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.equal(readlinkSync(join(sandbox.home, '.agents', 'skills', 'dispatch')), mine, 'the link is the user\'s, so it stays');
 });
 
@@ -397,14 +397,14 @@ test('install prints its plan, and uninstall restores the home folder (#904)', a
   const sandbox = makeSandbox();
   const home = (): string[] => readdirSync(sandbox.home, { recursive: true, withFileTypes: true }).map((entry) => `${relative(sandbox.home, join(entry.parentPath, entry.name))}${entry.isDirectory() ? '/' : ''}`).sort();
   const before = home();
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   const plan = result.stdout.split('\n').slice(0, 20).join('\n');
   assert.match(plan, /^install will write these files and settings keys:$/m);
   assert.match(plan, /~\/\.claude\/skills\/yokoten\/SKILL\.md/);
   assert.match(plan, /~\/\.claude\/settings\.json: hooks\.SessionStart, hooks\.PreToolUse/);
   assert.match(plan, /~\/\.config\/yokoten\/private-marks/);
-  const uninstalled = await sandbox.call(['uninstall']);
+  const uninstalled = await sandbox.call(['uninstall', '--list']);
   assert.equal(uninstalled.status, 0, uninstalled.stderr);
   assert.deepEqual(home(), before, 'the home folder is as it was before install');
 });
@@ -413,33 +413,33 @@ test('install prints its plan, and uninstall restores the home folder (#904)', a
 test('install: a managed skill you edited is kept; an untouched copy updates from the kit (#477)', async () => {
   const sandbox = makeSandbox();
   const skill = join(sandbox.home, '.claude', 'skills', 'yokoten', 'SKILL.md');
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const installed = readFileSync(skill, 'utf8');
   assert.match(installed, /managed by yokoten.* sha256=[0-9a-f]{64}/, 'the mark records what install wrote');
 
   // The user adds a rule of their own to a file install manages.
   const mine = `${installed}\nAsk the owner before a release.\n`;
   writeFileSync(skill, mine);
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^kept \(your edit\) skill yokoten in ~\/\.claude\/skills$/m);
   assert.equal(readFileSync(skill, 'utf8'), mine, 'their edit stays');
   assert.match(result.stdout, /your edits stay: install skipped skill yokoten\. The new copy is in ~\/\.local\/share\/yokoten\/kit\/user\./);
 
   // A copy yokoten wrote from an older kit, which the user did not touch, is replaced.
   writeFileSync(skill, sealManaged(installed.replace('hand a task to a worker', 'hand a task to a helper')));
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^updated skill yokoten in ~\/\.claude\/skills$/m);
   assert.equal(readFileSync(skill, 'utf8'), installed, 'the new copy is in place');
 
   // A copy from an older yokoten has no hash: install replaces it once, then it has one.
   writeFileSync(skill, installed.replace(/;? sha256=[0-9a-f]{64}/, ''));
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^updated skill yokoten/m);
   assert.equal(readFileSync(skill, 'utf8'), installed);
 
   // uninstall keeps the edit too: it is the user's.
   writeFileSync(skill, mine);
-  result = await sandbox.call(['uninstall']);
+  result = await sandbox.call(['uninstall', '--list']);
   assert.match(result.stdout, /^kept \(your edit\) skill yokoten in ~\/\.claude\/skills$/m);
   assert.match(readFileSync(skill, 'utf8'), /Ask the owner before a release\./);
 });
@@ -450,7 +450,7 @@ test('uninstall: a skill file that only mentions the mark in a sentence stays (#
   const mine = 'This file is managed by yokoten, in a sentence of my own.\n';
   mkdirSync(dirname(skill), { recursive: true });
   writeFileSync(skill, mine);
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^kept skill dispatch in ~\/\.claude\/skills \(yours, not yokoten's\)$/m);
   assert.equal(readFileSync(skill, 'utf8'), mine, 'the user\'s own file stays');
@@ -462,7 +462,7 @@ test('uninstall: a skill file that only mentions the mark in a sentence stays (#
 test('install: a shared skill folder with your own files in it stays real', async () => {
   const sandbox = makeSandbox();
   const shared = join(sandbox.home, '.agents', 'skills', 'yokoten');
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(lstatSync(shared).isSymbolicLink(), 'first install links it');
   // The user's own file next to a managed copy: the folder goes back to real files.
   const managed = readFileSync(join(sandbox.home, '.claude', 'skills', 'yokoten', 'SKILL.md'), 'utf8');
@@ -470,13 +470,13 @@ test('install: a shared skill folder with your own files in it stays real', asyn
   mkdirSync(shared, { recursive: true });
   writeFileSync(join(shared, 'SKILL.md'), managed);
   writeFileSync(join(shared, 'notes.txt'), 'mine\n');
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^kept skill yokoten in ~\/\.agents\/skills$/m);
   assert.ok(!lstatSync(shared).isSymbolicLink(), 'still a real folder');
   assert.equal(readFileSync(join(shared, 'SKILL.md'), 'utf8'), managed);
   assert.equal(readFileSync(join(shared, 'notes.txt'), 'utf8'), 'mine\n');
-  const uninstalled = await sandbox.call(['uninstall']);
+  const uninstalled = await sandbox.call(['uninstall', '--list']);
   assert.equal(uninstalled.status, 0, uninstalled.stderr);
   assert.equal(readFileSync(join(shared, 'notes.txt'), 'utf8'), 'mine\n', 'uninstall keeps the user file');
   assert.ok(!existsSync(join(shared, 'SKILL.md')), 'but takes the managed file');
@@ -486,10 +486,10 @@ test('install: a shared skill folder with your own files in it stays real', asyn
 // from the copy it would replace, that copy was deleted (#204).
 test('install: run from the installed copy, it keeps that copy, and the next run works (#204)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const installed = join(sandbox.home, '.local/share/yokoten/bin/yokoten.ts');
   for (let run = 0; run < 2; run++) {
-    const result = spawnSync('node', [installed, 'install'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
+    const result = spawnSync('node', [installed, 'install', '--list'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /^kept: ~\/\.local\/share\/yokoten is the copy running now$/m);
     assert.ok(!result.stdout.includes(sandbox.home), 'output shows the home path');
@@ -502,7 +502,7 @@ test('install: the session doctor and the command guard for Codex and Gemini CLI
   const codexFile = join(sandbox.home, '.codex', 'hooks.json');
   const geminiFile = join(sandbox.home, '.gemini', 'settings.json');
   // No ~/.codex or ~/.gemini: install makes neither, and says so.
-  const skipped = await sandbox.call(['install']);
+  const skipped = await sandbox.call(['install', '--list']);
   assert.equal(skipped.status, 0, skipped.stderr);
   assert.match(skipped.stdout, /^skipped Codex CLI: ~\/\.codex not found \(run `yokoten install` again after installing Codex\)$/m);
   assert.match(skipped.stdout, /^skipped Gemini CLI: ~\/\.gemini not found \(run `yokoten install` again after installing Gemini CLI\)$/m);
@@ -517,10 +517,10 @@ test('install: the session doctor and the command guard for Codex and Gemini CLI
   const line = 'yokoten: the runtime at ~/.local/share/yokoten is missing; run the install again';
   const atStart = (args: string) => `[ -f ${cli} ] 2>/dev/null || { echo '${line}'; exit 0; }; node ${cli} ${args}`;
   const onCall = (args: string) => onToolCall(`[ -f ${cli} ] 2>/dev/null || { echo '${line}' >&2; exit 1; }; `, cli, args);
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   for (const what of ['Codex SessionStart doctor', 'Codex command guard', 'Gemini CLI SessionStart doctor', 'Gemini CLI command guard']) assert.match(result.stdout, new RegExp(`^added the ${what} in ~/`, 'm'));
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   for (const what of ['Codex SessionStart doctor', 'Codex command guard', 'Gemini CLI SessionStart doctor', 'Gemini CLI command guard']) assert.match(result.stdout, new RegExp(`^kept the ${what} in ~/`, 'm'));
   const codex = JSON.parse(readFileSync(codexFile, 'utf8'));
   assert.equal(codex.description, 'ours');
@@ -551,11 +551,11 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   const before = await sandbox.call(['doctor']);
   assert.match(before.stdout, /note {4}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
   assert.match(before.stdout, /note {4}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^added the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m);
   assert.match(result.stdout, /^added the Copilot CLI command guard in ~\/\.copilot\/hooks\/yokoten\.json$/m);
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^same the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m);
   assert.match(result.stdout, /^same the Copilot CLI command guard in ~\/\.copilot\/hooks\/yokoten\.json$/m);
   for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match((await sandbox.call(['doctor'])).stdout, new RegExp(`^  ok {6}${id}$`, 'm'));
@@ -576,7 +576,7 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   assert.equal(cp.status, 2);
   assert.match(cp.stderr, /git push --tags pushes tags/);
   // uninstall takes the guard out and leaves the user's own entries.
-  const removed = await sandbox.call(['uninstall']);
+  const removed = await sandbox.call(['uninstall', '--list']);
   assert.equal(removed.status, 0, removed.stderr);
   assert.match(removed.stdout, /^removed the Antigravity CLI user hook$/m);
   assert.match(removed.stdout, /^removed the Copilot CLI user hook$/m);
@@ -597,9 +597,9 @@ test('uninstall: takes back the user hooks of Codex, Gemini CLI, Grok CLI, Muse 
   // A hook of the user's in Codex's file, which stays.
   const mine = { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine' }] }] } };
   writeFileSync(codexFile, JSON.stringify(mine));
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   for (const file of [grokFile, museFile, openCodeFile]) assert.ok(existsSync(file), `install wrote ${file}`);
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   for (const name of ['Codex CLI', 'Gemini CLI', 'Grok CLI', 'Muse Code']) assert.match(result.stdout, new RegExp(`^removed the ${name} user hooks?$`, 'm'));
   assert.match(result.stdout, /^removed the OpenCode user hook$/m);
@@ -640,7 +640,7 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
       mkdirSync(dirname(badPath));
       mkdirSync(dirname(goodPath));
       writeFileSync(badPath, content);
-      const result = await sandbox.call(['install']);
+      const result = await sandbox.call(['install', '--list']);
       const what = `${bad.name}, ${JSON.stringify(content)}`;
       assert.equal(result.status, 1, what);
       assert.ok(result.stdout.split('\n').includes(`skipped ${bad.cli}: ${skip}`), `${what}: ${result.stdout}${result.stderr}`);
@@ -669,7 +669,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   mkdirSync(dirname(file));
   const before = commentedGemini('{}');
   writeFileSync(file, before);
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.equal(result.stderr, '');
   assert.doesNotMatch(result.stdout, /can't read|unexpected shape/);
@@ -689,7 +689,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   // Added by hand, comments and all: install finds them the same and leaves the file.
   const after = commentedGemini(JSON.stringify(add, null, 2));
   writeFileSync(file, after);
-  const again = await sandbox.call(['install']);
+  const again = await sandbox.call(['install', '--list']);
   assert.equal(again.status, 0, again.stdout + again.stderr);
   assert.match(again.stdout, /^kept the Gemini CLI SessionStart doctor in ~\/\.gemini\/settings\.json$/m);
   assert.match(again.stdout, /^kept the Gemini CLI command guard in ~\/\.gemini\/settings\.json$/m);
@@ -705,7 +705,7 @@ test('install: Gemini CLI allows comments but not trailing commas, and Codex all
     const sandbox = makeSandbox();
     mkdirSync(join(sandbox.home, dir));
     writeFileSync(join(sandbox.home, dir, file), content);
-    const result = await sandbox.call(['install']);
+    const result = await sandbox.call(['install', '--list']);
     assert.equal(result.status, 1, cli);
     assert.ok(result.stdout.split('\n').includes(`skipped ${cli}: can't read ~/${dir}/${file} (make it valid JSON, then run \`yokoten install\` again)`), `${cli}: ${result.stdout}`);
     assert.equal(readFileSync(join(sandbox.home, dir, file), 'utf8'), content, cli);
@@ -718,7 +718,7 @@ test('install: an unreadable ~/.claude/settings.json is skipped, the rest goes o
     const file = join(sandbox.home, '.claude', 'settings.json');
     for (const dir of ['.claude', '.codex', '.gemini']) mkdirSync(join(sandbox.home, dir));
     writeFileSync(file, content);
-    const result = await sandbox.call(['install']);
+    const result = await sandbox.call(['install', '--list']);
     const what = JSON.stringify(content);
     assert.equal(result.status, 1, `${what}: ${result.stdout}${result.stderr}`);
     assert.ok(result.stdout.split('\n').includes(`skipped Claude Code: ${reason('~/.claude/settings.json')}`), `${what}: ${result.stdout}${result.stderr}`);
@@ -749,7 +749,7 @@ test('install: keys in ~/.claude/settings.json that install does not edit are ke
     const file = join(sandbox.home, '.claude', 'settings.json');
     mkdirSync(dirname(file));
     writeFileSync(file, content);
-    const result = await sandbox.call(['install']);
+    const result = await sandbox.call(['install', '--list']);
     assert.equal(result.status, 0, `${content}: ${result.stdout}${result.stderr}`);
     const settings = JSON.parse(readFileSync(file, 'utf8'));
     assert.equal(key === 'env' ? settings.env : settings.hooks.Notification, value, content);
@@ -767,7 +767,7 @@ test('install: other keys under hooks, such as Gemini CLI hooks.disabled, are ke
     const path = join(sandbox.home, dir, file);
     mkdirSync(dirname(path));
     writeFileSync(path, '{"hooks":{"disabled":["x"],"Other":5}}');
-    const result = await sandbox.call(['install']);
+    const result = await sandbox.call(['install', '--list']);
     assert.equal(result.status, 0, `${dir}: ${result.stdout}${result.stderr}`);
     const settings = JSON.parse(readFileSync(path, 'utf8'));
     assert.deepEqual(settings.hooks.disabled, ['x'], dir);
@@ -841,7 +841,7 @@ test('install: writes the launcher, and with no terminal prints the PATH line an
   const sandbox = makeSandbox();
   // macOS opens a login bash, which reads ~/.bash_profile (#983).
   const bashProfile = process.platform === 'darwin' ? '.bash_profile' : '.bashrc';
-  let result = await sandbox.call(['install'], { extra: { SHELL: '/bin/bash' } });
+  let result = await sandbox.call(['install', '--list'], { extra: { SHELL: '/bin/bash' } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^wrote the launcher ~\/\.local\/bin\/yokoten$/m);
   assert.ok(result.stdout.trimEnd().endsWith(`~/.local/bin is not on your PATH. Add this line to ~/${bashProfile}, then open a new shell: ${PROFILE_LINE}`), result.stdout);
@@ -854,7 +854,7 @@ test('install: writes the launcher, and with no terminal prints the PATH line an
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /install/);
   // ~/.local/bin on the PATH: no PATH line, and nothing more to do.
-  result = await sandbox.call(['install'], { extra: { SHELL: '/bin/bash', PATH: `${join(sandbox.home, '.local/bin')}:${process.env.PATH}` } });
+  result = await sandbox.call(['install', '--list'], { extra: { SHELL: '/bin/bash', PATH: `${join(sandbox.home, '.local/bin')}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^kept the launcher ~\/\.local\/bin\/yokoten$/m);
   assert.ok(!result.stdout.includes('PATH'), result.stdout);
@@ -862,7 +862,7 @@ test('install: writes the launcher, and with no terminal prints the PATH line an
   const bin = join(sandbox.home, 'bin');
   mkdirSync(bin);
   symlinkSync(join(sandbox.home, '.local/share/yokoten/bin/yokoten.ts'), join(bin, 'yokoten'));
-  result = await sandbox.call(['install'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
+  result = await sandbox.call(['install', '--list'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!result.stdout.includes('alias yokoten'), result.stdout);
 });
@@ -977,12 +977,12 @@ test('launcher: Windows gets yokoten.cmd and steps for the PATH, never an edit (
 
 test('uninstall: removes the launcher and the marked PATH line, and keeps the rest of the profile (#433)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const launcher = join(sandbox.home, '.local/bin/yokoten');
   assert.ok(existsSync(launcher));
   writeFileSync(join(sandbox.home, '.bashrc'), `export EDITOR=vi\n${PROFILE_LINE}\nalias ll='ls -l'\n`);
   writeFileSync(join(sandbox.home, '.zshrc'), `${PROFILE_LINE}\n`);
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^removed the launcher ~\/\.local\/bin\/yokoten$/m);
   assert.match(result.stdout, /^removed the PATH line from ~\/\.bashrc$/m);
@@ -993,7 +993,7 @@ test('uninstall: removes the launcher and the marked PATH line, and keeps the re
   // A launcher of the user's own is kept.
   mkdirSync(dirname(launcher), { recursive: true });
   writeFileSync(launcher, '#!/bin/sh\necho mine\n');
-  const again = await sandbox.call(['uninstall']);
+  const again = await sandbox.call(['uninstall', '--list']);
   assert.match(again.stdout, /^kept the launcher ~\/\.local\/bin\/yokoten \(yours, not yokoten's\)$/m);
   assert.doesNotMatch(again.stdout, /PATH line/);
   assert.equal(readFileSync(launcher, 'utf8'), '#!/bin/sh\necho mine\n');
@@ -1001,14 +1001,14 @@ test('uninstall: removes the launcher and the marked PATH line, and keeps the re
 
 test('uninstall: a symlinked profile stays a link, and the file it names loses the line (#983)', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['install'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   // A dotfile manager keeps the real file elsewhere and links it into the home folder.
   const real = join(sandbox.home, 'dotfiles', 'bashrc');
   mkdirSync(dirname(real), { recursive: true });
   writeFileSync(real, `export EDITOR=vi\n${PROFILE_LINE}\n`);
   const link = join(sandbox.home, '.bashrc');
   symlinkSync(real, link);
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^removed the PATH line from ~\/\.bashrc$/m);
   assert.ok(lstatSync(link).isSymbolicLink(), 'the profile is still a link');
@@ -1035,7 +1035,7 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   sandbox.git('add', '.');
   sandbox.git('commit', '-qm', 'docs: hello');
   const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   for (const value of ['Jane', 'personal-mail', 'private-host']) assert.ok(!(result.stdout + result.stderr).includes(value), 'install printed a value');
   assert.match(result.stdout, /^added your git name to the private marks \(not shown\)$/m);
@@ -1053,13 +1053,13 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   // A yes at the terminal sets it, and git prints the placeholder at the source.
   const asked: string[] = [];
   const done = install(sandbox.env, { cwd: sandbox.repo, ask: (question) => (asked.push(question), 'y'), platform: 'linux' });
-  assert.ok(asked.includes("Set git's global mailmap.file to ~/.config/yokoten/mailmap, so git prints a placeholder in place of your email in every repo? [Y/n]"), asked.join('\n'));
+  assert.ok(asked.includes('Hide your email in git logs that agents read? [Y/n]'), asked.join('\n'));
   assert.ok(done.lines.some((line) => /^kept .*mailmap, and git log and git show now print your emails as a placeholder$/.test(line)), done.lines.join('\n'));
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '~/.config/yokoten/mailmap\n');
   assert.match(sandbox.git('log', '-1').stdout, /^Author: owner <owner@noreply\.invalid>$/m);
   // A second run appends nothing. It still asks: the city and the domains are not in the file yet.
   const before = readFileSync(marks, 'utf8');
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^kept ~\/\.config\/yokoten\/private-marks$/m);
   assert.doesNotMatch(result.stdout, /already has what/, 'the file is named once');
   assert.match(result.stdout, /^optional: add your city or your domains too; yokoten can't find them on its own; run `yokoten marks add` and type one; it is not shown\nfor example: your city, a company domain, a server name$/m);
@@ -1067,7 +1067,7 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   assert.equal(readFileSync(marks, 'utf8'), before);
   // The user's own mailmap.file stays.
   sandbox.git('config', '--global', 'mailmap.file', '/elsewhere/mailmap');
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^kept your own git mailmap.file setting; add the lines of ~\/\.config\/yokoten\/mailmap to that file$/m);
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '/elsewhere/mailmap\n');
 });
@@ -1075,7 +1075,7 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
 test("install lists git's global mailmap.file in its plan, and a no leaves it unset (#985)", async () => {
   const sandbox = makeSandbox();
   sandbox.git('config', 'user.email', `jane${at}personal-mail.dev`);
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   const plan = result.stdout.split('\n').slice(0, 20).join('\n');
   assert.match(plan, /^ {2}~\/\.config\/yokoten\/mailmap$/m);
@@ -1108,7 +1108,7 @@ test('uninstall keeps a folder and a git config file that were there before inst
   // A second install keeps the record: it finds its own folders, not the user's.
   install(sandbox.env, { cwd: sandbox.repo, ask: () => 'y', platform: 'linux' });
   assert.deepEqual(JSON.parse(readFileSync(machineStateFile(sandbox.env), 'utf8')).installCreated, record);
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   // Positive control: the old uninstall removed each of these.
   for (const dir of theirs) assert.ok(existsSync(dir), `${dir} was the user's, so it stays`);
@@ -1123,7 +1123,7 @@ test('uninstall takes the empty git config file install made (#985)', async () =
   assert.ok(!existsSync(gitConfig));
   install(sandbox.env, { cwd: sandbox.repo, ask: () => 'y', platform: 'linux' });
   assert.ok(existsSync(gitConfig), 'git made the file when install set mailmap.file');
-  assert.equal((await sandbox.call(['uninstall'])).status, 0);
+  assert.equal((await sandbox.call(['uninstall', '--list'])).status, 0);
   assert.ok(!existsSync(gitConfig));
 });
 
@@ -1132,14 +1132,14 @@ test('install: the mark example follows an empty file, and a later run that does
   const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
   const example = 'for example: your city, a company domain, a server name';
   // The sandbox git name is a shared account, and its email is a public noreply: no mark is added.
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^~\/\.config\/yokoten\/private-marks has no marks yet; run `yokoten marks add` and type your name, your city or a domain; it is not shown\nfor example: your city, a company domain, a server name$/m);
   assert.equal(result.stdout.split('\n').filter((line) => line === example).length, 1);
   assert.match(readFileSync(marks, 'utf8'), /^# for example: your city, a company domain, a server name$/m);
   // A city and a domain are the kinds install asked for. The next run does not ask.
   writeFileSync(marks, `${readFileSync(marks, 'utf8')}mycity\nexample.com\n`);
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /has no marks yet|optional: add /);
   assert.doesNotMatch(result.stdout, /for example: your city, a company domain, a server name/);
@@ -1153,14 +1153,14 @@ test('install: an existing mailmap keeps its lines and gets only the missing one
   mkdirSync(dirname(mailmap), { recursive: true });
   const own = `Me <me${at}example.com> <old${at}example.com>\n`;
   writeFileSync(mailmap, own);
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(mailmap, 'utf8'), `${own}owner <owner@noreply.invalid> <jane${at}personal-mail.dev>\n`);
   assert.match(result.stdout, /^skipped the global git setting mailmap\.file: /m);
   // A marks path that is a folder: install says what it skipped, and goes on.
   const broken = join(sandbox.home, 'marks-folder');
   mkdirSync(broken);
-  result = await sandbox.call(['install'], { extra: { YOKOTEN_PRIVATE_MARKS: broken } });
+  result = await sandbox.call(['install', '--list'], { extra: { YOKOTEN_PRIVATE_MARKS: broken } });
   assert.match(result.stdout, /^skipped the marks from this machine: /m);
   assert.match(result.stdout, /^skipped the git mailmap: /m);
   assert.match(result.stdout, /skill /, 'the rest of install ran');
@@ -1341,7 +1341,7 @@ test('install: adds the git name as a mark of its own, never prints it, and not 
   sandbox.git('config', 'user.name', SAMPLE_NAME);
   const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
   const said: string[] = [];
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   said.push(result.stdout, result.stderr);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^added your git name to the private marks \(not shown\)$/m);
@@ -1349,7 +1349,7 @@ test('install: adds the git name as a mark of its own, never prints it, and not 
   assert.match(readFileSync(marks, 'utf8'), new RegExp(`${GIT_NAME_BLOCK}$`));
   assert.deepEqual(loadMarkKinds({ HOME: sandbox.home }).filter((mark) => mark.kind === 'git name').map((mark) => mark.value), [SAMPLE_NAME.toLowerCase()]);
   // A second run adds nothing, and says so.
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   said.push(result.stdout, result.stderr);
   assert.doesNotMatch(result.stdout, /added your git name/);
   assert.match(result.stdout, /^kept ~\/\.config\/yokoten\/private-marks$/m);
@@ -1363,7 +1363,7 @@ test('install: a git name that equals the forge login is not added twice (#434)'
   const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
   mkdirSync(dirname(marks), { recursive: true });
   writeFileSync(marks, `# added by yokoten from this machine: forge login\n${SAMPLE_LOGIN}\n`, { mode: 0o600 });
-  const result = await sandbox.call(['install']);
+  const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.doesNotMatch(result.stdout, /added your git name/);
   assert.equal(readFileSync(marks, 'utf8'), `# added by yokoten from this machine: forge login\n${SAMPLE_LOGIN}\n`);
@@ -1434,12 +1434,12 @@ test('uninstall: removes the stop log (#621)', async () => {
   mkdirSync(dirname(log), { recursive: true });
   writeFileSync(log, '{"time":"2026-10-23T00:00:00.000Z","vendor":"codex","role":"lead","rule":"release","answer":"refused"}\n');
   writeFileSync(join(sandbox.home, '.config', 'yokoten', 'keys.json'), '{}\n');
-  const result = await sandbox.call(['uninstall']);
+  const result = await sandbox.call(['uninstall', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!existsSync(log));
   assert.match(result.stdout, /^removed the stop log$/m);
   assert.match(result.stdout, /^kept ~\/\.config\/yokoten \(your keys and private marks\)$/m, 'the folder stays');
-  const again = await sandbox.call(['uninstall']);
+  const again = await sandbox.call(['uninstall', '--list']);
   assert.equal(again.status, 0, again.stderr);
   assert.match(again.stdout, /^not there the stop log$/m);
 });

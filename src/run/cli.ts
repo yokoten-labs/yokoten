@@ -175,14 +175,18 @@ export const COMMANDS: Command[] = [
   {
     name: 'install',
     summary: 'skills, agents and user-level hooks for this machine',
-    usage: '',
+    usage: '[--yes] [--list]',
     text: [
-      'Installs the skills into ~/.claude/skills and ~/.agents/skills, the agents into',
-      '~/.claude/agents, a SessionStart doctor hook, a user-level command guard, an empty',
-      'private-marks file, and a yokoten launcher in ~/.local/bin. It asks before it adds',
-      'that folder to your PATH. Files you wrote yourself are left alone.',
+      'Shows one screen of what it sets up, asks once, then writes it: the skills, the',
+      'agents, a SessionStart doctor hook, a user-level command guard, an empty',
+      'private-marks file, and a yokoten launcher in ~/.local/bin. Files you wrote',
+      'yourself are left alone. With --yes it writes without the question, and with',
+      '--list it names every file it writes or keeps.',
     ],
-    options: [],
+    options: [
+      { name: '--yes', text: 'set this computer up without asking first' },
+      { name: '--list', text: 'every file install writes or keeps, one line each' },
+    ],
     example: 'yokoten install',
   },
   {
@@ -645,13 +649,14 @@ export const COMMANDS: Command[] = [
   {
     name: 'uninstall',
     summary: 'take back what install wrote',
-    usage: '',
+    usage: '[--list]',
     text: [
       'Removes the skills and agents that install wrote (only files marked as managed by',
       'yokoten), its two hooks in ~/.claude/settings.json, and ~/.local/share/yokoten.',
       'Your own files, your other settings and ~/.config/yokoten (keys, private marks) stay.',
+      'With --list it names every file it removes or keeps.',
     ],
-    options: [],
+    options: [{ name: '--list', text: 'every file uninstall removes or keeps, one line each' }],
     example: 'yokoten uninstall',
   },
   {

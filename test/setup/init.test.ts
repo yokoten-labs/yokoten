@@ -2338,14 +2338,14 @@ test('trust (#661): init without a terminal writes nothing and names the command
   // A pipe is not a person: `yokoten trust` writes nothing there (#661).
   const piped = await sandbox.call(['trust']);
   assert.equal(piped.status, 1, 'no terminal is a refusal');
-  assert.match(piped.stderr, /^yokoten trust: a person runs this at a terminal/m);
-  assert.match(piped.stderr, /Nothing was written/);
+  assert.match(piped.stderr, /^yokoten trust · a person runs this at a terminal$/m);
+  assert.match(piped.stderr, /nothing was written/);
   assert.equal(readFileSync(config, 'utf8'), elsewhere, 'a pipe: nothing was written');
 
   const done = await trustAtTerminal(sandbox);
   assert.equal(done.status, 0, done.stderr);
-  assert.match(done.stdout, /turned on yokoten's guard in Codex \(~\/\.codex\/config\.toml\)/);
-  assert.match(done.stdout, /undo: `yokoten trust --undo` removes only the entries yokoten wrote/);
+  assert.match(done.stdout, /this folder is trusted/);
+  assert.match(done.stdout, /^Undo: `yokoten trust --undo`$/m);
   const text = readFileSync(config, 'utf8');
   assert.ok(text.includes(`[projects."${root}"]\ntrust_level = "trusted"`), text);
   assert.equal([...text.matchAll(new RegExp(`\\[hooks\\.state\\."${root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/\\.codex/hooks\\.json:`, 'g'))].length, 2, text);
@@ -2354,7 +2354,7 @@ test('trust (#661): init without a terminal writes nothing and names the command
 
   const undo = await trustAtTerminal(sandbox, '--undo');
   assert.equal(undo.status, 0, undo.stderr);
-  assert.match(undo.stdout, /removed the trust yokoten added in Codex/);
+  assert.match(undo.stdout, /this folder is no longer trusted/);
   assert.equal(readFileSync(config, 'utf8'), elsewhere, 'undo removed only the entries yokoten wrote');
   assert.equal(codexTrust(root, { HOME: sandbox.home }).state, 'untrusted');
 });
@@ -2372,7 +2372,7 @@ test('trust (#661): undo leaves an entry the user changed since, and removes the
   assert.equal(undo.status, 0, undo.stderr);
   const text = readFileSync(config, 'utf8');
   assert.ok(text.includes('trust_level = "untrusted"'), 'the user changed it: yokoten leaves it');
-  assert.match(undo.stdout, /left the trust in Codex \(~\/\.codex\/config\.toml\): it changed since yokoten wrote it/);
+  assert.match(undo.stdout, /left the trust in Codex \(~\/\.codex\/config\.toml\): it changed since\s+yokoten wrote it/);
   assert.equal(text.includes(`${root}/.codex/hooks.json`), false, 'the hooks yokoten wrote still go');
 });
 
@@ -2407,7 +2407,7 @@ test('trust (#661): a hook edited after trust stays off until init puts it back'
   assert.equal(codexTrust(root, { HOME: sandbox.home }).state, 'hooks edited');
   const again = await trustAtTerminal(sandbox);
   assert.equal(again.status, 1, 'the guard is still off');
-  assert.match(again.stdout, /left yokoten's guard off in Codex: a hook yokoten wrote there was edited; run `yokoten init` to put it back, then `yokoten trust`/);
+  assert.match(again.stdout, /left yokoten's guard off in Codex: a hook yokoten wrote there was\s+edited; run `yokoten init` to put it back, then `yokoten trust`/);
   // init puts yokoten's own command back, and trust then sets the new hash.
   await sandbox.call(['init', '--no-ci']);
   assert.equal((await trustAtTerminal(sandbox)).status, 0);
@@ -2438,7 +2438,7 @@ test('trust (#661): an empty hooks file is not yokoten\'s guard, so nothing is t
   sandbox.write('.codex/hooks.json', '{}\n');
   const done = await trustAtTerminal(sandbox);
   assert.equal(done.status, 0, done.stderr);
-  assert.match(done.stdout, /^no agent installed here runs yokoten's hooks in this project, so there is nothing to turn on$/m);
+  assert.match(done.stdout, /^yokoten trust · no agent here needs a change$/m);
   assert.equal(existsSync(join(sandbox.home, '.codex', 'config.toml')), false, 'a file with no hook trusts nothing');
 });
 
@@ -2451,7 +2451,7 @@ test('trust (#661): a Codex sandbox that contains nothing leaves trust off', asy
   sandbox.write('.codex/config.toml', 'sandbox_mode = "danger-full-access"\napproval_policy = "never"\n\n[sandbox_workspace_write]\nnetwork_access = false\n');
   const done = await trustAtTerminal(sandbox);
   assert.equal(done.status, 1, 'a sandbox that contains nothing is not trusted');
-  assert.match(done.stdout, /^left yokoten's guard off in Codex: the Codex sandbox is danger-full-access, so nothing is contained; set sandbox_mode to "workspace-write" in \.codex\/config\.toml$/m);
+  assert.match(done.stdout.replace(/\n\s+/g, ' '), /left yokoten's guard off in Codex: the Codex sandbox is danger-full-access, so nothing is contained; set sandbox_mode to "workspace-write" in \.codex\/config\.toml/);
   assert.equal(existsSync(join(sandbox.home, '.codex', 'config.toml')), false, 'nothing was trusted');
 });
 
@@ -2556,11 +2556,12 @@ test('trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok 
     writeFileSync(file, saved(root));
     const done = await trustAtTerminal(sandbox);
     assert.equal(done.status, 0, `${agent}: the user's choice is not a failure\n${done.stdout}`);
-    assert.ok(done.stdout.includes(`kept your choice in ${agent}: `) && done.stdout.includes(said), `${agent}\n${done.stdout}`);
+    const flat = done.stdout.replace(/\s+/g, ' ');
+    assert.ok(flat.includes(`kept your choice in ${agent}: `) && flat.includes(said), `${agent}\n${done.stdout}`);
     assert.doesNotMatch(done.stdout, /turned on yokoten's guard/, agent);
     assert.equal(readFileSync(file, 'utf8'), saved(root), `${agent}: the store stays byte for byte`);
     assert.equal(read(root, { HOME: sandbox.home }).state, 'untrusted', agent);
-    const report = (await sandbox.call(['doctor'])).stdout;
+    const report = (await sandbox.call(['doctor', '--all'])).stdout;
     assert.ok(report.includes(doctor), `${agent}\n${report}`);
   }
 });
@@ -2579,8 +2580,8 @@ test('trust (#984): a yokoten hook the user turned off in Codex stays off', asyn
   assert.equal(codexTrust(root, { HOME: sandbox.home }).state, 'hooks off');
   const again = await trustAtTerminal(sandbox);
   assert.equal(again.status, 0, again.stdout);
-  assert.ok(again.stdout.includes("kept your choice in Codex: a yokoten hook in .codex/hooks.json stays off (enabled = false in ~/.codex/config.toml; yokoten would turn it on); to turn it on, use Codex's `/hooks` screen"), again.stdout);
+  assert.ok(again.stdout.replace(/\s+/g, ' ').includes("kept your choice in Codex: a yokoten hook in .codex/hooks.json stays off (enabled = false in ~/.codex/config.toml; yokoten would turn it on); to turn it on, use Codex's `/hooks` screen"), again.stdout);
   assert.doesNotMatch(again.stdout, /already on/);
   assert.equal(readFileSync(config, 'utf8'), off, 'the off switch stays');
-  assert.ok((await sandbox.call(['doctor'])).stdout.includes("codex-hook: you turned off a yokoten hook in .codex/hooks.json in Codex; to turn it on, use Codex's `/hooks` screen"));
+  assert.ok((await sandbox.call(['doctor', '--all'])).stdout.includes("codex-hook: you turned off a yokoten hook in .codex/hooks.json in Codex; to turn it on, use Codex's `/hooks` screen"));
 });

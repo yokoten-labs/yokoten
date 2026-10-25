@@ -5,13 +5,14 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { ghIn } from '../host/github/index.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
-import { homeOf, NO_HOME } from '../rules/privacy.ts';
+import { hideHome, homeOf, NO_HOME } from '../rules/privacy.ts';
 import { formatFinding } from '../rules/message.ts';
 import { init, trust, undoTrust, updateCoreRules } from '../setup/init.ts';
-import { type Ask, install, isMachineSetUp, uninstall } from '../setup/install.ts';
+import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skillNames, uninstall } from '../setup/install.ts';
 import { readOriginUrl, setUpPlanning } from '../setup/plan.ts';
+import { VERSION } from '../setup/files.ts';
 import { enabledPlugin } from '../setup/advice/marketplace.ts';
-import { type Invocation, noRootFinding, type Output, parse, print, requireRoot, rootOf, usage } from './shared.ts';
+import { type Invocation, moreLine, nextLine, noRootFinding, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from './shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -25,11 +26,7 @@ export async function runStart(invocation: Invocation): Promise<number> {
   // Outside a project yokoten writes nothing: the first step is git's, not ours.
   if (!root) {
     const missing = noRootFinding(cwd, env);
-    print(invocation, [
-      `yokoten: ${formatFinding(missing)}.`,
-      'A project starts with git: run `git init` here, then `yokoten` again.',
-      'Run `yokoten help` to see every command.',
-    ], invocation.stderr);
+    print(invocation, [`yokoten: ${formatFinding(missing)}.`, 'A project starts with git: run `git init` here, then `yokoten` again.', 'Run `yokoten help` to see every command.'], invocation.stderr);
     return 1;
   }
   // No home folder means no place to install into (#548). Say it the way install does,
@@ -38,23 +35,40 @@ export async function runStart(invocation: Invocation): Promise<number> {
     print(invocation, [`${NO_HOME}. Set HOME to your home folder's full path and run \`yokoten\` again.`], invocation.stderr);
     return 1;
   }
+  const isMachineMissing = !isMachineSetUp(env);
+  const isProjectMissing = !hasProjectRules(root);
+  const ask = askWhenTerminal(invocation);
+  // Rustup's way (#1027): a person sees one screen of what changes, then answers one
+  // question. An agent, CI or a pipe has nobody to ask and goes ahead, as before.
+  if ((isMachineMissing || isProjectMissing) && ask) {
+    print(invocation, previewLines(env, isMachineMissing, isProjectMissing));
+    if (!isYes(ask(SET_UP_QUESTION))) {
+      print(invocation, title(VERSION, 'nothing changed'));
+      return 0;
+    }
+    print(invocation, ['']);
+  }
   // Each step that ran reports whether it is done: an install that failed is not "Setup is done" (#548).
   const stepResults: boolean[] = [];
-  if (!isMachineSetUp(env)) {
-    print(invocation, ['yokoten is not installed on this machine yet: installing it once for every project.']);
-    const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask: askWhenTerminal(invocation) });
-    print(invocation, done.lines);
+  if (isMachineMissing) {
+    const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask });
+    print(invocation, installScreen(invocation, done.lines, done.ok, true));
     stepResults.push(done.ok);
   }
-  if (!hasProjectRules(root)) {
-    print(invocation, ['This project has no yokoten rules yet: adding them now, and never overwriting a file of yours.']);
-    const done = init(root, env, undefined, { ask: askWhenTerminal(invocation) });
-    print(invocation, done.lines);
+  if (isProjectMissing) {
+    if (stepResults.length) print(invocation, ['']);
+    const done = init(root, env, undefined, { ask });
+    print(invocation, projectScreen(done.lines, done.ok));
     stepResults.push(done.ok);
   }
-  // After two reports, a reader needs to know that the road below is the point of it all.
-  if (stepResults.length && stepResults.every((isOk) => isOk)) print(invocation, ['Setup is done. Here is where this project is now:']);
-  return (await import('./advice/doctor.ts')).runDoctor(invocation);
+  // The screen of where the project is now is doctor's, never a copy (#1027).
+  if (stepResults.length) print(invocation, ['']);
+  const code = await (await import('./advice/doctor.ts')).runDoctor(invocation);
+  // The one thing a first run should do next is keep what it wrote.
+  if (stepResults.length) {
+    print(invocation, ['', ...nextLine('git add -A && git commit -m "chore: add yokoten"')]);
+  }
+  return code;
 }
 
 /** True when init has already put the rules in this project. */
@@ -75,6 +89,160 @@ const askWhenTerminal = (invocation: Invocation): Ask | undefined => {
   const { stdin, stdout } = invocation;
   return stdin.fd !== null && stdin.stream.isTTY && stdout.isTTY ? askOnTerminal(stdout, stdin.fd) : undefined;
 };
+
+// ---- One screen per command (issue #1027) ----
+
+/** Where a labelled row's text starts, so a wrapped line lines up under it. */
+const ROW_TEXT_INDENT = ' '.repeat(26);
+
+/** A line that says install changed something; a run with none of them changed nothing. */
+const CHANGED = /^(wrote|added|updated|linked|removed) /;
+
+/** The skill names a report names, each once. */
+function reportedSkills(lines: string[]): string[] {
+  const names = lines.map((line) => / skill ([\w-]+) in /.exec(line)?.[1]).filter((name): name is string => name !== undefined);
+  return [...new Set(names)];
+}
+
+/** The agents install left out because their own folder is not on this computer. */
+const absentAgents = (lines: string[]): string[] =>
+  lines.map((line) => /^skipped (.+?): .*not found/.exec(line)?.[1]).filter((name): name is string => name !== undefined);
+
+/** Why a line is a problem: a step that failed, never one that found nothing to do. */
+const isProblem = (line: string): boolean =>
+  /^(couldn't|kept the Claude Code hooks)/.test(line) || (/^skipped /.test(line) && !/ not found|the global git setting/.test(line));
+
+/** The home folder as `~`, so a screen measures what a reader sees (#1027, R9). */
+const shownPath = (invocation: Invocation, path: string): string => {
+  const home = homeOf(invocation.env);
+  return home ? path.split(home).join('~') : path;
+};
+
+/** The agents whose guard install really runs: a file of the user's own is not the guard. */
+function guardedAgents(lines: string[]): string[] {
+  const others = lines
+    .filter((line) => !/\(yours, not yokoten's\)/.test(line))
+    .map((line) => /(?:added|kept|updated|wrote) the (\w[\w ]*?) (?:SessionStart doctor|command guard) in /.exec(line)?.[1])
+    .filter((name): name is string => name !== undefined);
+  const isClaude = lines.some((line) => /the (?:SessionStart doctor|user-level command guard)$/.test(line) || /Claude Code hooks/.test(line));
+  return [...(isClaude ? ['Claude Code'] : []), ...new Set(others)];
+}
+
+/** The rest of a report, for a command whose full list sits behind --list. */
+function remaining(lines: string[], { isProblemsOnly = false } = {}): string[] {
+  const notes = lines.filter((line) => /^skipped the global git setting mailmap\.file/.test(line) || /^your edits stay/.test(line));
+  const problems = lines.filter(isProblem);
+  const out: string[] = [];
+  for (const note of notes) {
+    if (isProblemsOnly) continue;
+    if (/^your edits stay/.test(note)) {
+      out.push(...row('note', 'your own edits stay; the newest copies are in the kit', 'kept'));
+      continue;
+    }
+    const fix = /`(git config[^`]+)`/.exec(note)?.[1];
+    out.push(...row('note', 'hide your email in git logs: not on yet', 'email'));
+    if (fix) out.push(...wrap(ROW_TEXT_INDENT, `to turn it on: \`${fix}\``));
+  }
+  for (const problem of problems) out.push(...row('MISSING', problem));
+  return out;
+}
+
+/** The one screen `yokoten install` shows, from the report it wrote (#1027). */
+function installScreen(invocation: Invocation, lines: string[], ok: boolean, isFirstRun = false): string[] {
+  if (ok && !lines.some((line) => CHANGED.test(line))) {
+    return [...title('install', 'already set up here, nothing changed'), ...moreLine('`yokoten install --list` names every file')];
+  }
+  const out = title(isFirstRun ? VERSION : 'install', isFirstRun ? 'first run: this computer is set up' : ok ? 'this computer is set up' : 'this computer is partly set up');
+  out.push('');
+  const guarded = guardedAgents(lines);
+  out.push(...row('ok', guarded.length ? `on for ${guarded.join(', ')}` : 'on for Claude Code', 'guard'));
+  const skills = reportedSkills(lines);
+  if (skills.length) out.push(...row('ok', skills.join(', '), 'skills'));
+  const absent = absentAgents(lines);
+  if (absent.length) out.push(...row("can't check", `${absent.length} not installed here; run install again later`, 'other AIs'));
+  const pathLine = lines.find((line) => / is not on your PATH/.test(line));
+  if (pathLine) {
+    out.push(...row('note', `${shownPath(invocation, /^(\S+) is not on your PATH/.exec(pathLine)?.[1] ?? launcherDir(homeOf(invocation.env) ?? ''))} is not on your PATH yet`, 'command'));
+    out.push(
+      ...(invocation.platform === 'win32'
+        ? wrap(ROW_TEXT_INDENT, 'Windows: "Edit environment variables for your account"')
+        : wrap(ROW_TEXT_INDENT, 'add this line to your shell profile: export PATH="$HOME/.local/bin:$PATH"')),
+    );
+  }
+  const rest = remaining(lines);
+  if (rest.length) out.push('', ...rest);
+  // In a first run the project's screen follows, so this one has no next command of its own.
+  if (!isFirstRun) {
+    out.push('');
+    out.push(...nextLine(existsSync(resolve(invocation.cwd, 'AGENTS.md')) ? 'yokoten doctor' : 'yokoten init'));
+    out.push(...moreLine('`yokoten install --list` names every file'));
+  }
+  return out;
+}
+
+/** The one screen `yokoten uninstall` shows: counts, then the command that puts it back (#1027). */
+function uninstallScreen(lines: string[], ok: boolean): string[] {
+  if (!lines.some((line) => /^removed /.test(line))) return title('uninstall', 'nothing to remove, nothing changed');
+  const skills = new Set(lines.map((line) => /^removed skill ([\w-]+) in /.exec(line)?.[1]).filter(Boolean)).size;
+  const agents = lines.filter((line) => /^removed agent /.test(line)).length;
+  const hooks = lines.filter((line) => /^removed the .*(doctor|guard|hooks)/.test(line)).length;
+  const removed = [skills && `${skills} skill${skills === 1 ? '' : 's'}`, agents && `${agents} agents`, hooks && `${hooks} hooks`].filter(Boolean);
+  const out = title('uninstall', ok ? 'removed what install wrote' : 'removed some of what install wrote');
+  out.push('');
+  if (removed.length) out.push(...row('ok', removed.join(', '), 'removed'));
+  if (lines.some((line) => /^kept /.test(line))) out.push(...row('ok', 'your own files, keys and private marks', 'kept'));
+  const problems = lines.filter((line) => !/^(removed|nothing to remove|not there|kept|yokoten: cleaned)/.test(line));
+  if (problems.length) out.push('', ...problems.flatMap((line) => row('MISSING', line)));
+  out.push('');
+  out.push(`To install again: \`yokoten install\``);
+  return out;
+}
+
+/** The project part of the first run: init's report as four rows and a file count (#1027). */
+function projectScreen(lines: string[], ok: boolean): string[] {
+  const wrote = lines.filter((line) => /^wrote /.test(line));
+  const kept = lines.filter((line) => /^kept /.test(line));
+  if (ok && !wrote.length) return title('init', 'already set up here, nothing changed');
+  const workflows = wrote.filter((line) => /^wrote \.github\/workflows\//.test(line)).length;
+  const hasDependabot = wrote.some((line) => /dependabot/.test(line));
+  const hasGithubFiles = wrote.some((line) => /templates|CODEOWNERS|pull_request_template/.test(line));
+  const agents = lines.filter((line) => /hook in \./.test(line)).length;
+  const out = title('init', ok ? 'this project is set up' : 'this project is partly set up');
+  out.push('');
+  out.push(...row('ok', 'AGENTS.md, the commit check', 'rules'));
+  const ci = [workflows && `${workflows} workflows`, hasDependabot && 'Dependabot'].filter(Boolean).join(', ');
+  if (ci) out.push(...row('ok', ci, 'CI'));
+  if (hasGithubFiles) out.push(...row('ok', 'issue and PR templates, CODEOWNERS', 'GitHub'));
+  out.push(...row('ok', `guard for Claude Code${agents > 1 ? ` and ${agents - 1} more` : ''}`, 'agents'));
+  out.push(`${ROW_TEXT_INDENT}${wrote.length} files written${kept.length ? `, ${kept.length} of yours kept` : ', none of yours changed'}`);
+  const rest = remaining(lines, { isProblemsOnly: true });
+  if (rest.length) out.push('', ...rest);
+  out.push('');
+  out.push(...nextLine('git add -A && git commit -m "chore: add yokoten"'));
+  out.push(...moreLine('`yokoten init --list` names every file'));
+  return out;
+}
+
+/** What the first run will write, before it asks: two groups, then the way back (#1027). */
+export function previewLines(env: Env, isComputer: boolean, isProject: boolean): string[] {
+  const out = title(VERSION, 'first run: here is what changes');
+  out.push('');
+  if (isComputer) {
+    const agents = ['Claude Code', ...agentsHere(env)];
+    out.push(`  computer   guard on for ${agents.join(', ')}, ${skillNames().length} skills`);
+    out.push(`             the runtime and a yokoten command in ${hideHome(launcherDir(homeOf(env) ?? ''), env)}`);
+  }
+  if (isProject) {
+    out.push(`  project    AGENTS.md, the commit check, CI and the templates`);
+    out.push('             nothing of yours is overwritten');
+  }
+  out.push('');
+  out.push(isComputer ? 'Undo: `yokoten uninstall`' : 'Undo: `git restore .`');
+  return out;
+}
+
+/** The question the first run and install ask before they write (#1027). */
+export const SET_UP_QUESTION = 'Set up yokoten here? [Y/n]';
 
 export function runInit(invocation: Invocation): number {
   const options = parse('init', invocation.args);
@@ -117,10 +285,7 @@ export function runTrust(invocation: Invocation): number {
   // A person turns the guard on (#661): a pipe, a hook or CI has nobody to decide, and an
   // agent that ran the command would change the trust in its user's own settings.
   if (!isAtTerminal(invocation)) {
-    print(invocation, [
-      'yokoten trust: a person runs this at a terminal, because it changes the trust in your own agent settings.',
-      'Nothing was written. Run `yokoten trust` in your terminal.',
-    ], invocation.stderr);
+    print(invocation, [...title('trust', 'a person runs this at a terminal'), '', ...row('note', 'it changes the trust in your own agent settings', 'why'), ...row('note', 'nothing was written'), '', ...nextLine('yokoten trust')], invocation.stderr);
     return 1;
   }
   const dir = resolve(invocation.cwd, options.positional[0] ?? '.');
@@ -130,9 +295,32 @@ export function runTrust(invocation: Invocation): number {
   }
   const root = requireRoot(invocation, dir);
   if (!root) return 1;
-  const done = options.flags.has('--undo') ? undoTrust(root, invocation.env) : trust(root, invocation.env);
-  print(invocation, done.lines);
+  const isUndo = options.flags.has('--undo');
+  const done = isUndo ? undoTrust(root, invocation.env) : trust(root, invocation.env);
+  print(invocation, trustScreen(done.lines, isUndo));
   return done.ok ? 0 : 1;
+}
+
+/** The one screen `yokoten trust` shows: each agent, then the way back (#1027). */
+function trustScreen(lines: string[], isUndo: boolean): string[] {
+  const names = lines.map((line) => /^(?:turned on yokoten's guard in|removed the trust yokoten added in) (.+?)(?: \(|$)/.exec(line)?.[1]).filter((name): name is string => name !== undefined);
+  const already = lines.flatMap((line) => /^yokoten's guard is already on in (.+)$/.exec(line)?.[1]?.split(/, | and /) ?? []);
+  const problems = lines.filter((line) => !/^(turned on yokoten's guard in|removed the trust yokoten added in|yokoten's guard is already on in|undo: |no agent installed here|nothing to undo)/.test(line));
+  const counted = names.length + already.length;
+  if (!counted && !problems.length) return title('trust', 'no agent here needs a change');
+  const summary = isUndo ? 'the guard is off again in the agents here' : `the guard now runs in ${counted} ${counted === 1 ? 'agent' : 'agents'} here`;
+  const out = title('trust', counted ? summary : 'no agent here needs a change');
+  out.push('');
+  for (const name of names) out.push(...row('ok', isUndo ? 'this folder is no longer trusted' : 'this folder is trusted', name));
+  for (const name of already) out.push(...row('ok', 'this folder is already trusted', name));
+  // R5: a refusal or a problem is never folded away.
+  if (problems.length) {
+    if (counted) out.push('');
+    for (const line of problems) out.push(...row(/^(left the trust|kept your choice)/.test(line) ? 'note' : 'MISSING', line));
+  }
+  out.push('');
+  out.push(isUndo ? 'To turn it on again: `yokoten trust`' : 'Undo: `yokoten trust --undo`');
+  return out;
 }
 
 export function runUpdate(invocation: Invocation): number {
@@ -176,11 +364,21 @@ const askOnTerminal = (stdout: Output, fd: number): Ask => (question) => {
 export function runInstall(invocation: Invocation): number {
   const options = parse('install', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
-  // The PATH question needs someone to answer it: never in a pipe, a hook or CI (#433).
+  // The PATH and mailmap questions need someone to answer them: never in a pipe, a hook or CI (#433).
   const ask = askWhenTerminal(invocation);
+  // Before it writes anything, a person reads what will change and answers once (#1027).
+  // --yes, an agent and CI go ahead without the question, as before.
+  if (ask && !options.flags.has('--yes')) {
+    print(invocation, previewLines(invocation.env, true, false));
+    if (!isYes(ask(SET_UP_QUESTION))) {
+      print(invocation, title('install', 'nothing changed'));
+      return 0;
+    }
+    print(invocation, ['']);
+  }
   // gh may reach the network for the login: three seconds at most.
   const done = install(invocation.env, { cwd: invocation.cwd, gh: ghIn(invocation.cwd, invocation.env, 3000), ask });
-  print(invocation, done.lines);
+  print(invocation, options.flags.has('--list') ? done.lines : installScreen(invocation, done.lines, done.ok));
   return done.ok ? 0 : 1;
 }
 
@@ -188,7 +386,7 @@ export function runUninstall(invocation: Invocation): number {
   const options = parse('uninstall', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
   const done = uninstall(invocation.env);
-  print(invocation, done.lines);
+  print(invocation, options.flags.has('--list') ? done.lines : uninstallScreen(done.lines, done.ok));
   return done.ok ? 0 : 1;
 }
 
@@ -306,6 +504,16 @@ export function runUpgrade(invocation: Invocation): number {
   const options = parse('upgrade', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
   const done = upgrade(invocation.env);
-  print(invocation, done.lines, done.ok ? invocation.stdout : invocation.stderr);
-  return done.ok ? 0 : 1;
+  // A failed step is never folded: its own lines and the command to type by hand (#1027).
+  if (!done.ok) {
+    print(invocation, done.lines, invocation.stderr);
+    return 1;
+  }
+  const steps = done.lines.filter((line) => /^ok /.test(line));
+  if (!steps.length) {
+    print(invocation, [...title('upgrade', 'yokoten is not a Claude Code plugin here'), '', ...row('note', 'there is no plugin to update; nothing was changed'), '', ...nextLine('npx yokoten@latest')]);
+    return 0;
+  }
+  print(invocation, [...title('upgrade', 'the yokoten plugin is up to date'), '', ...row('ok', 'updated', 'plugin'), '', ...nextLine('restart Claude Code to use it')]);
+  return 0;
 }

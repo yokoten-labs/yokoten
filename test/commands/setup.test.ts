@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
-import { claudeCommand } from '../../src/commands/setup.ts';
+import { claudeCommand, previewLines } from '../../src/commands/setup.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
 test('update: a folder that does not exist is said plainly (#208)', () => {
@@ -19,24 +19,25 @@ test('update: a folder that does not exist is said plainly (#208)', () => {
 test('start: bare yokoten installs, adds the rules, then shows the road (#548)', async () => {
   const sandbox = makeSandbox();
   const first = await sandbox.call([]);
-  assert.match(first.stdout, /^yokoten is not installed on this machine yet/m);
-  assert.match(first.stdout, /^This project has no yokoten rules yet/m);
-  assert.match(first.stdout, /^Setup is done\. Here is where this project is now:$/m);
-  assert.match(first.stdout, /^stage 1 of 5, safety net\. Next: /m);
+  // The first run says what it wrote on this computer and here, then doctor's screen (#1027).
+  assert.match(first.stdout, /^yokoten 0\.1\.1 · first run: this computer is set up$/m);
+  assert.match(first.stdout, /^yokoten init · this project is set up$/m);
+  assert.match(first.stdout, /^yokoten doctor · stage 1 of 5, safety net$/m);
+  assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
   assert.ok(existsSync(join(sandbox.repo, 'AGENTS.md')), 'the rules are in the project');
   assert.ok(existsSync(join(sandbox.repo, 'yokoten.json')), 'init wrote yokoten.json');
   assert.ok(existsSync(join(sandbox.home, '.local', 'share', 'yokoten', 'bin', 'yokoten.mjs')), 'install wrote the runtime');
   // The second run does only what is left: the road and nothing to install or add.
   const again = await sandbox.call([]);
-  assert.doesNotMatch(again.stdout, /not installed on this machine yet/);
-  assert.doesNotMatch(again.stdout, /no yokoten rules yet/);
-  assert.doesNotMatch(again.stdout, /Setup is done/);
-  assert.match(again.stdout, /^stage 1 of 5, safety net\. Next: /m);
+  assert.doesNotMatch(again.stdout, /this computer is set up/);
+  assert.doesNotMatch(again.stdout, /this project is set up/);
+  assert.match(again.stdout, /^yokoten doctor · stage 1 of 5, safety net$/m);
+  assert.doesNotMatch(again.stdout, /^Next: `git add -A/, 'nothing new to commit');
 });
 
-test('start: a shell that is not UTC ends on the line for that shell (#932)', async () => {
+test('start: a shell that is not UTC ends doctor\'s full report on the line for that shell (#932)', async () => {
   const sandbox = makeSandbox();
-  const result = await sandbox.call([], { extra: { TZ: 'America/New_York', SHELL: '/bin/zsh' } });
+  const result = await sandbox.call(['doctor', '--all'], { extra: { TZ: 'America/New_York', SHELL: '/bin/zsh' } });
   const last = result.stdout.trimEnd().split('\n').at(-1) ?? '';
   assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
   assert.match(last, /`export TZ=UTC`/);
@@ -148,7 +149,7 @@ test('upgrade: the two updates carry the HTTPS override, and nothing is removed 
     // A remove would leave no marketplace when the next clone fails, so there is none.
     assert.deepEqual(calls.map((call) => call.args), ['plugin marketplace update yokoten', 'plugin update yokoten-beta@yokoten'], JSON.stringify(source));
     for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
-    assert.match(result.stdout, /^Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts\.$/m);
+    assert.match(result.stdout, /^Next: `restart Claude Code to use it`$/m);
   }
 });
 
@@ -157,7 +158,7 @@ test('upgrade: without the plugin it names npx and runs nothing', async () => {
   const fake = fakeClaude(sandbox);
   const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^To get the newest yokoten, run: npx yokoten@latest$/m);
+  assert.match(result.stdout, /^Next: `npx yokoten@latest`$/m);
   assert.deepEqual(fake.calls(), []);
 });
 
@@ -206,6 +207,65 @@ test('upgrade: a marketplace name that is not plain runs nothing, so it never re
     assert.deepEqual(fake.calls(), [], `${name}: no call`);
     assert.match(result.stderr, /the marketplace name in your settings is not a plain name/, name);
   }
+});
+
+// ---- One screen per command (#1027) ----
+
+/** Every line of a screen fits an 80-column terminal (R1). */
+const fit = (text: string): void => {
+  for (const line of text.trimEnd().split('\n')) assert.ok(line.length <= 80, `${line.length}: ${line}`);
+};
+
+test('install: one screen by default, and --list keeps every file (#1027)', async () => {
+  const sandbox = makeSandbox();
+  const result = await sandbox.call(['install']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^yokoten install · this computer is set up$/m);
+  assert.match(result.stdout, /^ {2}ok +guard +on for Claude Code$/m);
+  assert.match(result.stdout, /^ {2}can't check +other AIs +\d+ not installed here/m);
+  assert.match(result.stdout, /^Next: `yokoten init`$/m);
+  assert.match(result.stdout, /^More: `yokoten install --list` names every file$/m);
+  fit(result.stdout);
+  // The full listing is still there, behind the flag.
+  const list = await sandbox.call(['install', '--list']);
+  assert.match(list.stdout, /skill yokoten in ~\/\.claude\/skills$/m);
+  assert.match(list.stdout, /^skipped Codex CLI: /m);
+});
+
+test('install: the preview says what changes and how to undo it (#1027)', async () => {
+  const sandbox = makeSandbox();
+  const lines = previewLines(sandbox.env, true, true);
+  assert.match(lines.join('\n'), /^yokoten \d+\.\d+\.\d+ · first run: here is what changes$/m);
+  assert.match(lines.join('\n'), /^ {2}computer +guard on for Claude Code, 7 skills$/m);
+  assert.match(lines.join('\n'), /^ {2}project +AGENTS\.md, the commit check, CI and the templates$/m);
+  assert.match(lines.join('\n'), /^Undo: `yokoten uninstall`$/m);
+  for (const line of lines) assert.ok(line.length <= 80, line);
+});
+
+test('uninstall: one screen of counts, then how to install again (#1027)', async () => {
+  const sandbox = makeSandbox();
+  await sandbox.call(['install', '--list']);
+  const result = await sandbox.call(['uninstall']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^yokoten uninstall · removed what install wrote$/m);
+  assert.match(result.stdout, /^ {2}ok +removed +1 skill, 3 agents, 2 hooks$/m);
+  assert.match(result.stdout, /^To install again: `yokoten install`$/m);
+  assert.doesNotMatch(result.stdout, /removed skill /, 'per-file lines are behind --list');
+  fit(result.stdout);
+  const again = await sandbox.call(['uninstall']);
+  assert.match(again.stdout, /^yokoten uninstall · nothing to remove, nothing changed$/m);
+});
+
+test('trust: one screen names each agent, then the way back (#1027)', async () => {
+  const sandbox = makeSandbox();
+  mkdirSync(join(sandbox.home, '.codex'), { recursive: true });
+  await sandbox.call(['init', '--no-ci']);
+  const done = await sandbox.call(['trust'], { isTTY: true, extra: { NO_COLOR: '1' } });
+  assert.equal(done.status, 0, done.stderr);
+  assert.match(done.stdout, /^yokoten trust · the guard now runs in 1 agent here$/m);
+  assert.match(done.stdout, /^ {2}ok +Codex +this folder is trusted$/m);
+  assert.match(done.stdout, /^Undo: `yokoten trust --undo`$/m);
+  fit(done.stdout);
 });
 
 test('help: upgrade is in the Start group', async () => {
