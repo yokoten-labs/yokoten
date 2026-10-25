@@ -50,6 +50,11 @@ import { readTrust as codexTrust } from '../../src/agents/runtimes/codex.ts';
 import { readTrust as museTrust } from '../../src/agents/runtimes/muse.ts';
 import { readCodeOwners } from '../../src/host/github/index.ts';
 import { KIT, readWorkflowHashes, render, textHash, VERSION } from '../../src/setup/files.ts';
+
+// The version under test, read from package.json: a release bump must not need test edits.
+const versionPattern = VERSION.replaceAll('.', '\\.');
+const NEWER = `${Number(VERSION.split('.')[0]) + 1}.0.0`;
+const newerPattern = NEWER.replaceAll('.', '\\.');
 import {
   AGENTS_BACKUP,
   init,
@@ -1245,7 +1250,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const kitCore = fresh.slice(0, fresh.indexOf('## This project'));
   assert.match((await sandbox.call(['doctor'])).stdout, /\n {2}ok +core-rules\n/, 'init wrote the kit, so it is up to date');
   let result: { status: number | null; stdout: string; stderr: string } = sandbox.run(['update']); // a real process: the entry point of update
-  assert.deepEqual([result.status, result.stdout], [0, 'yokoten update: the core rules in AGENTS.md are up to date with yokoten 0.1.0; nothing to change\n']);
+  assert.deepEqual([result.status, result.stdout], [0, `yokoten update: the core rules in AGENTS.md are up to date with yokoten ${VERSION}; nothing to change\n`]);
 
   // An older kit had no rule 12, and someone edited a line by hand. The project's own
   // part has trailing spaces and a CRLF line end, to show it is kept byte for byte.
@@ -1253,7 +1258,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const old = kitCore.replace(/^\| 12 \|.*\n/m, '').replace('Plain English, close to', 'Plain words, close to') + own;
   writeFileSync(path, old);
   const doctor = await sandbox.call(['doctor']);
-  assert.match(doctor.stdout, /MISSING core-rules: the core rules in AGENTS\.md are behind yokoten 0\.1\.0's, or were edited by hand \(2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\); run `yokoten update` to see the change/);
+  assert.match(doctor.stdout, new RegExp(String.raw`MISSING core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
   assert.equal(doctor.status, 1);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the core rules in AGENTS\.md are behind/m, 'a session hears it');
   assert.ok(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).findings.some((f: { id: string }) => f.id === 'core-rules'));
@@ -1261,7 +1266,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   // The preview shows each line, the hand edit too, and writes nothing.
   result = await sandbox.call(['update']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten update: the core rules in AGENTS\.md differ from yokoten 0\.1\.0's: 2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\n/);
+  assert.match(result.stdout, new RegExp(String.raw`^yokoten update: the core rules in AGENTS\.md differ from yokoten ${versionPattern}'s: 2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\n`));
   assert.match(result.stdout, /^- Plain words, close to ASD-STE100/m, 'the hand-edited line is shown as replaced');
   assert.match(result.stdout, /^\+ Plain English, close to ASD-STE100/m);
   assert.match(result.stdout, /^\+ \| 12 \| Decisions are written down once/m);
@@ -1271,7 +1276,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   // --write replaces the core part only; a second run has nothing to do.
   result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout, `yokoten update: replaced the core rules in AGENTS.md with yokoten 0.1.0's: 2 line(s) added, 1 removed; sections changed: Core rules, Writing. "## This project" and below are unchanged\n`);
+  assert.equal(result.stdout, `yokoten update: replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 2 line(s) added, 1 removed; sections changed: Core rules, Writing. "## This project" and below are unchanged\n`);
   assert.equal(readFileSync(path, 'utf8'), kitCore + own);
   assert.match((await sandbox.call(['update'])).stdout, /up to date/);
   assert.match((await sandbox.call(['doctor'])).stdout, /\n {2}ok +core-rules\n/);
@@ -1303,26 +1308,26 @@ test('update: init writes the kit version; a newer project is refused, an older 
   assert.equal((await sandbox.call(['init'])).status, 0);
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
-  assert.match(fresh, /^<!-- yokoten kit 0\.1\.0 -->\n# How work is done here\n/, 'init writes the mark on the first line');
+  assert.match(fresh, new RegExp(String.raw`^<!-- yokoten kit ${versionPattern} -->\n# How work is done here\n`), 'init writes the mark on the first line');
   const own = fresh.slice(fresh.indexOf('## This project'));
   const kitCore = fresh.slice(0, fresh.indexOf('## This project'));
 
   // Newer: a later kit added a line. update refuses, with or without --write, and doctor
   // says to update yokoten, not the project.
-  const newer = kitCore.replace('0.1.0 -->', '0.2.0 -->').replace('## Roles\n', '## Roles\n\nA rule from a later kit.\n') + own;
+  const newer = kitCore.replace(`${VERSION} -->`, `${NEWER} -->`).replace('## Roles\n', '## Roles\n\nA rule from a later kit.\n') + own;
   writeFileSync(path, newer);
   for (const args of [['update'], ['update', '--write']]) {
     const result = await sandbox.call(args);
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /^yokoten update: AGENTS\.md was written by yokoten 0\.2\.0, newer than this yokoten 0\.1\.0\. Nothing was written/);
+    assert.match(result.stderr, new RegExp(String.raw`^yokoten update: AGENTS\.md was written by yokoten ${newerPattern}, newer than this yokoten ${versionPattern}\. Nothing was written`));
   }
   assert.equal(readFileSync(path, 'utf8'), newer, 'a newer project is not downgraded');
   const doctor = await sandbox.call(['doctor']);
-  assert.match(doctor.stdout, /\n {2}note +core-rules: the core rules in AGENTS\.md come from yokoten 0\.2\.0, newer than this yokoten 0\.1\.0; update yokoten itself, not the project/);
+  assert.match(doctor.stdout, new RegExp(String.raw`\n {2}note +core-rules: the core rules in AGENTS\.md come from yokoten ${newerPattern}, newer than this yokoten ${versionPattern}; update yokoten itself, not the project`));
   assert.doesNotMatch(doctor.stdout, /MISSING core-rules/);
 
   // Older: the same text with an older mark is updated, and gets the new mark.
-  writeFileSync(path, newer.replace('0.2.0 -->', '0.0.9 -->'));
+  writeFileSync(path, newer.replace(`${NEWER} -->`, '0.0.9 -->'));
   assert.match((await sandbox.call(['doctor'])).stdout, /MISSING core-rules: the core rules in AGENTS\.md are behind/);
   let result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 0, result.stderr);
@@ -1360,7 +1365,7 @@ test('update: the .yokoten/ copy has the kit\'s AGENTS.md, so doctor and update 
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   writeFileSync(path, fresh.replace('Plain English, close to', 'Plain words, close to'));
-  assert.match(vendored('doctor').stdout, /MISSING core-rules: the core rules in AGENTS\.md are behind yokoten 0\.1\.0's, or were edited by hand/);
+  assert.match(vendored('doctor').stdout, new RegExp(String.raw`MISSING core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand`));
   const result = vendored('update', '--write');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh, 'the copy writes its own kit, the one CI checks against');
