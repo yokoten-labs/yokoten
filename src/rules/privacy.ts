@@ -15,6 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
+import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
 import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
@@ -1369,6 +1370,8 @@ export interface CommandFiles {
   saw?: (isMarked: (word: string) => boolean) => Risk | undefined;
   /** A cd in the command: a path with `..` goes up from the real folder, behind any symlink. */
   movesFolder?: boolean;
+  /** Where the command's paths are read: on Windows Git Bash's `/c/x` is `C:\x` (#1015). Unset: as written. */
+  place?: PathPlace;
 }
 
 /** What a gh command posts: its pieces, a file the guard can't find, or a short-option cluster. Null when it posts nothing. */
@@ -1723,6 +1726,13 @@ export function checkPost(
     // A `..` past a `cd` escapes whatever folder the command lands in, so it is named
     // even from an unknown one: the file stays unreadable either way (#559).
     if (files?.movesFolder && full.split(/[\\/]/).includes('..')) return { saw: { what: 'a `cd` before a path with `..`' } };
+    // A Git Bash path the guard can't place on Windows (`/usr/x`, or a climb past the drive) is unsure (#1015).
+    const place = files?.place;
+    if (place) {
+      const placed = fromGitBash(full, place.platform, place.tmp);
+      if (placed === null || (cwd !== null && !isAbsolute(placed) && climbsPastDrive(cwd, placed, place.platform))) return 'unsure';
+      full = placed;
+    }
     if (!isAbsolute(full) && cwd === null) return 'unsure';
     const at = isAbsolute(full) || !cwd ? full : `${cwd}/${full}`;
     let stat: ReturnType<typeof statSync> | null = null;

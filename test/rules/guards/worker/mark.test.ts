@@ -1,7 +1,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand, checkWorkerMarkEdit, gitLinkAbove, markNote, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
 import { makeGitFolder, makeTempDir, runChild } from '../../../../test/repo/helpers.ts';
@@ -118,6 +118,34 @@ test('worker mark: a worker may not remove or replace the folder that holds the 
   }
   // The lead may not delete the checkout either: a different rule answers (#828).
   assert.equal(checkCommand('rm -rf .', { cwd: desk, env: { HOME: worker.HOME } })?.id, 'delete-checkout');
+});
+
+// #1015: on Windows Git Bash writes the desk as `/c/...`, and the temp folder as `/tmp`. The
+// place is passed in with this disk's temp folder, so Linux CI walks a real desk.
+test('worker mark: a Git Bash path to the desk or its parent is refused on Windows (#1015)', () => {
+  const base = makeTempDir('yokoten-desk-');
+  const desk = join(base, 'desk');
+  makeGitFolder(desk);
+  mkdirSync(join(desk, 'src'));
+  writeFileSync(join(desk, '.git', 'yokoten-worker'), 'x');
+  const place = { platform: 'win32', tmp: dirname(base) } as const;
+  const bashBase = `/tmp/${basename(base)}`;
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const check = (command: string) => checkCommand(command, { cwd: desk, env: worker, place });
+  for (const command of [
+    `mv ${bashBase}/desk ${bashBase}/old`,
+    `rm -rf ${bashBase}/desk`,
+    `rm -rf ${bashBase}`,
+    `rm -rf ${bashBase}/desk/.git`,
+    `echo x > ${bashBase}/desk/.git/yokoten-worker`,
+    `mv ${bashBase}/desk/../desk ${bashBase}/old`,
+    // Unsure: a Git Bash folder of its own.
+    'rm -rf /usr/x',
+  ]) assert.equal(check(command)?.id, 'worker-mark', command);
+  // Positive controls: work inside the desk goes on, in the Git Bash form too.
+  for (const command of ['rm -rf src', `rm -rf ${bashBase}/desk/src`, `mv ${bashBase}/desk/src ${bashBase}/desk/lib`, 'echo x > /dev/null']) {
+    assert.equal(check(command), null, command);
+  }
 });
 
 test('checkWorkerMarkEdit: a git folder by name or by real path (#555)', () => {

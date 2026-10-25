@@ -2,7 +2,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { isBotProgram, PIPE_READERS, type Risk } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { MOVERS } from '../commands/check.ts';
-import { base, unquotedRedirects, programName } from './read/words.ts';
+import { base, unquotedRedirects, programName, placedPath } from './read/words.ts';
 import { WRITE_REDIRECT } from '../lead-only/targets.ts';
 
 // ---- A body file the same command writes (#439) ----
@@ -404,9 +404,12 @@ export function folderAfter(words: string[], folder: string | null, { env, isTil
   if (target === undefined) return env.HOME ?? null;
   if (target === '-' || /[$`*?[]/.test(target) || /^~[^/]/.test(target)) return null;
   if (target.startsWith('~') && isTildeQuoted) return null;
-  const path = target.startsWith('~') ? (env.HOME ? join(env.HOME, target.slice(1)) : null) : target;
+  const written = target.startsWith('~') ? (env.HOME ? join(env.HOME, target.slice(1)) : null) : target;
+  // Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015); a folder it can't place is unknown.
+  const path = written === null ? null : placedPath(written, folder);
   if (path === null) return null;
-  if (isAbsolute(path)) return path;
+  // A Git Bash path the helper placed is a full path on its system.
+  if (path !== written || isAbsolute(path)) return path;
   // Only `/`, `./`, `../` and `.` and `..` alone say where a relative `cd` goes: bash
   // searches CDPATH for the rest, even with a `/` inside (`cd sub/dir`).
   // `isCdPathSkipped` reads it as written instead: the likely folder, never a sure one.

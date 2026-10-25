@@ -12,7 +12,7 @@ import { isAbsolute, resolve, sep } from 'node:path';
 import { matcher, type Config, type Env } from '../../config.ts';
 import { finding, type Finding, isFailingFinding, type RuleId } from '../../message.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, repoMarkKinds, scanText } from '../../privacy.ts';
-import { findPrograms, isGit, withoutShellRedirects } from '../bash/read/words.ts';
+import { findPrograms, isGit, withoutShellRedirects, placedPath } from '../bash/read/words.ts';
 import { gitParts, gitRootAbove, parseCommitOptions } from '../lead-only/targets.ts';
 
 /** The largest patch the guard reads for a commit. Bigger than this is refused, never skipped. */
@@ -86,7 +86,11 @@ function readCommitChange(words: string[], folder: string | null, env: Env): Com
   if (program === undefined) return null;
   const { sub, args, dir } = gitParts(withoutShellRedirects(words, words.indexOf(program) + 1), folder);
   if (sub !== 'commit') return null;
-  const { named, isAll, isInclude, namesFromFile } = parseCommitOptions(args);
+  const parsed = parseCommitOptions(args);
+  const { isAll, isInclude, namesFromFile } = parsed;
+  // Git Bash's `/c/x` is `C:\x` on Windows (#1015). One the guard can't place stays as
+  // written: it then reads as no file, and the commit is refused.
+  const named = parsed.named.map((name) => placedPath(name, dir) ?? name);
   // git reads the paths to commit from a file whose shape the guard cannot follow, so a
   // commit that names them that way is refused rather than guessed (#824).
   if (namesFromFile) return { problem: 'names from a file' };

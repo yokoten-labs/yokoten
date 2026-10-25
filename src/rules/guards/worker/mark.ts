@@ -6,7 +6,7 @@ import { type Env } from '../../config.ts';
 import { configFolder, configFinding, namesConfigFolder, withHomeRead, configForms, configTargetRefusal, type ConfigContext } from './config.ts';
 import { listedWorker } from './list.ts';
 import { findSparesGitTree } from '../commands/lose-work.ts';
-import { isFolder, globMatches, isGit, GIT_VALUE_OPTIONS, withoutShellRedirects, realPath, FIND_ACTIONS, programName, findPrograms } from '../bash/read/words.ts';
+import { isFolder, globMatches, isGit, GIT_VALUE_OPTIONS, withoutShellRedirects, realPath, FIND_ACTIONS, programName, findPrograms, placedPath } from '../bash/read/words.ts';
 import { gitRootAbove, writeTargets, plainArgs, COPY_VALUES, WRITERS } from '../lead-only/targets.ts';
 
 // ---- The worker mark (#555) ----
@@ -247,6 +247,9 @@ function mayBeGitPath(path: string): boolean {
 const namesGitDir = (command: string) =>
   NAMES_GIT_DIR.test(command) || command.split(PATH_BREAKS).some((part) => mayBeDotGit(part) || (/[a-z]/i.test(part) && globMatches(part, WORKER_MARK)));
 
+/** A target on Windows the guard can't place: a Git Bash folder of its own (`/usr/x`), or a climb past the drive (#1015). */
+const unplacedWhat = (written: string) => `this command changes ${written}, a Git Bash path yokoten can't place on Windows, so it may hold a git folder, where the worker mark is kept`;
+
 // Programs that change files beyond WRITERS: their plain words are their files. ln also
 // names the file it links to.
 export const MARK_WRITERS = new Set(['chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'touch', 'mkdir', 'mkfifo', 'mknod', 'rsync', 'ln']);
@@ -328,7 +331,9 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
     const held = [...dirs, ...(top ? [realPath(join(top.top, '.git'))] : [])];
     for (const start of starts) {
       if (/[$`~]/.test(start)) continue;
-      const full = realPath(resolve(folder, start));
+      const placed = placedPath(start, folder);
+      if (placed === null) return markFinding(unplacedWhat(start));
+      const full = realPath(resolve(folder, placed));
       const inside = full.endsWith(sep) ? full : full + sep;
       if (held.some((dir) => dir === full || dir.startsWith(inside))) return markFinding(`this command changes files under ${start}, which holds a git folder, where the worker mark is kept`);
     }
@@ -343,10 +348,13 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
       if (namesGitDir(command)) return markFinding(`this command changes ${written}, a path yokoten can't read, and names a git folder`);
       continue;
     }
-    if (folder === null && !isAbsolute(target)) continue;
+    // Git Bash's `/c/x` is `C:\x` on Windows (#1015); one the guard can't place is refused.
+    const placed = placedPath(target, folder);
+    if (placed === null) return markFinding(unplacedWhat(written));
+    if (folder === null && !isAbsolute(placed)) continue;
     dirs ??= folder === null ? [] : protectedGitDirs(folder);
     if (!dirs.length) continue;
-    const full = realPath(resolve(folder ?? '/', target));
+    const full = realPath(resolve(folder ?? '/', placed));
     if (dirs.some((dir) => full === dir || full.startsWith(dir + sep))) return markFinding(`this command changes ${written}, which is inside a git folder, where the worker mark is kept`);
     // A folder that holds the git folder: removing or replacing it drops the mark (#672).
     if (findStarts.has(written)) continue;
@@ -409,10 +417,13 @@ function mayReachGitFolder(args: string[]): boolean {
 function gitWorkFolders(args: string[], folder: string | null, home: string | null): { path: string; written: string }[] {
   const folders: { path: string; written: string }[] = [];
   let base = folder;
-  const place = (path: string) => {
+  // A path the guard can't read is kept as written; null for one it can't place (#1015).
+  const place = (path: string): string | null => {
     const expanded = withHomeRead(path, home, base);
     if (/[$`]/.test(expanded) || expanded.startsWith('~')) return path;
-    return base === null ? (isAbsolute(expanded) ? expanded : path) : resolve(base, expanded);
+    const placed = placedPath(expanded, base);
+    if (placed === null) return null;
+    return base === null ? (isAbsolute(placed) ? placed : path) : resolve(base, placed);
   };
   let at = 0;
   for (; at < args.length && args[at].startsWith('-'); at++) {
@@ -420,9 +431,9 @@ function gitWorkFolders(args: string[], folder: string | null, home: string | nu
     const value = joined ?? args[at + 1] ?? '';
     if (option === '-C') {
       const placed = place(value);
-      folders.push({ path: placed, written: value });
-      base = isAbsolute(placed) ? placed : null;
-    } else if (option === '--work-tree' || option === '--git-dir') folders.push({ path: place(value), written: value });
+      folders.push({ path: placed ?? value, written: value });
+      base = placed !== null && isAbsolute(placed) ? placed : null;
+    } else if (option === '--work-tree' || option === '--git-dir') folders.push({ path: place(value) ?? value, written: value });
     if (joined === undefined && GIT_VALUE_OPTIONS.has(option)) at++;
   }
   if (!args.slice(0, at).some((arg) => arg === '-C')) folders.push({ path: folder ?? '.', written: folder === null ? '.' : withHomeShown(folder, home) });
@@ -430,8 +441,8 @@ function gitWorkFolders(args: string[], folder: string | null, home: string | nu
   if (sub === 'init' || sub === 'clone') {
     for (const arg of args.slice(at + 1)) {
       const [option, joined] = arg.split(/=(.*)/s);
-      if (!arg.startsWith('-')) folders.push({ path: place(arg), written: arg });
-      else if (option === '--separate-git-dir' && joined !== undefined) folders.push({ path: place(joined), written: joined });
+      if (!arg.startsWith('-')) folders.push({ path: place(arg) ?? arg, written: arg });
+      else if (option === '--separate-git-dir' && joined !== undefined) folders.push({ path: place(joined) ?? joined, written: joined });
     }
   }
   return folders;
@@ -446,8 +457,9 @@ function gitEnvironmentFolders(command: string, folder: string | null, home: str
   for (const [, value] of command.matchAll(GIT_FOLDER_SETTING)) {
     const written = /^["']/.test(value) ? value.slice(1, -1) : value;
     const expanded = withHomeRead(written, home, folder);
-    const isRead = !/[$`]/.test(expanded) && !expanded.startsWith('~') && (folder !== null || isAbsolute(expanded));
-    folders.push({ path: isRead ? resolve(folder ?? '/', expanded) : written, written: written || '""' });
+    const placed = /[$`]/.test(expanded) || expanded.startsWith('~') ? null : placedPath(expanded, folder);
+    const isRead = placed !== null && (folder !== null || isAbsolute(placed));
+    folders.push({ path: isRead ? resolve(folder ?? '/', placed) : written, written: written || '""' });
   }
   return folders;
 }

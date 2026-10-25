@@ -7,7 +7,7 @@ import { markFinding, checkWorkerWrites } from '../worker/mark.ts';
 import { checkWorkerBox } from '../worker/box.ts';
 import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark } from '../worker/sends.ts';
-import { base, isGit, GIT_VALUE_OPTIONS, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
+import { base, isGit, GIT_VALUE_OPTIONS, commandPlace, placedPath, resolvedFrom, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
 import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner } from './lose-work.ts';
 import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, checkGitSetupWrites, checkHomeSetting, checkWorkerRealHome } from '../hooks/settings.ts';
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
@@ -19,13 +19,18 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
+import { hostPathPlace, type PathPlace } from '../../../platform/paths.ts';
 
-export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[] }): Finding | null {
+// `place` is where the command's paths are read (#1015): the entry point passes this machine's;
+// a test passes another system's, so Linux CI tests the Windows reading.
+export function checkCommand(command: string, options: { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; repos?: RuledRepo[]; place?: PathPlace }): Finding | null {
   // The reader is not a full parser. Whatever goes wrong inside it, the command is refused,
   // never let through: an error here must not open the guard.
   const outerAnswers = gitAnswers.map;
+  const outerPlace = commandPlace.current;
   try {
     gitAnswers.map = outerAnswers ?? new Map();
+    commandPlace.current = options.place ?? outerPlace ?? hostPathPlace();
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
     // The file rules are looked up once per call, and only for a worker.
     const rules = isWorker ? fileRules(options.repos ?? []) : undefined;
@@ -34,6 +39,7 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
     gitAnswers.map = outerAnswers;
+    commandPlace.current = outerPlace;
   }
 }
 
@@ -102,7 +108,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkBlocked(words, config?.commands.block ?? {}) ??
       // The text a post carries comes before the publish rule: a publish that would leak a
       // private mark names the mark, which is the part the agent must fix (#391, #829).
-      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder } }) ??
+      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd }) : null) ??
       // Last, so a worker's own rule names the case first. The commit's content: a repo with no
@@ -121,7 +127,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // walk over the command's programs. That walk reads only the words already parsed,
       // so it runs under its own budget: a long command that the reader accepted must not
       // lose these rules, and a rule that runs after the read must not make it unreadable.
-      withBudget(words.length, () => checkDamage(words, postCwd, env), true) ??
+      withBudget(words.length, () => checkDamage(words, postCwd, env, commandPlace.current?.platform), true) ??
       // Git's own ways to lose uncommitted work, a stash, the reflog or the default branch
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).
@@ -231,8 +237,9 @@ function folderForGitDirectory(value: string | undefined, from: string | null): 
   if (value === undefined || value === '') return null;
   // A relative folder needs a folder to start from: `GIT_DIR=` sets the working folder to
   // null, and then only a path that stands on its own can be read.
-  if (from === null && !isAbsolute(value)) return null;
-  const folder = resolve(from ?? '', value);
+  const placed = placedPath(value, from);
+  if (placed === null || (from === null && !isAbsolute(placed))) return null;
+  const folder = resolve(from ?? '', placed);
   return base(folder) === '.git' ? dirname(folder) : folder;
 }
 
@@ -330,7 +337,7 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
   if (namedDirectory !== undefined) directory = folderForGitDirectory(namedDirectory.slice('GIT_DIR='.length), cwd);
   let index = start + 1;
   while (index < words.length && words[index].startsWith('-')) {
-    if (words[index] === '-C' && directory !== null) directory = resolve(directory, words[index + 1] ?? '');
+    if (words[index] === '-C' && directory !== null) directory = resolvedFrom(directory, words[index + 1] ?? '');
     const gitDirectory = /^--git-dir(?:=(.*))?$/s.exec(words[index]);
     if (gitDirectory) directory = folderForGitDirectory(gitDirectory[1] ?? words[index + 1], directory);
     if (words[index] === '-c') settings.push(words[index + 1] ?? '');

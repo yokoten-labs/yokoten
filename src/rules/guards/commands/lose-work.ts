@@ -4,7 +4,7 @@ import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
 import { mayBeDotGit, PATH_BREAKS, MARK_WRITERS, RUNS_CODE, FIND_LEAD_OPTIONS, FIND_NAME_TESTS, WORKER_MARK, gitLinkAbove } from '../worker/mark.ts';
 import { withHomeRead } from '../worker/config.ts';
-import { withoutShellRedirects, isGit, GIT_VALUE_OPTIONS, HEADS, LAUNCHERS, redirectLength, skipPrefix, programName, findPrograms, findProgramPlaces, FIND_ACTIONS, globMatches } from '../bash/read/words.ts';
+import { withoutShellRedirects, isGit, GIT_VALUE_OPTIONS, placedPath, resolvedFrom, HEADS, LAUNCHERS, redirectLength, skipPrefix, programName, findPrograms, findProgramPlaces, FIND_ACTIONS, globMatches } from '../bash/read/words.ts';
 import { readGit } from '../hooks/read.ts';
 import { plainArgs, WRITERS } from '../lead-only/targets.ts';
 import { spend, isShell, RUNNERS, runString } from '../bash/read/run.ts';
@@ -161,7 +161,9 @@ function isCleanDryRun(args: string[]): boolean {
  */
 function isCheckoutPath(path: string, cwd: string | null): boolean {
   if (cwd !== null) {
-    const target = resolve(cwd, path);
+    // A path the guard can't place may be the checkout: the safe answer (#1015).
+    const target = resolvedFrom(cwd, path);
+    if (target === null) return true;
     return target === cwd || cwd.startsWith(target.endsWith(sep) ? target : `${target}${sep}`);
   }
   // Without the folder, a path that still ends in `..` after its own parts cancel is as close
@@ -177,7 +179,7 @@ function readGitCall(words: string[], cwd: string | null): { sub: string; args: 
   let directory = cwd;
   let at = start + 1;
   while (at < words.length && words[at].startsWith('-')) {
-    if (words[at] === '-C' && directory !== null) directory = resolve(directory, words[at + 1] ?? '');
+    if (words[at] === '-C' && directory !== null) directory = resolvedFrom(directory, words[at + 1] ?? '');
     if (/^--(git-dir|work-tree)(=|$)/.test(words[at])) directory = null;
     at += GIT_VALUE_OPTIONS.has(words[at]) ? 2 : 1;
   }
@@ -484,8 +486,11 @@ function repoGitDir(cwd: string): string | 'unsure' | null {
  * A start that names `.git` itself (`find .git`, `find src/.git`) always holds that folder.
  */
 function gitHold(start: string, cwd: string | null, home: string | null): GitHold {
-  const expanded = withHomeRead(start, home, cwd);
-  if (/[$`~]/.test(expanded)) return 'unsure';
+  const read = withHomeRead(start, home, cwd);
+  if (/[$`~]/.test(read)) return 'unsure';
+  // Git Bash's `/c/x` is `C:\x` on Windows; one the guard can't place is unsure (#1015).
+  const expanded = placedPath(read, cwd);
+  if (expanded === null) return 'unsure';
   // A glob the shell expands (`l*`, `*`) names children, and a child is not this repo's
   // `.git`. A component that can be `.git`, or a glob the guard cannot place, stays unsure.
   if (/[*?[{]/.test(expanded)) {

@@ -2,7 +2,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { finding, type Finding } from '../../message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
-import { globMatches, braceForms, realPath } from '../bash/read/words.ts';
+import { globMatches, braceForms, realPath, placedPath } from '../bash/read/words.ts';
 
 // ---- yokoten's config folder (#591) ----
 //
@@ -121,9 +121,12 @@ export type ConfigContext = { folder: string | null; command: string; words: str
  */
 export function configTargetRefusal(target: string, context: ConfigContext, { does = 'changes', shown = target } = {}): Finding | null {
   const { folder, command, words, home, forms } = context;
-  const expanded = withHomeRead(target, home, folder);
+  const read = withHomeRead(target, home, folder);
+  // Git Bash's `/c/x` is `C:\x` on Windows (#1015); a path it can't place is read by its names.
+  const placed = /[$`]/.test(read) ? read : placedPath(read, folder);
+  const expanded = placed ?? read;
   const globbed = expanded.replace(UNKNOWN_PART, ANY_PART);
-  const isStartRead = !globbed.startsWith(ANY_PART) && !globbed.startsWith('~') && !/[$`]/.test(globbed) && (folder !== null || isAbsolute(globbed));
+  const isStartRead = placed !== null && !globbed.startsWith(ANY_PART) && !globbed.startsWith('~') && !/[$`]/.test(globbed) && (folder !== null || isAbsolute(globbed));
   if (isStartRead && forms.length) {
     const full = resolve(folder ?? '/', globbed);
     return touchesConfig(full, forms) ? configFinding(`this command ${does} ${shown}, which is or holds yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`) : null;
