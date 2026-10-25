@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { checkCommand, runsCheck } from '../../../../../src/rules/guards/index.ts';
 import { blocked, allowed, pythonBlocked, force } from '../../../../../test/repo/helpers.ts';
 import { assertLinear, assertLinearEach } from '../../../../../scripts/linear.ts';
+import { withoutCmdSwitches } from '../../../../../src/rules/guards/bash/read/run.ts';
 
 test('bash: a command of 100k words is read in linear time (#226)', () => {
   const commands: [string, (n: number) => string][] = [
@@ -178,3 +179,15 @@ const nestedCases = nestedShapes.flatMap((shape) =>
     return { name, make: (n: number) => wrap(shape.repeat(n)), read };
   }),
 );
+
+test('withoutCmdSwitches: cmd switches are options, not paths (#1015)', () => {
+  const cases: [string[], string[]][] = [
+    [['cmd', '/c', 'dir'], ['cmd', 'dir']],
+    [['cmd', '//c', 'echo', 'hi'], ['cmd', 'echo', 'hi']],
+    [['CMD.EXE', '/d', '/c', 'rd', '/s', '/q', 'x'], ['CMD.EXE', 'rd', '/s', '/q', 'x']],
+    // Only the switches right after cmd: rd's own `/s` stays, and a path after another program too.
+    [['rm', '-rf', '/c'], ['rm', '-rf', '/c']],
+    [['ls', '/c/work'], ['ls', '/c/work']],
+  ];
+  for (const [words, expected] of cases) assert.deepEqual(withoutCmdSwitches(words), expected, words.join(' '));
+});

@@ -57,7 +57,22 @@ function cmdCommand(words: string[], index: number): string {
   return words.slice(index).map((word) => word.replace(/\\/g, '\\\\')).join(' ');
 }
 
-const RUNNER_OPTIONS =Object.entries(RUNNERS).flatMap(([runner, option]) => (option ? [[runner, option] as const] : []));
+/**
+ * The words without cmd's own switches (`/c`, `//c`, `/d`): they are options, not paths.
+ * On Windows Git Bash reads `/c` as the C: drive, so a rule that reads every word as a
+ * path would take `cmd /c dir` for a command that works on the whole drive (#1015).
+ */
+export function withoutCmdSwitches(words: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i++) {
+    out.push(words[i]);
+    if (!isCmd(words[i])) continue;
+    while (i + 1 < words.length && CMD_SWITCH.test(words[i + 1])) i++;
+  }
+  return out;
+}
+
+const RUNNER_OPTIONS = Object.entries(RUNNERS).flatMap(([runner, option]) => (option ? [[runner, option] as const] : []));
 
 // Where a shell or a runner stands in the command, or -1. Anywhere counts: `find -exec sh
 // -c`, `xargs sh -c` and `sudo bash -c` all run a string.

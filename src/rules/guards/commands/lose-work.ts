@@ -54,7 +54,11 @@ export function checkRemoveGit(words: string[], cwd: string | null, env: Env): F
       // `.` is the checkout and `..` holds it: one word removes every file and every commit (#828).
       const whole = targets.find((word) => isCheckoutPath(word, cwd));
       if (whole !== undefined) {
-        return finding('delete-checkout', `\`${name}\` on \`${whole}\` would delete the whole checkout, including every file and every commit`, DELETE_CHECKOUT_FIX);
+        // A path the guard can't place (Git Bash's `/usr` on Windows) may be the checkout: say so, not that it is (#1015).
+        const what = cwd !== null && resolvedFrom(cwd, whole) === null
+          ? `\`${name}\` on \`${whole}\`: yokoten can't tell where this path is on Windows, so it may be the checkout, with every file and every commit`
+          : `\`${name}\` on \`${whole}\` would delete the whole checkout, including every file and every commit`;
+        return finding('delete-checkout', what, DELETE_CHECKOUT_FIX);
       }
     }
     if (name === 'find') {
