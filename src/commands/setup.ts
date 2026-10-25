@@ -152,7 +152,7 @@ function installScreen(invocation: Invocation, lines: string[], ok: boolean, isF
   if (ok && !lines.some((line) => CHANGED.test(line))) {
     return [...title('install', 'already set up here, nothing changed'), ...moreLine('`yokoten install --list` names every file')];
   }
-  const out = title(isFirstRun ? VERSION : 'install', isFirstRun ? 'first run: this computer is set up' : ok ? 'this computer is set up' : 'this computer is partly set up');
+  const out = title(isFirstRun ? VERSION : 'install', isFirstRun ? 'first run' : ok ? 'this computer is set up' : 'this computer is partly set up');
   out.push('');
   const guarded = guardedAgents(lines);
   out.push(...row('ok', guarded.length ? `on for ${guarded.join(', ')}` : 'on for Claude Code', 'guard'));

@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
 import { claudeCommand, previewLines } from '../../src/commands/setup.ts';
+import { VERSION } from '../../src/setup/files.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
 test('update: a folder that does not exist is said plainly (#208)', () => {
@@ -20,7 +21,7 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   const sandbox = makeSandbox();
   const first = await sandbox.call([]);
   // The first run says what it wrote on this computer and here, then doctor's screen (#1027).
-  assert.match(first.stdout, /^yokoten 0\.1\.1 · first run: this computer is set up$/m);
+  assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · first run$`, 'm'));
   assert.match(first.stdout, /^yokoten init · this project is set up$/m);
   assert.match(first.stdout, /^yokoten doctor · stage 1 of 5, safety net$/m);
   assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
