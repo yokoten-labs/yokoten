@@ -188,6 +188,8 @@ function explainScreen(invocation: Invocation, found: Explained): string[] {
     const fix = stepFix(step, invocation);
     if (fix) lines.push(...field('Fix', shortFix(fix)));
   }
+  // explain is the detail screen: the outside standard a step meets stays here (#58).
+  if (step?.standard) lines.push(...field('Standard', step.standard));
   lines.push('');
   lines.push(...moreLine(found.docs ?? docsLink('road.md', found.id)));
   return lines;

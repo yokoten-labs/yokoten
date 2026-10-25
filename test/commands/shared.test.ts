@@ -186,9 +186,10 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   assert.equal(unknown.found, false);
   assert.ok(unknown.ids.includes('secret') && unknown.ids.includes('tool-hook'));
   result = await sandbox.call(['explain', 'secret']);
-  assert.match(result.stdout, /^secret: .+\.\nWhy: .+\.\nCheck: .+\.\nDocs: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy\n$/, 'the link to the rule (#94)');
+  // One screen since #1027: the title, then What, Why and Check rows, and the link last.
+  assert.match(result.stdout, /^yokoten explain secret · .+\n\n  What {8}.+\n(?:.*\n)*  Why {9}.+\n(?:.*\n)*  Check {7}.+\n(?:.*\n)*\nMore: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy\n$/, 'the link to the rule (#94)');
   result = await sandbox.call(['explain', 'commit-check']);
-  assert.match(result.stdout, /^commit-check: a step on the road: stage 1 of 5, safety net\.\nWhy: .+\.\nCheck: .+\.\nStandard: OSPS-BR-07\.01\.\n$/);
+  assert.match(result.stdout, /^yokoten explain commit-check · stage 1, safety net\n\n  What {8}.+\n(?:.*\n)*  Why {9}.+\n(?:.*\n)*  Check {7}.+\n(?:.*\n)*  Standard {4}OSPS-BR-07\.01\n\nMore: .+\n$/);
 });
 
 // #707: colour for a person's terminal, never for an agent, a pipe or a file. `NO_COLOR`
