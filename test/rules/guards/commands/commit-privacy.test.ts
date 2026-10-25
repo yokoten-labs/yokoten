@@ -3,10 +3,34 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { makeSandbox } from '../../../../test/repo/helpers.ts';
+
+// #1015: Git Bash writes the repo as `/c/...` or `/tmp/...`. The place is passed in with this
+// disk's temp folder as `/tmp`, so Linux CI scans a real repo by its Git Bash path.
+test('commit: a secret is stopped when the repo is named by a Git Bash path on Windows (#1015)', () => {
+  const sandbox = makeSandbox();
+  const key = `ghp_${'a1B2c3D4e5'.repeat(4).slice(0, 36)}`;
+  sandbox.write('README.md', 'hello\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'start');
+  const place = { platform: 'win32', tmp: dirname(sandbox.repo) } as const;
+  const run = (command: string, cwd = dirname(sandbox.repo)) => checkCommand(command, { env: sandbox.env, cwd, place });
+  // Positive controls: nothing staged, and a read.
+  for (const command of ['git -C /tmp/repo commit -m x', 'cd /tmp/repo && git commit -m x', 'git -C /tmp/repo status']) assert.equal(run(command), null, command);
+  sandbox.write('config.ts', `export const token = '${key}';\n`);
+  sandbox.git('add', 'config.ts');
+  for (const command of ['git -C /tmp/repo commit -m x', 'cd /tmp/repo && git commit -m x', 'git -C /tmp/repo/src/.. commit -m x']) {
+    assert.equal(run(command)?.id, 'secret', command);
+  }
+  // A folder the guard can't find or can't read is unknown, so the commit is refused.
+  for (const command of ['git -C /c/nowhere commit -m x', 'cd /c/nowhere && git commit -m x', 'GIT_DIR=/tmp/repo/.git git commit -m x', 'GIT_WORK_TREE=/tmp/repo git commit -m x']) {
+    assert.equal(run(command, sandbox.repo)?.id, 'unreadable-command', command);
+  }
+  assert.equal(run('git -C /tmp/repo status'), null, 'a read still passes');
+});
 
 test('commit: a secret is stopped with no yokoten.json, staged and with -a (#824)', () => {
   // No yokoten.json: there is no pre-commit hook here, so only the tool-call guard sees it.

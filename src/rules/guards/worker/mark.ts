@@ -254,7 +254,7 @@ const unplacedWhat = (written: string) => `this command changes ${written}, a Gi
 // names the file it links to.
 export const MARK_WRITERS = new Set(['chmod', 'chown', 'chgrp', 'chattr', 'setfacl', 'touch', 'mkdir', 'mkfifo', 'mknod', 'rsync', 'ln']);
 // Programs that run code given to them: what that code changes is not read.
-export const RUNS_CODE = /^(python[\d.]*|node|nodejs|deno|bun|perl|ruby|php|lua|osascript|pwsh|powershell|sh|bash|zsh|dash|ksh|fish)$/;
+export const RUNS_CODE = /^(python[\d.]*|node|nodejs|deno|bun|perl|ruby|php|lua|osascript|pwsh|powershell|cmd|sh|bash|zsh|dash|ksh|fish)$/i;
 export const FIND_WRITES = /^-(delete|fprint0?|fprintf|fls)$/;
 
 /**

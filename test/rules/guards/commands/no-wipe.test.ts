@@ -166,6 +166,13 @@ test('guard: the refusal keeps its four lines (#969)', () => {
   assert.match(lines[3], /^More: https:/);
 });
 
+test('guard: a wipe run through cmd /c is read as the same wipe (#1015)', () => {
+  for (const command of ['cmd /c del /s /q C:\\\\Users', 'cmd /c "del /s /q C:\\Users"', 'cmd //c "rd /s /q %USERPROFILE%"', 'cmd.exe /c rd /s /q %USERPROFILE%', 'CMD /C rd /s ~']) {
+    refusedAs(command, 'wipe-home-or-system');
+  }
+  for (const command of ['cmd /c dir', 'cmd /c del /q build\\out.log', 'cmd //c echo hi']) allowed(command);
+});
+
 // ---- src/platform/paths.ts (#1015) ----
 //
 // The wipe guard is the first user of the Git Bash reading. test/ is at its 7-entry cap, so the

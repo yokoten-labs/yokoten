@@ -148,6 +148,25 @@ test('worker mark: a Git Bash path to the desk or its parent is refused on Windo
   }
 });
 
+// #1015: Windows' cmd runs the words after `/c` as commands, so it runs code like bash -c.
+test('worker mark: cmd /c that names the git folder is refused, as bash -c is (#1015)', () => {
+  const base = makeTempDir('yokoten-desk-');
+  const desk = join(base, 'desk');
+  makeGitFolder(desk);
+  writeFileSync(join(desk, '.git', 'yokoten-worker'), 'x');
+  const check = (command: string) => checkCommand(command, { cwd: desk, env: { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') }, place: { platform: 'win32', tmp: base } });
+  for (const command of [
+    'cmd //c del "C:\\desk\\.git\\yokoten-worker"',
+    'cmd.exe /c del "C:\\desk\\.git\\yokoten-worker"',
+    'CMD.EXE /c del /f "C:\\desk\\.git\\yokoten-worker"',
+    'cmd /c erase "C:\\desk\\.git\\yokoten-worker"',
+    'cmd /c rd /s /q "C:\\repo\\.git\\worktrees"',
+    'cmd /c rd /s /q .git',
+  ]) assert.equal(check(command)?.id, 'worker-mark', command);
+  // Positive controls: cmd that names no git folder.
+  for (const command of ['cmd /c dir', 'cmd //c echo hi']) assert.equal(check(command), null, command);
+});
+
 test('checkWorkerMarkEdit: a git folder by name or by real path (#555)', () => {
   assert.equal(checkWorkerMarkEdit('/w/.git/worktrees/wt/yokoten-worker')?.id, 'worker-mark');
   assert.equal(checkWorkerMarkEdit('/w/wt/.git')?.id, 'worker-mark');

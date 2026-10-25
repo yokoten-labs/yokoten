@@ -88,7 +88,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     // The name is built only on a refusal (#498).
     const saw = (isMarked: (word: string) => boolean) => writeRisk(words, { heredoc, plainText, plainAt, fills, writers, isMarked });
     const reason =
-      checkGit(words, { env, config, cwd, rules }) ??
+      checkGit(words, { env, config, cwd, folder: postCwd, rules }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
       hostSettingsWrite(words) ??
@@ -322,24 +322,49 @@ function followsTags(directory: string | null, env: Env): boolean {
 
 // Each check looks for its program anywhere in the command, so a prefix such as FOO=1,
 // sudo, env, command, exec, time, nice, nohup, timeout or xargs does not hide it.
-function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; rules?: FileRules }): Finding | null {
+/**
+ * The folder git works in, from `from`: `-C` moves it, and `GIT_DIR=…` names the git folder
+ * before the program does. With `--git-dir`, the folder that reads the same tags and settings
+ * is the git folder's parent, so a push of a tag stays visible; `--work-tree` does not move
+ * the git folder at all (#865). `isNamed`: the command names the folder itself.
+ */
+function gitDirectoryOf(words: string[], start: number, from: string | null): { directory: string | null; isNamed: boolean } {
+  // The shell keeps the last assignment, and so does git: the first one can be a decoy.
+  const namedDirectory = words.slice(0, start).findLast((word) => /^GIT_DIR=/.test(word));
+  let directory = from;
+  let isNamed = namedDirectory !== undefined;
+  if (namedDirectory !== undefined) directory = folderForGitDirectory(namedDirectory.slice('GIT_DIR='.length), from);
+  for (let index = start + 1; index < words.length && words[index].startsWith('-'); index += GIT_VALUE_OPTIONS.has(words[index]) ? 2 : 1) {
+    if (words[index] === '-C') {
+      isNamed = true;
+      if (directory !== null) directory = resolvedFrom(directory, words[index + 1] ?? '');
+    }
+    const gitDirectory = /^--git-dir(?:=(.*))?$/s.exec(words[index]);
+    if (gitDirectory) {
+      isNamed = true;
+      directory = folderForGitDirectory(gitDirectory[1] ?? words[index + 1], directory);
+    }
+  }
+  return { directory, isNamed };
+}
+
+// `folder`: where the command runs after its `cd`s. `cwd` is null after a cd, for the hooks
+// setting; a push still reads its tags from the folder the cd went to (#1015).
+function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules }): Finding | null {
   const start = words.findIndex(isGit);
   if (start === -1) return null;
   const settings: string[] = [];
   const fromEnvironment: string[] = []; // --config-env name=VARIABLE
-  // The folder git works in: `-C` moves it, and `GIT_DIR=…` names the git folder before
-  // the program does. With `--git-dir`, the folder that reads the same tags and settings is
-  // the git folder's parent, so a push of a tag stays visible; `--work-tree` does not move
-  // the git folder at all (#865).
-  // The shell keeps the last assignment, and so does git: the first one can be a decoy.
-  const namedDirectory = words.slice(0, start).findLast((word) => /^GIT_DIR=/.test(word));
-  let directory: string | null = cwd;
-  if (namedDirectory !== undefined) directory = folderForGitDirectory(namedDirectory.slice('GIT_DIR='.length), cwd);
+  const here = gitDirectoryOf(words, start, cwd);
+  const { directory } = here;
+  // Where a push reads its tags: after a cd, the folder it went to. A folder the command
+  // names (or moves to) that git can't read leaves the push unknown, so it is refused.
+  const moved = cwd === null && folder !== null;
+  const pushFrom = moved ? gitDirectoryOf(words, start, folder) : here;
+  const pushDirectory = pushFrom.directory;
+  const isPushUnknown = () => (pushFrom.isNamed || moved) && (pushDirectory === null || readGit(pushDirectory, ['rev-parse', '--git-dir'], env) === null);
   let index = start + 1;
   while (index < words.length && words[index].startsWith('-')) {
-    if (words[index] === '-C' && directory !== null) directory = resolvedFrom(directory, words[index + 1] ?? '');
-    const gitDirectory = /^--git-dir(?:=(.*))?$/s.exec(words[index]);
-    if (gitDirectory) directory = folderForGitDirectory(gitDirectory[1] ?? words[index + 1], directory);
     if (words[index] === '-c') settings.push(words[index + 1] ?? '');
     if (words[index] === '--config-env') fromEnvironment.push(words[index + 1] ?? '');
     if (words[index].startsWith('--config-env=')) fromEnvironment.push(words[index].slice('--config-env='.length));
@@ -380,17 +405,21 @@ function checkGit(words: string[], { env, config, cwd, rules }: { env: Env; conf
       const tagFlag = options.find((a) => isGitLongOption(a, '--tags') || isGitLongOption(a, '--follow-tags') || isGitLongOption(a, '--mirror'));
       // A dry run changes nothing on the remote, so it may name tags.
       if (tagFlag && !dryRun) return release(`git push ${tagFlag} pushes tags`);
-      if (!dryRun && pushesTag(args, directory, env)) return release(`git push ${args.join(' ')} pushes a release tag`);
+      // A repo git can't read: neither its tags nor push.followTags can be read (#1015).
+      if (!dryRun && isPushUnknown()) {
+        return finding('release', "yokoten can't read the repo this push runs in, so it can't tell whether the push carries a tag", 'run the push from the repo folder, or name the folder by a path git can open, then push again');
+      }
+      if (!dryRun && pushesTag(args, pushDirectory, env)) return release(`git push ${args.join(' ')} pushes a release tag`);
       // The setting can arrive in an earlier call: `git config push.followTags true`, then
       // a plain `git push` (#829). Read the config git will read.
-      if (!dryRun && followsTags(directory, env)) return release('git push carries tags, because push.followTags is set');
+      if (!dryRun && followsTags(pushDirectory, env)) return release('git push carries tags, because push.followTags is set');
     }
     const force = args.find((a) => isGitLongOption(a, '--force') || /^-[a-z]*f[a-z]*$/i.test(a) || a.startsWith('+'));
     if (force) return finding('force-push', `git push ${force} forces the push`, 'use --force-with-lease, which stops when the remote has work you have not seen');
     // A worker commits in its worktree; the lead reviews and pushes (#555).
     if (env.YOKOTEN_ROLE === 'worker') return sends('a worker does not push');
     const pushed = findPushedDeletes(withoutShellRedirects(words, argsAt));
-    const gone = pushed?.find((name) => isDefaultBranch(name, directory, env));
+    const gone = pushed?.find((name) => isDefaultBranch(name, pushDirectory, env));
     if (gone !== undefined) return deleteBranchFinding(`\`git push\` deletes the default branch \`${gone}\` on the remote`);
   }
   if (sub === 'tag' && !env.YOKOTEN_RELEASE_APPROVAL) {
