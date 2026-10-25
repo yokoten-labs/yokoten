@@ -1,0 +1,3 @@
+# Tests known to fail on native Windows (scripts/time/windows-known.ts, record 0040).
+# Fix a test, then remove its line: the Windows job fails while a listed test passes.
+# `? ` before a line: the test may pass or fail.

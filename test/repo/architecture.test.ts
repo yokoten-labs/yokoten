@@ -14,6 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
+import { judgeKnown, readFailures, readKnown, testFileOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1710,6 +1711,41 @@ test('suite time: it reads the report node --test writes on this Node (#475)', (
   const { ms, tests } = readReport(readFileSync(report, 'utf8'));
   assert.ok(ms > 0);
   assert.deepEqual(tests.map((test) => test.name), ['one: it runs']);
+});
+
+// ---- The Windows job's known failures (record 0040) ----
+
+test('windows known: a failure is named by its test file and name, a Windows path included', () => {
+  const tap = [
+    'TAP version 13',
+    '# Subtest: install: the copy runs',
+    'ok 1 - install: the copy runs',
+    '# Subtest: install: writes ~/.claude',
+    'not ok 2 - install: writes ~/.claude',
+    '  ---',
+    "  location: 'C:\\a\\yokoten\\test\\setup\\install.test.ts:40:1'",
+    '  ...',
+    'not ok 3 - names: a \\# in a name # TODO later',
+    '  ---',
+    "  location: '/home/runner/work/yokoten/test/run/names.test.ts:9:1'",
+    '  ...',
+    'not ok 4 - test/run/broken.test.ts',
+    '  ---',
+    '  ...',
+  ].join('\r\n');
+  assert.deepEqual(readFailures(tap), ['test/run/broken.test.ts', 'test/run/names.test.ts :: names: a # in a name', 'test/setup/install.test.ts :: install: writes ~/.claude']);
+  assert.equal(testFileOf('D:/x/test/a.test.ts:1:2'), 'test/a.test.ts');
+  assert.equal(testFileOf('C:\\elsewhere\\a.ts:1:2'), null);
+});
+
+test('windows known: a new failure and a fixed entry both fail the job; a flaky entry may do either', () => {
+  const known = readKnown(['# a comment', '', 'test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', '? test/b.test.ts :: flaky'].join('\n'));
+  assert.deepEqual(known, { required: ['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now'], flaky: ['test/b.test.ts :: flaky'] });
+  assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/c.test.ts :: new'], known), { added: ['test/c.test.ts :: new'], fixed: ['test/a.test.ts :: fixed now'] });
+  // Positive control: the list matches the run, with the flaky test passing or failing.
+  for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
+    assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
+  }
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {
