@@ -219,11 +219,12 @@ The approval way, and the command that starts each agent with it, are in
 to their hooks, so the owner releases outside them. If Gemini CLI's strict environment
 sanitization is on, the variable is dropped, and the owner releases outside Gemini CLI.
 
-Every message has the same three parts: **what** happened, **why** it matters, and the
-**fix**, a command or an edit. A problem in a file starts with its place, `file:line:`.
-A hit names the kind of thing it found, never the thing: a secret or a private mark
-is never printed. When a section of this guide explains the rule, the message ends with
-a link to it, on its own line: `docs: <url>`.
+Every refusal has the same four lines. The first line says **what** happened, and ends
+with the rule id in square brackets, as `yokoten stopped this: <what> [<id>]`. The
+**Why:** line says why it matters. The **Do instead:** line is the fix, a command or an
+edit. The **More:** line links to where the rule is explained in full. For a problem in a
+file, the place comes right after the title: `yokoten stopped this: file:line: <what> [<id>]`. A hit names the kind of thing
+it found, never the thing: a secret or a private mark is never printed.
 
 To ask why a rule exists, run `yokoten explain <id>`. The id is the rule or step name,
 such as `secret` or `commit-check`. With no id, or an unknown one, it lists every id.
