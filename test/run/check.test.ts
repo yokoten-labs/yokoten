@@ -998,7 +998,7 @@ test('check and the commit hook: a mark allowed in one repo is stopped in anothe
   const setup = async (sandbox: ReturnType<typeof makeSandbox>, allow: string[]) => {
     sandbox.write('yokoten.json', JSON.stringify({ privacy: { allow } }));
     sandbox.write('README.md', 'QuietVale ships\n');
-    assert.equal((await sandbox.call(['init'], { extra })).status, 0);
+    assert.equal((await sandbox.call(['init', '--list'], { extra })).status, 0);
     sandbox.git('add', '.');
   };
   await setup(own, ['QUIETVALE']);

@@ -200,6 +200,7 @@ export const COMMANDS: Command[] = [
       'With "notNow" ci in yokoten.json, it writes no workflow and no Dependabot config.',
     ],
     options: [
+      { name: '--list', text: 'show every file init wrote or kept' },
       { name: '--no-ci', text: 'keep CI off: no workflows or Dependabot, and "notNow" ci in yokoten.json' },
       { name: '--github', text: 'work on GitHub too; goes with --yes' },
       { name: '--yes', text: 'add the standard labels, a first milestone and up to 8 area labels on GitHub' },

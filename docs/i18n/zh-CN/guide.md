@@ -738,7 +738,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | 命令 | 做什么 |
 |------|--------|
 | `install [--yes] [--list]` | 把入口技能 `yokoten` 一个装进 `~/.claude/skills` 和 `~/.agents/skills`，agent 装进 `~/.claude/agents`，加上会话开头的 `doctor` hook 和用户级命令守卫，再建一个空的私有词表。在终端里先显示一屏将要改动的内容，问一次，然后再写；`--yes` 跳过这个问题。写之前，先列出要写的文件和设置键。这两个 hook 给 Claude Code 装一份；已经有 `~/.codex` 或 `~/.gemini` 文件夹的话，Codex 和 Gemini CLI 也各装一份。Claude Code 的插件开着的时候，它不写全局的技能、agent 和 hook，并收回旧 `install` 写过的那些。它还会把这台电脑上能找到的私有词加进词表，并写好 git 的 mailmap 文件。改 git 全局的 `mailmap.file` 之前，它会先问你。`--list` 逐行列出它写的或留下的每个文件。见「隐私」 |
-| `init [dir]` | 把这套做法放进一个项目。只加文件；已有的文件保留，并告诉你保留了哪些。kit 的 workflow 你没改过的，会换成最新版。它还会用 `gh` 看一眼 GitHub，告诉你要补哪些标准标签和里程碑，但不会去改 GitHub。没装 `gh`、没登录，或者远程仓库不在 GitHub 上，就说一声跳过了 |
+| `init [dir] [--list]` | 把这套做法放进一个项目。`--list` 显示它写入或保留的每个文件；默认只显示一屏。只加文件；已有的文件保留，并告诉你保留了哪些。kit 的 workflow 你没改过的，会换成最新版。它还会用 `gh` 看一眼 GitHub，告诉你要补哪些标准标签和里程碑，但不会去改 GitHub。没装 `gh`、没登录，或者远程仓库不在 GitHub 上，就说一声跳过了 |
 | `init --github --yes [--remove-default-labels] [--board]` | 补上缺的标准标签；没有打开的里程碑时，建一个叫 "First release" 的；要是已经有一个关掉的里程碑叫这个名字，就叫 "Next release"。关掉的里程碑不会被重新打开。已有的标准标签，颜色和说明改成标准的。`yokoten.json` 里的模块不超过 8 个时，每个模块建一个灰色标签。再跑一次什么也不会变。GitHub 自带的、不在这套里的标签（`question`、`wontfix` 等），只有加上 `--remove-default-labels` 才会删。加 `--board` 还会建一个关联到仓库的看板，要 gh 的令牌带 `project` 权限 |
 | `init --no-ci` | 不用 CI：在 `yokoten.json` 的 `"notNow"` 里记下 `"ci"`，不写 workflow，也不写 Dependabot 配置；这些文件如果还是 kit 原样，就删掉。私有仓库的 Actions 按分钟收费，用这个省下来 |
 | `trust [dir] [--undo]` | 给这台电脑上装了的 agent 打开 yokoten 的守卫：按它们各自的写法，只写 yokoten 自己的钩子需要的信任，支持 Codex、Grok CLI、Copilot CLI 和 Muse Code。这条命令由人在终端里跑；管道里什么都不写。只有 yokoten 自己的钩子在、而且项目的 Codex 沙箱是安全的，它才信任这个文件夹，因为信任文件夹会让项目自己的沙箱设置生效。在终端里跑 `init` 时会问一次；没有终端就什么都不写，只告诉你这条命令。`--undo` 只删 yokoten 写进去的条目，你后来改过的会留着 |

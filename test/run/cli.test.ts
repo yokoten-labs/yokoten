@@ -64,7 +64,7 @@ test('hooks: a missing runtime says one plain line with no path, never a stack t
   mkdirSync(join(sandbox.home, '.gemini'));
   writeFileSync(join(sandbox.home, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: old }] }] } }));
   assert.match((await sandbox.call(['install'])).stdout, /^updated the SessionStart doctor$/m);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   rmSync(join(sandbox.home, '.local', 'share', 'yokoten'), { recursive: true });
   rmSync(join(sandbox.repo, '.yokoten'), { recursive: true });
   const shell = (command: string, extra: Record<string, string> = {}) =>
@@ -321,7 +321,7 @@ test('hooks: a tool-call guard that fails refuses the call; the stop check does 
   // Codex and Gemini CLI are installed, so install writes their home hooks too.
   for (const dir of ['.codex', '.gemini']) mkdirSync(join(sandbox.home, dir), { recursive: true });
   assert.equal((await sandbox.call(['install'])).status, 0);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const commands = (file: string) => {
     const hooks = JSON.parse(readFileSync(file, 'utf8')).hooks as Record<string, { hooks: { command: string }[] }[]>;
     return Object.fromEntries(Object.entries(hooks).map(([event, groups]) => [event, groups.flatMap((g) => g.hooks.map((h) => h.command))]));

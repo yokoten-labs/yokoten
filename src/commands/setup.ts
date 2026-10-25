@@ -12,7 +12,7 @@ import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skil
 import { readOriginUrl, setUpPlanning } from '../setup/plan.ts';
 import { VERSION } from '../setup/files.ts';
 import { enabledPlugin } from '../setup/advice/marketplace.ts';
-import { type Invocation, moreLine, nextLine, noRootFinding, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from './shared.ts';
+import { count, type Invocation, moreLine, nextLine, noRootFinding, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from './shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -266,7 +266,6 @@ export function runInit(invocation: Invocation): number {
   // The tests job is asked first (#550): only with a terminal on stdin and stdout, as install asks.
   const ask = askWhenTerminal(invocation);
   const done = init(root, invocation.env, undefined, { noCi: options.flags.has('--no-ci'), ask });
-  print(invocation, done.lines);
   // The host is changed only when asked (#10): it is a remote, and other people see it.
   // Without --yes, init only reads it and says what it would do, or what it skipped.
   const planning = setUpPlanning(ghIn(root, invocation.env), readOriginUrl(root, invocation.env), {
@@ -277,9 +276,137 @@ export function runInit(invocation: Invocation): number {
   });
   // --github --yes asked for changes on GitHub; a skip made none, so it fails (#208).
   const isRefused = planning.skipped && options.flags.has('--yes');
-  print(invocation, planning.lines, planning.ok && !isRefused ? invocation.stdout : invocation.stderr);
+  // `--list` keeps the full report, printed as before, on the stream that already carried it.
+  if (options.flags.has('--list')) {
+    print(invocation, done.lines);
+    print(invocation, planning.lines, planning.ok && !isRefused ? invocation.stdout : invocation.stderr);
+  } else {
+    // A plain init never asks GitHub, so its skip is not news on the screen (#1027); --github shows rows.
+    const plan = options.flags.has('--github') ? planScreen(planning.lines) : [];
+    print(invocation, initScreen(done.lines, plan), planning.ok && !isRefused ? invocation.stdout : invocation.stderr);
+  }
   if (isRefused) print(invocation, ['yokoten init: --github --yes changed nothing on GitHub (the reason is above). The project files are as listed above.'], invocation.stderr);
   return planning.ok && !isRefused && done.ok ? 0 : 1;
+}
+
+// The default screen of `yokoten init` (issue #1027, the design the owner approved 2026-10-25):
+// a title, groups of rows, and the command to type. `--list` keeps the full line-by-line report.
+// Only the printing changes: the same files are written, and the exit code is untouched.
+
+/** The agents init writes a guard for, in the order the report names them. */
+const INIT_AGENTS = ['Claude Code', 'Codex', 'Gemini CLI', 'Antigravity CLI', 'OpenCode', 'Muse Code', 'DeepSeek Harness', 'Grok CLI'];
+/** The folders whose files are the agents' guard and sandbox settings. */
+const AGENT_FOLDERS = ['.claude/', '.codex/', '.gemini/', '.agents/', '.opencode/', '.muse/', '.dsh/', '.grok/'];
+
+interface InitItem {
+  /** True when init wrote or changed this item on this run. */
+  isWritten: boolean;
+  /** The file the line is about, when it names one. */
+  path: string | null;
+  line: string;
+}
+
+/** One report line of init as an item: whether it was written, and which file it names. */
+function initItem(line: string): InitItem {
+  const isWritten = /^(?:wrote|updated|linked|added) /.test(line);
+  const direct = /^(?:wrote|updated|linked|kept) ([^\s(]+)/.exec(line);
+  const inside = / in (\.[^\s()]+)/.exec(line);
+  const path = direct?.[1] !== undefined && /[./]/.test(direct[1]) ? direct[1] : inside?.[1] ?? null;
+  return { isWritten, path, line };
+}
+
+/** Whether a line says a file of the user's was left as it is, which is a note. */
+const isYours = (line: string): boolean => /^kept (?:your|\(your edit\))/.test(line) || /\(yours, not yokoten's\)$/.test(line);
+
+/** The group a line belongs to; null for the plain files the count folds. */
+function initGroup(item: InitItem): 'rules' | 'CI' | 'GitHub' | 'agents' | null {
+  const path = item.path ?? '';
+  if (/AGENTS\.md/.test(item.line) || item.line.startsWith('git hook:') || path.startsWith('.githooks/')) return 'rules';
+  if (path.startsWith('.github/workflows/') || path === '.github/dependabot.yml') return 'CI';
+  if (path.startsWith('.github/ISSUE_TEMPLATE/') || path === '.github/pull_request_template.md' || path === '.github/CODEOWNERS' || path === '.github/SECURITY.md') return 'GitHub';
+  if (AGENT_FOLDERS.some((folder) => path.startsWith(folder))) return 'agents';
+  return null;
+}
+
+/** The text of one group's row, from the items it holds. */
+function groupText(group: 'rules' | 'CI' | 'GitHub' | 'agents', items: InitItem[]): string {
+  const paths = items.filter((item) => initGroup(item) === group && item.path !== null).map((item) => item.path ?? '');
+  if (group === 'rules') return 'AGENTS.md, the commit check';
+  if (group === 'CI') {
+    const workflows = new Set(paths.filter((path) => path.startsWith('.github/workflows/')));
+    const parts = [count(workflows.size, 'workflow')];
+    if (paths.includes('.github/dependabot.yml')) parts.push('Dependabot');
+    return parts.join(', ');
+  }
+  if (group === 'GitHub') {
+    const parts: string[] = [];
+    if (paths.some((path) => path.startsWith('.github/ISSUE_TEMPLATE/') || path === '.github/pull_request_template.md')) parts.push('issue and PR templates');
+    if (paths.includes('.github/CODEOWNERS')) parts.push('CODEOWNERS');
+    if (paths.includes('.github/SECURITY.md')) parts.push('a security policy');
+    return parts.join(', ') || 'nothing to add';
+  }
+  const found = INIT_AGENTS.filter((name) => items.some((item) => initGroup(item) === 'agents' && item.line.includes(name)));
+  const [first] = found;
+  if (first === undefined) return 'no agent found';
+  return found.length === 1 ? `guard for ${first}` : `guard for ${first} (${found.length - 1} more ready)`;
+}
+
+/** The default screen of `yokoten init`, from its report lines and the GitHub rows when asked. */
+export function initScreen(lines: string[], plan: string[] = []): string[] {
+  const items = lines.map(initItem);
+  const isRuntimeCopy = (item: InitItem): boolean => item.path === '.yokoten/';
+  const written = new Set(items.filter((item) => item.isWritten && !isRuntimeCopy(item) && item.path !== null).map((item) => item.path ?? ''));
+  const kept = new Set(items.filter((item) => !item.isWritten && !isRuntimeCopy(item) && item.path !== null).map((item) => item.path ?? ''));
+  // A file kept because the user changed it, a skip and a command to run by hand need an answer,
+  // so they are never folded (R5 of the design).
+  const notes = items
+    .filter((item) => isYours(item.line) || /^(?:skipped |could not )/.test(item.line) || (!/^(?:wrote|updated|linked|added|kept) /.test(item.line) && !item.line.startsWith('git hook:') && item.line !== 'other agents: see the guide'))
+    .map((item) => item.line)
+    .filter((line, at, all) => all.indexOf(line) === at);
+  const more = moreLine('`yokoten init --list` shows every file');
+  if (written.size === 0) return [...title('init', 'already set up here, nothing changed'), ...(plan.length ? ['', ...plan] : []), ...notes.flatMap(noteLine), ...more];
+  const groups = (['rules', 'CI', 'GitHub', 'agents'] as const).filter((group) => items.some((item) => initGroup(item) === group));
+  // Partly new: list only the groups that got something on this run.
+  const shown = groups.filter((group) => items.some((item) => initGroup(item) === group && item.isWritten));
+  const screen = [...title('init', 'this project is set up'), ''];
+  const isPartlyNew = kept.size > 0;
+  // Partly new: a group names only what this run added, so an old file is not news.
+  const listed = isPartlyNew ? items.filter((item) => item.isWritten) : items;
+  for (const group of shown) screen.push(...row('done', groupText(group, listed), group));
+  const summary = isPartlyNew
+    ? `${count(written.size, 'file')} added, ${count(kept.size, 'file')} already there`
+    : `${count(written.size, 'file')} written, ${notes.some(isYours) ? 'your own files kept' : 'none of yours changed'}`;
+  screen.push(...wrap('  ', summary));
+  screen.push(...plan, ...notes.flatMap(noteLine));
+  screen.push('', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more);
+  return screen;
+}
+
+/** One note of init as a row, so a queue and an agent read the same words. */
+function noteLine(line: string): string[] {
+  const text = line.replace(/^kept (?:your|\(your edit\)) /, 'your ').replace(/^kept /, '');
+  return row('note', text);
+}
+
+/** The GitHub part of `yokoten init --github` as rows: what was done, kept, skipped or planned. */
+export function planScreen(lines: string[]): string[] {
+  const rows: string[] = [];
+  for (const line of lines) {
+    const done = /^- done: (.*)$/.exec(line);
+    const failed = /^- could not (.*)$/.exec(line);
+    const keptLine = /^- (.*kept)$/.exec(line);
+    const item = /^- (.*)$/.exec(line);
+    const head = /^GitHub: (.*)$/.exec(line);
+    if (done) rows.push(...row('done', done[1] ?? '', 'GitHub'));
+    else if (failed) rows.push(...row('MISSING', failed[1] ?? '', 'GitHub'));
+    else if (keptLine) rows.push(...row('ok', keptLine[1] ?? '', 'GitHub'));
+    else if (line === 'Nothing to change.') rows.push(...row('ok', 'nothing to change', 'GitHub'));
+    else if (item) rows.push(...row('to do', item[1] ?? '', 'GitHub'));
+    else if (head) rows.push(...row(line.startsWith('GitHub: skipped') ? 'note' : 'ok', head[1] ?? '', 'GitHub'));
+    else if (line.startsWith('Nothing changed.')) rows.push(...nextLine(line.replace(/^Nothing changed\. /, '').replace(/`/g, '')));
+    else if (line !== 'Would do:') rows.push(...wrap('  ', line));
+  }
+  return rows;
 }
 
 export function runTrust(invocation: Invocation): number {

@@ -233,7 +233,7 @@ test('hook --stop --agent codex|gemini: the end-of-turn event sends the agent ba
   }
   // The hooks init writes run the same check, from the vendored copy.
   // On a child (#475): each hook config runs from a shell, as the agent's runtime runs it.
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   sandbox.write('a.md', `mail me${at}gmail.com\n`);
   const command = (file: string, event: string) => JSON.parse(readFileSync(join(sandbox.repo, file), 'utf8')).hooks[event][0].hooks[0].command as string;
   const shell = (text: string, input: object) =>

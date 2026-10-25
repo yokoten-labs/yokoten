@@ -69,7 +69,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   const cli = '.yokoten/bin/yokoten.mjs';
   assert.match((await sandbox.call(['doctor'])).stdout, /note +muse-hook: no tool-call guard or stop check in \.muse\/hooks\.json/, 'reported, not counted as missing');
   sandbox.write('.muse/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
-  const result = await sandbox.call(['init']);
+  const result = await sandbox.call(['init', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /added the Muse Code tool-call hook in \.muse\/hooks\.json/);
   assert.match(result.stdout, /added the Muse Code stop check in \.muse\/hooks\.json/);
@@ -90,7 +90,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   assert.match((await sandbox.call(['doctor'])).stdout, /ok +muse-hook: \.muse\/hooks\.json is in place; trust not checked, no ~\/\.config\/muse\n/);
   trustFolder(sandbox.home, realpathSync(sandbox.repo));
   assert.match((await sandbox.call(['doctor'])).stdout, /ok +muse-hook/);
-  const trusted = await sandbox.call(['init']);
+  const trusted = await sandbox.call(['init', '--list']);
   assert.match(trusted.stdout, /kept the Muse Code tool-call hook/);
   assert.match(trusted.stdout, /yokoten's guard is already on in Muse Code/);
   written.hooks.Stop[0].hooks[0].command = 'node old/yokoten.ts hook --stop --agent muse';
@@ -106,7 +106,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
 
 test('muse trust (#341): doctor says when Muse skips the hooks; ok only when trust.json names the folder', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
   const doctor = async () => (await sandbox.call(['doctor'])).stdout;
   // No Muse home: no trust line, and no claim that Muse trusts the folder.
@@ -157,8 +157,8 @@ test('muse session doctor (#556): a new project gets it; an existing file keeps 
   const mine = { matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] };
   const own = { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: './hello.sh' }] }], PreToolUse: [mine] } };
   sandbox.write('.muse/hooks.json', JSON.stringify(own));
-  assert.equal((await sandbox.call(['init'])).status, 0);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.equal(written.hooks.SessionStart.length, 2, 'the user\'s own SessionStart hook stays, ours is added once');
   assert.deepEqual(written.hooks.SessionStart[0], own.hooks.SessionStart[0]);

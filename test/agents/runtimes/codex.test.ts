@@ -154,7 +154,7 @@ test('codex config.toml: an array never swallows the next table header, so no ke
 
 test('codex trust (#341): doctor says when Codex skips the hooks, and ok only when the folder and both hooks are trusted', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
   const config = join(sandbox.home, '.codex', 'config.toml');
   const writeConfig = (text: string) => {

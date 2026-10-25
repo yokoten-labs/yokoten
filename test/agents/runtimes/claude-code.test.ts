@@ -146,7 +146,7 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
 test('plugin: /yokoten:update previews from the plugin, then writes with --write; a .yokoten/ copy without its kit cannot compare', () => {
   const sandbox = makeSandbox();
   // init's entry, through the real binary: the .yokoten/ copy it makes runs below.
-  assert.equal(sandbox.run(['init']).status, 0);
+  assert.equal(sandbox.run(['init', '--list']).status, 0);
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   const old = fresh.replace('Plain English, close to', 'Plain words, close to');

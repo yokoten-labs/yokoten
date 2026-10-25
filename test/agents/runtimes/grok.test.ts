@@ -244,7 +244,7 @@ test('grok project hooks: init writes the guard and the stop check, keeps other 
   const cli = '.yokoten/bin/yokoten.mjs'; // The agent hooks run yokoten.mjs (#408).
   assert.match((await sandbox.call(['doctor'])).stdout, /note +grok-hook: no tool-call guard or stop check in \.grok\/hooks\/yokoten\.json/, 'reported, not counted as missing');
   sandbox.write('.grok/hooks/yokoten.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
-  const result = await sandbox.call(['init']);
+  const result = await sandbox.call(['init', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^added the Grok CLI tool-call hook in \.grok\/hooks\/yokoten\.json$/m);
   assert.match(result.stdout, /^added the Grok CLI stop check in \.grok\/hooks\/yokoten\.json$/m);
@@ -262,7 +262,7 @@ test('grok project hooks: init writes the guard and the stop check, keeps other 
   // Grok looks unused here: no trust line from doctor.
   assert.match((await sandbox.call(['doctor'])).stdout, /ok +grok-hook: \.grok\/hooks\/yokoten\.json is in place; trust not checked, no ~\/\.grok\n/);
   mkdirSync(join(sandbox.home, '.grok'));
-  const trusted = await sandbox.call(['init']);
+  const trusted = await sandbox.call(['init', '--list']);
   assert.match(trusted.stdout, /kept the Grok CLI tool-call hook/);
   assert.match(trusted.stdout, /^to turn on yokoten's guard in Grok CLI, run `yokoten trust`$/m);
   written.hooks.Stop[0].hooks[0].timeout = 5;
@@ -278,7 +278,7 @@ test('grok project hooks: init writes the guard and the stop check, keeps other 
 
 test('grok trust: doctor says when Grok skips the hooks; ok only when trusted_folders.toml trusts the folder itself', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
   const doctor = async () => (await sandbox.call(['doctor'])).stdout;
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'no home');

@@ -143,7 +143,7 @@ test('antigravity: init, install and doctor keep a guard the user turned off, an
   mkdirSync(dirname(userFile), { recursive: true });
   let result = await sandbox.call(['install']);
   assert.match(result.stdout, /^added the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m, 'no user value: set as before');
-  result = await sandbox.call(['init', '--no-ci']);
+  result = await sandbox.call(['init', '--list', '--no-ci']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^added the Antigravity CLI tool-call hook in \.agents\/hooks\.json$/m, 'no user value: set as before');
   const projectFile = join(sandbox.repo, '.agents', 'hooks.json');
@@ -159,7 +159,7 @@ test('antigravity: init, install and doctor keep a guard the user turned off, an
   result = await sandbox.call(['install']);
   assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in ~/.gemini/config/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
   assert.equal(readFileSync(userFile, 'utf8'), userText, 'install kept the user file');
-  result = await sandbox.call(['init', '--no-ci']);
+  result = await sandbox.call(['init', '--list', '--no-ci']);
   assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
   assert.equal(readFileSync(projectFile, 'utf8'), projectText, 'init kept the project file');
   const doctor = (await sandbox.call(['doctor'])).stdout;

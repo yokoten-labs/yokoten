@@ -61,7 +61,7 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   const doctor = async () => (await sandbox.call(['doctor'], { extra: { DSH_HOME: dshHome } })).stdout;
   assert.match(await doctor(), /note +deepseek-harness-hook: no tool-call guard in \.dsh\/hooks\.json/, 'reported, not counted as missing');
   sandbox.write('.dsh/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
-  const result = await sandbox.call(['init'], { extra: { DSH_HOME: dshHome } });
+  const result = await sandbox.call(['init', '--list'], { extra: { DSH_HOME: dshHome } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /added the DeepSeek Harness tool-call hook in \.dsh\/hooks\.json/);
   assert.match(result.stdout, /added the DeepSeek Harness launch patch in \.dsh\/yokoten\.patch\.yml/);
@@ -77,7 +77,7 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   assert.equal(patch, PATCH);
   assert.match(patch, /^- insert:\n {4}- id: hooks-claude-code\n {6}name: '@deepseek-ai\/dsh-hooks-claude-code'\n {6}config:\n {8}configPath: \.dsh\/hooks\.json\n$/m);
   assert.deepEqual(projectHooksState(sandbox.repo, cli), { guard: 'same', patch: 'same' });
-  assert.match((await sandbox.call(['init'])).stdout, /kept the DeepSeek Harness tool-call hook/);
+  assert.match((await sandbox.call(['init', '--list'])).stdout, /kept the DeepSeek Harness tool-call hook/);
   // The bridge in the profile: can't check without a dsh home, never "done".
   assert.match(await doctor(), /note +deepseek-harness-hook: can't check the bridge: no dsh home/);
   const modules = join(dshHome, 'profiles', 'tui', 'node_modules', '@deepseek-ai');
@@ -89,7 +89,7 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   assert.deepEqual(profilesWithBridge({ DSH_HOME: dshHome }), { found: ['tui'], all: ['tui'] });
   assert.match(await doctor(), /ok +deepseek-harness-hook: the bridge is in profile tui; .*Only a real deny proves it/);
   // The profiles directory is dsh's home, so init prints the bridge commands (#654).
-  const withDsh = await sandbox.call(['init'], { extra: { DSH_HOME: dshHome } });
+  const withDsh = await sandbox.call(['init', '--list'], { extra: { DSH_HOME: dshHome } });
   assert.match(withDsh.stdout, /dsh plugin --profile <profile> add @deepseek-ai\/dsh-hooks-claude-code@0\.2\.1-rc\.2 && dsh plugin --profile <profile> add @deepseek-ai\/dsh-hook-protocol@0\.2\.1-rc\.2/);
   assert.match(withDsh.stdout, /dsh <profile> --patch \.dsh\/yokoten\.patch\.yml/);
   // Out of date, then a file init can't edit.

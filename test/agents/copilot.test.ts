@@ -41,7 +41,7 @@ test('copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trus
   assert.doesNotMatch(await doctor(), /copilot-hook/);
   mkdirSync(join(sandbox.home, '.copilot'));
   assert.match(await doctor(), /note +copilot-hook: no tool-call guard in \.claude\/settings\.json; `yokoten init` adds it/);
-  const init = await sandbox.call(['init']);
+  const init = await sandbox.call(['init', '--list']);
   assert.equal(init.status, 0, init.stderr);
   assert.match(init.stdout, /^to turn on yokoten's guard in Copilot CLI, run `yokoten trust`$/m);
   const root = realpathSync(sandbox.repo);
