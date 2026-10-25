@@ -58,7 +58,7 @@ export async function runStart(invocation: Invocation): Promise<number> {
   if (isProjectMissing) {
     if (stepResults.length) print(invocation, ['']);
     const done = init(root, env, undefined, { ask });
-    print(invocation, projectScreen(done.lines, done.ok));
+    print(invocation, projectScreen(done.lines, done.ok, true));
     stepResults.push(done.ok);
   }
   // The screen of where the project is now is doctor's, never a copy (#1027).
@@ -190,7 +190,7 @@ function uninstallScreen(lines: string[], ok: boolean): string[] {
   const out = title('uninstall', ok ? 'removed what install wrote' : 'removed some of what install wrote');
   out.push('');
   if (removed.length) out.push(...row('ok', removed.join(', '), 'removed'));
-  if (lines.some((line) => /^kept /.test(line))) out.push(...row('ok', 'your own files, keys and private marks', 'kept'));
+  if (ok) out.push(...row('ok', 'your own files, keys and private marks', 'kept'));
   const problems = lines.filter((line) => !/^(removed|nothing to remove|not there|kept|yokoten: cleaned)/.test(line));
   if (problems.length) out.push('', ...problems.flatMap((line) => row('MISSING', line)));
   out.push('');
@@ -199,7 +199,7 @@ function uninstallScreen(lines: string[], ok: boolean): string[] {
 }
 
 /** The project part of the first run: init's report as four rows and a file count (#1027). */
-function projectScreen(lines: string[], ok: boolean): string[] {
+function projectScreen(lines: string[], ok: boolean, isFirstRun = false): string[] {
   const wrote = lines.filter((line) => /^wrote /.test(line));
   const kept = lines.filter((line) => /^kept /.test(line));
   if (ok && !wrote.length) return title('init', 'already set up here, nothing changed');
@@ -217,9 +217,12 @@ function projectScreen(lines: string[], ok: boolean): string[] {
   out.push(`${ROW_TEXT_INDENT}${wrote.length} files written${kept.length ? `, ${kept.length} of yours kept` : ', none of yours changed'}`);
   const rest = remaining(lines, { isProblemsOnly: true });
   if (rest.length) out.push('', ...rest);
-  out.push('');
-  out.push(...nextLine('git add -A && git commit -m "chore: add yokoten"'));
-  out.push(...moreLine('`yokoten init --list` names every file'));
+  // The first run ends on one Next line, after doctor, so this screen names only the rest.
+  if (!isFirstRun) {
+    out.push('');
+    out.push(...nextLine('git add -A && git commit -m "chore: add yokoten"'));
+    out.push(...moreLine('`yokoten init --list` names every file'));
+  } else out.push('', ...moreLine('`yokoten init --list` names every file'));
   return out;
 }
 
