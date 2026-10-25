@@ -66,7 +66,7 @@ test('test: one screen says the plan first and ends with one row (#1027)', () =>
   sandbox.write('ok.test.mjs', "import { test } from 'node:test';\ntest('fine', () => {});\n");
   const result = sandbox.run(['test', '--', 'ok.test.mjs']);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /^yokoten test · \d+ files at once, /);
+  assert.match(result.stdout, /^yokoten test · \d+ files? at once, /);
   assert.match(result.stdout, /^ {2}done +tests passed$/m);
 });
 

@@ -489,7 +489,7 @@ export function runTest(invocation: Invocation): number {
   }
   // One screen around the runner (#1027): the plan first, the runner's own words as they are,
   // and one row at the end. The exit code is the runner's, unchanged.
-  const plan = light ? `${jobs} files at once, ${hasNice ? 'niced, at most half the cores' : 'no nice here'}` : 'the light run is off; every core';
+  const plan = light ? `${jobs} ${jobs === 1 ? 'file' : 'files'} at once, ${hasNice ? 'niced, at most half the cores' : 'no nice here'}` : 'the light run is off; every core';
   print(invocation, [...title('test', plan), '']);
   const result = spawnSync(command.file, command.args, { stdio: 'inherit', windowsHide: true });
   if (result.error) {
