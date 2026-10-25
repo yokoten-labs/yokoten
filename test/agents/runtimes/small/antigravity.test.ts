@@ -28,7 +28,7 @@ test('hook --agent antigravity: run_command by CommandLine, the edit tools by Ta
   assert.equal(result.status, 0, 'agy reads the decision, not the exit code');
   const denial = JSON.parse(result.stdout);
   assert.equal(denial.decision, 'deny');
-  assert.match(denial.reason, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release/);
+  assert.match(denial.reason, /^yokoten stopped this: git push --tags pushes tags \[release\]\n\n  Why       Only the owner decides when to release/);
   assert.match(result.stderr, /owner decides when to release/);
   result = await call('run_command', { CommandLine: 'git status', Cwd: sandbox.repo });
   assert.deepEqual([result.status, result.stdout], [0, ''], 'an allowed call leaves stdout empty: agy goes on');
@@ -141,9 +141,9 @@ test('antigravity: init, install and doctor keep a guard the user turned off, an
   const sandbox = makeSandbox();
   const userFile = join(sandbox.home, '.gemini', 'config', 'hooks.json');
   mkdirSync(dirname(userFile), { recursive: true });
-  let result = await sandbox.call(['install']);
+  let result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^added the Antigravity CLI command guard in ~\/\.gemini\/config\/hooks\.json$/m, 'no user value: set as before');
-  result = await sandbox.call(['init', '--no-ci']);
+  result = await sandbox.call(['init', '--list', '--no-ci']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^added the Antigravity CLI tool-call hook in \.agents\/hooks\.json$/m, 'no user value: set as before');
   const projectFile = join(sandbox.repo, '.agents', 'hooks.json');
@@ -156,13 +156,13 @@ test('antigravity: init, install and doctor keep a guard the user turned off, an
   const userText = turnOff(userFile);
   const projectText = turnOff(projectFile);
   const how = 'to turn it on, delete `"enabled": false` from its `"yokoten"` entry';
-  result = await sandbox.call(['install']);
+  result = await sandbox.call(['install', '--list']);
   assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in ~/.gemini/config/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
   assert.equal(readFileSync(userFile, 'utf8'), userText, 'install kept the user file');
-  result = await sandbox.call(['init', '--no-ci']);
+  result = await sandbox.call(['init', '--list', '--no-ci']);
   assert.ok(result.stdout.includes(`kept your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);
   assert.equal(readFileSync(projectFile, 'utf8'), projectText, 'init kept the project file');
-  const doctor = (await sandbox.call(['doctor'])).stdout;
+  const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.ok(doctor.includes(`antigravity-hook: you turned off the tool-call guard in .agents/hooks.json; ${how}`), doctor);
   assert.ok(doctor.includes(`antigravity-user-hook: you turned off the command guard in ~/.gemini/config/hooks.json; ${how}`), doctor);
 });

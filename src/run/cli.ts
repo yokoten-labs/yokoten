@@ -175,14 +175,18 @@ export const COMMANDS: Command[] = [
   {
     name: 'install',
     summary: 'skills, agents and user-level hooks for this machine',
-    usage: '',
+    usage: '[--yes] [--list]',
     text: [
-      'Installs the skills into ~/.claude/skills and ~/.agents/skills, the agents into',
-      '~/.claude/agents, a SessionStart doctor hook, a user-level command guard, an empty',
-      'private-marks file, and a yokoten launcher in ~/.local/bin. It asks before it adds',
-      'that folder to your PATH. Files you wrote yourself are left alone.',
+      'Shows one screen of what it sets up, asks once, then writes it: the skills, the',
+      'agents, a SessionStart doctor hook, a user-level command guard, an empty',
+      'private-marks file, and a yokoten launcher in ~/.local/bin. Files you wrote',
+      'yourself are left alone. With --yes it writes without the question, and with',
+      '--list it names every file it writes or keeps.',
     ],
-    options: [],
+    options: [
+      { name: '--yes', text: 'set this computer up without asking first' },
+      { name: '--list', text: 'every file install writes or keeps, one line each' },
+    ],
     example: 'yokoten install',
   },
   {
@@ -196,6 +200,7 @@ export const COMMANDS: Command[] = [
       'With "notNow" ci in yokoten.json, it writes no workflow and no Dependabot config.',
     ],
     options: [
+      { name: '--list', text: 'show every file init wrote or kept' },
       { name: '--no-ci', text: 'keep CI off: no workflows or Dependabot, and "notNow" ci in yokoten.json' },
       { name: '--github', text: 'work on GitHub too; goes with --yes' },
       { name: '--yes', text: 'add the standard labels, a first milestone and up to 8 area labels on GitHub' },
@@ -222,13 +227,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'update',
-    summary: "the core rules in a project's AGENTS.md: preview, or replace with --write",
-    usage: '[dir] [--write]',
+    summary: "the core rules in AGENTS.md: preview, or --write",
+    usage: '[dir] [--write] [--all]',
     text: [
       "Shows what this yokoten changes in the core rules of the project's AGENTS.md.",
       'With --write it replaces them and keeps the "This project" part as it is.',
     ],
-    options: [{ name: '--write', text: 'replace the core rules in AGENTS.md' }],
+    options: [{ name: '--write', text: 'replace the core rules in AGENTS.md' }, { name: '--all', text: 'every changed line, not one row per rule' }],
     argument: 'dir',
     example: 'yokoten update --write',
   },
@@ -249,9 +254,10 @@ export const COMMANDS: Command[] = [
   {
     name: 'doctor',
     summary: 'the road: where this project is and its next step',
-    usage: '[--session] [--json] [--agent <name>]',
-    text: ['Shows every stage and step of the road, and what this machine is missing.', 'It exits 1 on a problem: a failed self-test, or a core-rules, tree or machine line', 'marked MISSING. Steps left on the road are to do, not problems. Always 0 with --session.'],
+    usage: '[--all] [--session] [--json] [--agent <name>]',
+    text: ['Shows where the project is, what is left to do, and the next command, on one screen.', 'With --all it shows every stage and step of the road, and what this machine is missing.', 'It exits 1 on a problem: a failed self-test, or a core-rules, tree or machine line', 'marked MISSING. Steps left on the road are to do, not problems. Always 0 with --session.'],
     options: [
+      { name: '--all', text: 'every check: the whole road, the project, unsaved work, this machine and the server' },
       { name: '--session', text: 'only the next step, for the start of a session' },
       { name: '--json', text: 'the report as JSON on stdout' },
       { name: '--agent', value: 'name', text: 'with --session: claude-code (the default), codex, muse, or gemini for Gemini CLI JSON' },
@@ -261,15 +267,15 @@ export const COMMANDS: Command[] = [
   {
     name: 'adopt',
     summary: 'a draft of the adoption table for an old project',
-    usage: '[--json]',
+    usage: '[--json] [--all]',
     text: ['Drafts the adoption table: what the project does today, and as-is, lighter or not now', 'for each step. You decide every row. It writes no file.'],
-    options: [{ name: '--json', text: 'the rows as JSON on stdout' }],
+    options: [{ name: '--json', text: 'the rows as JSON on stdout' }, { name: '--all', text: 'the whole table, with a reason for every row' }],
     example: 'yokoten adopt',
   },
   {
     name: 'check',
-    summary: 'layout, privacy and lead-only files; the pull request or issue in CI',
-    usage: '[--staged | --history | --pr [number] | --issue | --anchor] [--json]',
+    summary: 'layout, privacy and lead-only files, and a PR or issue',
+    usage: '[--staged | --history | --pr [number] | --issue | --anchor] [--all] [--json]',
     text: ['Checks the whole tree by default. Use one mode at most.', '--pr with a number reads that pull request through gh, so you can run it without CI.', '--anchor checks the event log against its daily entries in Sigstore Rekor.'],
     options: [
       { name: '--staged', text: 'the next commit, as the git hook runs it' },
@@ -278,6 +284,7 @@ export const COMMANDS: Command[] = [
       { name: '--issue', text: 'in CI: the issue title, `area: summary` in 60 characters at most' },
       { name: '--anchor', text: 'the event log against the daily hashes in Sigstore Rekor' },
       { name: '--repo', value: 'owner/name', text: 'the repo whose anchor workflow signed the entries; GITHUB_REPOSITORY or origin by default' },
+      { name: '--all', text: 'every note in full; by default they fold into a count' },
       { name: '--json', text: 'the findings as JSON on stdout' },
     ],
     argument: 'number',
@@ -300,7 +307,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'provenance',
-    summary: 'the writer, reviewers, approver, tier and issue of a commit or a range',
+    summary: 'the writer, reviewers and approver of a commit',
     usage: '<ref> [--json]',
     text: ['Reads the message a squash merge leaves on the branch, and the Approve on the pull request it names.', 'The approver is the latest Approve; when gh cannot read it, it shows unknown.', 'A range shows each commit, oldest first.'],
     options: [{ name: '--json', text: 'the records as JSON on stdout' }],
@@ -309,7 +316,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'mcp',
-    summary: 'start the project MCP server and check its tools for every agent client',
+    summary: 'check the project MCP server and its tools',
     usage: '[dir] [--command "<command>"] [--json]',
     text: [
       'Starts each stdio server in .mcp.json, .vscode/mcp.json or mcp.json and calls tools/list.',
@@ -328,7 +335,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'borrowed',
-    summary: 'compare borrowed code with its upstream, and open issues when it moved',
+    summary: 'borrowed code against upstream, with issues',
     usage: '[--dry-run] [--json]',
     text: [
       "Compares each file in src/borrowed/ with upstream's default branch, through gh.",
@@ -342,7 +349,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'redact',
-    summary: 'command output with your name, emails, logins and private hosts hidden',
+    summary: 'hide your private marks in a pipeline',
     usage: '',
     text: [
       'Reads text on stdin and writes it to stdout with placeholders: <secret>, <owner>,',
@@ -371,7 +378,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'marks',
-    summary: 'count your private marks, add or remove one, turn a kind off, or allow one here',
+    summary: 'your private marks, never their values',
     usage: '[add | remove | off <kind> | on <kind> | allow <mark> --here | allow --remove <mark> --here]',
     text: [
       'Alone, it counts your private marks by kind; it never shows a value. install adds your',
@@ -422,6 +429,7 @@ export const COMMANDS: Command[] = [
     ],
     options: [
       { name: '--write', text: 'put the draft in lessons/ (adds only, never overwrites)' },
+      { name: '--all', text: 'show every field the issue left open, and the files the draft writes' },
       { name: '--ship', text: 'move a reviewed lesson into kit/lessons/; refused while a TODO is left' },
       { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file (prints it, or writes it with --out)' },
       { name: '--out', value: 'file', text: 'with --export: write the lesson file here instead of printing it' },
@@ -459,7 +467,7 @@ export const COMMANDS: Command[] = [
   {
     name: 'anchor',
     summary: "list a worker's checkpoints: commits whose checks passed",
-    usage: '[--json]',
+    usage: '[--json] [--all]',
     text: [
       'Lists the anchors recorded in this checkout, newest first. A worker records one when',
       'its checks pass and its tree is clean. An anchor is a commit, so going back is a new',
@@ -482,7 +490,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'worker',
-    summary: "mark a worktree as a worker's, so the guard treats every agent there as a worker",
+    summary: "mark a worktree as a worker's",
     usage: 'mark <dir> | unmark <dir> | env [runtime]',
     text: [
       "Marks the worktree at <dir> as a worker's. The guard then treats every agent there as",
@@ -504,7 +512,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'desk',
-    summary: "start a worker's agent in its own fenced desk: its clone, no network but its API",
+    summary: "a worker's agent in its own fenced desk",
     usage: '<agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>',
     text: [
       'Starts the command after -- in a sandbox around <folder>, which must be its own git clone.',
@@ -527,7 +535,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'msg',
-    summary: 'agents of every vendor message each other: send, inbox, who, and the lead\'s log',
+    summary: 'messages between agents on this team',
     usage: 'send <to> [<text>] | inbox | who | log',
     text: [
       'Each agent writes only its own outbox, in the team folder next to your checkout (<repo>.team).',
@@ -552,7 +560,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'pr',
-    summary: 'keep open pull requests up to date and resolve mechanical conflicts',
+    summary: 'keep open pull requests up to date',
     usage: 'sync',
     text: [
       'For each open pull request whose branch is behind its base branch, merges the base',
@@ -567,7 +575,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'bot',
-    summary: 'run one command as the bot (gh, git push); the token is never printed',
+    summary: 'run one command as the bot account',
     usage: '-- <command>',
     text: [
       'Runs the command after -- as the bot, with a one-hour token. It runs gh and git',
@@ -579,7 +587,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'train',
-    summary: 'merge an approved queue one pull request at a time, with a gate between each',
+    summary: 'merge an approved queue, one at a time',
     usage: '[<pr>...] [--wait <seconds>] [--next]',
     text: [
       'Merges each pull request in the given order, as the bot, and stops at the first one',
@@ -603,8 +611,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'board',
-    summary: 'the team at a glance: agents, pull requests and worktrees, live on a page (preview)',
-    usage: '[--text] [--no-open] [--role name] [--vendor name]',
+    summary: 'the team at a glance, live (preview)',
+    usage: '[--text] [--all] [--no-open] [--role name] [--vendor name]',
     text: [
       'Preview: it may change, and team commands come in v0.1.2 (#823).',
       'Serves a live page on this machine only, at http://<repo>.localhost:<port>/.',
@@ -618,6 +626,7 @@ export const COMMANDS: Command[] = [
     ],
     options: [
       { name: '--text', text: 'print the agents, pull requests and worktrees as plain text and exit' },
+      { name: '--all', text: 'with --text: every field of every agent, pull request and worktree' },
       { name: '--no-open', text: 'only print the link; do not open the browser' },
       { name: '--role', value: 'name', text: 'with --text: only this role in the usage view: engineer, reviewer or checker' },
       { name: '--vendor', value: 'name', text: 'with --text: only this vendor in the usage view, such as claude or muse' },
@@ -643,14 +652,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'uninstall',
-    summary: 'take back what install wrote, for example to use the plugin instead',
-    usage: '',
+    summary: 'take back what install wrote',
+    usage: '[--list]',
     text: [
       'Removes the skills and agents that install wrote (only files marked as managed by',
       'yokoten), its two hooks in ~/.claude/settings.json, and ~/.local/share/yokoten.',
       'Your own files, your other settings and ~/.config/yokoten (keys, private marks) stay.',
+      'With --list it names every file it removes or keeps.',
     ],
-    options: [],
+    options: [{ name: '--list', text: 'every file uninstall removes or keeps, one line each' }],
     example: 'yokoten uninstall',
   },
   {
@@ -678,20 +688,40 @@ export const findCommand = (name: string): Command | undefined => COMMANDS.find(
 /** The option as its help shows it: `--agent <name>`. */
 const optionLabel = (option: CommandOption): string => (option.value ? `${option.name} <${option.value}>` : option.name);
 
-/** What `yokoten <name> --help` prints. */
+/** One help line, wrapped at 80 columns with later lines under the first line's text (R10). */
+const helpWrap = (prefix: string, text: string, width = 80): string[] => {
+  const lines: string[] = [];
+  const indent = ' '.repeat(prefix.length);
+  let line = prefix;
+  for (const word of text.split(' ')) {
+    if (line !== prefix && line.length + 1 + word.length > width) {
+      lines.push(line);
+      line = indent + word;
+    } else line += line === prefix ? word : ` ${word}`;
+  }
+  lines.push(line);
+  return lines;
+};
+
+/**
+ * What `yokoten <name> --help` prints (issue #1027, R10): a usage line, at most four
+ * lines of text, the options aligned, and one example. No line passes SCREEN_WIDTH,
+ * and a longer option text wraps under itself.
+ */
 export function commandHelp(command: Command): string[] {
   const rows: [string, string][] = [...command.options.map((option): [string, string] => [optionLabel(option), option.text]), [HELP_OPTIONS.join(', '), 'this help']];
-  const width = Math.max(...rows.map(([label]) => label.length)) + 2;
+  const width = Math.min(Math.max(...rows.map(([label]) => label.length)) + 2, 24);
+  const text = command.text.flatMap((line) => helpWrap('', line));
   return [
-    `Usage: yokoten ${command.name}${command.usage ? ` ${command.usage}` : ''}`,
+    ...helpWrap('Usage: ', `yokoten ${command.name}${command.usage ? ` ${command.usage}` : ''}`),
     '',
-    ...command.text,
+    ...text,
     '',
     'Options:',
-    ...rows.map(([label, text]) => `  ${label.padEnd(width)}${text}`),
+    ...rows.flatMap(([label, words]) => helpWrap(`  ${label.padEnd(width)}`, words)),
     '',
     'Example:',
-    `  ${command.example}`,
+    ...helpWrap('  ', command.example),
   ];
 }
 
@@ -706,7 +736,10 @@ export const COMMAND_GROUPS: readonly { title: string; names: readonly string[] 
   { title: 'Keep the project healthy', names: ['update', 'adopt', 'ci-health', 'borrowed', 'learn', 'hook', 'help', 'version'] },
 ];
 
-/** The command list, for `yokoten help`: one block per group, a blank line between. */
+/**
+ * The command list, for `yokoten help` (issue #1027): one block per group, a blank line
+ * between, each command on one line of at most SCREEN_WIDTH (R1, R3).
+ */
 export function commandList(): string[] {
   const width = Math.max(...COMMANDS.map((command) => command.name.length)) + 2;
   return COMMAND_GROUPS.flatMap(({ title, names }, at) => [

@@ -180,7 +180,7 @@ test('the desk contract holds on this system', { skip: typeof backend === 'strin
     assert.deepEqual([answer.role, answer.tz, answer.token], ['worker', 'UTC', 'absent'], 'role and time zone are set; a token is not passed in');
     assert.match(answer.msgSend, /^0 /, 'the agent sends from its own outbox');
     assert.match(readFileSync(join(team, 'outbox', 'probe.jsonl'), 'utf8'), /"text":"hello from the desk".*"from":"probe","to":"lead"/);
-    assert.match(answer.msgInbox, /from lead \(the lead session, not the owner\)[^]*\| hello from the lead/, 'and reads what the lead sent it');
+    assert.match(answer.msgInbox, /\n {2}lead +\d\d:\d\dZ +hello from the lead\n[^]*never an approval from the owner/, 'and reads what the lead sent it');
     assert.equal(answer.msgLog, 1, 'the log is the lead\'s');
     assert.match(answer.leadOutboxWrite, /^failed/, "the lead's outbox is not written");
     assert.match(answer.otherOutboxWrite, /^failed/, "another agent's outbox is not written");

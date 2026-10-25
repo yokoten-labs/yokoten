@@ -26,23 +26,23 @@ import {
 test('board --text: the entry, an agent that joins and leaves, and the usage errors', async () => {
   const sandbox = makeSandbox();
   // The entry, through the real binary; the rest runs in this process.
-  const started = sandbox.run(['board', '--text']);
+  const started = sandbox.run(['board', '--text', '--all']);
   assert.equal(started.status, 0, started.stderr);
   assert.match(started.stdout, /^yokoten board: \S+ \(preview: it may change, and team commands come in v0\.1\.2, #823\)\n0 agents, 0 open pull requests, 1 worktree\.\n\nNeeds you:\n- nothing\.\n\nAgents:\n- none\. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself\.\n\nPull requests:\n- this repo has no GitHub remote, so the board shows no pull requests\n\nWorktrees:\n- \S+ \(main\)\n$/);
   const file = join(sandbox.repo, '.yokoten-agent.json');
   const who = nicknameOf(nicknameId(realpathSync(sandbox.repo), 'worker-1'), []);
   writeFileSync(file, JSON.stringify({ name: 'worker-1', vendor: 'claude-code', task: 'issue 601', worktree: sandbox.repo, doing: 'writing tests', updated: new Date().toISOString() }));
-  const joined = await sandbox.call(['board', '--text']);
+  const joined = await sandbox.call(['board', '--text', '--all']);
   assert.equal(joined.status, 0, joined.stderr);
   assert.match(joined.stdout, /\n1 agent, 0 open pull requests, 1 worktree\.\n/);
   assert.match(joined.stdout, new RegExp(`- ${who} \\(Claude\\): issue 601, in \\S+, writing tests, just now\n`));
   rmSync(file);
-  const left = await sandbox.call(['board', '--text']);
+  const left = await sandbox.call(['board', '--text', '--all']);
   assert.match(left.stdout, /\n0 agents, 0 open pull requests, 1 worktree\.\n/);
   assert.match(left.stdout, /- none\. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself\.\n/);
   // A fake HOME above the repo: every shown path hides it.
   writeFileSync(file, JSON.stringify({ name: 'worker-1', worktree: sandbox.repo }));
-  const hidden = await sandbox.call(['board', '--text'], { extra: { HOME: dirname(sandbox.repo) } });
+  const hidden = await sandbox.call(['board', '--text', '--all'], { extra: { HOME: dirname(sandbox.repo) } });
   assert.equal(hidden.status, 0, hidden.stderr);
   assert.match(hidden.stdout, /^yokoten board: ~\/repo \(preview: [^\n]+\)\n/);
   assert.match(hidden.stdout, new RegExp(`- ${who}: in ~/repo\n`));
@@ -50,7 +50,7 @@ test('board --text: the entry, an agent that joins and leaves, and the usage err
   assert.ok(!hidden.stdout.includes(sandbox.repo), 'no full path under the home folder');
   rmSync(file);
   assert.equal((await sandbox.call(['board', '--bogus'])).status, 1, 'an unknown option is refused');
-  const outside = await sandbox.call(['board', '--text'], { cwd: sandbox.home });
+  const outside = await sandbox.call(['board', '--text', '--all'], { cwd: sandbox.home });
   assert.equal(outside.status, 1, 'outside a repo it says so');
   assert.match(outside.stderr, /is not inside a git repo/);
 });
@@ -58,7 +58,7 @@ test('board --text: the entry, an agent that joins and leaves, and the usage err
 // #933: the board is a preview, and the first line of `board --text` says so.
 test('board --text: the first line says preview, what may change, and v0.1.2 (#933)', async () => {
   const sandbox = makeSandbox();
-  const result = await sandbox.call(['board', '--text']);
+  const result = await sandbox.call(['board', '--text', '--all']);
   assert.equal(result.status, 0, result.stderr);
   const [first] = result.stdout.split('\n');
   assert.match(first, /preview/);
@@ -80,7 +80,7 @@ test('board --text: pull requests with each stage, read-only', async () => {
   ];
   writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nconsole.log(${JSON.stringify(JSON.stringify(pulls))});\n`);
   chmodSync(join(bin, 'gh'), 0o755);
-  const result = await sandbox.call(['board', '--text'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
+  const result = await sandbox.call(['board', '--text', '--all'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\n0 agents, 1 open pull request, 1 worktree\.\n/);
   assert.match(result.stdout, /\n- #7 team page \[board\]: Ready to merge, tier B\n- #6 old work: merged\n/);
@@ -635,7 +635,7 @@ test('board --text: the waiting list shows when something waits', async () => {
     join(sandbox.repo, '.yokoten-agent.json'),
     JSON.stringify({ name: 'w', vendor: 'muse', task: 'issue 601', worktree: sandbox.repo, doing: 'blocked', updated: '2026-10-22T10:00:00Z', role: 'engineer', blocked: 'the guard stopped a force push' }),
   );
-  const result = await sandbox.call(['board', '--text']);
+  const result = await sandbox.call(['board', '--text', '--all']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\nWaiting for you:\n/);
   assert.match(result.stdout, /the guard stopped a force push/);
@@ -651,7 +651,7 @@ test('board --text: a started run shows under Started here', () => {
   assert.ok(typeof run !== 'string', `the start passes: ${run}`);
   const chunks: string[] = [];
   const stream = new Writable({ write(chunk, _, done) { chunks.push(String(chunk)); done(); } });
-  const invocation: Invocation = { command: 'board', args: ['--text'], env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stream as Output, stderr: stream as Output, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
+  const invocation: Invocation = { command: 'board', args: ['--text', '--all'], env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stream as Output, stderr: stream as Output, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
   assert.equal(runBoard(invocation, { controls }), 0);
   const text = chunks.join('');
   assert.ok(text.includes('Started here:'), 'the runs section shows');
@@ -668,7 +668,7 @@ test('board --text: a started run hides the home folder', () => {
   assert.ok(typeof run !== 'string', `the start passes: ${run}`);
   const chunks: string[] = [];
   const stream = new Writable({ write(chunk, _, done) { chunks.push(String(chunk)); done(); } });
-  const invocation: Invocation = { command: 'board', args: ['--text'], env: { ...sandbox.env, HOME: dirname(sandbox.repo) }, cwd: sandbox.repo, stdout: stream as Output, stderr: stream as Output, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
+  const invocation: Invocation = { command: 'board', args: ['--text', '--all'], env: { ...sandbox.env, HOME: dirname(sandbox.repo) }, cwd: sandbox.repo, stdout: stream as Output, stderr: stream as Output, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
   assert.equal(runBoard(invocation, { controls }), 0);
   const text = chunks.join('');
   assert.ok(text.includes('Started here:'), 'the runs section shows');

@@ -154,14 +154,14 @@ test('codex config.toml: an array never swallows the next table header, so no ke
 
 test('codex trust (#341): doctor says when Codex skips the hooks, and ok only when the folder and both hooks are trusted', async () => {
   const sandbox = makeSandbox();
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
   const config = join(sandbox.home, '.codex', 'config.toml');
   const writeConfig = (text: string) => {
     mkdirSync(dirname(config), { recursive: true });
     writeFileSync(config, text);
   };
-  const doctor = async () => (await sandbox.call(['doctor'])).stdout;
+  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
   // No Codex home: Codex looks unused here, so no trust line, and no claim that it is trusted.
   assert.match(await doctor(), /ok +codex-hook: \.codex\/hooks\.json is in place; trust not checked, no ~\/\.codex\n/);
   assert.doesNotMatch(await doctor(), /Codex trusts|codex-hook: can't check/);

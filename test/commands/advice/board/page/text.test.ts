@@ -4,7 +4,7 @@ import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EMPTY_DESK } from '../../../../../src/commands/advice/board/feed/read/desk.ts';
-import { renderBoardText } from '../../../../../src/commands/advice/board/page/text.ts';
+import { renderBoardScreen, renderBoardText } from '../../../../../src/commands/advice/board/page/text.ts';
 import { type AgentView, type BoardData, pullView, vendorOf } from '../../../../../src/commands/advice/board/view.ts';
 
 const agent = (fields: Partial<AgentView>): AgentView => ({ key: '', name: 'a', nickname: '', isMain: false, vendor: vendorOf(''), model: '', effort: '', role: '', dot: 'idle', task: '', title: '', ref: null, doing: '', checks: '', age: '', updated: '', started: '', branch: '', ...fields });
@@ -123,4 +123,21 @@ test('board text: the usage view says tokens and an API price in plain words', (
   assert.match(text, /- Total: 2,000,000 in, 1,000,000 cached, 100,000 out: about \$39.00 if paid by API/);
   assert.match(text, /Partial:\n- mystery-9: no price in the table\./);
   assert.match(text, /Prices checked 2026-10-23/);
+});
+
+// #1027: the default `board --text` is one screen: a title with counts, groups, one row each.
+test('board text: the default screen is one screen of 80 columns or less', () => {
+  const board: BoardData = {
+    repo: '/repo', repoName: 'repo', repoUrl: '', agents: [agent({ nickname: 'lead', vendor: vendorOf('claude-code'), role: 'engineer', doing: 'reviewing PR #1033' }), agent({ nickname: 'worker-42', vendor: vendorOf('deepseek'), dot: 'waiting' })],
+    needs: [], pulls: [pullView({ number: 1031, title: 'one screen', branch: 'screen', url: '', stage: 'open', checks: 'pass', tier: 'A', review: 'approved', isApprovedOnHead: true, mergedAt: '' })], merged: [],
+    worktrees: [{ path: '/repo', branch: 'main' }], desk: EMPTY_DESK, updated: '',
+  };
+  const lines = renderBoardScreen(board, undefined, 'http://repo.localhost:4815/');
+  assert.equal(lines[0], 'yokoten board · 2 agents, 1 pull request, 1 worktree');
+  assert.ok(lines.includes('Agents'), 'the agents group');
+  assert.ok(lines.some((line) => line.startsWith('  skipped     lead')), 'an agent row');
+  assert.ok(lines.some((line) => line.includes('waiting for you')), 'what an agent waits for');
+  assert.ok(lines.includes('Pull requests') && lines.includes('Worktrees'), 'the other two groups');
+  assert.match(lines.at(-1) ?? '', /^More: the live page at http:\/\/repo\.localhost:4815\/$/, 'the page last');
+  for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

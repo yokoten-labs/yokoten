@@ -146,7 +146,7 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
 test('plugin: /yokoten:update previews from the plugin, then writes with --write; a .yokoten/ copy without its kit cannot compare', () => {
   const sandbox = makeSandbox();
   // init's entry, through the real binary: the .yokoten/ copy it makes runs below.
-  assert.equal(sandbox.run(['init']).status, 0);
+  assert.equal(sandbox.run(['init', '--list']).status, 0);
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   const old = fresh.replace('Plain English, close to', 'Plain words, close to');
@@ -154,7 +154,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   writeFileSync(path, old);
   const skill = readFileSync(join(ROOT, 'kit/plugin/skills/update/SKILL.md'), 'utf8');
   const commands = [...skill.matchAll(/^ *(node "\$\{CLAUDE_PLUGIN_ROOT\}\/bin\/yokoten\.ts" update.*)$/gm)].map((m) => m[1]);
-  assert.deepEqual(commands, [`node "${PLUGIN_ROOT}/bin/yokoten.ts" update`, `node "${PLUGIN_ROOT}/bin/yokoten.ts" update --write`], 'preview, then write');
+  assert.deepEqual(commands, [`node "${PLUGIN_ROOT}/bin/yokoten.ts" update --all`, `node "${PLUGIN_ROOT}/bin/yokoten.ts" update --write`], 'preview, then write');
   assert.doesNotMatch(skill, /\.yokoten\/bin/, 'the skill never runs the copy in .yokoten/');
   const run = (command: string) => spawnSync(command.replaceAll(PLUGIN_ROOT, ROOT), { shell: true, cwd: sandbox.repo, env: { ...sandbox.env, CLAUDE_PLUGIN_ROOT: ROOT }, encoding: 'utf8' });
 
@@ -162,7 +162,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   rmSync(join(sandbox.repo, '.yokoten', 'kit'), { recursive: true });
   const vendored = spawnSync('node', ['.yokoten/bin/yokoten.ts', 'update', '--write'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
   assert.equal(vendored.status, 1);
-  assert.match(vendored.stderr, /can't compare AGENTS\.md with the kit: this copy of yokoten has no kit.*\/yokoten:update/);
+  assert.match(vendored.stderr.replace(/\s+/g, ' '), /can't compare AGENTS\.md with the kit: this copy of yokoten has no kit.*\/yokoten:update/);
   assert.equal(readFileSync(path, 'utf8'), old);
 
   let result = run(commands[0]);
@@ -172,7 +172,7 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
   assert.equal(readFileSync(path, 'utf8'), old, 'the preview writes nothing');
   result = run(commands[1]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /replaced the core rules in AGENTS\.md/);
+  assert.match(result.stdout, /the core rules in AGENTS\.md are this version's now/);
   assert.equal(readFileSync(path, 'utf8'), fresh);
   assert.match(run(commands[0]).stdout, /up to date/);
 });
@@ -206,7 +206,7 @@ test('hook: a Copilot CLI call, in the Claude-format shape it sends from .claude
   });
   const result = await sandbox.call(['hook'], { input });
   assert.equal(result.status, 2, 'Claude Code reads exit 2 and stderr');
-  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+\n$/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+\n$/);
   // Copilot CLI shows the agent only "hook exited with code 2" unless stdout names the reason.
   assert.deepEqual(JSON.parse(result.stdout), { permissionDecision: 'deny', permissionDecisionReason: result.stderr.trimEnd() });
   const create = JSON.stringify({ hook_event_name: 'PreToolUse', cwd: sandbox.repo, tool_name: 'Write', tool_input: { path: join(sandbox.repo, 'AGENTS.md'), file_text: 'x' } });

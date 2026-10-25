@@ -9,7 +9,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { type Finding, finding, isFailingFinding } from '../../rules/message.ts';
-import { bullets, type Invocation, parse, print, printJson, requireRoot, usage } from '../shared.ts';
+import { bullets, count, type Invocation, parse, print, printJson, requireRoot, row, title, usage } from '../shared.ts';
+
+/** The words of a `--command` value; a part in double quotes is one word, so `"C:\Program Files\nodejs\node.exe"` stays whole. A backslash is kept as it is. */
+export function commandWords(command: string): string[] {
+  return [...command.matchAll(/"([^"]*)"|(\S+)/g)].map((match) => match[1] ?? match[2]);
+}
 
 /** One tool as `tools/list` sends it. Only the fields the rules read are named; the rest stays as it came. */
 export interface McpTool {
@@ -499,7 +504,7 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const command = options.values['--command'];
   let servers: McpServer[] = config.servers;
   if (command) {
-    const [name, ...args] = command.trim().split(/\s+/);
+    const [name, ...args] = commandWords(command);
     servers = name ? [{ name: 'command line', entry: { command: name, args }, file: '--command' }] : [];
   }
   const configFindings = config.problems;
@@ -528,8 +533,10 @@ export async function runMcp(invocation: Invocation): Promise<number> {
       notes: warnings,
     });
   } else if (!problems.length) {
-    print(invocation, [`yokoten mcp: ok (${reports.length} server(s), ${toolCount} tool(s))`, ...reports.map(serverLine)]);
-    if (warnings.length) print(invocation, [`yokoten mcp: note: ${warnings.length} warning(s)`, ...bullets(warnings)]);
+    const lines = [...title('mcp --check', `${count(toolCount, 'tool')} ready`), ''];
+    for (const report of reports) lines.push(...row('ok', report.skipped ? report.skipped : `${count(report.tools, 'tool')}, ${report.metrics.bytes} B`, report.name));
+    if (warnings.length) lines.push('', ...row('note', `${count(warnings.length, 'warning')}; run yokoten mcp --json`));
+    print(invocation, lines);
   } else {
     print(invocation, [`yokoten mcp: ${problems.length} problem(s)`, ...reports.map(serverLine), ...bullets(problems), ...(warnings.length ? [`notes:`, ...bullets(warnings)] : [])], invocation.stderr);
   }

@@ -6,35 +6,18 @@
 // first, which is all a beginner needs before one merge.
 
 import { formatFinding } from '../../../rules/message.ts';
-import { type Invocation, parse, print, printJson, requireRoot, usage } from '../../shared.ts';
+import { count, type Invocation, nextLine, parse, print, printJson, requireRoot, row, title, usage, wrap } from '../../shared.ts';
 import { beforeChange, buildMap, openChanges, writeMap } from './map.ts';
 import { mergeOrder } from './order.ts';
 import { rebuildPrompt } from './rebuild.ts';
-import type { Change, Collision, ConflictMap } from './types.ts';
+import type { Change, ConflictMap } from './types.ts';
 
 /** The most labels one line names before it counts the rest. */
 const MAX_LABELS = 6;
-/** The most lines one block shows before it counts the rest. */
-const MAX_LINES = 3;
 /** The most paths one line names before it counts the rest. */
 const MAX_PATHS = 3;
 
 const one = (count: number, word: string): string => `${count} ${word}${count === 1 ? '' : 's'}`;
-
-/** The last line of a long block: how many lines it keeps back, and the command that shows them. */
-const moreLine = (count: number): string => `+${count} more: \`yokoten conflicts --json\``;
-
-/**
- * One block: a short heading, its lines indented under it, and a count when it holds more
- * than three. An empty block says nothing, so a quiet map has no empty heading.
- */
-function block(heading: string, lines: string[]): string[] {
-  if (!lines.length) return [];
-  const shown = lines.slice(0, MAX_LINES);
-  const kept = [heading, ...shown.map((line) => `  ${line}`)];
-  if (lines.length > MAX_LINES) kept.push(`  ${moreLine(lines.length - MAX_LINES)}`);
-  return kept;
-}
 
 /** Some paths, or the first few and a count: a line stays short on a big map. */
 export function pathsText(paths: string[]): string {
@@ -86,69 +69,50 @@ export function movers(map: ConflictMap): { change: Change; others: Change[] }[]
 }
 
 /**
- * The summary: the next pick first, then one block for what goes first, one for the pairs
- * that collide, one for the hot files, and last the drafts and the map's own notes. Plain
- * words, one idea a line, and the same facts as before, only grouped (owner 2026-10-24).
+ * The screen for `yokoten conflicts` (#1027): the counts, one row per colliding pair with
+ * the file under it and which goes first, one row for the rest, then the command to type.
+ * A beginner reads it top to bottom; an agent reads the same words.
  */
 export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
-  if (!map.changes.length) return ['No open change is here to compare with main.', 'Push a branch or open a pull request, then run `yokoten conflicts` again.'];
+  if (!map.changes.length) return [...title('conflicts', 'no open change to compare with main'), '', ...row('to do', 'push a branch or open a pull request, then run `yokoten conflicts` again')];
   const withMain = collideWithMain(map);
-  // The merge order (#912) decides which of a pair goes first, so every line agrees with it.
-  // A draft has no place in it, so the other change of its pair goes first.
   const order = mergeOrder(map);
   const rank = new Map(order.map((pick, index) => [pick.id, index]));
-  const next = order[0] && map.changes.find((change) => change.id === order[0]?.id);
-  const key = next && (withMain.length || map.collisions.length)
-    ? `Merge next: ${next.label}, because ${order[0]?.why}.`
-    : withMain.length || map.collisions.length
-      ? 'No change can merge next: every one that collides is a draft.'
-      : 'No open change collides with main, or with another open change.';
-  const lines: string[] = [key];
-  const add = (part: string[]): void => {
-    if (part.length) lines.push('', ...part);
-  };
-
-  const moving = movers(map);
-  add(block('What goes first', moving.map(({ change, others }) =>
-    `${change.label} moves ${one(change.moves.length, 'file')} that ${one(others.length, 'other change')} ${others.length === 1 ? 'touches' : 'touch'}. It goes in alone, before them.`)));
-
-  const pairLines: string[] = [];
-  if (withMain.length) pairLines.push(`${one(withMain.length, 'change')} ${withMain.length === 1 ? 'collides' : 'collide'} with main: ${labelsText(withMain)}.`);
-  const pairs: { collision: Collision; pair: [Change, Change] }[] = [];
+  const pairs: { pair: [Change, Change]; files: string[]; first: Change; second: Change }[] = [];
   for (const collision of map.collisions) {
     const pair = pairOf(map, collision.first, collision.second);
-    if (pair) pairs.push({ collision, pair });
-  }
-  for (const { collision, pair } of pairs) {
+    if (!pair) continue;
     const [left, right] = pair;
     const leftRank = rank.get(left.id) ?? Infinity;
     const rightRank = rank.get(right.id) ?? Infinity;
     const first = leftRank === rightRank ? firstOf(left, right) : leftRank < rightRank ? left : right;
-    const second = first === left ? right : left;
-    pairLines.push(`${first.label} and ${second.label} both change ${pathsText(collision.files)}. Merge ${first.label} first, then ${second.label}.`);
+    pairs.push({ pair, files: collision.files, first, second: first === left ? right : left });
   }
-  add(block('Pairs that collide', pairLines));
-
-  if (map.hot.length) {
-    const names = map.hot.slice(0, MAX_PATHS).join(', ');
-    const rest = map.hot.length - MAX_PATHS;
-    const hot = ['Hot files', `  ${one(map.hot.length, 'file')} ${map.hot.length === 1 ? 'is' : 'are'} hot: three or more open changes touch them, or an open change moves them.`, `  ${names}`];
-    if (rest > 0) hot.push(`  ${moreLine(rest)}`);
-    add(hot);
+  // The title counts the changes in a collision, as the owner's screen does: two changes
+  // that collide are one row, and the row says which of them goes first.
+  const colliding = new Set([...pairs.flatMap(({ pair }) => pair.map((change) => change.id)), ...withMain.map((change) => change.id)]);
+  const summary = colliding.size ? `${count(map.changes.length, 'open change')}, ${colliding.size} collide` : `${count(map.changes.length, 'open change')}, none collide`;
+  const lines = [...title('conflicts', summary), ''];
+  for (const { files, first, second } of pairs) {
+    const why = order.find((pick) => pick.id === first.id)?.why;
+    lines.push(...row('next', `${first.label} ⇄ ${second.label}`));
+    lines.push(...wrap(' '.repeat(26), `${pathsText(files)}. Merge ${first.label} first${why ? `: ${why}` : ''}.`));
   }
-
+  for (const change of withMain) {
+    lines.push(...row('note', `${change.label} collides with main: ${pathsText(change.mainConflicts ?? [])}`));
+  }
+  const rest = map.changes.length - colliding.size;
+  if (rest > 0) lines.push(...row('ok', `${count(rest, 'change')} ${rest === 1 ? 'touches' : 'touch'} no shared file`));
+  else if (!pairs.length && !withMain.length) lines.push(...row('ok', 'no open change touches a file main or another open change touches'));
+  const moving = movers(map);
+  for (const { change, others } of moving) {
+    lines.push(...row('note', `${change.label} moves ${one(change.moves.length, 'file')} that ${one(others.length, 'other change')} ${others.length === 1 ? 'touches' : 'touch'}; merge it in alone, before them`));
+  }
+  if (map.hot.length) lines.push(...row('note', `${count(map.hot.length, 'file')} ${map.hot.length === 1 ? 'is' : 'are'} hot: ${pathsText(map.hot)}`));
   const drafts = map.changes.filter((change) => change.draft && (change.mainConflicts?.length || map.collisions.some((collision) => collision.first === change.id || collision.second === change.id)));
-  const last: string[] = [];
-  if (drafts.length) {
-    last.push(drafts.length === 1
-      ? `${drafts[0]?.label ?? 'A draft'} is a draft, so it is listed here, but not ordered.`
-      : `${labelsText(drafts)} are drafts, so they are listed here, but not ordered.`);
-  }
-  for (const note of notes) last.push(`note: ${note}`);
-  const heading = drafts.length && notes.length ? 'Drafts and notes' : drafts.length ? 'Drafts' : 'Notes';
-  // The last block is never shortened: --json has the drafts but not the map's own notes,
-  // so a count here would point at a command that cannot show what it hid.
-  if (last.length) add([heading, ...last.map((line) => `  ${line}`)]);
+  for (const draft of drafts) lines.push(...row('note', `${draft.label} is a draft, so it is listed here, but not ordered`));
+  for (const note of notes) lines.push(...row('note', note));
+  lines.push('', ...nextLine('yokoten train --next'));
   return lines;
 }
 

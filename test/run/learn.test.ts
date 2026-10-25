@@ -118,17 +118,17 @@ test('lessons: full doctor notes a new lesson on the first run only; a session, 
   rmSync(stateFile);
   // Not now: no new note, and the lesson is not marked seen.
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { 'incident-138': 'no local servers here' } }));
-  result = await sandbox.call(['doctor']);
+  result = await sandbox.call(['doctor', '--all']);
   assert.ok(!/new lesson/.test(result.stdout), result.stdout);
   assert.ok(!existsSync(stateFile));
   rmSync(join(sandbox.repo, 'yokoten.json'));
   // The first run: the note, even with no problem found (positive control).
-  result = await sandbox.call(['doctor']);
+  result = await sandbox.call(['doctor', '--all']);
   assert.match(result.stdout, newNote);
   assert.deepEqual(JSON.parse(readFileSync(stateFile, 'utf8')), { seenLessons: ['incident-138'] });
   assert.equal(sandbox.git('status', '--porcelain').stdout, '', 'the state file is never in the tree');
   // The second run: the lesson's own line only.
-  result = await sandbox.call(['doctor']);
+  result = await sandbox.call(['doctor', '--all']);
   assert.ok(!/new lesson/.test(result.stdout));
   assert.match(result.stdout, /\n {2}ok {6}lesson incident-138\n/);
   // A broken state file is an empty state: the note again, no crash, and the file is mended.
@@ -172,7 +172,7 @@ test('lessons: a session hears a new lesson that finds something once; a project
   // A later session: nothing; full doctor still notes the lesson as new, and its problem.
   result = await startFound({ session_id: 's-2', source: 'startup' });
   assert.ok(!result.stdout.includes('new lesson'), result.stdout);
-  assert.match((await found.call(['doctor'])).stdout, /\n {2}note {4}new lesson: incident-138 [^\n]*\n {2}note {4}lesson incident-138: test\/api\.test\.ts/);
+  assert.match((await found.call(['doctor', '--all'])).stdout, /\n {2}note {4}new lesson: incident-138 [^\n]*\n {2}note {4}lesson incident-138: test\/api\.test\.ts/);
   // After full doctor has seen it, a fresh session state never brings it back.
   writeFileSync(foundState, JSON.stringify({ seenLessons: ['incident-138'] }));
   assert.ok(!(await startFound({ session_id: 's-3', source: 'startup' })).stdout.includes('new lesson'));

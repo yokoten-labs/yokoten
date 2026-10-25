@@ -72,7 +72,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
     assert.equal(found?.what, '~/away is not inside a git repo', args.join(' '));
   }
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
-  const result = await sandbox.call(['init', 'typo'], { cwd: away });
+  const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, 'yokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
@@ -118,9 +118,10 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['check', '--staged'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
-  const lines = result.stderr.split('\n').filter((l) => l.startsWith('- '));
-  assert.ok(lines.length >= 7, result.stderr);
-  for (const line of lines) assert.match(line, /^- .+\. [A-Z].+\. .+\.$/, line);
+  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences.
+  const problems = result.stderr.replace(/\s+/g, ' ').split(' MISSING ').slice(1).map((one) => one.split(' Next: ')[0] ?? one);
+  assert.ok(problems.length >= 7, result.stderr);
+  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. .+\.\s*$/, one);
   clean(result.stderr);
   result = await sandbox.call(['check', '--staged', '--json'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
@@ -151,7 +152,7 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   const call = { cwd: sandbox.repo, tool_input: { command: 'git push --force' } };
   result = await sandbox.call(['hook', '--json'], { input: JSON.stringify(call) });
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /^yokoten stopped this: git push --force forces the push \[force-push\]\nWhy: .+\nDo instead: .*Use --force-with-lease/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --force forces the push \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   .*Use --force-with-lease/);
   const blocked = JSON.parse(result.stdout);
   assert.equal(blocked.blocked, true);
   shaped(blocked.finding);
@@ -186,9 +187,10 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   assert.equal(unknown.found, false);
   assert.ok(unknown.ids.includes('secret') && unknown.ids.includes('tool-hook'));
   result = await sandbox.call(['explain', 'secret']);
-  assert.match(result.stdout, /^secret: .+\.\nWhy: .+\.\nCheck: .+\.\nDocs: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy\n$/, 'the link to the rule (#94)');
+  // One screen since #1027: the title, then What, Why and Check rows, and the link last.
+  assert.match(result.stdout, /^yokoten explain secret · .+\n\n  What {8}.+\n(?:.*\n)*  Why {9}.+\n(?:.*\n)*  Check {7}.+\n(?:.*\n)*\nMore: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy\n$/, 'the link to the rule (#94)');
   result = await sandbox.call(['explain', 'commit-check']);
-  assert.match(result.stdout, /^commit-check: a step on the road: stage 1 of 5, safety net\.\nWhy: .+\.\nCheck: .+\.\nStandard: OSPS-BR-07\.01\.\n$/);
+  assert.match(result.stdout, /^yokoten explain commit-check · stage 1, safety net\n\n  What {8}.+\n(?:.*\n)*  Why {9}.+\n(?:.*\n)*  Check {7}.+\n(?:.*\n)*  Standard {4}OSPS-BR-07\.01\n\nMore: .+\n$/);
 });
 
 // #707: colour for a person's terminal, never for an agent, a pipe or a file. `NO_COLOR`
@@ -278,12 +280,12 @@ test('output colour: a mark in green, red or yellow, a heading in bold, a comman
 // #707: doctor on a terminal, through the command, gets colour; a pipe or NO_COLOR does not.
 test('output colour: doctor colours a terminal report and never a pipe or NO_COLOR (#707)', async () => {
   const sandbox = makeSandbox();
-  const colour = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
+  const colour = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
   assert.match(colour.stdout, /\u001b\[1m/, 'a heading is bold');
   assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:✔ ok|✔ done|✘ MISSING|⚠ note|● next|● to do|\? can't check)\u001b\[0m/, 'a mark has its glyph, its word and its colour');
   assert.ok(!/^[ ]*(?:✔|✘|●|⚠|\?)/m.test(colour.stdout), 'the glyph sits inside the colour, so a plain line never shows one');
-  const plain = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
-  const piped = await invoke(['doctor'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
+  const plain = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
+  const piped = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
   for (const [name, result] of [['NO_COLOR', plain], ['a pipe', piped]] as const) {
     assert.ok(!result.stdout.includes('\u001b'), `${name}: no ANSI code`);
     assert.ok(result.stdout.includes('yokoten '), `${name}: the report still reads`);
@@ -328,10 +330,29 @@ test('output colour: help bolds the usage and sections, and names each command i
   assert.match(list.stdout, /\u001b\[36mcheck\u001b\[0m/, 'a command name is cyan');
   assert.match(list.stdout, /\u001b\[1mStart:\u001b\[0m/, 'a group title is bold');
   assert.match(list.stdout, /\u001b\[1mA team of agents:\u001b\[0m/, 'a longer group title is bold');
-  assert.match(list.stdout, /\u001b\[1mMore:\u001b\[0m/, 'the last section title is bold');
+  assert.match(list.stdout, /\u001b\[1mMore: /, 'the last section title is bold');
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
   assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
   assert.match(one.stdout, /\u001b\[1mExample:\u001b\[0m/, 'the example title is bold');
 });
 
+
+// #1027: the screen helpers every command uses.
+test('screen helpers: 80 columns, the label column, plural counts, the old console falls back (#1027)', async () => {
+  const { wrap, row, title, nextLine, count, isUnicodeTerminal } = await import('../../src/commands/shared.ts');
+  const long = 'word '.repeat(40).trim();
+  for (const line of [...wrap('  note        ', long), ...row('note', long, 'label'), ...title('doctor', long)]) assert.ok(line.length <= 80, line);
+  assert.deepEqual(row('ok', 'on for Claude Code', 'guard'), ['  ok          guard       on for Claude Code']);
+  assert.deepEqual(nextLine('yokoten init'), ['Next: `yokoten init`']);
+  assert.equal(count(1, 'file'), '1 file');
+  assert.equal(count(3, 'file'), '3 files');
+  // is-unicode-supported's rules: Windows Terminal and VS Code draw ✔; the classic console gets √.
+  assert.equal(isUnicodeTerminal({}, 'win32'), false);
+  assert.equal(isUnicodeTerminal({ WT_SESSION: 'x' }, 'win32'), true);
+  assert.equal(isUnicodeTerminal({ TERM_PROGRAM: 'vscode' }, 'win32'), true);
+  assert.equal(isUnicodeTerminal({}, 'darwin'), true);
+  assert.equal(isUnicodeTerminal({ TERM: 'linux' }, 'linux'), false);
+  assert.match(styleLine('  ok          guard', true, false), /√ ok/);
+  assert.match(styleLine('  ok          guard', true, true), /✔ ok/);
+});

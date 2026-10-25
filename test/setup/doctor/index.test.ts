@@ -14,7 +14,7 @@ test('doctor: a marks file it can not read is named as unreadable, not missing (
   writeFileSync(join(config, 'private-marks'), 'quietharbor\n');
   const folder = join(sandbox.home, 'marks-folder');
   mkdirSync(folder);
-  const result = await sandbox.call(['doctor'], { extra: { YOKOTEN_PRIVATE_MARKS: folder } });
+  const result = await sandbox.call(['doctor', '--all'], { extra: { YOKOTEN_PRIVATE_MARKS: folder } });
   const out = result.stdout;
   assert.match(out, /private-marks: a private-marks file can't be read, so the privacy check stops every commit; make ~\/\.config\/yokoten\/private-marks readable/);
   assert.doesNotMatch(out, /is missing or has no marks/);

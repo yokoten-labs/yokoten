@@ -30,9 +30,10 @@ agent 想做有風險的事，yokoten 會攔下它，並告訴它該怎麼做：
 
 ```
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+  Instead   Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 ## 它攔下什麼

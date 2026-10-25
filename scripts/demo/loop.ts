@@ -180,7 +180,7 @@ export function runDemo({ isKept = false, print = (line: string) => console.log(
     showStep(6, 'Project B uses yokoten, and has a test with the same mistake.', 'cat test/api.test.js');
     print(PROJECT_B_TEST.trimEnd());
     print(`$ yokoten doctor | grep lesson`);
-    result = runYokoten(['doctor'], projectB);
+    result = runYokoten(['doctor', '--all'], projectB);
     const notes = result.output.split('\n').filter((line) => line.includes(`lesson ${LESSON_ID}`));
     if (!notes.length) throw new Error(`doctor in project B shows no note from ${LESSON_ID}:\n${result.output}`);
     print(notes.join('\n'));

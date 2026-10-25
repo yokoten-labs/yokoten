@@ -23,6 +23,8 @@ import {
   CLI,
   makeSandbox,
 } from '../repo/helpers.ts';
+import { learnScreen } from '../../src/commands/learn.ts';
+import type { Draft } from '../../src/run/learn.ts';
 
 test('changelog: previews the change files, and --write moves them into CHANGELOG.md (#132)', async () => {
   const sandbox = makeSandbox();
@@ -36,17 +38,19 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   sandbox.write('changes/1-a.md', 'Added\n\nA thing.\n');
   result = await sandbox.call(['changelog']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /2 change\(s\); `--write` adds these under \[Unreleased\] in CHANGELOG\.md:\n\n### Added\n\n- A thing\.\n\n### Fixed\n\n- A fix\.\n$/);
+  assert.match(result.stdout, /^yokoten changelog · 2 entries for the next release\n\n {2}Added {7}A thing\.\n {2}Fixed {7}A fix\.\n\nMore: before a release: `yokoten changelog --write`\n$/);
+  // One screen: no line passes 80 columns (issue #1027).
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, `over 80: ${line}`);
   assert.ok(existsSync(join(sandbox.repo, 'changes/1-a.md')), 'a preview writes nothing');
   // A bad file stops the write, and says so on stderr.
   sandbox.write('changes/3-c.md', 'Added\n');
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /1 problem\(s\); nothing was written:\n- changes\/3-c\.md:1: no entry after the section/);
+  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {5}changes\/3-c\.md:1\n {26}no entry after the section\n {26}write the entry/);
   rmSync(join(sandbox.repo, 'changes/3-c.md'));
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /wrote 2 change\(s\) under \[Unreleased\] in CHANGELOG\.md, and deleted:\n- changes\/1-a\.md\n- changes\/2-b\.md/);
+  assert.match(result.stdout, /^yokoten changelog · wrote 2 entries under \[Unreleased\]\n\n {2}Added {7}A thing\.\n {2}Fixed {7}A fix\.\n\nMore: before a release: `yokoten changelog --write`\n$/);
   assert.equal(readFileSync(join(sandbox.repo, 'CHANGELOG.md'), 'utf8'), '# Changelog\n\n## [Unreleased]\n\n### Added\n\n- A thing.\n\n### Fixed\n\n- A fix.\n\n## [0.1.0] - 2026-10-18\n\n### Added\n\n- The first release.\n');
   assert.deepEqual(readdirSync(join(sandbox.repo, 'changes')), ['README.md']);
   assert.equal((await sandbox.call(['changelog', '--wrote'])).status, 1, 'an unknown option is refused');
@@ -63,7 +67,7 @@ test('learn: previews a check draft from an incident, writes it with --write, an
   chmodSync(join(bin, 'gh'), 0o755);
   const extra = { PATH: `${bin}:${process.env.PATH}` };
   // The entry, through the real binary, with the fake gh on its PATH; the rest runs in this process.
-  let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['learn', '7'], { extra });
+  let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['learn', '7', '--all'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten learn: a check draft from issue #7, "repo: a test fails behind a proxy"\.\nThe issue left 1 field\(s\) open, each a TODO\(reviewer\):\n- why: the issue has no "Why it matters" section\nThe reviewer also writes the check \(findProblems\) and the cases in its test, each a TODO\(reviewer\) too\.\n/);
   assert.match(result.stdout, /\n--- lessons\/incident-7\/lesson\.ts\n[^]*fix: 'the test sets NO_PROXY',[^]*\n--- lessons\/incident-7\/lesson\.test\.ts\n/);
@@ -209,17 +213,17 @@ test('lessons: learn, write the check, ship, then doctor in a second repo shows 
   // The second repo: a project with the problem. Doctor shows the note, and it fails nothing.
   sandbox.write('.env', 'KEY=1\n');
   // The project's own .yokoten/ copy is from before the ship: it has no incident-9 until init runs again (#77).
-  assert.ok(!/lesson incident-9/.test(vendored(['doctor']).stdout), 'the old copy has no incident-9');
+  assert.ok(!/lesson incident-9/.test(vendored(['doctor', '--all']).stdout), 'the old copy has no incident-9');
   assert.equal(runCopy(['init'], sandbox.repo).status, 0);
-  assert.match(vendored(['doctor']).stdout, /\n {2}note {4}new lesson: incident-9 [^\n]*\n {2}note {4}lesson incident-9: \.env is in the repo; /);
-  result = runCopy(['doctor'], sandbox.repo);
+  assert.match(vendored(['doctor', '--all']).stdout, /\n {2}note {4}new lesson: incident-9 [^\n]*\n {2}note {4}lesson incident-9: \.env is in the repo; /);
+  result = runCopy(['doctor', '--all'], sandbox.repo);
   assert.match(result.stdout, /\n {2}note {4}lesson incident-9: \.env is in the repo; remove it, and add it to \.gitignore\n/);
   const report = JSON.parse(runCopy(['doctor', '--json'], sandbox.repo).stdout);
   assert.deepEqual(report.lessons.find((lesson: { id: string }) => lesson.id === 'incident-9'), { id: 'incident-9', mark: 'note' });
   assert.ok(report.notes.some((note: { id: string }) => note.id === 'incident-9') && !report.findings.some((f: { id: string }) => f.id === 'incident-9'), 'a note, never a finding');
   // Not now, with the reason.
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { 'incident-9': 'a sample file, no secret in it' } }));
-  result = runCopy(['doctor'], sandbox.repo);
+  result = runCopy(['doctor', '--all'], sandbox.repo);
   assert.match(result.stdout, /\n {2}not now lesson incident-9: a sample file, no secret in it\n/);
 });
 
@@ -314,4 +318,16 @@ test('learn --upstream: an empty or missing HOME never writes into the repo', ()
     assert.equal(runWith(env, ['--done', 'nope']).status, 1);
     assert.ok(!existsSync(join(sandbox.repo, '.config')), 'no inbox inside the repo');
   }
+});
+
+// #1027: the default learn screen says the rule, where the files go, and the command to type.
+test('learn: the default screen is the rule, the file and the next command (#1027)', () => {
+  const draft: Draft = { finding: { id: 'no-force-push', what: 'a force push to main is stopped', why: 'it rewrites history', fix: 'stop it' }, todos: ['why: the issue has no "Why it matters" section'], files: [{ path: 'lessons/incident-138/lesson.ts', text: '' }] };
+  const lines = learnScreen({ number: 138 }, draft, '138');
+  assert.equal(lines[0], 'yokoten learn · a check draft from issue #138');
+  assert.ok(lines.some((line) => /^  rule\s+a force push to main is stopped$/.test(line)), 'the rule');
+  assert.ok(lines.some((line) => line.includes('lessons/incident-138/lesson.ts (not written yet)')), 'the file');
+  assert.ok(lines.some((line) => /still to fill in/.test(line)), 'the fields left open, as a count');
+  assert.equal(lines.at(-1), 'Next: `yokoten learn 138 --write`');
+  for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

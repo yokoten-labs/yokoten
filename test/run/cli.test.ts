@@ -63,8 +63,8 @@ test('hooks: a missing runtime says one plain line with no path, never a stack t
   mkdirSync(join(sandbox.home, '.codex'));
   mkdirSync(join(sandbox.home, '.gemini'));
   writeFileSync(join(sandbox.home, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: old }] }] } }));
-  assert.match((await sandbox.call(['install'])).stdout, /^updated the SessionStart doctor$/m);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.match((await sandbox.call(['install', '--list'])).stdout, /^updated the SessionStart doctor$/m);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   rmSync(join(sandbox.home, '.local', 'share', 'yokoten'), { recursive: true });
   rmSync(join(sandbox.repo, '.yokoten'), { recursive: true });
   const shell = (command: string, extra: Record<string, string> = {}) =>
@@ -125,7 +125,7 @@ test('exit codes: 0 ok, 1 problems or a usage error, 2 the hook blocked (#42)', 
   assert.equal(hook('git status').status, 0);
   assert.equal((await run(['doctor', '--session'])).code, 0, 'a session always starts');
   assert.equal((await run(['explain', 'release'])).code, 0);
-  assert.equal((await run(['doctor'])).code, 1, 'nothing is installed on this machine: a problem');
+  assert.equal((await run(['doctor', '--all'])).code, 1, 'nothing is installed on this machine: a problem');
   sandbox.write('b.md', `me${at}gmail.com\n`);
   sandbox.git('add', '.');
   assert.equal((await run(['check'])).code, 1);
@@ -320,8 +320,8 @@ test('hooks: a tool-call guard that fails refuses the call; the stop check does 
   const sandbox = makeSandbox();
   // Codex and Gemini CLI are installed, so install writes their home hooks too.
   for (const dir of ['.codex', '.gemini']) mkdirSync(join(sandbox.home, dir), { recursive: true });
-  assert.equal((await sandbox.call(['install'])).status, 0);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const commands = (file: string) => {
     const hooks = JSON.parse(readFileSync(file, 'utf8')).hooks as Record<string, { hooks: { command: string }[] }[]>;
     return Object.fromEntries(Object.entries(hooks).map(([event, groups]) => [event, groups.flatMap((g) => g.hooks.map((h) => h.command))]));
@@ -745,7 +745,7 @@ test('demo: scripts/demo/loop.ts walks the loop from an incident to a doctor not
   const before = readFileSync(kitTable, 'utf8');
   const result = spawnSync('node', [join(dirname(CLI), '..', 'scripts', 'demo', 'loop.ts')], { env: { PATH: process.env.PATH, HOME: join(temp, 'home'), TMPDIR: temp }, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /\n\$ yokoten learn https:\/\/github\.com\/octo-org\/project-a\/issues\/12\nyokoten learn: a check draft from issue #12, /);
+  assert.match(result.stdout, /\n\$ yokoten learn https:\/\/github\.com\/octo-org\/project-a\/issues\/12\nyokoten learn · a check draft from issue #12/);
   assert.match(result.stdout, /\nWrote:\n- lessons\/incident-12\/lesson\.ts\n/);
   assert.match(result.stdout, /\nyokoten learn --ship: 2 problem\(s\); nothing was moved:\n- lessons\/incident-12\/lesson\.ts still has 1 TODO\(reviewer\)/);
   assert.match(result.stdout, /\n\+ {2}what: 'a test calls a server on this machine and does not set NO_PROXY',\n/);

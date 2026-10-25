@@ -395,12 +395,12 @@ test('refusal: title, why, do instead and more, the same for every rule (#707)',
   const text = formatRefusal(refused);
   assert.equal(
     text,
-    `yokoten stopped this: git push --tags pushes tags [release]\nWhy: Only the owner decides when to release.\nDo instead: Ask the owner to start a new session.\nMore: ${DOCS_URL}#how-to-release`,
+    `yokoten stopped this: git push --tags pushes tags [release]\n\n  Why       Only the owner decides when to release.\n  Instead   Ask the owner to start a new session.\n  More      ${DOCS_URL}#how-to-release`,
   );
   for (const id of Object.keys(RULES) as (keyof typeof RULES)[]) {
     const link = (RULES[id] as Rule).docs ?? DOCS_URL;
     const one = formatRefusal(finding(id, 'something was refused', 'do the safe thing'));
-    assert.match(one, /^yokoten stopped this: something was refused \[[\w-]+\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+$/, id);
+    assert.match(one, /^yokoten stopped this: something was refused \[[\w-]+\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+$/, id);
     assert.ok(one.includes(link), `${id}: the link is always there`);
     assert.ok(!one.includes('\u001b'), `${id}: no ANSI code in a refusal`);
   }

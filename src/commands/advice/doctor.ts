@@ -14,14 +14,16 @@ import { DEFAULTS, loadConfig } from '../../rules/config.ts';
 import { gitConfig } from '../../run/check.ts';
 import { workerRole } from '../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../run/hook.ts';
-import { formatFinding } from '../../rules/message.ts';
+import { docsLink, formatFinding } from '../../rules/message.ts';
 import { hideHome } from '../../rules/privacy.ts';
-import { draft, facts, table } from '../../setup/advice/adopt.ts';
-import { explain, explainLines, ids } from '../../setup/advice/explain.ts';
+import { type Draft, draft, facts, table } from '../../setup/advice/adopt.ts';
+import { explain, type Explained, ids } from '../../setup/advice/explain.ts';
 import { cleanOlderInstall, PROFILE_MARK } from '../../setup/install.ts';
-import { blocksToSay, doctor, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
+import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
+import { ROAD, STAGES } from '../../setup/road.ts';
+import type { Finding } from '../../rules/message.ts';
 import { READERS } from '../hook.ts';
-import { type Invocation, noRootFinding, parse, print, printJson, requireRoot, rootOf, say, usage } from '../shared.ts';
+import { count, field, type Invocation, moreLine, nextLine, noRootFinding, parse, print, printJson, requireRoot, rootOf, row, say, title, usage, wrap } from '../shared.ts';
 import { writeLeadSession } from './board/feed/read/logs.ts';
 
 /** What full doctor says while the slow reads run: the server read and (in WSL) the drive read. */
@@ -57,7 +59,9 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const start = root && session && agent === 'claude-code' ? readSessionStart(invocation) : null;
   if (root && session) noteSessionStart(cwd, env, agent, start?.model ?? '', start?.transcriptPath ?? '');
   // A compaction start repeats only what changed (#405); any other start says all.
-  const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : allLines;
+  // Full doctor shows one screen unless --all asks for the whole map (#1027); a broken self-test still leads.
+  const isShort = root && !session && !options.flags.has('--all') && !options.flags.has('--json');
+  const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : isShort ? shortLines(report, report.selfTest.ok ? undefined : allLines[0]) : allLines;
   // One line, and only when an older install's copies were there (#935). The edit that
   // stays is named on that first start; a later start finds nothing and says nothing.
   if (cleanup?.files && !options.flags.has('--json')) {
@@ -155,14 +159,78 @@ export function runExplain(invocation: Invocation): number {
   const [id] = options.positional;
   if (id === undefined) {
     if (options.flags.has('--json')) printJson(invocation, { ids: ids() });
-    else print(invocation, [`Ids: ${ids().join(', ')}`]);
+    else print(invocation, idListLines());
     return 0;
   }
   const found = explain(id);
   if (options.flags.has('--json')) printJson(invocation, found ? { found: true, ...found } : { id, found: false, ids: ids() });
-  else if (found) print(invocation, explainLines(found));
+  else if (found) print(invocation, explainScreen(invocation, found));
   else print(invocation, [`yokoten explain: no rule or step is called ${id}.`, `Ids: ${ids().join(', ')}`], invocation.stderr);
   return found ? 0 : 1;
+}
+
+/** The first letter small: a task title reads as a sentence after its label (#1027). */
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
+ * `yokoten explain <id>` as one screen (#1027): what it is in the title, then What, Why, Check
+ * and, for a road step, its Fix. A person and an agent read the same words.
+ */
+function explainScreen(invocation: Invocation, found: Explained): string[] {
+  const step = ROAD.find((s) => s.key === found.id);
+  const summary = step ? `stage ${step.stage}, ${STAGES[step.stage - 1]}` : found.kind === 'rule' ? 'a rule yokoten checks' : 'a step on the road';
+  const lines = [...title(`explain ${found.id}`, summary), ''];
+  const task = step ? STEP_TITLES[found.id] : undefined;
+  lines.push(...field('What', task ? lowerFirst(task) : found.what));
+  lines.push(...field('Why', found.why));
+  lines.push(...field('Check', found.check));
+  if (step) {
+    const fix = stepFix(step, invocation);
+    if (fix) lines.push(...field('Fix', shortFix(fix)));
+  }
+  // explain is the detail screen: the outside standard a step meets stays here (#58).
+  if (step?.standard) lines.push(...field('Standard', step.standard));
+  lines.push('');
+  lines.push(...moreLine(found.docs ?? docsLink('road.md', found.id)));
+  return lines;
+}
+
+/** The first, usable part of a fix: the rest is a command or a link, and the screen stays short. */
+function shortFix(fix: string): string {
+  const first = fix.split(', then ')[0] ?? fix;
+  // A cut fix says where the rest is, so "paste this" never points at nothing.
+  const rest = '; the whole fix: `yokoten doctor --all`';
+  if (first === fix && first.length <= 160) return first;
+  if (first.length <= 160) return `${first}${rest}`;
+  return `${first.slice(0, first.lastIndexOf(' ', 158))}…${rest}`;
+}
+
+/** A step's fix, computed where it can be; a step that needs a code host reads none here. */
+function stepFix(step: (typeof ROAD)[number], invocation: Invocation): string | undefined {
+  try {
+    return step.fix(rootOf(invocation.cwd, invocation.env) ?? invocation.cwd, invocation.env, undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+/** `yokoten explain` with no id: every id, grouped as rules and as road stages, within 80 columns. */
+function idListLines(): string[] {
+  const all = ids();
+  const rules = all.filter((id) => !ROAD.some((step) => step.key === id));
+  const steps = ROAD.filter((step) => all.includes(step.key));
+  const lines = [...title('explain', `${count(rules.length, 'rule')} and ${count(steps.length, 'step')}`), ''];
+  lines.push('Rules', ...wrap('  ', rules.join(', ')));
+  if (steps.length) {
+    lines.push('Road');
+    for (const [stage, name] of STAGES.entries()) {
+      const inStage = steps.filter((step) => step.stage === stage + 1);
+      if (!inStage.length) continue;
+      lines.push(...wrap('  ', `stage ${stage + 1} of ${STAGES.length}, ${name}`));
+      lines.push(...wrap('    ', inStage.map((step) => step.key).join(', ')));
+    }
+  }
+  return lines;
 }
 
 export function runAdopt(invocation: Invocation): number | Promise<number> {
@@ -176,7 +244,98 @@ export function runAdopt(invocation: Invocation): number | Promise<number> {
     if (options.flags.has('--json')) {
       printJson(invocation, drafted.rows.map(({ key, status, evidence, decision, reason }) => ({ key, status, evidence, decision, reason })));
       print(invocation, [`yokoten adopt: drafted by ${drafted.by}${drafted.note ? `, because ${drafted.note}` : ''}. You decide every row.`], invocation.stderr);
-    } else print(invocation, table(drafted));
+    } else print(invocation, options.flags.has('--all') ? table(drafted) : adoptScreen(drafted));
     return 0;
   });
+}
+
+/** The word a plain reader knows for each decision (issue #1027). */
+const DECISION_WORDS = { 'as-is': 'keep', lighter: 'add', 'not-now': 'decide' } as const;
+const DECISION_MARKS = { 'as-is': 'ok', lighter: 'next', 'not-now': "can't check" } as const;
+
+/**
+ * The default screen of `yokoten adopt` (issue #1027): a title, then one row per practice,
+ * grouped by what the draft says to do with it, and the full table behind `--json`.
+ */
+export function adoptScreen(drafted: Draft): string[] {
+  const lines = [...title('adopt', 'a draft for this project'), ''];
+  // The first few of each group, so the screen fits (R3); the rest fold into a count.
+  const caps = { 'as-is': 3, lighter: 4, 'not-now': 3 } as const;
+  for (const decision of ['as-is', 'lighter', 'not-now'] as const) {
+    const rows = drafted.rows.filter((r) => r.decision === decision);
+    for (const one of rows.slice(0, caps[decision])) lines.push(...row(DECISION_MARKS[decision], one.evidence || one.status, DECISION_WORDS[decision]));
+    if (rows.length > caps[decision]) lines.push(...row(DECISION_MARKS[decision], `${count(rows.length - caps[decision], 'more row')}, with \`yokoten adopt --all\``));
+  }
+  // Why the rules drafted it, when they did: a note, never folded (R5).
+  if (drafted.by === 'rules') lines.push('', ...row('note', `drafted by rules${drafted.note ? `: ${drafted.note}` : ''}`));
+  lines.push('', ...moreLine('`yokoten adopt --json` shows every row with its reason'));
+  return lines;
+}
+
+// What `yokoten doctor` shows by default (issue #1027): one screen. Owner 2026-10-25, after running it
+// himself: "我是新手，看到这么一堆文字，就被劝退了" (as a beginner, this wall of text made me give up).
+// Flutter's doctor shows a summary unless asked for detail; Homebrew's shows only what is wrong.
+// `yokoten doctor --all` keeps the full map. The same text for a person and an agent.
+
+/** Each road step as a task, in plain words for a beginner. A test keeps it in step with the road. */
+export const STEP_TITLES: Record<string, string> = {
+  rules: 'Write the rules for your agents (AGENTS.md)',
+  'tool-hook': "Turn on the guard for your agents' commands",
+  'commit-check': 'Check each commit before it is made',
+  runtime: 'Add the yokoten runtime to the project',
+  tests: 'Run your tests on every push',
+  remote: 'Put the project on GitHub or Gitea',
+  ci: 'Run the checks on every pull request',
+  issues: 'Turn on issues',
+  templates: 'Add issue and pull request templates',
+  labels: 'Add the standard labels',
+  milestone: 'Add a first milestone',
+  'no-build-output': 'Keep build output out of git',
+  changelog: 'Keep a changelog',
+  titles: 'Check pull request titles',
+  codeowners: 'Name the owner (CODEOWNERS)',
+  bot: 'Set up the bot account',
+  skills: 'Install the yokoten skills',
+  sandbox: 'Keep your agents in a sandbox',
+  review: 'Ask for a review before a merge',
+  'security-files': 'Add a license and a security policy',
+  protection: 'Protect the main branch',
+  'merge-settings': 'Set the merge settings',
+  'security-settings': 'Turn on the security settings',
+  'tag-bypass': 'Let only you create release tags',
+  'release-reviewer': 'Approve each release yourself',
+  'release-tag-rule': 'Limit releases to version tags',
+};
+
+/** The command to type for a step: one its fix names, or else `yokoten explain`, which says what to do. */
+export function nextCommand(next: Finding): string {
+  const named = [...next.fix.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? '').find((c) => /^(yokoten|npx yokoten|git) /.test(c));
+  return named ?? `yokoten explain ${next.id}`;
+}
+
+/** The default screen of `yokoten doctor`, from its report; a broken self-test line leads. */
+export function shortLines(report: DoctorReport, brokenLine?: string): string[] {
+  const lines: string[] = brokenLine ? [brokenLine, ''] : [];
+  const steps = report.steps ?? [];
+  const stepIds = new Set(steps.map((s) => s.id));
+  const left = steps.filter((s) => s.mark === 'next' || s.mark === 'to do').sort((a, b) => (a.mark === 'next' ? -1 : b.mark === 'next' ? 1 : 0));
+  const problems = report.findings.filter((x) => !stepIds.has(x.id));
+  if (report.stage === null && !problems.length) return [...lines, ...title('doctor', `all ${STAGES.length} stages done, nothing to do`)];
+  lines.push(...title('doctor', report.stage === null ? `all ${STAGES.length} stages done` : `stage ${report.stage} of ${STAGES.length}, ${STAGES[report.stage - 1]}`), '');
+  const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
+  if (steps.length) lines.push(...row('done', `${done} of ${count(steps.length, 'step')}`));
+  // A problem fails doctor, so it is never folded: each one with its fix.
+  for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`));
+  // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
+  for (const s of left.slice(0, 5)) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  if (left.length > 5) lines.push(...row('to do', `${count(left.length - 5, 'more step')}, listed by \`yokoten doctor --all\``));
+  const unchecked = steps.filter((s) => s.mark === "can't check").length;
+  if (unchecked) lines.push(...row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
+  // Work only on this machine can be lost, so it shows too, one line each.
+  for (const f of (report.notes ?? []).filter((n) => n.id === 'uncommitted-changes' || n.id === 'unpushed-commits')) lines.push(...row('note', f.what.split(';')[0]?.replace(/^\. has /, 'this project has ') ?? f.what));
+  lines.push('');
+  if (report.next) lines.push(...nextLine(nextCommand(report.next)));
+  const notes = (report.notes ?? []).length;
+  lines.push(...moreLine(`\`yokoten doctor --all\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`));
+  return lines;
 }

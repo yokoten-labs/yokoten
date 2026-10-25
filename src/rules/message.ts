@@ -913,10 +913,19 @@ export const refusalParts = (f: Finding): Refusal => ({
   docs: f.docs ?? DOCS_URL,
 });
 
-/** The text form of a refusal, every rule the same: title, why, do instead, more. */
+/**
+ * One aligned refusal row (issue #1027): a label, then its text, on one line. It is not
+ * wrapped: an Instead row can hold a command to copy, and a line break would change it.
+ */
+const refusalRow = (label: string, text: string): string[] => [`  ${label.padEnd(10)}${text}`];
+
+/**
+ * The text form of a refusal (issue #1027): a title, then aligned `Why`, `Instead` and
+ * `More` rows, so a person and an agent read the same four parts.
+ */
 export const formatRefusal = (f: Finding): string => {
   const parts = refusalParts(f);
-  return `${parts.title}\nWhy: ${parts.why}\nDo instead: ${parts.fix}\nMore: ${parts.docs}`;
+  return [parts.title, '', ...refusalRow('Why', parts.why), ...refusalRow('Instead', parts.fix), ...refusalRow('More', parts.docs)].join('\n');
 };
 
 /**
@@ -928,9 +937,20 @@ export function parseRefusal(text: string): Refusal | null {
   const title = lines.find((line) => line.startsWith('yokoten stopped this: '));
   if (title === undefined) return null;
   const named = /^yokoten stopped this: (.+) \[([\w-]+)\]$/.exec(title);
-  const why = lines.find((line) => line.startsWith('Why: '))?.slice('Why: '.length);
-  const fix = lines.find((line) => line.startsWith('Do instead: '))?.slice('Do instead: '.length);
-  const docs = lines.find((line) => line.startsWith('More: '))?.slice('More: '.length);
+  // The aligned rows of #1027, or the older `Why: ...` form a session log may still hold.
+  const value = (label: string, old: string): string | undefined => {
+    const head = `  ${label.padEnd(10)}`;
+    const at = lines.findIndex((line) => line.startsWith(head));
+    if (at !== -1) {
+      const parts = [lines[at]?.slice(head.length) ?? ''];
+      for (let next = at + 1; next < lines.length && lines[next]?.startsWith(' '.repeat(head.length)) && !lines[next]?.trimStart().match(/^(Why|Instead|More)\b/); next++) parts.push(lines[next]?.trimStart() ?? '');
+      return parts.join(' ');
+    }
+    return lines.find((line) => line.startsWith(old))?.slice(old.length);
+  };
+  const why = value('Why', 'Why: ');
+  const fix = value('Instead', 'Do instead: ');
+  const docs = value('More', 'More: ');
   if (named === null || why === undefined || fix === undefined) return null;
   return { id: named[2] ?? '', title: named[0], why, fix, docs: docs ?? DOCS_URL };
 }

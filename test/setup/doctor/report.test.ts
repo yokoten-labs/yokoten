@@ -260,7 +260,7 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
 
 test('doctor: the next step comes first, each part is a block, and done steps share a line (#946)', async () => {
   const sandbox = makeSandbox();
-  const text = (await sandbox.call(['doctor'])).stdout;
+  const text = (await sandbox.call(['doctor', '--all'])).stdout;
   const lines = text.trimEnd().split('\n');
   // The first line says where the project is and the one step to take next.
   assert.match(lines[0] ?? '', /^stage \d of 5, [^.]+\. Next: .+\.$/, text);
@@ -472,7 +472,7 @@ test('road: the labels and milestone steps are stage 2; missing labels or no ope
 
 test('doctor: the no-build-output step looks at the tracked files (#56)', async () => {
   const sandbox = makeSandbox();
-  const line = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((l) => / no-build-output/.test(l)) ?? '';
+  const line = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / no-build-output/.test(l)) ?? '';
   assert.match(await line(), /^ +done  .*\bno-build-output\b/);
   sandbox.write('build/a.js', 'x\n');
   sandbox.write('lib/x.so', 'x\n');
@@ -484,13 +484,13 @@ test('doctor: the no-build-output step looks at the tracked files (#56)', async 
 
 test('doctor: shows check\'s notes, worded as check words them, and they never change the exit code (#228)', async () => {
   const sandbox = makeSandbox();
-  const before = await sandbox.call(['doctor']);
+  const before = await sandbox.call(['doctor', '--all']);
   assert.doesNotMatch(before.stdout, /note +yokoten\.json|is behind en\.md/);
   // An unknown yokoten.json key.
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   const unknownKey = /^ {2}note +yokoten\.json: "colour" is not a key this version of yokoten knows/m;
-  assert.match((await sandbox.call(['check'])).stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
-  let result = await sandbox.call(['doctor']);
+  assert.match((await sandbox.call(['check', '--all'])).stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  let result = await sandbox.call(['doctor', '--all']);
   assert.match(result.stdout, unknownKey);
   assert.equal(result.status, before.status, 'a note never changes the exit code');
   result = await sandbox.call(['doctor', '--json']);
@@ -503,7 +503,7 @@ test('doctor: shows check\'s notes, worded as check words them, and they never c
   sandbox.git('commit', '-q', '-m', 'docs: add the guide');
   sandbox.write('en.md', '# Guide\n\nStep one.\nStep two.\n');
   sandbox.git('commit', '-q', '-am', 'docs: add step two');
-  result = await sandbox.call(['doctor']);
+  result = await sandbox.call(['doctor', '--all']);
   assert.match(result.stdout, /^ {2}note +zh\.md:1: is behind en\.md by 1 commit/m);
   assert.match(result.stdout, unknownKey);
   assert.equal(result.status, before.status);
@@ -514,15 +514,15 @@ test('doctor: shows check\'s notes, worded as check words them, and they never c
 test('doctor: a hook in the project\'s folder that is not executable is not checked, and init makes it executable (#239)', { skip: process.platform === 'win32' && 'Windows has no execute bit' }, async () => {
   const sandbox = makeSandbox();
   sandbox.git('config', 'core.hooksPath', 'tools/hooks');
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done');
   const mergeHook = join(sandbox.repo, 'tools/hooks/pre-merge-commit');
   chmodSync(mergeHook, 0o644);
   assert.notEqual(await stepMark(sandbox, 'commit-check'), 'done', 'the check is in the file, but git does not run it');
-  let doctor = (await sandbox.call(['doctor'])).stdout;
+  let doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(doctor, /commit-check \(OSPS-BR-07\.01\): merge commits are not checked: tools\/hooks\/pre-merge-commit is not executable, so git skips it/);
   assert.match(doctor, /run `chmod \+x tools\/hooks\/pre-merge-commit`, or `yokoten init`/);
-  const result = await sandbox.call(['init']);
+  const result = await sandbox.call(['init', '--list']);
   assert.match(result.stdout, /made executable tools\/hooks\/pre-merge-commit/);
   assert.ok(statSync(mergeHook).mode & 0o100, 'executable');
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done');
@@ -530,7 +530,7 @@ test('doctor: a hook in the project\'s folder that is not executable is not chec
   const preCommit = join(sandbox.repo, 'tools/hooks/pre-commit');
   writeFileSync(preCommit, '#!/bin/sh\necho own\n');
   chmodSync(preCommit, 0o644);
-  doctor = (await sandbox.call(['doctor'])).stdout;
+  doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(doctor, /commit-check \(OSPS-BR-07\.01\): commits are not checked: tools\/hooks\/pre-commit does not run yokoten; `yokoten init` adds the check to tools\/hooks\/pre-commit,/);
   assert.match(doctor, /or do it yourself: add the line below to tools\/hooks\/pre-commit, after its `#!` line; run `chmod \+x tools\/hooks\/pre-commit`\. The line: /);
 });
@@ -539,8 +539,8 @@ test('doctor: a workflow of the project\'s own that init keeps gets the step to 
   const sandbox = makeSandbox();
   sandbox.write('.github/workflows/pr.yml', 'name: pr\non: pull_request\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n');
   sandbox.write('.github/workflows/yokoten.yml', 'name: yokoten\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n');
-  assert.equal((await sandbox.call(['init'])).status, 0);
-  const doctor = (await sandbox.call(['doctor'])).stdout;
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
+  const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.ok(doctor.includes('titles (Conventional Commits 1.0.0): CI does not check pull requests (`yokoten check --pr`); add this step to .github/workflows/pr.yml, after actions/checkout with `fetch-depth: 0` and actions/setup-node, in a job that runs on pull_request (`yokoten init` keeps your file as it is): `- run: node .yokoten/bin/yokoten.ts check --pr`\n'), doctor);
   assert.ok(doctor.includes('ci (Scorecard: CI-Tests): CI does not run `yokoten check`; add this step to .github/workflows/yokoten.yml, after actions/checkout and actions/setup-node (`yokoten init` keeps your file as it is): `- run: node .yokoten/bin/yokoten.ts check`\n'), doctor);
   assert.doesNotMatch(doctor, /`yokoten init` adds \.github\/workflows/);
@@ -574,7 +574,7 @@ test('doctor --session: "not now" skips a step, by the names yokoten.json alread
   assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: CI does not run/, 'a stage with every step not now is passed');
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { rules: 'a', 'tool-hook': 'b', 'commit-check': 'c', runtime: 'd', tests: 'e', remote: 'no remote yet', ci: 'no remote yet', issues: 'f' } }));
   assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: no issue templates and no pull request template/);
-  const full = (await sandbox.call(['doctor'])).stdout;
+  const full = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(full, /^ +not now +ci \(Scorecard: CI-Tests\): no remote yet$/m, 'the full map shows the reason');
   assert.match(full, /^ +next +templates \(GitHub community profile\): /m);
   assert.match(full, /^ +to do +changelog \(Best Practices: release_notes\): /m);
@@ -592,7 +592,7 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   const next = async (more?: Record<string, string>) => (await session(more))[0];
   assert.match(await next(), /stage 1 of 5, safety net\. Next: no AGENTS\.md/);
   // Stage 1 done, stage 2 not: init without its CI workflow.
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   sandbox.withTests();
   // The remote comes first (#655): make the repo, add it as origin, and push.
   assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: there is no origin remote/);
@@ -602,7 +602,7 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   rmSync(join(sandbox.repo, '.github', 'workflows', 'yokoten.yml'));
   assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: CI does not run `yokoten check`/, 'the pull request check alone is not the CI check');
   sandbox.write('TODO.md', '- one\n');
-  await sandbox.call(['init']);
+  await sandbox.call(['init', '--list']);
   assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: a todo file \(TODO\.md\)/);
   rmSync(join(sandbox.repo, 'TODO.md'));
   // Stage 2 done. init wrote a changelog and changes/; without both, stage 3 is next.
@@ -636,14 +636,14 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   // The order is advice, not a gate: a later step done early counts as done.
   rmSync(join(sandbox.repo, 'AGENTS.md'));
   assert.match(await next(bot), /stage 1 of 5, safety net\. Next: no AGENTS\.md/);
-  assert.match((await sandbox.call(['doctor'], { extra: { ...extra, ...bot } })).stdout, /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
+  assert.match((await sandbox.call(['doctor', '--all'], { extra: { ...extra, ...bot } })).stdout, /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
 });
 
 test('doctor: a stage that jumped says which stages it passed, once (#514)', async () => {
   const sandbox = makeSandbox();
   const jumpLine = /^stage \d (is done too|counts as done): /m;
   // The first run has nothing to compare with: stage 1 is next, and no line.
-  const first = await sandbox.call(['doctor']);
+  const first = await sandbox.call(['doctor', '--all']);
   assert.match(first.stdout, /^stage 1 of 5, /m);
   assert.doesNotMatch(first.stdout, jumpLine);
   // The stage file sits next to the lessons state, in the git folder, not one folder deeper (#514).
@@ -653,19 +653,19 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   assert.equal(existsSync(join(sandbox.repo, '.git/yokoten/yokoten')), false, 'no nested yokoten folder');
   // Stage 1 to stage 4 at once: init writes the rules, hooks and changelog, and the
   // remote, the test workflow and the templates finish stages 2 and 3.
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   sandbox.withTests();
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  const jumpedRun = await sandbox.call(['doctor']);
+  const jumpedRun = await sandbox.call(['doctor', '--all']);
   assert.match(jumpedRun.stdout, /^stage 4 of 5, /m);
   // Each passed stage says its own reason: stage 2 has steps only the server can check,
   // while stage 3 was already in place.
   assert.match(jumpedRun.stdout, /^stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
   assert.match(jumpedRun.stdout, /^stage 3 is done too: its steps were already in place$/m);
   // The lines are told once: the next run starts from stage 4.
-  const later = await sandbox.call(['doctor']);
+  const later = await sandbox.call(['doctor', '--all']);
   assert.match(later.stdout, /^stage 4 of 5, /m);
   assert.doesNotMatch(later.stdout, jumpLine);
   // A session stays short: it never prints the lines.
@@ -675,16 +675,16 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
 test('doctor: a jump over one stage says that stage, in the singular (#514)', async () => {
   const sandbox = makeSandbox();
   // Stage 1 is done and stage 2 is next (no remote), so this run records stage 2.
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   sandbox.withTests();
-  const atTwo = await sandbox.call(['doctor']);
+  const atTwo = await sandbox.call(['doctor', '--all']);
   assert.match(atTwo.stdout, /^stage 2 of 5, /m);
   // The remote finishes stage 2, and stage 3 was already in place: only stage 3 was
   // passed, so the line names one stage and not "stages 3 are".
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  const jumped = await sandbox.call(['doctor']);
+  const jumped = await sandbox.call(['doctor', '--all']);
   assert.match(jumped.stdout, /^stage 4 of 5, /m);
   assert.match(jumped.stdout, /^stage 3 is done too: its steps were already in place$/m);
   assert.doesNotMatch(jumped.stdout, /^stages /m);
@@ -692,7 +692,7 @@ test('doctor: a jump over one stage says that stage, in the singular (#514)', as
 
 test('doctor: the tests step wants a test command and a CI step that runs it (#55)', async () => {
   const sandbox = makeSandbox();
-  const line = async () => (await sandbox.call(['doctor'])).stdout.split('\n').find((l) => / tests\b/.test(l)) ?? '';
+  const line = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / tests\b/.test(l)) ?? '';
   // No package.json: the message does not name it (#257).
   assert.match(await line(), /^ +to do +tests \(Best Practices: test\): no workflow runs a test command/);
   // npm's placeholder script only fails: it is no test command.
@@ -715,16 +715,16 @@ test('doctor: exits 0 on a set-up project with steps to do, and 1 on a problem (
   assert.equal((await sandbox.call(['install'])).status, 0);
   writeFileSync(join(sandbox.home, '.config/yokoten/private-marks'), 'mycity\n');
   sandbox.withTests();
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   // The doctor calls here are real children: the exit code 0 and 1 come through the entry point.
-  let result = sandbox.run(['doctor']);
+  let result = sandbox.run(['doctor', '--all']);
   assert.match(result.stdout, /\n +next +remote[^]*\n +to do +codeowners/, 'later steps are left');
   assert.equal(result.status, 0, result.stdout);
   assert.equal(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).ok, true);
   // A problem: a private mark in the tree.
   sandbox.write('notes.md', 'I live in MyCity\n');
   sandbox.git('add', 'notes.md');
-  result = sandbox.run(['doctor']);
+  result = sandbox.run(['doctor', '--all']);
   assert.match(result.stdout, /MISSING tree: 1 problem/);
   assert.equal(result.status, 1);
   assert.equal(sandbox.run(['doctor', '--session']).status, 0, 'a session always starts');
@@ -739,7 +739,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   // A fresh change is work going on now: the session does not hear it.
   sandbox.write('a.txt', 'a\n');
   assert.equal((await session()).length, 3, 'only the road');
-  assert.match((await sandbox.call(['doctor'], { extra })).stdout, /^unsaved work \(only on this machine\):\n {2}note {4}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
+  assert.match((await sandbox.call(['doctor', '--all'], { extra })).stdout, /^unsaved work \(only on this machine\):\n {2}note {4}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
   const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   utimesSync(join(sandbox.repo, 'a.txt'), old, old);
   assert.deepEqual((await session()).slice(3), ['yokoten: . has 1 uncommitted file, the oldest changed 2 days ago; commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it.', UNSAVED_OFFER]);
@@ -759,7 +759,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   assert.equal(lines.length, 5, lines.join('\n'));
   assert.equal(lines[3], 'yokoten: 2 more like this; `yokoten doctor` lists them all.');
   assert.ok(lines.every((line) => !line.includes(sandbox.home)), 'never the full home path');
-  const full = await sandbox.call(['doctor'], { extra });
+  const full = await sandbox.call(['doctor', '--all'], { extra });
   assert.equal(full.stdout.match(/^ {2}note {4}(uncommitted-changes|unpushed-commits): /gm)?.length, 5);
   assert.match(full.stdout, /uncommitted-changes: ~\/w1 has 1 uncommitted file/, 'a worktree outside the repo shows from ~');
 });
@@ -773,7 +773,7 @@ test('doctor: a clean, pushed repo has no unsaved-work note (#365)', async () =>
   sandbox.git('commit', '-qm', 'first');
   sandbox.git('remote', 'add', 'origin', origin);
   sandbox.git('push', '-q', '-u', 'origin', 'main');
-  const full = (await sandbox.call(['doctor'])).stdout;
+  const full = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(full, /^unsaved work \(only on this machine\):\n {2}ok {6}everything is committed and pushed$/m);
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /only on this machine/);
 });
@@ -1009,7 +1009,7 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   // No origin: init.defaultBranch, else main.
   assert.equal(sandbox.git('checkout', '-q', 'old').status, 0);
   assert.equal(await first(), 'yokoten: stage 1 of 5, safety net. Next: AGENTS.md is on main, not on this branch (old); work on a branch made from main, or merge main into this one.');
-  const full = (await sandbox.call(['doctor'])).stdout;
+  const full = (await sandbox.call(['doctor', '--all'])).stdout;
   const line = (key: string) => full.split('\n').find((l) => new RegExp(` ${key}[ :]`).test(l)) ?? '';
   assert.match(line('rules'), /AGENTS\.md is on main, not on this branch \(old\)/);
   // A step that checks more than that a file exists keeps its own advice.
@@ -1161,13 +1161,13 @@ test('doctor: a repo with a default branch reads its merge history in one git pr
 test('doctor: the sandbox step is to do, then done after init, then names a too-wide value (#589)', async () => {
   const sandbox = makeSandbox();
   assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
-  assert.match((await sandbox.call(['doctor'])).stdout, /^ {4}(next|to do) +sandbox: no sandbox in \.claude\/settings\.json; `yokoten init` adds it$/m);
-  assert.equal((await sandbox.call(['init'])).status, 0);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}(next|to do) +sandbox: no sandbox in \.claude\/settings\.json; `yokoten init` adds it$/m);
+  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   assert.equal(await stepMark(sandbox, 'sandbox'), 'done');
-  assert.match((await sandbox.call(['doctor'])).stdout, /^ {4}done +sandbox$/m);
+  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}done +sandbox$/m);
   sandbox.write('.gemini/settings.json', JSON.stringify({ security: { disableYoloMode: false } }));
   assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
-  const doctor = (await sandbox.call(['doctor'])).stdout;
+  const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(doctor, /^ {4}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
 });
 
@@ -1186,7 +1186,7 @@ test('doctor: a CODEOWNERS line that matches no file is a finding (#667)', () =>
 test('doctor: a shell that is not UTC gets the line for that shell, once, at the end (#932)', async () => {
   const sandbox = makeSandbox();
   const extra = { TZ: 'America/New_York', SHELL: '/usr/bin/fish' };
-  const full = (await sandbox.call(['doctor'], { extra })).stdout.trimEnd().split('\n');
+  const full = (await sandbox.call(['doctor', '--all'], { extra })).stdout.trimEnd().split('\n');
   const last = full.at(-1) ?? '';
   assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
   assert.match(last, /`set -gx TZ UTC`/);
@@ -1195,7 +1195,7 @@ test('doctor: a shell that is not UTC gets the line for that shell, once, at the
   // A session never needs it: init already sets TZ=UTC for agent sessions.
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'], { extra })).stdout, /time zone is not UTC/);
   // A shell already in UTC hears nothing.
-  assert.doesNotMatch((await sandbox.call(['doctor'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
+  assert.doesNotMatch((await sandbox.call(['doctor', '--all'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
 });
 
 // #500: after a fresh install, every line that names a command uses one way to run yokoten.

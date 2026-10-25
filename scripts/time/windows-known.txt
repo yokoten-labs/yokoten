@@ -1,13 +1,14 @@
 # Tests known to fail on native Windows (scripts/time/windows-known.ts, record 0040).
 # Fix a test, then remove its line: the Windows job fails while a listed test passes.
-# `? ` before a line: the test may pass or fail.
-test/agents/copilot.test.ts :: copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trusted parent folder counts
+# `? ` before a line: the test may pass or fail, as when a laptop and the GitHub runner differ
+# (node under C:\Program Files, a signed-in gh, another temp path; issue #1030 for one).
+? test/agents/copilot.test.ts :: copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trusted parent folder counts
 ? test/agents/desk/desk.test.ts :: findProgram: a name on PATH, a path as it is, null when missing
 ? test/agents/desk/desk.test.ts :: isInside: the folder itself and what is under it, not a name that only starts the same
-test/agents/desk/desk.test.ts :: planDesk: a command model wins over the config, for the roster and the env (#748)
-test/agents/desk/desk.test.ts :: planDesk: a desk that cannot be marked does not start, with the plain reason (#672)
-test/agents/desk/desk.test.ts :: planDesk: on a team, the team folder read-only, only the own outbox writable, the desk file locked (#674)
-test/agents/desk/desk.test.ts :: planDesk: the desk and its own state writable, a token dropped, role and time zone fixed
+? test/agents/desk/desk.test.ts :: planDesk: a command model wins over the config, for the roster and the env (#748)
+? test/agents/desk/desk.test.ts :: planDesk: a desk that cannot be marked does not start, with the plain reason (#672)
+? test/agents/desk/desk.test.ts :: planDesk: on a team, the team folder read-only, only the own outbox writable, the desk file locked (#674)
+? test/agents/desk/desk.test.ts :: planDesk: the desk and its own state writable, a token dropped, role and time zone fixed
 ? test/agents/desk/network/proxy.test.ts :: (timed out)
 ? test/agents/desk/network/proxy.test.ts :: startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed
 ? test/agents/desk/network/proxy.test.ts :: startProxy: tunnels to an allowed host, refuses others and anything not CONNECT
@@ -17,59 +18,59 @@ test/agents/desk/team/outbox.test.ts :: unread: a FIFO as an outbox or as the re
 test/agents/desk/team/who.test.ts :: isLockedMount: a file this process can write is not locked; one with only a file mode is not either
 test/agents/desk/team/who.test.ts :: keepReadState: a read state that is a link is never followed
 test/agents/desk/team/who.test.ts :: whoAmI in a desk: the roster names the agent, the read state is the desk's, and only inside the fence
-test/agents/runtimes/claude-code.test.ts :: hook: a Copilot CLI call, in the Claude-format shape it sends from .claude/settings.json, is refused with the reason on stdout too (#30)
+? test/agents/runtimes/claude-code.test.ts :: hook: a Copilot CLI call, in the Claude-format shape it sends from .claude/settings.json, is refused with the reason on stdout too (#30)
 test/agents/runtimes/claude-code.test.ts :: plugin: install keeps a direct path, and the guard the plugin registers blocks (#706)
 test/agents/runtimes/codex.test.ts :: codex trust (#341): doctor says when Codex skips the hooks, and ok only when the folder and both hooks are trusted
-test/agents/runtimes/codex.test.ts :: hook --agent codex: shell calls by command, apply_patch by the files it touches (#30)
+? test/agents/runtimes/codex.test.ts :: hook --agent codex: shell calls by command, apply_patch by the files it touches (#30)
 test/agents/runtimes/codex.test.ts :: sandbox problem: writable roots inside the project or temp pass; anything else, or unsure, does not
-test/agents/runtimes/gemini.test.ts :: hook --agent gemini: run_shell_command by command, write_file and replace by file_path (#30)
+? test/agents/runtimes/gemini.test.ts :: hook --agent gemini: run_shell_command by command, write_file and replace by file_path (#30)
 test/agents/runtimes/grok.test.ts :: grok readStop: a turn end is checked; the session-end fire only observes, so it is skipped
-test/agents/runtimes/grok.test.ts :: grok readToolCall: every edit tool Grok names is read by its file, and the matcher names them all
+? test/agents/runtimes/grok.test.ts :: grok readToolCall: every edit tool Grok names is read by its file, and the matcher names them all
 test/agents/runtimes/grok.test.ts :: grok readToolCall: the shell by command, an edit by file, and nothing for a read, a web call or an MCP tool
-test/agents/runtimes/grok.test.ts :: grok trust: doctor says when Grok skips the hooks; ok only when trusted_folders.toml trusts the folder itself
+? test/agents/runtimes/grok.test.ts :: grok trust: doctor says when Grok skips the hooks; ok only when trusted_folders.toml trusts the folder itself
 test/agents/runtimes/grok.test.ts :: hook --agent grok: a command that prints the owner's details is rewritten with updatedInput, keeping the other fields (#390)
 test/agents/runtimes/grok.test.ts :: hook --agent grok: the recorded tag push is refused, with the whole reason on stdout and exit 2; the recorded ls runs (#407)
 test/agents/runtimes/grok.test.ts :: hook: under Grok, the Claude Code hook still guards, even next to an empty Grok hook file (#407)
 test/agents/runtimes/muse.test.ts :: Muse's hook entry point in a marked clone sees a worker and refuses a lead-only edit (#672)
-test/agents/runtimes/muse.test.ts :: hook --agent muse: bash by command, the edit tools by path; a refusal is exit 2 with the reason on stderr (#5)
-test/agents/runtimes/muse.test.ts :: muse project hooks: init writes the guard and the stop check, keeps other hooks, and doctor notes them
-test/agents/runtimes/muse.test.ts :: muse trust (#341): doctor says when Muse skips the hooks; ok only when trust.json names the folder
-test/agents/runtimes/small/antigravity.test.ts :: hook --agent antigravity: run_command by CommandLine, the edit tools by TargetFile; a refusal is a deny decision on stdout (#30)
+? test/agents/runtimes/muse.test.ts :: hook --agent muse: bash by command, the edit tools by path; a refusal is exit 2 with the reason on stderr (#5)
+? test/agents/runtimes/muse.test.ts :: muse project hooks: init writes the guard and the stop check, keeps other hooks, and doctor notes them
+? test/agents/runtimes/muse.test.ts :: muse trust (#341): doctor says when Muse skips the hooks; ok only when trust.json names the folder
+? test/agents/runtimes/small/antigravity.test.ts :: hook --agent antigravity: run_command by CommandLine, the edit tools by TargetFile; a refusal is a deny decision on stdout (#30)
 test/agents/runtimes/small/deepseek-harness.test.ts :: deepseek-harness project files: init writes the guard and the launch patch, keeps other hooks, and doctor says only a real deny proves it
-test/agents/runtimes/small/deepseek-harness.test.ts :: hook --agent deepseek-harness: lowercase bash by command, write and edit by a file_path relative to cwd; a refusal is exit 2 with the reason on stderr (#334)
+? test/agents/runtimes/small/deepseek-harness.test.ts :: hook --agent deepseek-harness: lowercase bash by command, write and edit by a file_path relative to cwd; a refusal is exit 2 with the reason on stderr (#334)
 test/commands/advice/board/agents.test.ts :: board worktrees: the repo lists its own; outside a repo git cannot list them
 test/commands/advice/board/feed/read/logs.test.ts :: board stream logs: Claude Code, its own newest session, or a subagent whose task names the worktree
 test/commands/advice/board/feed/route.test.ts :: board feed route: a home path, an email, a token and a private mark never reach /feed
-test/commands/advice/board/feed/route.test.ts :: board feed route: a mask that fails sends no line
+? test/commands/advice/board/feed/route.test.ts :: board feed route: a mask that fails sends no line
 test/commands/advice/board/feed/route.test.ts :: board feed route: a plain log streams its new lines, with a home path, an email and a token masked
-test/commands/advice/board/feed/route.test.ts :: board feed route: no log falls back to the doing steps
+? test/commands/advice/board/feed/route.test.ts :: board feed route: no log falls back to the doing steps
 test/commands/advice/board/server.test.ts :: board --text: pull requests with each stage, read-only
 test/commands/advice/board/server.test.ts :: board --text: the entry, an agent that joins and leaves, and the usage errors
 test/commands/advice/board/server.test.ts :: board server: the right Host and cookie see the page and the data
 test/commands/advice/board/view.test.ts :: board data: agents from each vendor's hook, and a desk clone, with their own colours
 test/commands/advice/board/view.test.ts :: board data: agents, needs, pulls and worktrees; gh runs only with a GitHub remote
-test/commands/advice/board/view.test.ts :: board view: a stale working agent holds no seat, and seats come from the git folder
+? test/commands/advice/board/view.test.ts :: board view: a stale working agent holds no seat, and seats come from the git folder
 test/commands/advice/board/view.test.ts :: board view: nicknames stay with the worktree, and the top bar names the main folder
 test/commands/advice/doctor.test.ts :: doctor --session: a stdin pipe left open never holds the session start (#405)
 test/commands/check.test.ts :: check --issue: an issue needs the type and tier labels its repo has (#544)
 test/commands/check.test.ts :: check --pr <number>: reads the pull request through gh and checks it with the commits here (#377)
 test/commands/check.test.ts :: ci-health --dry-run: prints the report and touches no issue
 test/commands/check.test.ts :: ci-health: opens and pins the one report issue, then edits it in place
-test/commands/check.test.ts :: marks add, marks and marks remove: one value from stdin, never in stdout or stderr (#434)
+? test/commands/check.test.ts :: marks add, marks and marks remove: one value from stdin, never in stdout or stderr (#434)
 test/commands/check.test.ts :: marks: the count names both files when the setting adds one (#656)
 test/commands/check.test.ts :: pr sync: a list that stops at the limit says so (#809)
 test/commands/check.test.ts :: pr sync: no open pull requests is one line, and no bot is needed (#432)
 test/commands/check.test.ts :: provenance: a commit names its writer, reviewers, approver, tier and issue (#756)
 test/commands/check.test.ts :: redact: fails closed; a marks file it cannot read prints none of the input, one line, exit 1 (#1006)
 test/commands/hook.test.ts :: desk: names what is missing, refuses a worker, and refuses a folder that is no clone (#637)
-test/commands/hook.test.ts :: hook --commands-only: an edit in a yokoten repo gets its file rules wherever the session started (#307)
+? test/commands/hook.test.ts :: hook --commands-only: an edit in a yokoten repo gets its file rules wherever the session started (#307)
 test/commands/hook.test.ts :: hook --stop --agent codex|gemini: the end-of-turn event sends the agent back once (#211)
 test/commands/hook.test.ts :: hook --stop: a partial desk runs its own done-when in the desk (#746)
-test/commands/hook.test.ts :: hook: a stop writes a masked line to the stop log (#621)
-test/commands/hook.test.ts :: hook: the five safeguards hold in a repo with no yokoten.json (#816)
+? test/commands/hook.test.ts :: hook: a stop writes a masked line to the stop log (#621)
+? test/commands/hook.test.ts :: hook: the five safeguards hold in a repo with no yokoten.json (#816)
 test/commands/hook.test.ts :: session start: a lead registers its log path; a worker does not (#700)
-test/commands/hook.test.ts :: worker list: mark keeps the role with .git moved away; unmark clears it (#566)
-test/commands/hook.test.ts :: worker mark: a clone is marked only by the lead, from its own checkout, in the clone's own .git (#672)
+? test/commands/hook.test.ts :: worker list: mark keeps the role with .git moved away; unmark clears it (#566)
+? test/commands/hook.test.ts :: worker mark: a clone is marked only by the lead, from its own checkout, in the clone's own .git (#672)
 test/commands/hook.test.ts :: worker mark: a marked worktree is a worker for every agent; the plain ways to drop the mark are refused (#555)
 test/commands/learn.test.ts :: learn --upstream: keeps a note with the project hidden, refuses a token, and lists and removes notes
 test/commands/learn.test.ts :: learn: previews a check draft from an incident, writes it with --write, and never overwrites
@@ -106,13 +107,14 @@ test/rules/guards/commands/commit-privacy.test.ts :: commit: a change the guard 
 test/rules/guards/commands/no-wipe.test.ts :: guard: a project one or two folders below the root is the project (#969)
 test/rules/guards/commands/no-wipe.test.ts :: guard: no wipe of the home folder or a top-level system folder (#969)
 test/rules/guards/hooks/read.test.ts :: hooks setting: a folder whose pre-commit runs the check, or the value already set, passes (#217)
+? test/rules/guards/hooks/settings.test.ts :: hooks setting: a shell write to .git/config, .git/hooks or .githooks is refused, a read passes (#361)
 test/rules/guards/lead-only/edit.test.ts :: lead-only files: a worker's git commit of a lead-only file is stopped, in the guard and the commit check (#402)
-test/rules/guards/lead-only/edit.test.ts :: lead-only files: shell writes follow the edit guard's scope (#402, #816)
-test/rules/guards/lead-only/edit.test.ts :: the vendored .yokoten/ runtime is lead-only: the hook and check --staged stop a worker, not the lead (#297)
+? test/rules/guards/lead-only/edit.test.ts :: lead-only files: shell writes follow the edit guard's scope (#402, #816)
+? test/rules/guards/lead-only/edit.test.ts :: the vendored .yokoten/ runtime is lead-only: the hook and check --staged stop a worker, not the lead (#297)
 test/rules/guards/lead-only/targets.test.ts :: lead-only files: a worker relative write after an unknown cd is refused (#559)
 test/rules/guards/lead-only/targets.test.ts :: lead-only files: git apply and an unknowable commit from an unknown folder are refused (#559)
-test/rules/guards/lead-only/writes.test.ts :: lead-only files: the hook stops a shell write from the plugin agent yokoten:worker, with no YOKOTEN_ROLE (#402)
-test/rules/guards/worker/box.test.ts :: guard: a worker command with a part the guard cannot read, or a shell mode it does not follow, is refused (#591)
+? test/rules/guards/lead-only/writes.test.ts :: lead-only files: the hook stops a shell write from the plugin agent yokoten:worker, with no YOKOTEN_ROLE (#402)
+? test/rules/guards/worker/box.test.ts :: guard: a worker command with a part the guard cannot read, or a shell mode it does not follow, is refused (#591)
 test/rules/guards/worker/mark.test.ts :: worker mark: a worker may not remove or replace the folder that holds the git folder (#672)
 test/rules/privacy.test.ts :: TZ=UTC with a post is trusted: gh sends it as the Time-Zone header (#488)
 test/rules/privacy.test.ts :: a --body-file with a private mark is stopped, by file and line; the mark is never printed
@@ -139,25 +141,25 @@ test/run/cli.test.ts :: hooks: a missing runtime says one plain line with no pat
 test/run/cli.test.ts :: hooks: a tool-call guard that fails refuses the call; the stop check does not (#260)
 test/run/cli.test.ts :: plugin launcher: a safe cache copy runs, and any other path does not (#706)
 ? test/run/hook.test.ts :: done-when: a passing check stops a background writer on Windows (#735)
-test/run/hook.test.ts :: hook: a key with the wrong shape gets its default and one line; check names the key; an unknown key is a note (#228)
-test/run/hook.test.ts :: hook: a repo reached through a symlink gets the same file rules (#1)
-test/run/hook.test.ts :: hook: blocks with exit 2 and a reason, allows with exit 0
-test/run/learn.test.ts :: lessons: the state file is in the git folder; missing, broken or unwritable state is empty, never an error
+? test/run/hook.test.ts :: hook: a key with the wrong shape gets its default and one line; check names the key; an unknown key is a note (#228)
+? test/run/hook.test.ts :: hook: a repo reached through a symlink gets the same file rules (#1)
+? test/run/hook.test.ts :: hook: blocks with exit 2 and a reason, allows with exit 0
+? test/run/learn.test.ts :: lessons: the state file is in the git folder; missing, broken or unwritable state is empty, never an error
 test/run/learn.test.ts :: upstream: a note hides the project, home and owner, and refuses a secret or what is left
 test/run/learn.test.ts :: upstream: a symlink into the project, a relative path and a symlink into home are hidden too
 test/run/protocol.test.ts :: conformance: the OpenCode adapter is a thin translation into the protocol
 test/run/protocol.test.ts :: protocol: a refusal names the tool in the stop log, and carries the four parts
-test/setup/advice/unsaved.test.ts :: unsaved: a commit that carries .yokoten/ says what the copy is, and the commit check takes the message (#655)
+? test/setup/advice/unsaved.test.ts :: unsaved: a commit that carries .yokoten/ says what the copy is, and the commit check takes the message (#655)
 test/setup/advice/unsaved.test.ts :: unsaved: a repo on a tmpfs is gone after a restart (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: a root reached through a link reads like the real one, as on macOS /var (#365)
+? test/setup/advice/unsaved.test.ts :: unsaved: a root reached through a link reads like the real one, as on macOS /var (#365)
 test/setup/advice/unsaved.test.ts :: unsaved: a worktree under the temp folder is named only when it holds work at risk (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: a worktree whose branch is merged, or whose upstream is gone, is safe to remove (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: a worktree whose folder is gone gets `git worktree prune` (#365)
+? test/setup/advice/unsaved.test.ts :: unsaved: a worktree whose branch is merged, or whose upstream is gone, is safe to remove (#365)
+? test/setup/advice/unsaved.test.ts :: unsaved: a worktree whose folder is gone gets `git worktree prune` (#365)
 test/setup/advice/unsaved.test.ts :: unsaved: an index.lock is stale only when no git process works in the repo (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: commits on a detached HEAD that no branch holds; a detached worktree in main is done (#365)
+? test/setup/advice/unsaved.test.ts :: unsaved: commits on a detached HEAD that no branch holds; a detached worktree in main is done (#365)
 test/setup/advice/unsaved.test.ts :: unsaved: the parts, read from git output (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: uncommitted changes, with the file count and the oldest change (#365)
-test/setup/advice/unsaved.test.ts :: unsaved: with no remote no advice says push on its own (#524)
+? test/setup/advice/unsaved.test.ts :: unsaved: uncommitted changes, with the file count and the oldest change (#365)
+? test/setup/advice/unsaved.test.ts :: unsaved: with no remote no advice says push on its own (#524)
 test/setup/doctor/checks.test.ts :: doctor --session: a user's own hook that runs the runtime keeps it (#935)
 test/setup/doctor/checks.test.ts :: doctor --session: another agent tool keeps the runtime and the launcher (#935)
 test/setup/doctor/checks.test.ts :: doctor --session: with the plugin on, takes back what an older install left (#935)
@@ -174,7 +176,7 @@ test/setup/doctor/machine.test.ts :: machine: reading the Windows drive in WSL, 
 test/setup/doctor/machine.test.ts :: machine: the printed command quotes the temp folder, so a space or $(...) in TMPDIR deletes nothing else
 test/setup/doctor/report.test.ts :: doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder is visible (#681)
 test/setup/doctor/report.test.ts :: doctor: full doctor in an empty repo starts each git read once, ten child processes in all (#453)
-test/setup/doctor/report.test.ts :: doctor: lists the work only on this machine; a session hears at most three items (#365)
+? test/setup/doctor/report.test.ts :: doctor: lists the work only on this machine; a session hears at most three items (#365)
 test/setup/doctor/report.test.ts :: doctor: on another host, each forge step says once what it asks, with no GitHub instruction, and never holds the stage (#504)
 test/setup/init.test.ts :: (timed out)
 test/setup/install.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)

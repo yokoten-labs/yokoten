@@ -530,6 +530,25 @@ function installPlan(env: Env, runtime: string, plugin: boolean, needsRuntime: b
 const kitSkills = (): string[] => readdirSync(join(KIT, 'user', 'skills'));
 const kitAgents = (): string[] => readdirSync(join(KIT, 'user', 'agents'));
 
+/** The skills install puts here, for the one screen it shows before it asks (#1027). */
+export const skillNames = (): string[] => kitSkills();
+
+/**
+ * The agents this computer has, Claude Code aside (it is set up everywhere). Install puts
+ * the guard in each one, and the preview names them before it writes (#1027).
+ */
+export function agentsHere(env: Env): string[] {
+  return [
+    ...(codex.hasUserDir(env) ? ['Codex'] : []),
+    ...(gemini.hasUserDir(env) ? ['Gemini CLI'] : []),
+    ...(antigravity.hasUserDir(env) ? ['Antigravity CLI'] : []),
+    ...(copilot.hasUserDir(env) ? ['Copilot CLI'] : []),
+    ...(grok.hasUserDir(env) ? ['Grok CLI'] : []),
+    ...(muse.hasUserDir(env) ? ['Muse Code'] : []),
+    ...(opencode.hasUserDir(env) ? ['OpenCode'] : []),
+  ];
+}
+
 /**
  * Write an OpenCode plugin (the user's here, the project's in init) as a file yokoten owns:
  * a file without the mark, or one the user edited, stays (#984). A file yokoten can't read
@@ -1415,7 +1434,7 @@ export function mailmapState(env: Env): 'ours' | 'other' | 'unset' {
 }
 
 /** The question install asks before it sets git's global mailmap.file (#985). */
-export const MAILMAP_QUESTION = `Set git's global mailmap.file to ${MAILMAP_SETTING}, so git prints a placeholder in place of your email in every repo? [Y/n]`;
+export const MAILMAP_QUESTION = 'Hide your email in git logs that agents read? [Y/n]';
 
 /**
  * Write yokoten's mailmap: one line per owner email (git user.email and the marks shaped

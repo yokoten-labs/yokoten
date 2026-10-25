@@ -10,6 +10,7 @@
 // touched by `off`, `on` or install. And `yokoten test`, the tests run light on a shared
 // machine (#461).
 
+import { Writable } from 'node:stream';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { chmodSync, closeSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -27,13 +28,13 @@ import { finding, type Finding, formatFinding, isWarningFinding } from '../rules
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from './advice/board/agents.ts';
 import { parseChange } from '../run/changelog.ts';
-import { borrowedFiles, type BorrowedChange, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../run/check.ts';
+import { borrowedFiles, type BorrowedChange, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, type SyncOutcome, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../run/check.ts';
 import { readBranchDesks } from '../run/hook.ts';
 import { isCodeFile, nameNotes } from '../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, type Invocation, parse, print, printJson, readInput, requireRoot, say, showOnPullRequest, usage } from './shared.ts';
+import { bullets, count, field, type Invocation, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -54,19 +55,77 @@ export async function runCheck(invocation: Invocation): Promise<number> {
   const name = `yokoten check${['pr', 'issue', 'anchor'].includes(mode) ? ` --${mode}` : ''}`;
   const notes: Finding[] = [];
   let problems: Finding[];
+  // The notes runMode prints are held (#1027): the screen puts them under its title, folded.
+  const held: string[] = [];
+  const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
+  const isFolding = !json && mode !== 'anchor';
   try {
-    problems = await runMode(invocation, mode, root, config, notes, { name, json, number, values: options.values });
+    problems = await runMode(isFolding ? { ...invocation, stdout: sink } : invocation, mode, root, config, notes, { name, json, number, values: options.values });
   } catch (err) {
     // A git read the check depends on gave no answer (#403): one finding, and the check fails.
     if (!(err instanceof GitReadError)) throw err;
     problems = [gitReadFinding(err)];
   }
-  if (problems === SKIPPED) return 0;
+  const heldLines = held.join('').split('\n').filter((line) => line !== '');
+  if (problems === SKIPPED) {
+    print(invocation, heldLines);
+    return 0;
+  }
+  const command = `check${mode === 'tree' ? '' : ` --${mode}`}`;
+  const isAll = options.flags.has('--all');
   if (json) printJson(invocation, { check: mode, ok: !problems.length, findings: problems, notes });
-  else if (!problems.length) print(invocation, [`${name}: ok${mode === 'history' ? ' (every commit on every branch)' : ''}`]);
-  else print(invocation, [`${name}: ${problems.length} problem(s)`, ...bullets(problems), ...unstageLines(root, invocation.env, mode, problems)], invocation.stderr);
+  else if (!problems.length) print(invocation, withNotes(title(command, cleanSummary(mode, number)), heldLines, name, isAll));
+  else {
+    if (isAll) print(invocation, heldLines);
+    print(invocation, withNotes(problemScreen(command, problems, unstageLines(root, invocation.env, mode, problems)), isAll ? [] : heldLines, name, false), invocation.stderr);
+  }
   showOnPullRequest(invocation, `yokoten check${mode === 'tree' ? '' : ` --${mode}`}`, problems, notes, { json, isPlaceAFile: mode !== 'history' });
   return problems.length ? 1 : 0;
+}
+
+/**
+ * A screen with the notes a check printed (#1027). By default they fold into one row
+ * before `Next:`, with a More line that names --all; with --all they follow, each in full.
+ * A warning (a likely secret) is counted on its own, so it is never lost in the count.
+ */
+export function withNotes(screen: string[], held: string[], name: string, isAll: boolean): string[] {
+  if (!held.length) return screen;
+  if (isAll) return [...screen, '', ...held];
+  const notes = held.filter((line) => line.startsWith(`${name}: `) || line.startsWith(`${name} --`));
+  const warnings = notes.filter((line) => line.includes(': warning: ')).length;
+  const said = `${count(notes.length || held.length, 'note')}${warnings ? `, ${count(warnings, 'warning')} among them` : ''}`;
+  const fold = [...row('note', said), '', ...moreLine('`yokoten check --all` shows each note')];
+  const next = screen.findIndex((line) => line.startsWith('Next: '));
+  if (next === -1) return [...screen, '', ...fold];
+  return [...screen.slice(0, next - 1), '', ...fold.slice(0, -2), ...screen.slice(next - 1), ...fold.slice(-1)];
+}
+
+/** What a clean check is true of, in the mode's own words. */
+function cleanSummary(mode: string, number?: string): string {
+  if (mode === 'history') return 'clean: every commit on every branch';
+  if (mode === 'staged') return 'clean: layout, privacy, lead-only files';
+  if (mode === 'pr') return number === undefined ? 'no problems in this pull request' : `PR #${number}, no problems`;
+  if (mode === 'issue') return 'no problems in this issue';
+  if (mode === 'anchor') return 'clean: every anchored day checks out';
+  return 'clean: layout, privacy, lead-only files';
+}
+
+/**
+ * The screen for a check that found problems (issue #1027): the count first, one row per
+ * problem with its place first and why and the fix under it, then the one command to type.
+ * Problems are never folded; the why and the fix are never left out, and a link they share
+ * is one More line.
+ */
+function problemScreen(command: string, problems: Finding[], hints: string[]): string[] {
+  const lines = [...title(command, count(problems.length, 'problem')), '', ...problemRows(problems)];
+  const links = [...new Set(problems.map((problem) => problem.docs).filter((docs) => docs !== undefined))];
+  if (hints.length) {
+    lines.push('');
+    for (const hint of hints) lines.push(...row('note', hint));
+  }
+  lines.push('', ...wrap('Next: ', 'fix them, then `yokoten check`'));
+  if (links.length === 1) lines.push(...moreLine(links[0] ?? ''));
+  return lines;
 }
 
 /** For a stopped commit, the line that says how to unstage the files it names (#503). Nothing for other modes. */
@@ -349,14 +408,15 @@ export async function runProvenance(invocation: Invocation): Promise<number> {
     return 0;
   }
   const lines: string[] = [];
-  for (const row of rows) {
+  for (const record of rows) {
     if (lines.length) lines.push('');
-    lines.push(`${row.commit.slice(0, 7)} ${row.subject}`);
-    lines.push(`  writer: ${agentsText(row.writers)}`);
-    lines.push(`  reviewers: ${agentsText(row.reviewers)}`);
-    lines.push(`  approver: ${row.approver || 'unknown'}`);
-    lines.push(`  tier: ${row.tier ?? 'none'}`);
-    lines.push(`  issue: ${row.issues.length ? row.issues.map((issue) => `#${issue}`).join(', ') : 'none'}`);
+    lines.push(...title('provenance', `${record.commit.slice(0, 7)} ${record.subject}`), '');
+    const field = (label: string, value: string): string => `  ${label.padEnd(12)}${value}`;
+    lines.push(field('writer', agentsText(record.writers)));
+    lines.push(field('reviewers', agentsText(record.reviewers)));
+    lines.push(field('approver', record.approver || 'unknown'));
+    lines.push(field('tier', record.tier ?? 'none'));
+    lines.push(field('issue', record.issues.length ? record.issues.map((issue) => `#${issue}`).join(', ') : 'none'));
   }
   print(invocation, lines);
   return 0;
@@ -487,12 +547,18 @@ export function runTest(invocation: Invocation): number {
     print(invocation, [shown, why]);
     return 0;
   }
+  // One screen around the runner (#1027): the plan first, the runner's own words as they are,
+  // and one row at the end. The exit code is the runner's, unchanged.
+  const plan = light ? `${jobs} ${jobs === 1 ? 'file' : 'files'} at once, ${hasNice ? 'niced, at most half the cores' : 'no nice here'}` : 'the light run is off; every core';
+  print(invocation, [...title('test', plan), '']);
   const result = spawnSync(command.file, command.args, { stdio: 'inherit', windowsHide: true });
   if (result.error) {
     print(invocation, [`yokoten test: can't run the tests: ${result.error.message}`], invocation.stderr);
     return 1;
   }
-  return result.status ?? 1;
+  const status = result.status ?? 1;
+  print(invocation, ['', ...row(status === 0 ? 'done' : 'MISSING', status === 0 ? 'tests passed' : `tests failed (exit ${status})`)]);
+  return status;
 }
 
 // ---- `yokoten marks` (#447) ----
@@ -559,7 +625,18 @@ export function runMarkAction(invocation: Invocation, action: string | undefined
   return action === 'off' ? turnOff(invocation, kind) : turnOn(invocation, kind);
 }
 
-/** `yokoten marks`: how many marks of each kind, and which kinds are off. Never a value. */
+/** The word `yokoten marks` uses for a kind, in a row: short, and never a value. */
+const KIND_LABELS: Record<string, string> = {
+  'git name': 'git-name',
+  'git email': 'git-email',
+  'forge login': 'forge-login',
+  'private remote host': 'private host',
+  'by hand': 'your own',
+};
+const INSTALL_KINDS = new Set(['git name', 'git email', 'forge login']);
+const kindLabel = (kind: string): string => KIND_LABELS[kind] ?? kind;
+
+/** `yokoten marks`: one screen, a count per kind, and the way to add one. Never a value. */
 function showCounts(invocation: Invocation): number {
   let counts: Map<string, number>;
   try {
@@ -570,15 +647,15 @@ function showCounts(invocation: Invocation): number {
   const off = new Set(kindsTurnedOff(invocation.env));
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
   const kinds = [...SHOWN_KINDS, ...[...counts.keys()].filter((kind) => !SHOWN_KINDS.includes(kind))];
-  const width = Math.max(...kinds.map((kind) => kind.length)) + 1;
-  // The count is of every file the check reads (#656): the setting's file adds to the default.
-  const where = marksFiles(invocation.env).length > 1 ? `${paths(invocation.env).marks} and the file YOKOTEN_PRIVATE_MARKS names` : paths(invocation.env).marks;
-  const lines = [`yokoten marks: ${total} in ${where} (the values are never shown)`];
-  for (const kind of kinds) {
-    const note = off.has(kind) ? `  off: install does not add it; \`yokoten marks on ${kindWord(kind)}\` adds it again` : '';
-    lines.push(`  ${`${kind}:`.padEnd(width + 1)} ${counts.get(kind) ?? 0}${note}`);
+  const lines = [...title('marks', `${total} private ${total === 1 ? 'mark' : 'marks'}, values never shown`), ''];
+  for (const kind of kinds.filter((kind) => (counts.get(kind) ?? 0) > 0 || off.has(kind))) {
+    const note = off.has(kind) ? `off: install does not add it` : INSTALL_KINDS.has(kind) ? 'added by install' : '';
+    lines.push(...field(kindLabel(kind), `${counts.get(kind) ?? 0}${note ? `   ${note}` : ''}`));
   }
-  lines.push('To add one: yokoten marks add. To stop install adding a kind: yokoten marks off <kind>.');
+  if (lines.length === 2) lines.push(...row('note', 'no private marks yet'));
+  // The count is of every file the check reads (#656): the setting's file adds to the default.
+  if (marksFiles(invocation.env).length > 1) lines.push(...row('note', `read from ${paths(invocation.env).marks} and the file YOKOTEN_PRIVATE_MARKS names`));
+  lines.push('', ...wrap('Add one: ', '`yokoten marks add`'));
   print(invocation, lines);
   return 0;
 }
@@ -1315,9 +1392,11 @@ export function runCiHealth(invocation: Invocation): number {
     print(invocation, [`yokoten ci-health: ${posted}`], invocation.stderr);
     return 1;
   }
+  // One screen: where the report is, then what it found (issue #1027).
   print(invocation, [
-    `yokoten ci-health: ${posted.created ? 'opened' : 'updated'} issue #${posted.number} in ${repo}${posted.pinned ? '' : ' (not pinned: pin it once by hand)'}`,
-    `${problems} problem(s) in the last ${runs.length} runs.`,
+    ...title('ci-health', `${posted.created ? 'opened' : 'updated'} issue #${posted.number} in ${repo}${posted.pinned ? '' : ' (not pinned yet)'}`),
+    '',
+    ...row('ok', `${count(runs.length, 'run')}: ${count(problems, 'problem')}`),
   ]);
   return 0;
 }
@@ -1391,7 +1470,8 @@ export async function runBorrowed(invocation: Invocation): Promise<number> {
   if (json) printJson(invocation, { borrowed: watch, issues: issues.map(({ change, issue }) => ({ source: change.source, ...issue })) });
   else if (isDryRun) {
     for (const { change, issue } of issues) print(invocation, [`would open: ${issue.title} for ${change.source}`, ...issue.body.trimEnd().split('\n')]);
-    print(invocation, [`borrowed: ${files.length} file(s), ${watch.changed.length} source(s) changed, ${watch.unreadable.length} unreadable`]);
+    const sources = new Set(files.map((file) => file.source)).size;
+    print(invocation, [...title('borrowed', `${count(sources, 'source')}, ${watch.changed.length ? `${count(watch.changed.length, 'source')} moved` : 'none moved'}`)]);
   }
   if (isDryRun || json) return watch.unreadable.length ? 1 : 0;
   let failed = watch.unreadable.length > 0;
@@ -1409,7 +1489,11 @@ export async function runBorrowed(invocation: Invocation): Promise<number> {
       failed = true;
     }
   }
-  print(invocation, [`borrowed: ${files.length} file(s), ${watch.changed.length} source(s) changed, ${watch.unreadable.length} unreadable`]);
+  const sources = new Set(files.map((file) => file.source)).size;
+  const lines = [...title('borrowed', `${count(sources, 'source')}, ${watch.changed.length ? `${count(watch.changed.length, 'source')} moved` : 'none moved'}`), ''];
+  for (const change of watch.changed) lines.push(...row('next', `${change.source} moved ${count(change.commits.length, 'commit')}`, 'upstream'));
+  for (const gap of watch.unreadable) lines.push(...row("can't check", `${gap.source}: ${gap.reason}`));
+  print(invocation, lines);
   return failed ? 1 : 0;
 }
 // ---- `yokoten pr sync` (#432) ----
@@ -1512,9 +1596,12 @@ export async function runPr(invocation: Invocation): Promise<number> {
   };
 
   let needsAgent = false;
+  // The screen's title first, then one row per pull request as its sync finishes (issue #1027):
+  // progress without an animation, so a log stays readable.
+  print(invocation, [...title('pr sync', count(open.pulls.length, 'open pull request')), '']);
   for (const pull of open.pulls) {
     if (pull.isFork) {
-      print(invocation, [`#${pull.number} ${pull.branch}: needs an agent (the branch is in a fork, which yokoten does not push)`]);
+      print(invocation, row('note', 'needs an agent: the branch is in a fork, which yokoten does not push', `PR #${pull.number}`));
       needsAgent = true;
       continue;
     }
@@ -1528,7 +1615,7 @@ export async function runPr(invocation: Invocation): Promise<number> {
       verify: (worktree, files) => verifyMerge(worktree, files, env),
       tempRoot: join(root, '.tmp', 'yokoten-pr-sync'),
     });
-    print(invocation, [pullLine({ ...outcome, base: pull.base })]);
+    print(invocation, pullLine({ ...outcome, base: pull.base }));
     if (outcome.files?.length) print(invocation, ['', 'Files:', ...outcome.files.map((file) => `- ${file}`)]);
     if (outcome.hunksText?.length) print(invocation, ['', 'Conflict hunks:', ...outcome.hunksText.flatMap((hunk) => hunk.split('\n'))]);
     if (outcome.brief) print(invocation, ['', 'Dispatch brief:', ...outcome.brief.split('\n')]);
@@ -1537,11 +1624,16 @@ export async function runPr(invocation: Invocation): Promise<number> {
   return needsAgent ? 1 : 0;
 }
 
-/** The one line a pull request gets in the sync's report, naming the base it merged. */
-export function pullLine(outcome: { number: number; branch: string; base: string; state: string; hunks?: number }): string {
-  const head = `#${outcome.number} ${outcome.branch}: `;
-  if (outcome.state === 'up-to-date') return `${head}up to date with ${outcome.base}`;
-  if (outcome.state === 'merged') return `${head}merged ${outcome.base}`;
-  if (outcome.state === 'resolved') return `${head}resolved ${outcome.hunks ?? 0} hunk${outcome.hunks === 1 ? '' : 's'} then merged ${outcome.base}`;
-  return `${head}needs an agent`;
+/**
+ * The rows a pull request gets in the sync's report (#432, #1027): its state in plain words,
+ * and for one that needs an agent, the file it conflicts on and what to do next.
+ */
+export function pullLine(outcome: SyncOutcome & { base: string }): string[] {
+  const label = `PR #${outcome.number}`;
+  if (outcome.state === 'up-to-date') return row('ok', `up to date with ${outcome.base}`, label);
+  if (outcome.state === 'merged') return row('ok', `${outcome.base} merged in, tests pass, pushed`, label);
+  if (outcome.state === 'resolved') return row('ok', `${outcome.base} merged in (${outcome.hunks ?? 0} hunk${outcome.hunks === 1 ? '' : 's'} resolved), tests pass, pushed`, label);
+  const lines = outcome.files?.length ? row('MISSING', `conflict in ${outcome.files.join(', ')}`, label) : row('MISSING', 'needs an agent', label);
+  lines.push(...wrap(' '.repeat(26), 'not mechanical: the hunks and the brief are below'));
+  return lines;
 }

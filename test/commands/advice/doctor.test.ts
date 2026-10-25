@@ -103,7 +103,7 @@ test('doctor --session: a worker hears that lead-only files are guarded; the lea
   const has = (result: { stdout: string }) => result.stdout.split('\n').includes(line);
   assert.ok(has(await sandbox.call(['doctor', '--session'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'YOKOTEN_ROLE=worker');
   assert.ok(!has(await sandbox.call(['doctor', '--session'])), 'the lead');
-  assert.ok(!has(await sandbox.call(['doctor'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'only at session start');
+  assert.ok(!has(await sandbox.call(['doctor', '--all'], { extra: { YOKOTEN_ROLE: 'worker' } })), 'only at session start');
   // A compaction drops what the session heard, never the worker's role (#405).
   const start = (source: string) => sandbox.call(['doctor', '--session'], { extra: { YOKOTEN_ROLE: 'worker', CLAUDE_PROJECT_DIR: sandbox.repo }, input: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'w-1', source }) });
   assert.ok(has(await start('startup')));
@@ -135,4 +135,30 @@ test('doctor: one progress line on a terminal; none off it, in a session, or wit
   const json = await run(true, ['--json']);
   assert.ok(!json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
   JSON.parse(json.stdout);
+});
+
+// #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.
+test('doctor shows one screen: where, what is left, the next command; --all keeps the map (#1027)', async () => {
+  const sandbox = makeSandbox();
+  const short = await sandbox.call(['doctor']);
+  const lines = short.stdout.trimEnd().split('\n');
+  assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
+  assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines`);
+  assert.ok(lines.every((line) => line.length <= 80), 'no line passes 80 characters');
+  assert.match(short.stdout, /^ {2}done {8}\d+ of 26 steps$/m);
+  assert.match(short.stdout, /^ {2}next {8}Write the rules for your agents \(AGENTS\.md\)$/m);
+  assert.match(lines.at(-2) ?? '', /^Next: `yokoten init`$/);
+  assert.match(lines.at(-1) ?? '', /^More: `yokoten doctor --all` shows every check/);
+  assert.doesNotMatch(short.stdout, /OpenSSF|Scorecard|OSPS-/, 'no standard ids on the default screen');
+  const all = await sandbox.call(['doctor', '--all']);
+  assert.match(all.stdout, /OpenSSF/, '--all keeps the standards');
+  assert.match(all.stdout, /^machine:$/m);
+  assert.equal(short.status, all.status, 'the same exit code');
+});
+
+test('every road step has a plain task title (#1027)', async () => {
+  const { STEP_TITLES: stepTitles } = await import('../../../src/commands/advice/doctor.ts');
+  const { ROAD: road } = await import('../../../src/setup/road.ts');
+  assert.deepEqual(road.map((s) => s.key).filter((key) => !stepTitles[key]), []);
+  for (const t of Object.values(stepTitles)) assert.ok(t.length <= 60, t);
 });
