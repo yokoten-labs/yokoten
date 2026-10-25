@@ -89,8 +89,33 @@ test('test commands: a workflow that runs the command of a language counts as ru
 });
 
 test('test commands: a build, an install or a look-alike is no test run, in any project (#546)', () => {
-  for (const { files } of [{ files: {} }, ...CASES]) {
-    for (const run of NOT_RUNS) assert.equal(testsStep({ ...files, ...workflow(run) }).done, false, `${Object.keys(files).join(', ') || 'no files'}: ${run}`);
+  // Each group joins languages whose files do not collide (pubspec.yaml and composer.json
+  // carry two contents each, so their cases go to groups of their own). The three Ruby cases
+  // also split up: testLanguages names one runner per language, so finer Ruby runners would
+  // hide behind `bundle exec rspec`. A step check walks the folder each time, so this keeps
+  // every language-runner and every non-test command paired, at a fraction of the walks of
+  // the old table per language (#943).
+  const plain = CASES.filter((c) => c.language !== 'Ruby' && c.files['composer.json'] !== COMPOSER_TEST && !('pubspec.yaml' in c.files));
+  const groups: (typeof CASES)[] = [
+    [],
+    plain,
+    ...CASES.filter((c) => c.language === 'Ruby').map((ruby) => [ruby, ...plain.slice(0, 2)]),
+    [...CASES.filter((c) => c.files['composer.json'] === COMPOSER_TEST), ...CASES.filter((c) => c.files['pubspec.yaml'] === FLUTTER_PUBSPEC), ...plain.slice(2, 4)],
+    ...CASES.filter((c) => c.files['pubspec.yaml'] === DART_PUBSPEC).map((dart) => [dart, ...plain.slice(4, 6)]),
+  ];
+  const tests = ROAD.find((s) => s.key === 'tests');
+  assert.ok(tests);
+  for (const cases of groups) {
+    const files = Object.assign({}, ...cases.map((c) => c.files));
+    const dir = project({ ...files, ...workflow(NOT_RUNS[0]) });
+    // Every language of the group is still found with its own runner, so no case hides in another.
+    const found = testLanguages(dir);
+    for (const { language, runner } of cases) assert.ok(found.some((l) => l.language === language && l.runner === runner), `${language}: ${runner} among ${JSON.stringify(found)}`);
+    const ci = join(dir, '.github', 'workflows', 'ci.yml');
+    for (const run of NOT_RUNS) {
+      if (run !== NOT_RUNS[0]) writeFileSync(ci, `jobs:\n  t:\n    steps:\n      - run: ${run}\n`);
+      assert.equal(tests.check(dir, {}, undefined), false, `${Object.keys(files).join(', ') || 'no files'}: ${run}`);
+    }
   }
 });
 
@@ -160,11 +185,19 @@ test('test commands: composer test counts only when composer.json has a test scr
 });
 
 test('test commands: a test folder counts only for the language whose test files are in it (#576)', () => {
-  // Each folder name, with no test file of the language, is missing.
-  for (const path of ['spec/openapi.yaml', 'test/notes.md', 'tests/notes.md', '__tests__/notes.md']) {
-    const adopt = adoptTests({ 'go.mod': 'module example.com/x\n', [path]: '' });
-    assert.equal(adopt?.status, 'missing', path);
-    assert.equal(adopt?.evidence, '`go test` (Go) once tests exist', path);
+  // Each folder name, with no test file of the language, is missing. All four live in one
+  // project: a facts call walks the project whole, so one call per folder would cost four
+  // walks, and none of the folders is a test file of Go (#943).
+  {
+    const adopt = adoptTests({
+      'go.mod': 'module example.com/x\n',
+      'spec/openapi.yaml': '',
+      'test/notes.md': '',
+      'tests/notes.md': '',
+      '__tests__/notes.md': '',
+    });
+    assert.equal(adopt?.status, 'missing');
+    assert.equal(adopt?.evidence, '`go test` (Go) once tests exist');
   }
 
   // A source file in that folder is not a test unless the language's own rule matches it.
