@@ -182,11 +182,17 @@ export const hardenRead = (command: string): string => readAccount(command)?.har
 /** The refusal for an agent whose hook can't change the command, with yokoten.json "privacy.output" "stop": the fix is the wrapped command. */
 export const privateOutput = (printed: string, wrapped: string): Finding => finding('private-output', `${printed}, and this agent can't filter it`, `run it as \`${wrapped}\``);
 
+/** The one line a wrapped command prints on stderr when redact could not run (#1006). No single quote, since the wrapper quotes it, and no backtick, since a refusal shows the wrapper in backticks. No "yokoten redact" either, or isRedacted would count the line as the call. */
+export const REDACT_FAILED = 'yokoten: the output is hidden, because the redact step could not run. Run yokoten doctor to see what to fix.';
+
 /**
  * The command with its output, stderr too, sent through `redact`, the command that runs
- * `yokoten redact`. pipefail keeps the command's exit code. If redact can't start or
- * stops, `cat` passes the rest through: hiding output never stops the command. The
- * command sits on lines of its own, after the marker.
+ * `yokoten redact`. The command sits on lines of its own, after the marker.
+ * If redact can't start or stops, the rest of the output is read and thrown away, so a
+ * closed pipe never stops the command, and REDACT_FAILED goes to stderr. Output that redact
+ * did not check is never printed (#1006). The exit code is the command's when it failed.
+ * When the command passed and redact failed, it is 1: hidden output never looks like a clean run.
  */
-export const wrapForRedact = (command: string, redact: string): string => `set -o pipefail ${REDACT_MARKER}\n(\n${command}\n) 2>&1 | { ${redact} || cat; }`;
+export const wrapForRedact = (command: string, redact: string): string =>
+  `set -o pipefail ${REDACT_MARKER}\n(\n${command}\n) 2>&1 | { ${redact} || { cat >/dev/null; printf '%s\\n' '${REDACT_FAILED}' >&2; exit 1; }; }; (exit "$(( PIPESTATUS[0] ? PIPESTATUS[0] : PIPESTATUS[1] ))")`;
 

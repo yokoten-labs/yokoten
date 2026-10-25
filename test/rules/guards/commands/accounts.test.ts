@@ -2,7 +2,7 @@ import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { hardenRead, isRedacted, printsAccount, wrapForRedact } from '../../../../src/rules/guards/index.ts';
+import { hardenRead, isRedacted, printsAccount, REDACT_FAILED, wrapForRedact } from '../../../../src/rules/guards/index.ts';
 
 test('printsAccount: one plain read from the table is caught (#390)', () => {
   const caught = [
@@ -73,18 +73,49 @@ test('isRedacted: the wrapper\'s own first line and the call; a comment that nam
   assert.equal(isRedacted('git log # yokoten-redact yokoten redact'), false);
   assert.equal(isRedacted(`echo hi\n${wrapped}`), false);
   assert.equal(isRedacted(wrapped.replace('yokoten.ts" redact', 'other.ts" redact')), false);
-  assert.equal(wrapped, 'set -o pipefail # yokoten-redact\n(\ngit log\n) 2>&1 | { "node" "$HOME/y/bin/yokoten.ts" redact || cat; }');
+  assert.ok(wrapped.startsWith('set -o pipefail # yokoten-redact\n(\ngit log\n) 2>&1 | { "node" "$HOME/y/bin/yokoten.ts" redact || { cat >/dev/null; '), wrapped);
+  assert.ok(!wrapped.includes('|| cat;'), 'a redact that fails never passes the output through (#1006)');
 });
 
-test('wrapForRedact: keeps the exit code; a redact that fails passes the output through; a heredoc still ends (#390)', () => {
+test('wrapForRedact: keeps the exit code; a heredoc still ends (#390)', () => {
   const run = (command: string, redact = 'tr a-z A-Z') => spawnSync('bash', ['-c', wrapForRedact(command, redact)], { encoding: 'utf8' });
   assert.deepEqual([run('echo hi; exit 3').status, run('echo hi; exit 3').stdout], [3, 'HI\n']);
   assert.deepEqual([run('echo out; echo err >&2').status, run('echo out; echo err >&2').stdout], [0, 'OUT\nERR\n']);
   assert.equal(run('cat <<EOF\nbody\nEOF').stdout, 'BODY\n');
-  // redact missing or failing: the command still runs, and its output and exit code come through.
-  const broken = run('echo plain; exit 4', '"/nonexistent/node" "/nonexistent/yokoten.ts" redact');
-  assert.deepEqual([broken.status, broken.stdout], [4, 'plain\n']);
-  assert.ok(broken.stderr.split('\n').filter(Boolean).length <= 1, broken.stderr);
+});
+
+// #1006: a redact that can't run hides the output, fail closed. A stand-in redact hides
+// the name; the broken ones are missing, exit at once, or stop partway.
+test('wrapForRedact: a redact that is missing, exits at once or stops partway prints no name, one line, and the exit code (#1006)', () => {
+  const name = ['Sample', 'Owner'].join(' ');
+  const email = ['sample.owner', 'example.com'].join('@');
+  // Many lines, so a redact that stops partway leaves most of the output unread.
+  const command = `for i in $(seq 1 3000); do echo "Author: ${name} <${email}>"; done; echo "by ${name}" >&2`;
+  const hide = `sed -e 's/${name}/[name]/g' -e 's/${email}/[email]/g'`;
+  const run = (redact: string, exitCode = 0) => spawnSync('bash', ['-c', wrapForRedact(`${command}; exit ${exitCode}`, redact)], { encoding: 'utf8' });
+  const assertNoOwner = (output: string) => assert.ok(!output.includes(name) && !output.includes(email), 'the name or email was printed');
+
+  // Positive control: a working redact prints the output, the name hidden.
+  const working = run(hide);
+  assert.equal(working.status, 0);
+  assert.ok(working.stdout.includes('Author: [name] <[email]>') && working.stdout.includes('by [name]'), working.stdout.slice(0, 200));
+  assertNoOwner(working.stdout + working.stderr);
+
+  const broken = {
+    missing: '"/nonexistent/node" "/nonexistent/yokoten.ts" redact',
+    'exits at once': "sh -c 'exit 3'",
+    'stops partway': `sh -c "head -n 5 | ${hide.replaceAll('"', '\\"')}; exit 9"`,
+  };
+  for (const [label, redact] of Object.entries(broken)) {
+    for (const exitCode of [0, 4]) {
+      const result = run(redact, exitCode);
+      assertNoOwner(result.stdout + result.stderr);
+      const lines = result.stderr.split('\n').filter((line) => line.startsWith('yokoten:'));
+      assert.deepEqual(lines, [REDACT_FAILED], `${label}: ${result.stderr}`);
+      // The command's own failure wins; a passed command with hidden output is not a clean run.
+      assert.equal(result.status, exitCode || 1, `${label}, command exit ${exitCode}`);
+    }
+  }
 });
 
 // #555: a worker does not push or post, and does not change a git folder, where the worker

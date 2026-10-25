@@ -2578,8 +2578,9 @@ yokoten hides your details before some commands run.
   `user.*` and `remote.*`; `gh auth status`; GET calls through `gh` on traffic and user
   paths; `npm whoami`; `wrangler whoami`. When the whole command is one of these, with
   nothing around it, the guard changes it to
-  `set -o pipefail # yokoten-redact`, then `( <command> ) 2>&1 | { <node> <yokoten> redact || cat; }`.
-  The exit code stays the command's. A command with `&&`, `;`, a pipe, a redirect, a
+  `set -o pipefail # yokoten-redact`, then `( <command> ) 2>&1 | <node> <yokoten> redact`.
+  If redact cannot run, the output is hidden, and one line on stderr says so.
+  The exit code stays the command's; it is 1 when only redact failed. A command with `&&`, `;`, a pipe, a redirect, a
   substitution, a prefix such as `sudo`, or an option that writes a file, is left as it
   is.
 - **Other agents run the command as it is.** Their hooks can't change a command.
