@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { finding, type Finding } from '../../message.ts';
 import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
@@ -465,12 +465,17 @@ function expressionSpares(parsed: FindParsed, cwd: string | null, home: string |
   return true;
 }
 
-/** The `.git` of the checkout that holds `cwd`, or null when there is none. A broken one is unsure. */
+/**
+ * The `.git` of the checkout that holds `cwd`, or null when there is none. A broken one is unsure.
+ * In a linked worktree it is the `.git` file in the worktree: the git folder it names is
+ * elsewhere, but a walk from the worktree reaches the file, and deleting it breaks the
+ * worktree (#994).
+ */
 function repoGitDir(cwd: string): string | 'unsure' | null {
   const link = gitLinkAbove(cwd);
   if (link === null) return null;
   if (link.kind === 'broken') return 'unsure';
-  return link.gitDir;
+  return link.kind === 'file' ? join(link.top, '.git') : link.gitDir;
 }
 
 /**
