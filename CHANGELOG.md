@@ -23,6 +23,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Added
 
+- `yokoten changelog --notes <version>` prints the release notes from that version's `CHANGELOG.md` section, so they are never written twice. The release skill uses it, and now names the npm trusted publisher as a step before the tag.
 - `yokoten train <pr>...` merges an approved, green queue one pull request at a time (#320). Each merged tree runs the project's tests and `check`. The first pull request that needs a person stops the train.
 - `install` now writes the user-level command guard for Antigravity CLI and Copilot CLI (#342).
   For agy it goes in `~/.gemini/config/hooks.json`, and for Copilot in `~/.copilot/hooks/yokoten.json`.

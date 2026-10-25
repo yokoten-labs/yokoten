@@ -146,6 +146,28 @@ export function mergeChanges(changelog: string, changes: Change[]): string | Fin
 }
 
 /**
+ * The release notes for `version`: the opening of its CHANGELOG.md section (the text
+ * before its first `###` list), then a link to the whole section. The notes are never
+ * written by hand, so they cannot drift from the changelog (#980). `repoUrl` is the
+ * project's GitHub page, or null off GitHub. Null when the
+ * changelog has no such section.
+ */
+export function releaseNotes(changelog: string, version: string, repoUrl: string | null): string | null {
+  const lines = changelog.split(/\r?\n/);
+  const start = lines.findIndex((line) => line.startsWith(`## [${version}]`));
+  if (start === -1) return null;
+  let end = lines.findIndex((line, index) => index > start && line.startsWith('## ['));
+  if (end === -1) end = lines.length;
+  const list = lines.findIndex((line, index) => index > start && index < end && line.startsWith('### '));
+  const opening = lines.slice(start + 1, list === -1 ? end : list).join('\n').trim();
+  // GitHub's anchor for "## [0.1.1] - 2026-10-25" is "011---2026-10-25".
+  const anchor = lines[start].replace(/^##\s*/, '').toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/ /g, '-');
+  // Off GitHub the page address is unknown, so the link is the file itself.
+  const link = repoUrl === null ? `CHANGELOG.md#${anchor}` : `${repoUrl}/blob/v${version}/CHANGELOG.md#${anchor}`;
+  return `${opening}\n\n## Everything in ${version}\n\nThe full list, with every change, is in the [changelog](${link}).\n`;
+}
+
+/**
  * `yokoten changelog --write`: the change files merged into CHANGELOG.md, and then
  * deleted. When any file is wrong, or CHANGELOG.md has no Unreleased heading, nothing is
  * written and nothing is deleted.
