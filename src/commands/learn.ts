@@ -1,7 +1,7 @@
 // `yokoten learn` and `yokoten changelog`: what the project learned, and what it changed.
 
-import { ghIn, readIncident, readLocalLogins } from '../host/github/index.ts';
-import { formatChanges, readChanges, writeChanges } from '../run/changelog.ts';
+import { ghIn, readIncident, readLocalLogins, repoOf, repoPageOf } from '../host/github/index.ts';
+import { formatChanges, readChanges, releaseNotes, writeChanges } from '../run/changelog.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { loadConfig } from '../rules/config.ts';
@@ -20,11 +20,29 @@ import { bullets, type Invocation, type Parsed, parse, print, rootOf, usage } fr
 const upstreamUsage = (error: string): string =>
   error.startsWith('unexpected argument') ? 'give what happened as one argument, in quotes' : error.startsWith('unknown option') && !/^unknown option --[a-z][a-z-]*(?:\. Did you mean --[a-z-]+\?)?$/.test(error) ? 'a note cannot start with -' : error;
 
+/** The project's GitHub page from its origin remote, or null off GitHub. */
+const githubPage = (remote: string): string | null => {
+  const repo = repoOf(remote);
+  return repo === null ? null : repoPageOf(repo);
+};
+
 export function runChangelog(invocation: Invocation): number {
   const { cwd } = invocation;
   const options = parse('changelog', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
   const root = rootOf(cwd, invocation.env) ?? cwd;
+  const notesFor = options.values['--notes'];
+  if (notesFor !== undefined) {
+    if (options.flags.has('--write')) return usage(invocation, '--notes only prints; it does not go with --write');
+    const path = join(root, 'CHANGELOG.md');
+    const notes = existsSync(path) ? releaseNotes(readFileSync(path, 'utf8'), notesFor.replace(/^v/, ''), githubPage(readOriginUrl(root, invocation.env))) : null;
+    if (notes === null) {
+      print(invocation, [`yokoten changelog: CHANGELOG.md has no section for ${notesFor}; run \`yokoten changelog --write\` and add its heading first`], invocation.stderr);
+      return 1;
+    }
+    invocation.stdout.write(notes);
+    return 0;
+  }
   const isWrite = options.flags.has('--write');
   const { changes, problems } = isWrite ? writeChanges(root) : readChanges(root);
   if (problems.length) {

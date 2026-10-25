@@ -515,7 +515,7 @@ yokoten check --pr 12
 | `check --issue` | CI で: issue のタイトルとラベル。[issue のタイトル](#issue-のタイトル)を見てください |
 | `redact` | stdin のテキストを読み、あなたの詳細を隠して書きます。`<owner>`、`<email>`、`<host>`、`<mark>` です。ツール呼び出しの番人は危険なコマンドをこれに通します。[プライバシー](#プライバシー)を見てください |
 | `marks allow <mark> --here` | あなたの非公開の印の一つを、このリポジトリでだけ通します。`yokoten.json` は要りません。許可はこのマシンに保ち、リポジトリには決して入れません。`--remove` で取り消します。[プライバシー](#プライバシー)を見てください |
-| `changelog [--write]` | `changes/` のファイルが `[Unreleased]` の下に足す項目を示します。`--write` はそれらを `CHANGELOG.md` に入れてファイルを消します。リリースの前に走らせてください。[変更履歴](#変更履歴)を見てください |
+| `changelog [--write]`、`changelog --notes <バージョン>` | `changes/` のファイルが `[Unreleased]` の下に足す項目を示します。`--write` はそれらを `CHANGELOG.md` に入れてファイルを消します。`--notes` はそのバージョンのリリースノートを `CHANGELOG.md` の節から作るので、二度書く必要がありません。リリースの前に走らせてください。[変更履歴](#変更履歴)を見てください |
 | `learn <issue> [--write]` | インシデントの issue からチェックを下書きし、人がレビューします。`--write` は `lessons/` にファイルを足します。[インシデントから学ぶ](#インシデントから学ぶ)を見てください |
 | `learn --ship <id>` | yokoten で: レビュー済みの教訓を `kit/lessons/` のグループに移し、そこから走る yokoten の `doctor` がすべてのプロジェクトでそれを走らせます。`TODO(reviewer)` が残っていたり、そのテストが失敗したりする間は拒否されます |
 | `learn --upstream "<what happened>" [--area <name>] [--fix <idea>]` | yokoten 自身の隙間についての注意を、プロジェクトとあなたを隠して保ちます。`--list` は注意を一覧し、`--done <id>` は一つを消します。[yokoten 自身のための教訓](#yokoten-自身のための教訓)を見てください |

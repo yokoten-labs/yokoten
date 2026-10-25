@@ -18,6 +18,7 @@ import {
   parseChange,
   readChanges,
   writeChanges,
+  releaseNotes,
 } from '../../src/run/changelog.ts';
 
 // ---- Change files (#132) ----
@@ -127,4 +128,17 @@ test('changes: --write puts each entry after its section, deletes the files, and
   const mixed = mergeChanges([`${firstLine}\r`, ...otherLines].join('\n'), changes);
   assert.equal(typeof mixed, 'string', 'a stray CRLF line still has an Unreleased heading');
   assert.ok((mixed as string).startsWith(CHANGELOG.split('\n')[0] + '\r\n'), 'the CRLF line is kept');
+});
+
+// Release notes come from the CHANGELOG section, never typed twice (#980).
+test('changelog --notes: the opening of a version section, and a link to all of it', () => {
+  const log = '# Changelog\n\n## [Unreleased]\n\n## [1.2.0] - 2026-01-02\n\nThe big one.\n\n- **New:** a thing.\n\n### Added\n\n- A long list.\n\n## [1.1.0] - 2025-12-01\n\nOld.\n';
+  assert.equal(
+    releaseNotes(log, '1.2.0', 'https://github.com/o/r'),
+    'The big one.\n\n- **New:** a thing.\n\n## Everything in 1.2.0\n\nThe full list, with every change, is in the [changelog](https://github.com/o/r/blob/v1.2.0/CHANGELOG.md#120---2026-01-02).\n',
+  );
+  assert.ok(!releaseNotes(log, '1.2.0', null)?.includes('A long list'), 'the full list stays out of the notes');
+  assert.match(releaseNotes(log, '1.2.0', null) ?? '', /\]\(CHANGELOG\.md#120---2026-01-02\)/, 'off GitHub the link is the file');
+  assert.equal(releaseNotes(log, '9.9.9', null), null, 'a version with no section');
+  assert.match(releaseNotes(log, '1.1.0', null) ?? '', /^Old\.\n/, 'the last section ends at the end of the file');
 });

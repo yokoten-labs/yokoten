@@ -188,7 +188,7 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   assert.ok(statSync(join(sandbox.repo, '.githooks', 'pre-commit')).mode & 0o100);
   const workflow = readFileSync(join(sandbox.repo, '.github/workflows/yokoten.yml'), 'utf8');
   assert.match(workflow, /- run: node \.yokoten\/bin\/yokoten\.ts check\n/, 'the check is the project\'s copy, the same as the commit hook (#129, core rule 6)');
-  assert.match(workflow, /uses: yokoten-labs\/yokoten@6b76595e24e7b796a863b8717120edffc69bad0a # v0\.1\.0/, 'and the released Action, pinned to a commit (#129)');
+  assert.ok(workflow.includes(releasedActionPin()), 'and the released Action, pinned to a commit (#129)');
   assert.match(workflow, /persist-credentials: false/, 'the hardened workflow (#36)');
   assert.match(workflow, /^  ci:\n    if: always\(\)\n    needs: \[changes, check, lint\]$/m, 'one required check that waits for the rest (#36)');
   assert.match(readFileSync(join(sandbox.repo, '.github/workflows/pr.yml'), 'utf8'), /node \.yokoten\/bin\/yokoten\.ts check --pr/, 'the pull request check (#47)');
@@ -1909,6 +1909,13 @@ const commitAll = (sandbox: ReturnType<typeof makeSandbox>) => {
 /** The kit's workflow `name` as init writes it into a project. */
 const kitWorkflow = (name: string) => render(readFileSync(join(KIT_WORKFLOWS, name), 'utf8'), { cli: '.yokoten/bin/yokoten.ts', version: VERSION });
 
+/** The released Action the kit pins, read from the kit: Dependabot moves it, so no test names a commit (#980). */
+const releasedActionPin = (): string => {
+  const pin = kitWorkflow('yokoten.yml').match(/uses: yokoten-labs\/yokoten@[0-9a-f]{40} # v\d+\.\d+\.\d+/)?.[0];
+  assert.ok(pin, 'the kit workflow pins no released yokoten Action');
+  return pin;
+};
+
 /** The kit's newest yokoten.yml with a `tests` job added the way the tests step says (#552). */
 const withTestsJob = (yml: string): string =>
   yml
@@ -1920,7 +1927,7 @@ const oldYokotenYml = () =>
   kitWorkflow('yokoten.yml')
     // Before #129, the kit ran only its own copy of yokoten, not the released Action.
     .replace(
-      "      # yokoten as a released Action (#129), pinned to the first release by its full\n      # commit: a tag can move, a commit cannot. Dependabot keeps it current. It runs the\n      # release's own copy, so a pull request that changes .yokoten/ still meets a check\n      # it cannot edit. pr.yml and issue.yml still run the project's copy.\n      - uses: yokoten-labs/yokoten@6b76595e24e7b796a863b8717120edffc69bad0a # v0.1.0\n        with:\n          pr-check: 'false'\n          issue-check: 'false'\n          node-version: '^22.23.4'\n",
+      `      # yokoten as a released Action (#129), pinned to the first release by its full\n      # commit: a tag can move, a commit cannot. Dependabot keeps it current. It runs the\n      # release's own copy, so a pull request that changes .yokoten/ still meets a check\n      # it cannot edit. pr.yml and issue.yml still run the project's copy.\n      - ${releasedActionPin()}\n        with:\n          pr-check: 'false'\n          issue-check: 'false'\n          node-version: '^22.23.4'\n`,
       '',
     )
     .replace(
