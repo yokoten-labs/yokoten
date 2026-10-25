@@ -8,6 +8,8 @@ AI エージェントは一瞬で大きなミスをします。yokoten はその
 - **危険な操作を止めます**：force push、作業の削除、秘密の漏えい、あなた抜きのリリース。
 - **いま使っているツールの中で動きます**：Claude Code、Codex、Copilot CLI、Muse Code など。
 - **最初から有効です。** コマンドひとつで始まり、新しく覚えることはありません。
+- **あなたの設定を勝手に変えません**：あなたが決めた設定はそのまま残し、ファイルを変える前にコピーを取ります。
+- **Linux、Windows、macOS で動きます。**
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 

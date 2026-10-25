@@ -8,6 +8,8 @@ AI agent 一秒钟就能犯大错。yokoten 在它动手之前拦住。
 - **拦住危险操作**：强推、删掉你的工作、泄露密钥、没经过你就发版。
 - **在你已经在用的工具里工作**：Claude Code、Codex、Copilot CLI、Muse Code 等等。
 - **默认开启。** 一条命令开始，不用学新东西。
+- **不乱动你的设置**：你做过的选择它都保留；改你的文件之前，先留一份副本。
+- **支持 Linux、Windows 和 macOS。**
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · 简体中文 · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
