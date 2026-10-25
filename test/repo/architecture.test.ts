@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { judgeKnown, readFailures, readKnown, testFileOf } from '../../scripts/time/windows-known.ts';
+import { entriesOf, judgeKnown, readFailures, readKnown, TIMED_OUT } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -1716,27 +1716,25 @@ test('suite time: it reads the report node --test writes on this Node (#475)', (
 
 // ---- The Windows job's known failures (record 0040) ----
 
-test('windows known: a failure is named by its test file and name, a Windows path included', () => {
+test('windows known: a failure is named by its test file and name, and a file past its cap by the time-out', () => {
   const tap = [
     'TAP version 13',
     '# Subtest: install: the copy runs',
     'ok 1 - install: the copy runs',
-    '# Subtest: install: writes ~/.claude',
+    '    not ok 1 - a subtest is its parent',
     'not ok 2 - install: writes ~/.claude',
     '  ---',
-    "  location: 'C:\\a\\yokoten\\test\\setup\\install.test.ts:40:1'",
     '  ...',
     'not ok 3 - names: a \\# in a name # TODO later',
-    '  ---',
-    "  location: '/home/runner/work/yokoten/test/run/names.test.ts:9:1'",
-    '  ...',
-    'not ok 4 - test/run/broken.test.ts',
-    '  ---',
-    '  ...',
   ].join('\r\n');
-  assert.deepEqual(readFailures(tap), ['test/run/broken.test.ts', 'test/run/names.test.ts :: names: a # in a name', 'test/setup/install.test.ts :: install: writes ~/.claude']);
-  assert.equal(testFileOf('D:/x/test/a.test.ts:1:2'), 'test/a.test.ts');
-  assert.equal(testFileOf('C:\\elsewhere\\a.ts:1:2'), null);
+  assert.deepEqual(readFailures(tap), ['install: writes ~/.claude', 'names: a # in a name']);
+  assert.deepEqual(entriesOf('test\\setup\\install.test.ts', tap, true), [
+    'test/setup/install.test.ts :: install: writes ~/.claude',
+    'test/setup/install.test.ts :: names: a # in a name',
+    `test/setup/install.test.ts :: ${TIMED_OUT}`,
+  ]);
+  // Positive control: a passing file in time has no entry.
+  assert.deepEqual(entriesOf('test/a.test.ts', 'TAP version 13\nok 1 - fine\n', false), []);
 });
 
 test('windows known: a new failure and a fixed entry both fail the job; a flaky entry may do either', () => {

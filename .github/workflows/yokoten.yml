@@ -118,10 +118,10 @@ jobs:
       - run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.of == 1 && '--budget 400' || matrix.os == 'ubuntu-latest' && matrix.node == '24' && '--budget 90' || '' }}
   # Windows has the most users (owner 2026-10-25), and the hook's job host there broke once
   # with no Windows run to see it (#735, PR #982). The whole suite in one job, on the current
-  # LTS. A test gets two minutes, so a test that hangs on Windows fails and is named instead
-  # of holding the job until its timeout (a desk test hung for an hour, 10-25). Tests known
-  # to fail there are listed in scripts/time/windows-known.txt (record 0040): a new failure
-  # fails the job, and so does a listed test that passes, so the list only gets shorter.
+  # LTS. Each test file runs on its own with a four-minute cap, since a few files never ended
+  # on Windows and one `node --test` run passed the job's limit (10-25). Tests known to fail
+  # there are listed in scripts/time/windows-known.txt (record 0040): a new failure fails the
+  # job, and so does a listed test that passes, so the list only gets shorter.
   windows:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
@@ -136,19 +136,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '^24.22.1'
-      # The suite's own exit code is the list's to judge, in the next step.
-      - run: node --test --test-concurrency=4 --test-timeout=120000 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap "--test-reporter-destination=${{ runner.temp }}/windows.tap" || true
+      - run: node scripts/time/windows-known.ts --out "${{ runner.temp }}/windows-failures.txt"
         shell: bash
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
-      - run: node scripts/time/windows-known.ts "${{ runner.temp }}/windows.tap"
-        shell: bash
-      # The report, to rewrite the list from: `node scripts/time/windows-known.ts <file> --write`.
+      # This run's failures, in the list's own form: copy it over the list to rewrite it.
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: windows-tap
-          path: ${{ runner.temp }}/windows.tap
+          name: windows-failures
+          path: ${{ runner.temp }}/windows-failures.txt
           retention-days: 7
   # Types are checked here and nowhere else: Node runs the .ts files without them.
   # Skipped on a docs-only pull request.
