@@ -747,12 +747,14 @@ test('install: temp folders that an earlier crash left are removed, and only tho
 // #208, #433: a clone install puts a launcher in ~/.local/bin, and with no terminal it edits no shell file.
 test('install: writes the launcher, and with no terminal prints the PATH line and edits no profile (#433)', async () => {
   const sandbox = makeSandbox();
+  // macOS opens a login bash, which reads ~/.bash_profile (#983).
+  const bashProfile = process.platform === 'darwin' ? '.bash_profile' : '.bashrc';
   let result = await sandbox.call(['install'], { extra: { SHELL: '/bin/bash' } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^wrote the launcher ~\/\.local\/bin\/yokoten$/m);
-  assert.ok(result.stdout.trimEnd().endsWith(`~/.local/bin is not on your PATH. Add this line to ~/.bashrc, then open a new shell: ${PROFILE_LINE}`), result.stdout);
+  assert.ok(result.stdout.trimEnd().endsWith(`~/.local/bin is not on your PATH. Add this line to ~/${bashProfile}, then open a new shell: ${PROFILE_LINE}`), result.stdout);
   assert.ok(!result.stdout.includes('alias yokoten'), result.stdout);
-  for (const file of ['.bashrc', '.zshrc', '.profile']) assert.ok(!existsSync(join(sandbox.home, file)), `${file} was written`);
+  for (const file of ['.bashrc', '.bash_profile', '.zshrc', '.profile']) assert.ok(!existsSync(join(sandbox.home, file)), `${file} was written`);
   // The launcher runs the installed copy, with every argument as it was given.
   const launcher = join(sandbox.home, '.local/bin/yokoten');
   assert.equal(statSync(launcher).mode & 0o111, 0o111, 'the launcher can be run');
