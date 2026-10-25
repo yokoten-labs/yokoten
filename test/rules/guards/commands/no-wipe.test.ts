@@ -167,11 +167,11 @@ test('guard: no disk commands (#969)', () => {
 test('guard: the refusal keeps its four lines (#969)', () => {
   const text = formatRefusal(checkCommand('rm -rf ~', { cwd: process.cwd(), env: withHome })!);
   const lines = text.split('\n');
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 5);
   assert.match(lines[0], /^yokoten stopped this: .* \[wipe-home-or-system\]$/);
-  assert.match(lines[1], /^Why: /);
-  assert.match(lines[2], /^Do instead: /);
-  assert.match(lines[3], /^More: https:/);
+  assert.match(lines[2], /^  Why       /);
+  assert.match(lines[3], /^  Instead   /);
+  assert.match(lines[4], /^  More      https:/);
 });
 
 test('guard: a wipe run through cmd /c is read as the same wipe (#1015)', () => {

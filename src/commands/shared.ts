@@ -193,7 +193,7 @@ export function isUnicodeTerminal(env: Env, platform: NodeJS.Platform = 'linux')
 
 /** The padding after a mark, two columns shorter, so the text after it keeps its column. */
 const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
-const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten [a-z][a-z -]* · |yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
+const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten [a-z][a-z -]* · |yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:|More:|Instead:|Why:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
 // The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
 const COMMAND = /`[^`\n]+`/g;

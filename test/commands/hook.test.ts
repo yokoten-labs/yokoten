@@ -106,7 +106,7 @@ test('hook: the five safeguards hold in a repo with no yokoten.json (#816)', asy
   for (const [command, id] of refused) {
     const result = await bash(command ?? '');
     assert.equal(result.status, 2, command ?? '');
-    assert.match(result.stderr, /^yokoten stopped this: [^\n]+ \[[a-z-]+\]\nWhy: [^\n]+\.\nDo instead: [^\n]+\nMore: \S+\n$/, command ?? '');
+    assert.match(result.stderr, /^yokoten stopped this: [^\n]+ \[[a-z-]+\]\n\n  Why       [\s\S]+?\n  Instead   [^\n]+\n  More      \S+\n$/, command ?? '');
     assert.match(result.stderr, new RegExp(`\\[${id}\\]`), command ?? '');
   }
   // Taking the safeguard apart is refused even with no yokoten.json.
@@ -142,7 +142,7 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   sandbox.write('scripts/out.txt', `${key}\n`);
   result = stopChild();
   assert.equal(result.status, 2, 'blocked');
-  assert.match(result.stderr, /^yokoten stopped this: scripts\/out\.txt:1: a secret \(AWS access key id\) \[secret\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+#privacy\n$/);
+  assert.match(result.stderr, /^yokoten stopped this: scripts\/out\.txt:1: a secret \(AWS access key id\) \[secret\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+#privacy\n$/);
   // The end-of-turn refusal has the same four parts as a tool denial, so the board splits it.
   const parsed = parseRefusal(result.stderr);
   assert.equal(parsed?.id, 'secret');
@@ -179,7 +179,7 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   result = await sandbox.call(['hook', '--commands-only'], { cwd: away, input: JSON.stringify({ cwd: away, tool_name: 'Bash', tool_input: { command: 'git push --tags' } }) });
   assert.equal(result.status, 2);
   assert.doesNotMatch(result.stderr, /fatal|not a git repository/);
-  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\n\n  Why       Only the owner decides when to release\.\n  Instead   Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\n  More      https:\/\/\S+#how-to-release\n$/);
   // A broken config is an internal error: the turn ends, with one line on stderr.
   sandbox.write('yokoten.json', '{ broken');
   result = await sandbox.call(['hook', '--stop'], { input: JSON.stringify({ cwd: sandbox.repo }) });
@@ -226,7 +226,7 @@ test('hook --stop --agent codex|gemini: the end-of-turn event sends the agent ba
     sandbox.write('a.md', `mail me${at}gmail.com\n`);
     const result = await stop(false);
     assert.equal(result.status, 2, `${agent}: sent back`);
-    assert.match(result.stderr, /^yokoten stopped this: a\.md:1: an email address \[email\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+#privacy\n$/, `${agent}: the four parts`);
+    assert.match(result.stderr, /^yokoten stopped this: a\.md:1: an email address \[email\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+#privacy\n$/, `${agent}: the four parts`);
     assert.equal(result.stdout, '', `${agent}: stdout stays empty`);
     assert.deepEqual(pick(await stop(true)), [0, '', ''], `${agent}: already sent back once`);
     sandbox.write('a.md', 'fine\n');
@@ -268,7 +268,7 @@ test('hook --agent: the release refusal is the same plain sentence (#931)', asyn
   const plain = 'stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way';
   for (const [agent, input] of Object.entries(agents)) {
     const result = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input) });
-    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\nWhy: Only the owner decides when to release\.\nDo instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\nMore: https:\/\/\S+#how-to-release\n$/, agent);
+    assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\n\n  Why       Only the owner decides when to release\.\n  Instead   Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way\.\n  More      https:\/\/\S+#how-to-release\n$/, agent);
     assert.doesNotMatch(result.stderr, /YOKOTEN_RELEASE_APPROVAL|new session/, agent);
     // --json carries the same fix.
     const json = JSON.parse((await sandbox.call(['hook', '--agent', agent, '--json'], { input: JSON.stringify(input) })).stdout);
@@ -293,7 +293,7 @@ test('hook: a refusal is the four parts, as JSON for a named Claude Code hook an
   assert.equal(answer.hookSpecificOutput.hookEventName, 'PreToolUse');
   assert.equal(answer.hookSpecificOutput.permissionDecision, 'deny');
   const reason = answer.hookSpecificOutput.permissionDecisionReason as string;
-  assert.match(reason, /^yokoten stopped this: git push --force forces the push \[force-push\]\nWhy: .+\nDo instead: .+\nMore: https:\/\/\S+$/);
+  assert.match(reason, /^yokoten stopped this: git push --force forces the push \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+$/);
   assert.ok(claude.stderr.includes(reason), 'stderr keeps the reason too');
   // The installed project hook names no agent: Copilot CLI reads it, and it needs exit 2,
   // even when the process inherited Claude Code's variables.
@@ -355,7 +355,7 @@ test('hook: a Claude Code refusal is one JSON deny on exit 0, for every kind of 
 // #800: a deny in JSON on exit 0 is the whole answer, or it is no answer at all. A hook that
 // already wrote to stdout falls back to the exit-2 answer, which blocks the call anyway.
 test('hook: a structured deny falls back to exit 2 unless it would be alone on stdout (#800)', () => {
-  const reason = 'yokoten stopped this: a test [force-push]\nWhy: why\nDo instead: fix\nMore: https://example.com/x';
+  const reason = 'yokoten stopped this: a test [force-push]\n\n  Why       why\n  Instead   fix\n  More      https://example.com/x';
   const clean = chooseDenial('claude-code', reason, { CLAUDECODE: '1' }, { isNamed: true, isStdoutEmpty: true });
   assert.equal(clean.exitCode, 0);
   assert.equal(JSON.parse(clean.stdout).hookSpecificOutput.permissionDecision, 'deny');
@@ -484,7 +484,7 @@ test("hook: an agent that can't rewrite runs the command, or with privacy.output
   const result = await codexCall();
   assert.equal(result.status, 2);
   assert.equal(result.stdout, '');
-  assert.match(result.stderr, /^yokoten stopped this: `git remote` prints remote URLs, and this agent can't filter it \[[\w-]+\]\nWhy: /);
+  assert.match(result.stderr, /^yokoten stopped this: `git remote` prints remote URLs, and this agent can't filter it \[[\w-]+\]\n\n  Why       /);
   assert.match(result.stderr, /Run it as `set -o pipefail # yokoten-redact\n\(\ngit remote -v\n\) 2>&1 \| \{ "[^"]+" "[^"]+" redact \|\| \{ cat >\/dev\/null; [^`]*; \}; \(exit [^`]*\)`\./);
   // A push still runs: only plain reads are ever stopped.
   assert.deepEqual(pick(await codexCall('git push origin main')), [0, '', '']);
@@ -942,7 +942,7 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
     'gh api repos/a/b/issues -f title=x',
   ]) {
     result = await refused(command, /worker-push|worker does not push|pushes|host|alias|bot/);
-    assert.match(result.stderr, /Do instead: .*carries the worker mark/, command);
+    assert.match(result.stderr, /  Instead   .*carries the worker mark/, command);
   }
   // The reviewer's ways to drop the mark (H1, L2).
   const gitDir = runChild('git', ['rev-parse', '--absolute-git-dir'], { cwd: tree }).stdout.trim();
@@ -1397,7 +1397,7 @@ test('hook: protection 1 refuses the red-team calls that lose work (#828)', asyn
   for (const command of refused) {
     const result = await bash(command);
     assert.equal(result.status, 2, `should refuse: ${command}\n${result.stdout}${result.stderr}`);
-    assert.match(result.stderr, /^yokoten stopped this: [^\n]+ \[[a-z-]+\]\nWhy: [^\n]+\.\nDo instead: [^\n]+\nMore: \S+/, command);
+    assert.match(result.stderr, /^yokoten stopped this: [^\n]+ \[[a-z-]+\]\n\n  Why       [\s\S]+?\n  Instead   [^\n]+\n  More      \S+/, command);
   }
   // Everyday work still passes, including the spellings that only read or save work.
   for (const command of [
@@ -1555,7 +1555,7 @@ test('hook: a commit that adds a secret is refused with no yokoten.json (#824)',
   const reason = refused(result);
   assert.match(reason, /config\.ts:2: this commit adds a secret \(GitHub token\)/);
   assert.match(reason, /\.gitignore/);
-  assert.match(reason, /More: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy/);
+  assert.match(reason, /  More      https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#privacy/);
   assert.ok(!result.stderr.includes(key), 'the secret is never printed');
   assert.ok(!result.stdout.includes(key));
   // The same key in a tracked file: only -a takes it (the staged key is gone by now).

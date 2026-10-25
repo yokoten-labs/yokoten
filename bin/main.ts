@@ -16,19 +16,13 @@ import { VERSION } from '../src/setup/files.ts';
 const HELP = [
   `yokoten ${VERSION}`,
   '',
-  'Start here: run `yokoten` in your project. It installs what is missing, adds the rules',
-  'to the project, and shows the next step.',
+  'Start here: run `yokoten` in your project.',
   '',
   'Usage: yokoten <command> [options]',
   '',
   ...commandList(),
   '',
-  'More:',
-  '  To run each step yourself, use `yokoten install`, then `yokoten init`.',
-  '  Run `yokoten <command> --help` for its options and an example.',
-  '  --json on check, doctor, hook, explain and adopt: data on stdout, for an agent or a script.',
-  '  Exit codes: 0 ok, 1 problems found or a usage error, 2 the hook blocked the tool call',
-  '  or the end of the turn.',
+  'More: `yokoten <command> --help`',
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */

@@ -151,7 +151,7 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   const call = { cwd: sandbox.repo, tool_input: { command: 'git push --force' } };
   result = await sandbox.call(['hook', '--json'], { input: JSON.stringify(call) });
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /^yokoten stopped this: git push --force forces the push \[force-push\]\nWhy: .+\nDo instead: .*Use --force-with-lease/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --force forces the push \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   .*Use --force-with-lease/);
   const blocked = JSON.parse(result.stdout);
   assert.equal(blocked.blocked, true);
   shaped(blocked.finding);
@@ -329,7 +329,7 @@ test('output colour: help bolds the usage and sections, and names each command i
   assert.match(list.stdout, /\u001b\[36mcheck\u001b\[0m/, 'a command name is cyan');
   assert.match(list.stdout, /\u001b\[1mStart:\u001b\[0m/, 'a group title is bold');
   assert.match(list.stdout, /\u001b\[1mA team of agents:\u001b\[0m/, 'a longer group title is bold');
-  assert.match(list.stdout, /\u001b\[1mMore:\u001b\[0m/, 'the last section title is bold');
+  assert.match(list.stdout, /\u001b\[1mMore: /, 'the last section title is bold');
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
   assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
