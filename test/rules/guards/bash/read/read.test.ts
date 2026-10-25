@@ -42,8 +42,9 @@ test('bash: separators, groups, comments and line joins (#105)', () => {
 
 test('bash: prefixes and wrappers do not hide the command (#105)', () => {
   for (const c of ['FOO=1 npm publish', 'NODE_ENV=prod npm publish', 'sudo npm publish', 'env X=1 npm publish', 'command npm publish', 'exec npm publish', 'time npm publish', 'nice -n 5 npm publish', 'nohup npm publish', 'timeout 10 npm publish', 'ls | xargs npm publish', 'npm --tag beta publish', 'env -S "npm publish"', "git -c alias.p='!git push --tags' p"]) blocked(c);
-  // sudo runs a program, not a shell string, so a quoted message stays a message.
-  allowed('sudo git commit -m "docs: npm publish"');
+  // sudo runs a program, not a shell string, so a quoted message stays a message (#105); the
+  // root rule refuses the sudo itself, whatever the message says (#969).
+  assert.equal(checkCommand('sudo git commit -m "docs: npm publish"', { cwd: process.cwd(), env: {} })?.id, 'no-root');
 });
 
 test('bash: an unclosed quote is dropped and the rest read as words (#105)', () => {

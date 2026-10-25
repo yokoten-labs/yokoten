@@ -154,6 +154,8 @@ type Place = 'root' | 'home' | 'system' | 'unreadable';
 // reads its own forms in either case. A quoted `~` is a folder named `~`, and the guard
 // reads it as the home folder anyway: refusing it is the safe way.
 const HOME_FORM = /^(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[\\/]|$)/i;
+// `$PWD` names the folder the command runs in, so the guard reads it as `cwd`.
+const PWD_FORM = /^(?:\$PWD|\$\{PWD\})(?=[\\/]|$)/;
 
 // The top-level system folders on Linux and macOS, by exact path. Windows has its own
 // tree under a drive, read below (`C:\Windows`, `C:\Users`).
@@ -167,6 +169,12 @@ function findWipePlace(word: string, cwd: string | null, home: string | null, ho
     // The home folder must be known for any of its forms to be read.
     if (home === null) return 'unreadable';
     return findPlaceInPath(join(home, word.slice(lead[0].length)), home, homeReal);
+  }
+  // `$PWD` names the folder the command runs in; the guard reads it from `cwd`.
+  const pwd = PWD_FORM.exec(word);
+  if (pwd) {
+    if (cwd === null) return 'unreadable';
+    return findPlaceInPath(join(cwd, word.slice(pwd[0].length)), home, homeReal);
   }
   if (/^[A-Za-z]:[\\/]?$/s.test(word)) return 'root'; // `C:\`, `C:/`, `C:`
   if (/[$%`]/.test(word)) return 'unreadable'; // a value the shell fills in
