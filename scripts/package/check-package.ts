@@ -13,8 +13,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { packageViolations, readPackageFiles } from './package-contents.ts';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -51,6 +52,12 @@ function step(name: string, file: string, args: string[], cwd: string, { okCodes
 }
 
 try {
+  // 0. What the package would hold (#631): `npm pack --dry-run --json` needs no network.
+  // A docs-site folder (website/) with its own node_modules must never reach users.
+  const dryRun = step('npm pack --dry-run --json', 'npm', ['pack', '--dry-run', '--json', '--pack-destination', base], ROOT);
+  const violations = packageViolations(readPackageFiles(dryRun.stdout));
+  assert.deepEqual(violations, [], `the package holds paths outside the allow list: ${violations.join(', ')}\nsee scripts/package-contents.ts`);
+
   // 1. Pack. The prepack script builds dist/ first.
   step('npm pack', 'npm', ['pack', '--pack-destination', base], ROOT);
   const tarballs = readdirSync(base).filter((name) => name.endsWith('.tgz'));
