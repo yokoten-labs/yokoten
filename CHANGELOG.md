@@ -8,18 +8,19 @@ All notable changes are listed here. The format follows
 
 ## [0.1.1] - 2026-10-25
 
-The safeguard release: yokoten now protects you from the first command, in any repo, with no setup.
+The safeguard release: yokoten now protects you from the first command, in any repo, with no setup, and every command fits one screen.
 To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/docs/guide.md).
 
 **The main changes**
 
 - The five protections are on for everyone, in any repo, with no `yokoten init` and no setting.
+- Every command shows one screen: where you are, a short list, and the one command to type next. `--all` shows every detail. Scripts that read `--json` keep working: it is unchanged.
 - The guard also stops root commands (`sudo`, `su`), wiping your home folder or a system folder, and disk commands.
-- Every refusal reads the same, in four lines: what was stopped, Why, Do instead, More.
+- Every refusal reads the same: what was stopped, then Why, Instead and More.
 - Many AI sessions in one repo: `yokoten conflicts` and `yokoten train --next` say which change to merge first, and the guard stops an edit to a file another open change is moving.
 - `yokoten upgrade` brings yokoten to the newest version in one command, with no SSH key.
 - OpenCode is guarded too, tested with DeepSeek V4.1 Flash and GLM-5.3 Flash. The README shows every agent in one table.
-- `yokoten doctor` shows your next step first, then one block per stage.
+- `yokoten doctor` names your stage, and the next step is the last line.
 - yokoten leaves your settings alone: it keeps a choice you made on purpose, saves a copy before it changes a file of yours, and asks before it changes your git config.
 - Windows: the guard reads Windows and Git Bash paths, and every test runs on Windows in CI. WSL is fully supported. Native Windows is in beta, in Git Bash and PowerShell 7. Windows PowerShell 5.1 is not supported.
 - The board starts Codex only where its guard really runs. If it cannot tell, it does not start Codex and says what to do.
@@ -214,6 +215,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Changed
 
+- Every command shows one screen by default: a title that says what is true now, rows that start with ok, next, MISSING, note or can't check, and the one command to type next. `doctor --all`, `check --all`, `update --all`, `adopt --all`, `learn --all`, `install --list` and `init --list` show the full detail, and `--json` is unchanged (#1027).
 - The npm page and search now describe yokoten in the README's own opening words, and a test keeps the two the same.
 - Record 0028 sets the framework above the details: yokoten is a neutral trust layer for AI teams, with three pillars (an open standard, a provenance ledger, a lesson network). The desk becomes the main line of defence and the guard stops mistakes.
 - Record 0029 sets how yokoten runs a team: one event log is the source of truth, control loops do what the lead did by hand, and service levels decide priorities.
@@ -329,6 +331,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- `yokoten mcp --command` keeps a part in double quotes as one word, so a Windows path with a space, such as `C:\Program Files`, works (#1027).
 - yokoten keeps a value you set on purpose, and says so in one line with how to change it (#984). `init` and `install` no longer turn the Antigravity CLI guard back on after you set `"enabled": false`. `yokoten trust` no longer trusts a folder you marked untrusted in Codex, Muse Code or Grok CLI. It no longer turns on a Codex hook you turned off. The OpenCode plugin now carries yokoten's mark: a plugin you wrote or edited stays as it is. Doctor names the same choices and the way to change each one.
 - `install`, `init` and `uninstall` are safer with your agent tools' settings files (#984). A settings file that is a link to your dotfiles stays a link. A write that fails half way leaves your file as it was. The first time yokoten changes a file of yours, it keeps a copy next to it as `<file>.before-yokoten`, and it never overwrites that copy. A hook you wrote yourself that runs `npx yokoten`, such as `npx yokoten hook`, now stays: yokoten changes and removes only the hooks it wrote.
 - `yokoten install` now asks before it changes your git config. It lists git's global `mailmap.file` in its plan and sets it only when you say yes; with no terminal, it prints the command to run. `yokoten uninstall` now removes only the folders and git config file that install made, so an empty folder you had before stays. On Windows, the merge train's test step runs again (#985).

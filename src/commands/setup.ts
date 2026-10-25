@@ -3,6 +3,7 @@
 import { existsSync, readSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { Writable } from 'node:stream';
 import { ghIn } from '../host/github/index.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
 import { hideHome, homeOf, NO_HOME } from '../rules/privacy.ts';
@@ -49,25 +50,39 @@ export async function runStart(invocation: Invocation): Promise<number> {
     print(invocation, ['']);
   }
   // Each step that ran reports whether it is done: an install that failed is not "Setup is done" (#548).
-  const stepResults: boolean[] = [];
+  // A step that went well is one row on doctor's screen; one that failed keeps its whole screen,
+  // since a problem is never folded (#1027).
+  const doneRows: string[] = [];
+  const failedScreens: string[][] = [];
   if (isMachineMissing) {
     const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask });
-    print(invocation, installScreen(invocation, done.lines, done.ok, true));
-    stepResults.push(done.ok);
+    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done.lines).join(', ') || 'your agents'}`, 'computer'));
+    else failedScreens.push(installScreen(invocation, done.lines, done.ok, true));
   }
   if (isProjectMissing) {
-    if (stepResults.length) print(invocation, ['']);
     const done = init(root, env, undefined, { ask });
-    print(invocation, projectScreen(done.lines, done.ok, true));
-    stepResults.push(done.ok);
+    const wrote = done.lines.filter((line) => /^wrote /.test(line)).length;
+    if (done.ok && !done.lines.some((line) => NEEDS_HAND.test(line))) doneRows.push(...row('ok', `${count(wrote, 'file')} written, none of yours changed`, 'project'));
+    else failedScreens.push(projectScreen(done.lines, done.ok, true));
   }
-  // The screen of where the project is now is doctor's, never a copy (#1027).
-  if (stepResults.length) print(invocation, ['']);
-  const code = await (await import('./advice/doctor.ts')).runDoctor(invocation);
-  // The one thing a first run should do next is keep what it wrote.
-  if (stepResults.length) {
-    print(invocation, ['', ...nextLine('git add -A && git commit -m "chore: add yokoten"')]);
-  }
+  for (const screen of failedScreens) print(invocation, [...screen, '']);
+  const ran = isMachineMissing || isProjectMissing;
+  const runDoctor = (await import('./advice/doctor.ts')).runDoctor;
+  if (!ran) return runDoctor(invocation);
+  // One screen (#1027): doctor's title, what this run did, the road, and one Next line, to keep
+  // what it wrote. Doctor's own Next waits for that commit; its More line stays last.
+  const held: string[] = [];
+  const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
+  const code = await runDoctor({ ...invocation, stdout: sink });
+  const lines = held.join('').replace(/\n$/, '').split('\n');
+  const next = lines.findIndex((line) => line.startsWith('Next: '));
+  const moreAt = lines.findIndex((line) => line.startsWith('More: '));
+  const more = moreAt === -1 ? [] : lines.slice(moreAt);
+  const body = lines.slice(0, next === -1 ? (moreAt === -1 ? lines.length : moreAt) : next);
+  while (body.length && body.at(-1) === '') body.pop();
+  // The title says this run set things up, then where the road is.
+  const head = body[0]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
+  print(invocation, [head, ...body.slice(1, 2), ...doneRows, ...body.slice(2), '', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
   return code;
 }
 
@@ -109,7 +124,14 @@ const absentAgents = (lines: string[]): string[] =>
   lines.map((line) => /^skipped (.+?): .*not found/.exec(line)?.[1]).filter((name): name is string => name !== undefined);
 
 /** A line that leaves a step for the person: the commit check not on yet, or a line to add by hand (#1027 review). */
-const NEEDS_HAND = /core\.hooksPath|not on yet|Add this line|by hand/;
+const NEEDS_HAND = /core\.hooksPath|not on yet|by hand/;
+
+/** A step left for the person, as a MISSING row; a line to paste stays whole on its own line, so it copies as one (#1027 review). */
+function handRow(problem: string): string[] {
+  const at = /^(.*?Add this line[^:]*:) (.+)$/.exec(problem.replace(/^kept /, ''));
+  if (!at) return row('MISSING', problem.replace(/^kept /, ''));
+  return [...row('MISSING', at[1]), `${' '.repeat(14)}${at[2]}`];
+}
 
 /** Why a line is a problem: a step that failed, or one left for the person; never one that found nothing to do. */
 const isProblem = (line: string): boolean =>
@@ -147,7 +169,7 @@ function remaining(lines: string[], { isProblemsOnly = false } = {}): string[] {
     // The command stays whole on a line of its own, so it fits 80 columns and copies as one.
     if (fix) out.push(`${ROW_TEXT_INDENT}to turn it on:`, `${' '.repeat(14)}\`${fix}\``);
   }
-  for (const problem of problems) out.push(...row('MISSING', problem));
+  for (const problem of problems) out.push(...handRow(problem));
   return out;
 }
 
@@ -212,7 +234,8 @@ function projectScreen(lines: string[], ok: boolean, isFirstRun = false): string
   const hasDependabot = wrote.some((line) => /dependabot/.test(line));
   const hasGithubFiles = wrote.some((line) => /templates|CODEOWNERS|pull_request_template/.test(line));
   const agents = lines.filter((line) => /hook in \./.test(line)).length;
-  const out = title('init', ok ? 'this project is set up' : 'this project is partly set up');
+  const isDone = ok && !lines.some((line) => NEEDS_HAND.test(line));
+  const out = title('init', isDone ? 'this project is set up' : 'this project is partly set up');
   out.push('');
   out.push(...row('ok', 'AGENTS.md, the commit check', 'rules'));
   const ci = [workflows && `${workflows} workflows`, hasDependabot && 'Dependabot'].filter(Boolean).join(', ');
@@ -369,7 +392,7 @@ export function initScreen(lines: string[], plan: string[] = [], ok = true): str
     .map((item) => item.line)
     .filter((line, at, all) => all.indexOf(line) === at);
   // A step left for the person is a MISSING row, never a note or a file count (#1027 review).
-  const handRows = lines.filter((line, at) => NEEDS_HAND.test(line) && lines.indexOf(line) === at).flatMap((line) => row('MISSING', line.replace(/^kept /, '')));
+  const handRows = lines.filter((line, at) => NEEDS_HAND.test(line) && lines.indexOf(line) === at).flatMap(handRow);
   const otherNotes = notes.filter((line) => !NEEDS_HAND.test(line));
   const more = moreLine('`yokoten init --list` shows every file');
   if (written.size === 0 && !handRows.length) return [...title('init', 'already set up here, nothing changed'), ...(plan.length ? ['', ...plan] : []), ...notes.flatMap(noteLine), ...more];

@@ -20,11 +20,13 @@ test('update: a folder that does not exist is said plainly (#208)', () => {
 test('start: bare yokoten installs, adds the rules, then shows the road (#548)', async () => {
   const sandbox = makeSandbox();
   const first = await sandbox.call([]);
-  // The first run says what it wrote on this computer and here, then doctor's screen (#1027).
-  assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · first run$`, 'm'));
-  assert.match(first.stdout, /^yokoten init · this project is set up$/m);
-  assert.match(first.stdout, /^yokoten doctor · stage 1 of 5, safety net$/m);
-  assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
+  // One screen (#1027): the title says it set up and the stage, one row per step, one Next line, then More.
+  assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · set up; stage 1 of 5, safety net$`, 'm'));
+  assert.match(first.stdout, /^ {2}ok {10}computer {4}guard on for /m);
+  assert.match(first.stdout, /^ {2}ok {10}project {5}\d+ files written, none of yours changed$/m);
+  assert.equal(first.stdout.match(/^Next: /gm)?.length, 1, 'one Next line');
+  assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`\nMore: /m);
+  assert.ok(first.stdout.split('\n').every((line) => line.length <= 80), 'every line fits 80 columns');
   assert.ok(existsSync(join(sandbox.repo, 'AGENTS.md')), 'the rules are in the project');
   assert.ok(existsSync(join(sandbox.repo, 'yokoten.json')), 'init wrote yokoten.json');
   assert.ok(existsSync(join(sandbox.home, '.local', 'share', 'yokoten', 'bin', 'yokoten.mjs')), 'install wrote the runtime');

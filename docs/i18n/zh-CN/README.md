@@ -24,6 +24,31 @@ npx yokoten
 
 就这样。随时可以再运行一次，它只做还缺的部分。
 
+第一次运行只有一屏：装好了什么、你走到哪一步、下一条要输入的命令。
+
+<!-- The first run in a new repo, from `yokoten` 0.1.1; regenerate it when the screen changes. -->
+```text
+yokoten 0.1.1 · set up; stage 1 of 5, safety net
+
+  ok          computer    guard on for Claude Code
+  ok          project     18 files written, none of yours changed
+  done        12 of 26 steps
+  MISSING     ~/.config/yokoten/private-marks is missing or has no marks; run
+              `npx yokoten marks add` and type your name, your city or a domain;
+              it is not shown
+  next        Run your tests on every push
+  to do       Put the project on GitHub or Gitea
+  to do       Name the owner (CODEOWNERS)
+  to do       Set up the bot account
+  to do       Add a license and a security policy
+  can't check 9 steps read the code host; doctor checks them after a push
+  note        this project has 16 uncommitted files, the oldest changed 1 minute
+              ago
+
+Next: `git add -A && git commit -m "chore: add yokoten"`
+More: `yokoten doctor --all` shows every check and 5 notes
+```
+
 ## 你会看到什么
 
 agent 想做有风险的事，yokoten 拦住它，并告诉它该怎么做：
@@ -89,7 +114,7 @@ npx yokoten doctor      # 走到了第几关，下一步做什么
 
 ## 往哪里去
 
-- **现在，v0.1.1**：五项保护对所有人开启；一个仓库里多个 AI 会话。
+- **现在，v0.1.1**：五项保护对所有人开启；一个仓库里多个 AI 会话；每条命令一屏看完。
 - **接下来，v0.1.2**：在命令行里带一支 agent 团队（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
 - **以后**：一个项目学到的教训，变成每个项目的检查。
 

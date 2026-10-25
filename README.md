@@ -23,6 +23,31 @@ npx yokoten
 
 That's it. Run it again any time: it does only what is still missing.
 
+The first run shows one screen: what it set up, where you are, and the one command to type next.
+
+<!-- The first run in a new repo, from `yokoten` 0.1.1; regenerate it when the screen changes. -->
+```text
+yokoten 0.1.1 · set up; stage 1 of 5, safety net
+
+  ok          computer    guard on for Claude Code
+  ok          project     18 files written, none of yours changed
+  done        12 of 26 steps
+  MISSING     ~/.config/yokoten/private-marks is missing or has no marks; run
+              `npx yokoten marks add` and type your name, your city or a domain;
+              it is not shown
+  next        Run your tests on every push
+  to do       Put the project on GitHub or Gitea
+  to do       Name the owner (CODEOWNERS)
+  to do       Set up the bot account
+  to do       Add a license and a security policy
+  can't check 9 steps read the code host; doctor checks them after a push
+  note        this project has 16 uncommitted files, the oldest changed 1 minute
+              ago
+
+Next: `git add -A && git commit -m "chore: add yokoten"`
+More: `yokoten doctor --all` shows every check and 5 notes
+```
+
 ## What you see
 
 An agent tries something risky. yokoten stops it and says what to do instead:
@@ -92,7 +117,7 @@ npx yokoten doctor      # where you are, and the one next step
 
 ## On the road
 
-- **Now, v0.1.1**: the five protections on for everyone; many AI sessions in one repo.
+- **Now, v0.1.1**: the five protections on for everyone; many AI sessions in one repo; every command in one screen.
 - **Next, v0.1.2**: run a team of agents from the command line ([issue #823](https://github.com/yokoten-labs/yokoten/issues/823)).
 - **Later**: a lesson one project learns becomes a check for every project.
 
