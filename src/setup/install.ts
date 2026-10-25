@@ -214,7 +214,7 @@ export const PROFILE_MARK = '# added by yokoten';
 /** The line install adds to the shell profile, when the user says yes. */
 export const PROFILE_LINE = `export PATH="$HOME/.local/bin:$PATH" ${PROFILE_MARK}`;
 /** The profiles uninstall looks in for the marked line. */
-const PROFILES = ['.bashrc', '.zshrc'];
+const PROFILES = ['.bashrc', '.bash_profile', '.zshrc'];
 
 /** The folder the launcher goes in: ~/.local/bin, on the PATH on most setups. */
 export const launcherDir = (home: string): string => join(home, '.local', 'bin');
@@ -234,10 +234,13 @@ export function launcherText(runtime: string, platform: NodeJS.Platform = proces
   return `#!/bin/sh\n# ${MANAGED}: \`yokoten uninstall\` removes this file.\nexec node '${cli.replaceAll("'", "'\\''")}' "$@"\n`;
 }
 
-/** The profile of the user's shell, from $SHELL: ~/.bashrc for bash, ~/.zshrc for zsh, else null. */
-export function shellProfile(env: Env, home: string): string | null {
+/**
+ * The profile of the user's shell, from $SHELL: ~/.bashrc for bash, ~/.zshrc for zsh, else null.
+ * macOS opens a login bash, which reads ~/.bash_profile and not ~/.bashrc (#983).
+ */
+export function shellProfile(env: Env, home: string, platform: NodeJS.Platform = process.platform): string | null {
   const shell = basename(env.SHELL ?? '');
-  if (shell === 'bash') return join(home, '.bashrc');
+  if (shell === 'bash') return join(home, platform === 'darwin' ? '.bash_profile' : '.bashrc');
   if (shell === 'zsh') return join(home, '.zshrc');
   return null;
 }
@@ -279,7 +282,7 @@ export function setUpLauncher(env: Env, runtime: string, home: string, { ask, pl
   const lines = [describeWrite(written, `the launcher ${file}`)];
   if (isDirOnPath(env, dir, platform)) return lines;
   if (platform === 'win32') return [...lines, `${dir} is not on your PATH. Add it to the Path for your account (search Windows for "environment variables for your account"), then open a new terminal`];
-  const profile = shellProfile(env, home);
+  const profile = shellProfile(env, home, platform);
   if (!profile) return [...lines, `${dir} is not on your PATH. Add this line to your shell profile, then open a new shell: ${PROFILE_LINE}`];
   if (hasProfileLine(profile)) return [...lines, `${profile} already adds ${dir} to the PATH; open a new shell, then run \`yokoten\``];
   const shown = (path: string): string => `~/${relative(home, path).split(sep).join('/')}`;
@@ -291,10 +294,18 @@ export function setUpLauncher(env: Env, runtime: string, home: string, { ask, pl
   return [...lines, `${dir} is not on your PATH. Add this line to ${profile}, then open a new shell: ${PROFILE_LINE}`];
 }
 
-/** Take back the launcher and the marked profile lines: one report line for each thing removed or kept. */
-function removeLauncher(home: string, platform: NodeJS.Platform): string[] {
+/** The shell profiles that still hold the line install added. */
+const profilesWithLine = (home: string): string[] => PROFILES.map((name) => join(home, name)).filter(hasProfileLine);
+
+/**
+ * Take back the launcher and, when `profiles` is true, the marked profile lines: one report
+ * line for each thing removed or kept. Only a command the user ran edits a profile; a session
+ * start passes false (#983).
+ */
+function removeLauncher(home: string, platform: NodeJS.Platform, profiles = true): string[] {
   const file = launcherFile(home, platform);
   const lines = [describeWrite(removeManaged(file), `the launcher ${file}`)];
+  if (!profiles) return lines;
   for (const name of PROFILES) {
     const profile = join(home, name);
     if (!hasProfileLine(profile)) continue;
@@ -325,6 +336,8 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // Refuse before writing anything: with no home, every path below would be relative (#404).
   if (!homeOf(env)) return { ok: false, lines: [`${NO_HOME}. Set HOME to your home folder's full path and run install again`] };
   const target = paths(env);
+  // Read before anything is written: uninstall later takes back only what install made (#985).
+  const existedBefore = existingInstallPaths(env);
   const report: string[] = [];
   let ok = true;
   const plugin = hasPlugin(env);
@@ -474,13 +487,17 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
       else if (missing.length) lines.push(`${offerMarkKinds(missing)}; ${OFFER_MARKS_FIX}`, MARK_EXAMPLE);
       return lines;
     }),
-    ...trySafely('the git mailmap', () => [setUpMailmap(env, found)]),
+    ...trySafely('the git mailmap', () => [setUpMailmap(env, found, { ask })]),
   );
   // Last, so the way to call `yokoten` is the line the user reads at the end.
   if (needsRuntime) report.push(...trySafely('the launcher', () => setUpLauncher(env, target.runtime, homeIn(env), { ask, platform })));
   // Nothing is kept out silently: with the plugin on, a launcher that was never there is
   // not worth a line, and one an older install left is named as removed.
   else report.push(...trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform)).filter((line) => !line.startsWith('nothing to remove:')));
+  report.push(...trySafely('the list of what install made', () => {
+    recordCreatedPaths(env, existedBefore);
+    return [];
+  }));
   return { ok, lines: [...plan, ...report] };
 }
 
@@ -504,7 +521,9 @@ function installPlan(env: Env, runtime: string, plugin: boolean, needsRuntime: b
   if (muse.hasUserDir(env)) plan.push(`  ${muse.userSettingsFile(env)}: hooks.SessionStart, hooks.PreToolUse`);
   if (opencode.hasUserDir(env)) plan.push(`  ${opencode.userPluginFile(env)}`);
   if (needsRuntime) plan.push('  ~/.local/bin/yokoten');
-  plan.push(`  ${shown(paths(env).marks)}`);
+  plan.push(`  ${shown(paths(env).marks)}`, `  ${shown(join(paths(env).config, 'mailmap'))}`);
+  // The one change to the user's own config: it is listed, and asked for when it runs (#985).
+  if (mailmapState(env) === 'unset') plan.push(`  git config --global mailmap.file ${MAILMAP_SETTING} (install asks first)`);
   return plan;
 }
 
@@ -591,8 +610,11 @@ function removeManaged(path: string, { folder = false }: { folder?: boolean } = 
   return 'removed';
 }
 
-/** What a session start took back from an older install (#935): the files removed, and the edits that stay. */
-export type OlderInstallCleanup = { files: number; edits: string[] };
+/**
+ * What a session start took back from an older install (#935): the files removed, the edits
+ * that stay, and the shell profiles that still hold install's PATH line (#983).
+ */
+export type OlderInstallCleanup = { files: number; edits: string[]; profiles: string[] };
 
 /**
  * Take back what v0.1.0's install left beside the plugin (#935): the global skills in both
@@ -603,7 +625,7 @@ export type OlderInstallCleanup = { files: number; edits: string[] };
  * runtime and the launcher stay then.
  */
 export function cleanOlderInstall(env: Env, { platform = process.platform }: { platform?: NodeJS.Platform } = {}): OlderInstallCleanup {
-  const cleanup: OlderInstallCleanup = { files: 0, edits: [] };
+  const cleanup: OlderInstallCleanup = { files: 0, edits: [], profiles: [] };
   if (!hasPlugin(env) || homeOf(env) === null) return cleanup;
   const count = (what: string, outcome: ReturnType<typeof removeManaged>): void => {
     if (outcome === 'removed') cleanup.files += 1;
@@ -628,9 +650,11 @@ export function cleanOlderInstall(env: Env, { platform = process.platform }: { p
     rmSync(target.runtime, { recursive: true, force: true });
     cleanup.files += 1;
   }
-  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform))) {
+  // A session never edits a shell profile: the line stays, and the session names it (#983).
+  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform, false))) {
     if (line.startsWith('removed the launcher')) cleanup.files += 1;
   }
+  if (cleanup.files) cleanup.profiles = profilesWithLine(homeIn(env));
   return cleanup;
 }
 
@@ -786,31 +810,20 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
     report.push(`removed ${mailmapFile}`);
   }
   if (mailmapState(env) === 'ours') readGitValue(env, ['config', '--global', '--unset', 'mailmap.file']);
-  const gitConfig = env.GIT_CONFIG_GLOBAL;
+  // Only what install made goes (#985). An install older than this record named nothing,
+  // so its folders and git config file stay: a leftover empty folder is the safe side.
+  const created = readCreatedPaths(env);
+  const gitConfig = globalGitConfigFile(env);
   try {
-    if (gitConfig && statSync(gitConfig).size === 0) rmSync(gitConfig, { force: true });
+    if (created.has(gitConfig) && statSync(gitConfig).size === 0) rmSync(gitConfig, { force: true });
   } catch {
     // no global git config, or it holds the user's own settings: it stays
   }
-  // A folder install made, and the user never put anything in, goes too. A folder with
-  // anything of theirs in it stays.
-  for (const dir of [
-    join(homeIn(env), '.local', 'bin'),
-    join(homeIn(env), '.local', 'share'),
-    join(homeIn(env), '.local'),
-    target.config,
-    join(homeIn(env), '.agents', 'skills'),
-    join(homeIn(env), '.agents'),
-    join(userDir(env), 'skills'),
-    join(userDir(env), 'agents'),
-    userDir(env),
-    join(homeIn(env), '.grok', 'hooks'),
-    join(homeIn(env), '.copilot', 'hooks'),
-    join(homeIn(env), '.gemini', 'config'),
-    join(homeIn(env), '.config', 'opencode', 'plugins'),
-    join(homeIn(env), '.config', 'muse'),
-    join(homeIn(env), '.config'),
-  ]) {
+  forgetCreatedPaths(env);
+  // A folder install made, and the user never put anything in, goes too. A folder that was
+  // there before install stays, even when it is empty, and so does one with anything in it.
+  for (const dir of installFolders(env)) {
+    if (!created.has(dir)) continue;
     try {
       rmdirSync(dir);
     } catch {
@@ -819,6 +832,71 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
   }
   if (existsSync(target.config)) report.push(`kept ${target.config} (your keys and private marks)`);
   return { ok: true, lines: report };
+}
+
+// ---- What install made, so uninstall takes back only that (#985) ----
+
+/** The machine.json key that lists the folders and files install made. */
+const CREATED_KEY = 'installCreated';
+
+/** The file git's `--global` writes: $GIT_CONFIG_GLOBAL, or ~/.gitconfig. */
+const globalGitConfigFile = (env: Env): string => env.GIT_CONFIG_GLOBAL || join(homeIn(env), '.gitconfig');
+
+/** The folders install may make, deepest first, so uninstall can take each back once it is empty. */
+function installFolders(env: Env): string[] {
+  const home = homeIn(env);
+  return [
+    join(home, '.local', 'bin'),
+    join(home, '.local', 'share'),
+    join(home, '.local'),
+    paths(env).config,
+    join(home, '.agents', 'skills'),
+    join(home, '.agents'),
+    join(userDir(env), 'skills'),
+    join(userDir(env), 'agents'),
+    userDir(env),
+    join(home, '.grok', 'hooks'),
+    join(home, '.copilot', 'hooks'),
+    join(home, '.gemini', 'config'),
+    join(home, '.config', 'opencode', 'plugins'),
+    join(home, '.config', 'muse'),
+    join(home, '.config'),
+  ];
+}
+
+/** Every path install may make: its folders and the global git config file. */
+const installPaths = (env: Env): string[] => [...installFolders(env), globalGitConfigFile(env)];
+
+/** The paths of `installPaths` that are there now. Install reads this before it writes anything. */
+export const existingInstallPaths = (env: Env): Set<string> => new Set(installPaths(env).filter((path) => existsSync(path)));
+
+/** The paths machine.json says install made. Only paths install may make count, so a hand-edited list can't name another folder. */
+export function readCreatedPaths(env: Env): Set<string> {
+  const listed = readMachineState(machineStateFile(env), REAL_USER_PROBE)[CREATED_KEY];
+  const known = new Set(installPaths(env));
+  return new Set(Array.isArray(listed) ? listed.filter((path): path is string => typeof path === 'string' && known.has(path)) : []);
+}
+
+/**
+ * Write what install made to machine.json: what was missing before this run and is there now,
+ * and what an earlier install made that this run found still there.
+ */
+function recordCreatedPaths(env: Env, before: Set<string>): void {
+  const earlier = readCreatedPaths(env);
+  const created = installPaths(env).filter((path) => existsSync(path) && (!before.has(path) || earlier.has(path)));
+  if (!created.length && !earlier.size) return;
+  saveMachineState(machineStateFile(env), REAL_USER_PROBE, CREATED_KEY, created);
+}
+
+/** Take the record out of machine.json, and the file too when nothing else is left in it. */
+function forgetCreatedPaths(env: Env): void {
+  const file = machineStateFile(env);
+  const state = readMachineState(file, REAL_USER_PROBE);
+  if (!(CREATED_KEY in state)) return;
+  const rest = { ...state };
+  delete rest[CREATED_KEY];
+  if (Object.keys(rest).length) REAL_USER_PROBE.writeText(file, `${JSON.stringify(rest, null, 2)}\n`);
+  else rmSync(file, { force: true });
 }
 
 // ---- What this machine knows about its owner (#390) ----
@@ -1096,7 +1174,10 @@ export function migrateMarks(text: string, { logins, hosts }: { logins: string[]
 }
 
 /** Write a file in one step: a temp file next to it, then a rename. It keeps the file's mode. */
-function replaceFile(file: string, text: string): void {
+function replaceFile(link: string, text: string): void {
+  // Through a symlink to the file it names: a profile or marks file a dotfile manager links
+  // stays a link (#983).
+  const file = realPath(link) ?? link;
   const temp = `${file}.${process.pid}.tmp`;
   let mode = 0o600;
   try {
@@ -1311,12 +1392,17 @@ export function mailmapState(env: Env): 'ours' | 'other' | 'unset' {
   return value === MAILMAP_SETTING || value === join(paths(env).config, 'mailmap') ? 'ours' : 'other';
 }
 
+/** The question install asks before it sets git's global mailmap.file (#985). */
+export const MAILMAP_QUESTION = `Set git's global mailmap.file to ${MAILMAP_SETTING}, so git prints a placeholder in place of your email in every repo? [Y/n]`;
+
 /**
  * Write yokoten's mailmap: one line per owner email (git user.email and the marks shaped
- * like an address), each shown as MAILMAP_OWNER. Then point git's global mailmap.file at
- * it, unless the user set another file: that one is theirs, so it stays and the line says so.
+ * like an address), each shown as MAILMAP_OWNER. The file is yokoten's own. Pointing git's
+ * global mailmap.file at it changes the user's git config, so install asks first (#985):
+ * with no terminal, or no yes, the setting stays unset and the line gives the command.
+ * A mailmap.file the user set to another file is theirs: it stays and the line says so.
  */
-export function setUpMailmap(env: Env, found: MachineMark[]): string {
+export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: Ask } = {}): string {
   const emails = [...new Set([...found.filter((mark) => mark.kind === 'git email').map((mark) => mark.value), ...loadMarks(env).filter((mark) => /^[^@\s]+@[^@\s]+$/.test(mark))].map((email) => email.toLowerCase()))];
   const file = join(paths(env).config, 'mailmap');
   // The file may hold lines the owner wrote: it only gets the lines it lacks.
@@ -1330,6 +1416,9 @@ export function setUpMailmap(env: Env, found: MachineMark[]): string {
   if (missing.length) appendFileSync(file, `${before && !before.endsWith('\n') ? '\n' : ''}${missing.map((email) => `${MAILMAP_OWNER} <${email}>\n`).join('')}`);
   const state = mailmapState(env);
   if (state === 'other') return `kept your own git mailmap.file setting; add the lines of ${file} to that file`;
+  if (state === 'unset' && !(ask && isYes(ask(MAILMAP_QUESTION)))) {
+    return `skipped the global git setting mailmap.file: install changes your git config only when you say yes. A mailmap makes git print a placeholder in place of your email. To turn it on, run \`git config --global mailmap.file ${MAILMAP_SETTING}\``;
+  }
   // git prints nothing when it sets a value, so the setting is read back to see it took.
   if (state === 'unset') readGitValue(env, ['config', '--global', 'mailmap.file', MAILMAP_SETTING]);
   if (mailmapState(env) !== 'ours') return `skipped the git mailmap: git config could not set mailmap.file; run \`git config --global mailmap.file ${MAILMAP_SETTING}\`; a mailmap makes git print a private address in place of your email`;

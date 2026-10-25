@@ -326,6 +326,7 @@ To start, read the [guide](https://github.com/yokoten-labs/yokoten/blob/v0.1.1/d
 
 ### Fixed
 
+- A session start no longer edits your shell profile. The PATH line an older install added to `~/.bashrc` or `~/.zshrc` stays, and the session tells you to delete it. A profile that is a symlink, as dotfile managers keep it, stays a symlink when `yokoten uninstall` removes the line. On macOS, install adds the PATH line for bash to `~/.bash_profile`, which the login shell reads (#983).
 - On Windows, a done-when check stops programs it left running after `cmd.exe` exits (#735). On Linux, a check that ends also stops a program in a new process group in its session; one that started its own session, such as `setsid`, is still left running. If Windows has no job host, the check runs without one and says why on stderr.
 - The Windows job host is found even when an agent hands the hook an environment with no `SystemRoot`: yokoten falls back to `windir`, then `C:\Windows`. Tested on Windows with Node 24.22.1.
 - `yokoten init`, `yokoten doctor` and the hooks setup no longer stop with a RangeError on a very long line of package-runner flags, such as `npx -y -y ... yokoten check`. They now read the flags one word at a time (#431).

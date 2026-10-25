@@ -40,6 +40,7 @@ import {
   noteRefused,
   readDoneWhen,
   type Repo,
+  agentIdOf,
   repeatKeyOf,
   repeatStopFinding,
   REPEAT_STOP_LIMIT,
@@ -609,7 +610,7 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   };
   // The circuit breaker (#711): one count for the session, one shape for this step. A call
   // with no session id gets no count: the count would belong to the folder, not a session (#792).
-  const sessionKey = repeatKeyOf(sessionIdOf(input));
+  const sessionKey = repeatKeyOf(sessionIdOf(input), agentIdOf(input));
   const shape = commandShape(action.command, action.paths);
   return judged.then((judgedFinding) => {
     let found = judgedFinding;

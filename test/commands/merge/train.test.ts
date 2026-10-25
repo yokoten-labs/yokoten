@@ -3,7 +3,7 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { type PullRequest, runQueue, type TrainApi, verifyInWorktree } from '../../../src/commands/merge/train.ts';
+import { npmTestSpawn, type PullRequest, runQueue, type TrainApi, verifyInWorktree } from '../../../src/commands/merge/train.ts';
 import { CLI, makeSandbox } from '../../repo/helpers.ts';
 
 /** A pull request the fake host holds. Its branches live in the sandbox repo. */
@@ -223,4 +223,19 @@ test('train: verify runs the project script and check in a worktree (#320)', () 
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'true' } }));
   const passing = commit(sandbox, 'a.txt', 'b\n', 'tests pass');
   assert.equal(verifyInWorktree({ root: sandbox.repo, commit: passing, env: sandbox.env, script: CLI, cwd: sandbox.repo }), null);
+});
+
+/** Whether Node refuses this spawn on Windows (EINVAL since 18.20.2 and 20.12.2): a .cmd or .bat file with no shell. */
+const isRefusedOnWindows = (spawn: { command: string; options: object }): boolean => /\.(cmd|bat)$/i.test(spawn.command) && !('shell' in spawn.options && spawn.options.shell);
+
+test('train: on Windows npm test runs through cmd.exe, never npm.cmd alone (#985)', () => {
+  // Positive control: the old spawn, npm.cmd with no shell, is the shape Node refuses.
+  assert.equal(isRefusedOnWindows({ command: 'npm.cmd', options: {} }), true);
+  const windows = npmTestSpawn('win32');
+  assert.equal(isRefusedOnWindows(windows), false);
+  assert.equal(windows.command, 'cmd.exe');
+  // Fixed text only: no folder or other value goes on the command line.
+  assert.deepEqual(windows.args, ['/d', '/s', '/c', 'npm test']);
+  assert.equal(windows.options.windowsVerbatimArguments, true);
+  assert.deepEqual(npmTestSpawn('linux'), { command: 'npm', args: ['test'], options: {} });
 });

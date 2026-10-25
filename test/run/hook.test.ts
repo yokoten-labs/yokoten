@@ -28,7 +28,9 @@ import {
   isWorkingTreeClean,
   listAnchors,
   recordAnchor,
+  agentIdOf,
   repeatKeyOf,
+  sessionIdOf,
   repeatStopFinding,
   REPEAT_STOP_LIMIT,
   DONE_TRY_LIMIT,
@@ -153,6 +155,26 @@ test('hook: repeat counts are kept per session and reset on success (#711)', () 
   assert.equal(repeatKeyOf('session-a'), 'session-a');
   assert.equal(repeatKeyOf(undefined), null, 'no session id, no count');
   assert.equal(repeatKeyOf('not a safe name'), null);
+});
+
+test('hook: each subagent keeps its own repeat count under the lead\'s session (#990)', () => {
+  const env = { HOME: makeTempDir('yokoten-repeat-') };
+  const call = (agent?: string) => ({ session_id: 'lead-session', ...(agent ? { agent_id: agent } : {}) });
+  const one = repeatKeyOf(sessionIdOf(call('worker-1')), agentIdOf(call('worker-1')));
+  const two = repeatKeyOf(sessionIdOf(call('worker-2')), agentIdOf(call('worker-2')));
+  const lead = repeatKeyOf(sessionIdOf(call()), agentIdOf(call()));
+  assert.equal(lead, 'lead-session', 'the lead keeps the session key');
+  assert.notEqual(one, two);
+  assert.notEqual(one, lead);
+  for (const key of [one, two]) assert.ok(key !== null);
+  // Two refusals in worker 1 leave worker 2's first refusal at one.
+  bumpRepeat(env, one as string, 'worker-mark', 'cd x');
+  bumpRepeat(env, one as string, 'worker-mark', 'cd x');
+  assert.equal(bumpRepeat(env, two as string, 'worker-mark', 'cd x'), 1);
+  // Positive control: the old key, the session alone, is the same for both workers.
+  assert.equal(repeatKeyOf(sessionIdOf(call('worker-1'))), repeatKeyOf(sessionIdOf(call('worker-2'))));
+  assert.equal(agentIdOf({ agent_id: 'bad name' }), undefined);
+  assert.equal(repeatKeyOf('s', 's'), 's');
 });
 
 // #711: an anchor is a commit whose checks passed; going back is a new branch from it.
