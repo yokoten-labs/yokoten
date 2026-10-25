@@ -1,4 +1,4 @@
-import { unquotedRedirects, readWords, KEYWORDS, COMPOUNDS, REDIRECT_OPERATOR, isOperatorStart, REDIRECT } from './words.ts';
+import { unquotedRedirects, quotedWords, readWords, KEYWORDS, COMPOUNDS, REDIRECT_OPERATOR, isOperatorStart, REDIRECT } from './words.ts';
 import { spend, withBudget, runnerAt, passesOn, isSource, xargsCommand, xargsInput, xargsUsesNull, printedText, runString } from './run.ts';
 import { groupBodies, closeAnsi, RAN_OUT, readDouble, heredoc, bodies, readsCommands, withoutRedirects, rough } from './bodies.ts';
 
@@ -26,6 +26,10 @@ import { groupBodies, closeAnsi, RAN_OUT, readDouble, heredoc, bodies, readsComm
 // Functions and aliases are not followed.
 
 const MAX_DEPTH = 8;
+
+// The text inside each `((…))` arithmetic command, by the command list it was read into.
+// The reader turns the inside into words; bash evaluates it as one expression instead (#457).
+export const arithmeticCommands = new WeakMap<string[][], string[]>();
 
 export function commandWords(text: string, depth = 0): string[][] {
   const out: string[][] = [];
@@ -90,6 +94,13 @@ export function read(text: string, start: number, closer: string, depth: number,
   let inWord = false;
   let isQuoted = false; // the word has a quote or a \ in it, so it is no keyword: `'case'`, `\case`
   let quotedAt = 0; // with isQuoted, how much of the word came before its first quote
+  // The ranges of this word that bash reads literally: a glob in them expands no file (#457).
+  let quotedSpans: [number, number][] = [];
+  const addQuoted = (text: string) => {
+    const start = word.length;
+    word += text;
+    if (text !== '') quotedSpans.push([start, word.length]);
+  };
   // Marks the word as quoted from here on, before the quoted text is added.
   const quote = () => {
     if (!isQuoted) quotedAt = word.length;
@@ -125,10 +136,17 @@ export function read(text: string, start: number, closer: string, depth: number,
         unquotedRedirects.set(words, marks);
       }
       isLeading = isLeading && isKeyword && KEYWORDS.has(ended);
+      // Where the word was quoted, so a glob there is literal to bash (#457).
+      if (quotedSpans.length > 0) {
+        const marks = quotedWords.get(words) ?? new Map<number, [number, number][]>();
+        marks.set(words.length - 1, quotedSpans);
+        quotedWords.set(words, marks);
+      }
     }
     word = '';
     inWord = false;
     isQuoted = false;
+    quotedSpans = [];
     if (ended === null) return;
     if (isPattern && ++alternative > 1) isPattern = false; // `a b)` is no pattern: read it as a command
     if (!isKeyword) return;
@@ -281,7 +299,7 @@ export function read(text: string, start: number, closer: string, depth: number,
     } else if (character === '\\') {
       if (next !== '\n') {
         quote();
-        word += next ?? character;
+        addQuoted(next ?? character);
         inWord = true;
       }
       index += 2;
@@ -295,7 +313,7 @@ export function read(text: string, start: number, closer: string, depth: number,
       else {
         const body = text.slice(open + 1, end);
         quote();
-        word += ansi ? body.replace(/\\(.)/gs, '$1') : body;
+        addQuoted(ansi ? body.replace(/\\(.)/gs, '$1') : body);
         inWord = true;
         index = end + 1;
       }
@@ -306,7 +324,7 @@ export function read(text: string, start: number, closer: string, depth: number,
       else if (!quoted) index = open + 1; // unclosed: drop the quote and read on
       else {
         quote();
-        word += quoted.value;
+        addQuoted(quoted.value);
         inWord = true;
         index = quoted.end;
       }
@@ -335,6 +353,14 @@ export function read(text: string, start: number, closer: string, depth: number,
       // (( maths )): read the inside on its own, so a << there is a shift, not a heredoc.
       endWord();
       const end = read(text, index + 1, ')', depth + 1, out);
+      // The inside is one arithmetic expression, not the commands the reader made of it:
+      // bash runs a name or a subscript in it later. Keep the text for the hidden-code
+      // check (#457).
+      if (end !== -1) {
+        const expressions = arithmeticCommands.get(out) ?? [];
+        expressions.push(text.slice(index + 2, end - 1));
+        arithmeticCommands.set(out, expressions);
+      }
       if (end === -1) endCommand();
       index = end === -1 ? text.length : end; // unclosed: the read inside read the rest
     } else if (character === '(' && word.endsWith('%') && isGitFormatAtom(text, index)) {

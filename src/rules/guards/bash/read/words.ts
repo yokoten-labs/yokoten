@@ -72,6 +72,9 @@ export const isAssignment = (word: string) => /^[A-Za-z_][A-Za-z0-9_]*\+?=/.test
 // `git config core.hooksPath '>x'` still sets the value ">x". Words that never went through
 // the reader (an `env -S` string, the rough cut) have no marks, and keep every word.
 export const unquotedRedirects = new WeakMap<string[], Set<number>>();
+// The ranges of each word that came from a quote or a \ escape, by word index (#457): bash
+// expands no glob in them, so `git tag --list "v*"` names a pattern, not a file.
+export const quotedWords = new WeakMap<string[], Map<number, [number, number][]>>();
 // The word lists the reader made: in them, a redirect with no mark is quoted text.
 export const readWords = new WeakSet<string[]>();
 
