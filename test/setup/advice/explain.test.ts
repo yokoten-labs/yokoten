@@ -15,7 +15,10 @@ test('explain with no id lists the ids on stdout and exits 0; --json gives { ids
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['explain']);
   assert.deepEqual([result.status, result.stderr], [0, '']);
-  assert.match(result.stdout, /^Ids: release, .*\bsecret\b.*\n$/);
+  assert.match(result.stdout, /^yokoten explain · \d+ rules and \d+ steps\n/);
+  assert.match(result.stdout, /\brelease\b/);
+  assert.match(result.stdout, /\bsecret\b/);
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, line);
   result = await sandbox.call(['explain', '--json']);
   assert.deepEqual([result.status, result.stderr], [0, '']);
   const listed = JSON.parse(result.stdout);
@@ -38,4 +41,17 @@ test('explain: each rule and step, its reason and its check; ids are unique (#42
   }
   assert.equal(explain('nope'), null);
   assert.equal(explain('toString'), null, 'only own keys');
+});
+
+test('explain <id> is one screen: the stage, the four labels and a link (#1027)', async () => {
+  const sandbox = makeSandbox();
+  const result = await sandbox.call(['explain', 'tests']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^yokoten explain tests · stage 1, safety net\n/);
+  assert.match(result.stdout, /^  What {8}run your tests on every push$/m);
+  assert.match(result.stdout, /^  Why {9}/m);
+  assert.match(result.stdout, /^  Check {7}/m);
+  assert.match(result.stdout, /^  Fix {9}/m);
+  assert.match(result.stdout, /^More: https:\/\//m);
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, line);
 });

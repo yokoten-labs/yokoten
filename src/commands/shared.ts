@@ -328,6 +328,11 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
   return wrap(head, text);
 }
 
+/** One row with no mark: a label, then the text, wrapped under itself (#1027). */
+export function field(label: string, text: string): string[] {
+  return wrap(`  ${label.padEnd(12)}`, text);
+}
+
 /** The last line: the one command to type next. */
 export const nextLine = (command: string): string[] => wrap('Next: ', `\`${command}\``);
 

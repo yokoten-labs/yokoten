@@ -61,6 +61,15 @@ test('light: yokoten test runs the tests and returns their exit code (#461)', ()
   assert.equal(sandbox.run(['test', '--', 'bad.test.mjs']).status, 1);
 });
 
+test('test: one screen says the plan first and ends with one row (#1027)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('ok.test.mjs', "import { test } from 'node:test';\ntest('fine', () => {});\n");
+  const result = sandbox.run(['test', '--', 'ok.test.mjs']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /^yokoten test · \d+ files at once, /);
+  assert.match(result.stdout, /^ {2}done +tests passed$/m);
+});
+
 test('guard cost: the shell times line gives user plus system CPU of the child, and nothing else (#461)', () => {
   assert.equal(parseChildTimes('0m0.010s 0m0.020s\n0m0.060s 0m0.030s\n'), 90);
   assert.equal(parseChildTimes('no times here\n'), null);

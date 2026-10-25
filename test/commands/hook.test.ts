@@ -909,8 +909,9 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   result = await sandbox.call(['worker', 'mark', join(tree, 'src')]);
   assert.equal(result.status, 0, result.stderr);
   const top = realpathSync(tree);
-  assert.ok(result.stdout.includes(`marked the worktree at ${top}.`), result.stdout);
-  assert.ok(result.stdout.includes(`\`git worktree remove ${top}\``), result.stdout);
+  assert.match(result.stdout, /marked the worktree at/);
+  assert.ok(result.stdout.includes(top), result.stdout);
+  assert.ok(result.stdout.includes('git worktree remove'), result.stdout);
   // Positive controls: with the mark and no env, a lead-only edit and a push are refused.
   result = await muse({ path: join(tree, 'AGENTS.md') });
   assert.equal(result.status, 2);
@@ -1082,7 +1083,7 @@ test("worker mark: a clone is marked only by the lead, from its own checkout, in
   // GIT_DIR and GIT_WORK_TREE that name the lead's checkout don't move the mark there.
   result = await sandbox.call(['worker', 'mark', desk], { extra: { GIT_DIR: join(sandbox.repo, '.git'), GIT_WORK_TREE: sandbox.repo, GIT_COMMON_DIR: join(sandbox.repo, '.git') } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /marked the clone at /);
+  assert.match(result.stdout, /marked the clone at/);
   assert.ok(existsSync(deskMark), "the mark is in the clone's own .git");
   assert.ok(!existsSync(leadMark), "the lead's .git has no mark");
   // In the marked clone every session is a worker: mark and unmark say to run them from outside.
@@ -1502,8 +1503,9 @@ test('stops: off and on work, and the state says where the log is (#621)', async
   const state = await sandbox.call(['stops']);
   assert.equal(state.status, 0, state.stderr);
   assert.match(state.stdout, /stops\.jsonl/);
-  assert.match(state.stdout, /on:/);
+  assert.match(state.stdout, /^yokoten stops · on: 1 stop logged on this computer$/m);
   assert.match(state.stdout, /Nothing is sent anywhere/);
+  for (const line of state.stdout.split('\n')) assert.ok(line.length <= 80, line);
 });
 
 // The guard read the session's root twice: once for the call, and once more for the team

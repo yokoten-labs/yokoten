@@ -921,9 +921,9 @@ test('marks add, marks and marks remove: one value from stdin, never in stdout o
   // The counts by kind, never a value.
   const counts = await call(['marks']);
   assert.equal(counts.status, 0, counts.stderr);
-  assert.match(counts.stdout, /^yokoten marks: 1 in ~\/\.config\/yokoten\/private-marks \(the values are never shown\)$/m);
-  assert.match(counts.stdout, /^ {2}by hand: +1$/m);
-  assert.match(counts.stdout, /^ {2}git name: +0$/m);
+  assert.match(counts.stdout, /^yokoten marks · 1 private mark, values never shown$/m);
+  assert.match(counts.stdout, /^ {2}your own +1$/m);
+  assert.doesNotMatch(counts.stdout, /^ {2}git-name/m, 'a kind with no mark is folded away');
   // A mark is never a word on the command line, and is not repeated when it is.
   const worded = await call(['marks', 'add', OTHER]);
   assert.equal(worded.status, 1);
@@ -940,13 +940,21 @@ test('marks add, marks and marks remove: one value from stdin, never in stdout o
   assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });
 
+test('marks: the default screen fits 80 columns (#1027)', async () => {
+  const { call } = marksSandbox();
+  assert.equal((await call(['marks', 'add'], `${HAND_MARK}\n`)).status, 0);
+  const result = await call(['marks']);
+  assert.equal(result.status, 0, result.stderr);
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, line);
+});
+
 test('marks add: a mark after one yokoten added goes under a header of its own, so it counts as the owner\'s (#434)', async () => {
   const { file, call, marks } = marksSandbox();
   mkdirSync(join(file, '..'), { recursive: true });
   writeFileSync(file, `# added by yokoten from this machine: git email\nann${'@'}sample-mail.dev\n`, { mode: 0o600 });
   assert.equal((await call(['marks', 'add'], OTHER)).status, 0);
   assert.equal(marks(), `# added by yokoten from this machine: git email\nann${'@'}sample-mail.dev\n# your own marks\n${OTHER}\n`);
-  assert.match((await call(['marks'])).stdout, /^ {2}git email: +1\n(?:.*\n)* {2}by hand: +1$/m);
+  assert.match((await call(['marks'])).stdout, /^ {2}git-email +1 +added by install\n(?:.*\n)* {2}your own +1$/m);
 });
 
 test('marks off git-name: removed, install no longer adds it, hand-added marks untouched; marks on git-name adds it back (#434)', async () => {
@@ -969,7 +977,7 @@ test('marks off git-name: removed, install no longer adds it, hand-added marks u
   const install = await call(['install']);
   assert.doesNotMatch(install.stdout, /added your git name/);
   assert.ok(!marks().includes(NAME));
-  assert.match((await call(['marks'])).stdout, /^ {2}git name: +0 {2}off: install does not add it; `yokoten marks on git-name` adds it again$/m);
+  assert.match((await call(['marks'])).stdout, /^ {2}git-name +0 +off: install does not add it$/m);
   // Back to the default: the name is added again, with no value shown.
   const on = await call(['marks', 'on', 'git-name']);
   assert.equal(on.stdout, 'yokoten marks: install adds your git name again, and it is in your private marks now (not shown)\n');
@@ -1027,7 +1035,9 @@ test('marks: the count names both files when the setting adds one (#656)', async
   writeFileSync(extra, `${OTHER}\n`);
   const counts = await sandbox.call(['marks'], { extra: { YOKOTEN_PRIVATE_MARKS: extra } });
   assert.equal(counts.status, 0, counts.stderr);
-  assert.match(counts.stdout, /^yokoten marks: 2 in ~\/\.config\/yokoten\/private-marks and the file YOKOTEN_PRIVATE_MARKS names \(the values are never shown\)$/m);
+  assert.match(counts.stdout, /^yokoten marks · 2 private marks, values never shown$/m);
+  assert.match(counts.stdout, /~\/\.config\/yokoten\/private-marks/);
+  assert.match(counts.stdout, /and the file YOKOTEN_PRIVATE_MARKS names/);
   assert.ok(!VALUES.test(counts.stdout + counts.stderr));
 });
 

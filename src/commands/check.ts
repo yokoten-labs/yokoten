@@ -33,7 +33,7 @@ import { isCodeFile, nameNotes } from '../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../setup/install.ts';
 import { readOriginUrl } from '../setup/plan.ts';
-import { bullets, type Invocation, parse, print, printJson, readInput, requireRoot, say, showOnPullRequest, usage } from './shared.ts';
+import { bullets, field, type Invocation, parse, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from './shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -487,12 +487,18 @@ export function runTest(invocation: Invocation): number {
     print(invocation, [shown, why]);
     return 0;
   }
+  // One screen around the runner (#1027): the plan first, the runner's own words as they are,
+  // and one row at the end. The exit code is the runner's, unchanged.
+  const plan = light ? `${jobs} files at once, ${hasNice ? 'niced, at most half the cores' : 'no nice here'}` : 'the light run is off; every core';
+  print(invocation, [...title('test', plan), '']);
   const result = spawnSync(command.file, command.args, { stdio: 'inherit', windowsHide: true });
   if (result.error) {
     print(invocation, [`yokoten test: can't run the tests: ${result.error.message}`], invocation.stderr);
     return 1;
   }
-  return result.status ?? 1;
+  const status = result.status ?? 1;
+  print(invocation, ['', ...row(status === 0 ? 'done' : 'MISSING', status === 0 ? 'tests passed' : `tests failed (exit ${status})`)]);
+  return status;
 }
 
 // ---- `yokoten marks` (#447) ----
@@ -559,7 +565,18 @@ export function runMarkAction(invocation: Invocation, action: string | undefined
   return action === 'off' ? turnOff(invocation, kind) : turnOn(invocation, kind);
 }
 
-/** `yokoten marks`: how many marks of each kind, and which kinds are off. Never a value. */
+/** The word `yokoten marks` uses for a kind, in a row: short, and never a value. */
+const KIND_LABELS: Record<string, string> = {
+  'git name': 'git-name',
+  'git email': 'git-email',
+  'forge login': 'forge-login',
+  'private remote host': 'private host',
+  'by hand': 'your own',
+};
+const INSTALL_KINDS = new Set(['git name', 'git email', 'forge login']);
+const kindLabel = (kind: string): string => KIND_LABELS[kind] ?? kind;
+
+/** `yokoten marks`: one screen, a count per kind, and the way to add one. Never a value. */
 function showCounts(invocation: Invocation): number {
   let counts: Map<string, number>;
   try {
@@ -570,15 +587,15 @@ function showCounts(invocation: Invocation): number {
   const off = new Set(kindsTurnedOff(invocation.env));
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
   const kinds = [...SHOWN_KINDS, ...[...counts.keys()].filter((kind) => !SHOWN_KINDS.includes(kind))];
-  const width = Math.max(...kinds.map((kind) => kind.length)) + 1;
-  // The count is of every file the check reads (#656): the setting's file adds to the default.
-  const where = marksFiles(invocation.env).length > 1 ? `${paths(invocation.env).marks} and the file YOKOTEN_PRIVATE_MARKS names` : paths(invocation.env).marks;
-  const lines = [`yokoten marks: ${total} in ${where} (the values are never shown)`];
-  for (const kind of kinds) {
-    const note = off.has(kind) ? `  off: install does not add it; \`yokoten marks on ${kindWord(kind)}\` adds it again` : '';
-    lines.push(`  ${`${kind}:`.padEnd(width + 1)} ${counts.get(kind) ?? 0}${note}`);
+  const lines = [...title('marks', `${total} private ${total === 1 ? 'mark' : 'marks'}, values never shown`), ''];
+  for (const kind of kinds.filter((kind) => (counts.get(kind) ?? 0) > 0 || off.has(kind))) {
+    const note = off.has(kind) ? `off: install does not add it` : INSTALL_KINDS.has(kind) ? 'added by install' : '';
+    lines.push(...field(kindLabel(kind), `${counts.get(kind) ?? 0}${note ? `   ${note}` : ''}`));
   }
-  lines.push('To add one: yokoten marks add. To stop install adding a kind: yokoten marks off <kind>.');
+  if (lines.length === 2) lines.push(...row('note', 'no private marks yet'));
+  // The count is of every file the check reads (#656): the setting's file adds to the default.
+  if (marksFiles(invocation.env).length > 1) lines.push(...row('note', `read from ${paths(invocation.env).marks} and the file YOKOTEN_PRIVATE_MARKS names`));
+  lines.push('', ...wrap('Add one: ', '`yokoten marks add`'));
   print(invocation, lines);
   return 0;
 }

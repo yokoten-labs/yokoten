@@ -14,16 +14,16 @@ import { DEFAULTS, loadConfig } from '../../rules/config.ts';
 import { gitConfig } from '../../run/check.ts';
 import { workerRole } from '../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../run/hook.ts';
-import { formatFinding } from '../../rules/message.ts';
+import { docsLink, formatFinding } from '../../rules/message.ts';
 import { hideHome } from '../../rules/privacy.ts';
 import { draft, facts, table } from '../../setup/advice/adopt.ts';
-import { explain, explainLines, ids } from '../../setup/advice/explain.ts';
+import { explain, type Explained, ids } from '../../setup/advice/explain.ts';
 import { cleanOlderInstall, PROFILE_MARK } from '../../setup/install.ts';
 import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../setup/doctor/index.ts';
-import { STAGES } from '../../setup/road.ts';
+import { ROAD, STAGES } from '../../setup/road.ts';
 import type { Finding } from '../../rules/message.ts';
 import { READERS } from '../hook.ts';
-import { count, type Invocation, moreLine, nextLine, noRootFinding, parse, print, printJson, requireRoot, rootOf, row, say, title, usage } from '../shared.ts';
+import { count, field, type Invocation, moreLine, nextLine, noRootFinding, parse, print, printJson, requireRoot, rootOf, row, say, title, usage, wrap } from '../shared.ts';
 import { writeLeadSession } from './board/feed/read/logs.ts';
 
 /** What full doctor says while the slow reads run: the server read and (in WSL) the drive read. */
@@ -159,14 +159,73 @@ export function runExplain(invocation: Invocation): number {
   const [id] = options.positional;
   if (id === undefined) {
     if (options.flags.has('--json')) printJson(invocation, { ids: ids() });
-    else print(invocation, [`Ids: ${ids().join(', ')}`]);
+    else print(invocation, idListLines());
     return 0;
   }
   const found = explain(id);
   if (options.flags.has('--json')) printJson(invocation, found ? { found: true, ...found } : { id, found: false, ids: ids() });
-  else if (found) print(invocation, explainLines(found));
+  else if (found) print(invocation, explainScreen(invocation, found));
   else print(invocation, [`yokoten explain: no rule or step is called ${id}.`, `Ids: ${ids().join(', ')}`], invocation.stderr);
   return found ? 0 : 1;
+}
+
+/** The first letter small: a task title reads as a sentence after its label (#1027). */
+const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text.slice(1);
+
+/**
+ * `yokoten explain <id>` as one screen (#1027): what it is in the title, then What, Why, Check
+ * and, for a road step, its Fix. A person and an agent read the same words.
+ */
+function explainScreen(invocation: Invocation, found: Explained): string[] {
+  const step = ROAD.find((s) => s.key === found.id);
+  const summary = step ? `stage ${step.stage}, ${STAGES[step.stage - 1]}` : found.kind === 'rule' ? 'a rule yokoten checks' : 'a step on the road';
+  const lines = [...title(`explain ${found.id}`, summary), ''];
+  const task = step ? STEP_TITLES[found.id] : undefined;
+  lines.push(...field('What', task ? lowerFirst(task) : found.what));
+  lines.push(...field('Why', found.why));
+  lines.push(...field('Check', found.check));
+  if (step) {
+    const fix = stepFix(step, invocation);
+    if (fix) lines.push(...field('Fix', shortFix(fix)));
+  }
+  lines.push('');
+  lines.push(...moreLine(found.docs ?? docsLink('road.md', found.id)));
+  return lines;
+}
+
+/** The first, usable part of a fix: the rest is a command or a link, and the screen stays short. */
+function shortFix(fix: string): string {
+  const first = fix.split(', then ')[0] ?? fix;
+  if (first.length <= 160) return first;
+  return `${first.slice(0, first.lastIndexOf(' ', 158))}…`;
+}
+
+/** A step's fix, computed where it can be; a step that needs a code host reads none here. */
+function stepFix(step: (typeof ROAD)[number], invocation: Invocation): string | undefined {
+  try {
+    return step.fix(rootOf(invocation.cwd, invocation.env) ?? invocation.cwd, invocation.env, undefined);
+  } catch {
+    return undefined;
+  }
+}
+
+/** `yokoten explain` with no id: every id, grouped as rules and as road stages, within 80 columns. */
+function idListLines(): string[] {
+  const all = ids();
+  const rules = all.filter((id) => !ROAD.some((step) => step.key === id));
+  const steps = ROAD.filter((step) => all.includes(step.key));
+  const lines = [...title('explain', `${count(rules.length, 'rule')} and ${count(steps.length, 'step')}`), ''];
+  lines.push('Rules', ...wrap('  ', rules.join(', ')));
+  if (steps.length) {
+    lines.push('Road');
+    for (const [stage, name] of STAGES.entries()) {
+      const inStage = steps.filter((step) => step.stage === stage + 1);
+      if (!inStage.length) continue;
+      lines.push(...wrap('  ', `stage ${stage + 1} of ${STAGES.length}, ${name}`));
+      lines.push(...wrap('    ', inStage.map((step) => step.key).join(', ')));
+    }
+  }
+  return lines;
 }
 
 export function runAdopt(invocation: Invocation): number | Promise<number> {

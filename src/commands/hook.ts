@@ -1,7 +1,7 @@
 // `yokoten hook`: the tool-call guard, and with --stop the end-of-turn check.
 
 import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
@@ -54,7 +54,7 @@ import {
   wasRefusedRecently,
   writeAgentChecks,
 } from '../run/hook.ts';
-import { bullets, type Invocation, type Output, parse, print, printJson, readInput, rootOf, say, usage } from './shared.ts';
+import { bullets, field, type Invocation, type Output, parse, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
 
 // Each runtime sends its tool call in its own shape; its adapter turns it into an Action.
 // The table below asks the adapters' contract (#395), never a runtime's name.
@@ -705,11 +705,15 @@ export function runStops(invocation: Invocation): number {
   }
   if (action === undefined) {
     const state = stopsState(env);
+    const stops = `${state.count} ${state.count === 1 ? 'stop' : 'stops'}`;
+    const summary = state.isOff ? 'off: no stops logged' : `on: ${stops} logged on this computer`;
     print(invocation, [
-      `the stop log is ${state.isOff ? 'off' : 'on'}: ${hideHome(state.file ?? file, env)}`,
-      state.isOff ? 'yokoten writes no line while it is off.' : `${state.count} stop(s), ${state.bytes} byte(s)`,
-      'It stays on this computer. Nothing is sent anywhere.',
-      '`yokoten stops off` stops the writing and deletes the log.',
+      ...title('stops', summary),
+      '',
+      ...field('log', hideHome(state.file ?? file, env)),
+      ...row('note', state.isOff ? 'yokoten writes no line while it is off' : 'Nothing is sent anywhere; the log stays on this computer'),
+      '',
+      ...(state.isOff ? wrap('Turn on: ', '`yokoten stops on` starts the writing again') : wrap('Turn off: ', '`yokoten stops off` stops the writing and deletes the log')),
     ]);
     return 0;
   }
@@ -722,7 +726,7 @@ export function runStops(invocation: Invocation): number {
       say(invocation, `yokoten stops: the log cannot be turned off: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
       return 1;
     }
-    print(invocation, ['the stop log is off, and its file is deleted. `yokoten stops on` starts it again.']);
+    print(invocation, [...title('stops', 'off, and the log is deleted'), '', ...wrap('Turn on: ', '`yokoten stops on` starts it again')]);
     return 0;
   }
   if (action === 'on') {
@@ -732,7 +736,7 @@ export function runStops(invocation: Invocation): number {
       say(invocation, `yokoten stops: the log cannot be turned on: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
       return 1;
     }
-    print(invocation, [`the stop log is on: ${hideHome(file, env)}`]);
+    print(invocation, [...title('stops', 'on, and the log is written again'), '', ...field('log', hideHome(file, env))]);
     return 0;
   }
   return usage(invocation, `unknown action "${action}"; use off or on`);
@@ -874,7 +878,11 @@ export function runWorker(invocation: Invocation): number | Promise<number> {
   const marked = markWorktree(invocation.cwd, dir, invocation.env);
   if ('fail' in marked) return fail(marked.fail);
   const removes = marked.kind === 'clone' ? 'Removing the clone removes the mark.' : `\`git worktree remove ${marked.top}\` removes the mark.`;
-  print(invocation, [`yokoten worker: marked the ${marked.kind} at ${marked.top}. The guard now treats every agent there as a worker. ${removes} \`yokoten worker unmark ${marked.top}\` clears it sooner.`]);
+  print(invocation, [
+    ...title('worker', `marked the ${marked.kind} at ${marked.top}.`),
+    '',
+    ...wrap('  ', `Lead-only files are guarded there. ${removes} \`yokoten worker unmark ${marked.top}\` clears it sooner.`),
+  ]);
   return 0;
 }
 
@@ -932,7 +940,7 @@ function runUnmark(invocation: Invocation, dir: string, fail: (line: string) => 
   } catch (error) {
     return fail(`can't clear the worker list (${(error as Error).message.split('\n')[0]}). Check HOME, then run it again.`);
   }
-  print(invocation, [`yokoten worker: unmarked ${top}. The guard no longer treats agents there as workers.`]);
+  print(invocation, [...title('worker', `unmarked ${top}`), '', ...wrap('  ', 'The guard no longer treats agents there as workers.')]);
   return 0;
 }
 
@@ -982,7 +990,17 @@ export async function runDesk(invocation: Invocation): Promise<number> {
   } catch (error) {
     return fail((error as Error).message);
   }
-  print(invocation, [`yokoten desk: ${runtime} in ${plan.desk} (${backend.name}); the agent may reach ${plan.hosts.join(', ')}.`], invocation.stderr);
+  // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
+  const shown = hideHome(relative(invocation.cwd, plan.desk) || plan.desk, invocation.env);
+  print(invocation, [
+    ...title('desk', `${runtime} in ${shown}`),
+    '',
+    ...field('writes', `${shown} only`),
+    ...field('network', "the agent's API only"),
+    ...field('role', 'worker, TZ=UTC, no tokens'),
+    '',
+    'Starting… (stop with Ctrl+C)',
+  ]);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
   if (unlisted) print(invocation, [`yokoten desk: the board won't show this desk: ${unlisted}.`], invocation.stderr);
