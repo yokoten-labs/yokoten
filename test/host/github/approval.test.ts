@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MODEL_TIMEOUT_MS, parseVerdict, reviewFor } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -589,7 +589,6 @@ test('review: the verdict parser takes only the exact JSON shape; anything else 
     ['findings not a list', JSON.stringify({ verdict: 'APPROVE', summary: 's', findings: 'none' })],
     ['a finding not text', JSON.stringify({ verdict: 'APPROVE', summary: 's', findings: [1] })],
     ['changes with no finding', JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: [] })],
-    ['too many findings', JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 21 }, (_, i) => `f${i}`) })],
   ];
   for (const [name, answer] of refused) assert.equal(parseVerdict(answer), null, name);
 });
@@ -612,13 +611,71 @@ test('review: only a clear APPROVE posts an approval; errors, timeouts and junk 
     assert.equal(review.event, 'COMMENT', name);
     assert.equal(parseLeadApproval(review.body), null, `${name}: no approval line`);
   }
-  // A diff over the cap is not sent to the model; it gets REQUEST_CHANGES.
+  // A diff over the cap of parts is not sent to the model; it gets REQUEST_CHANGES.
   let asked = false;
-  const large = await run(async () => { asked = true; return approve; }, 'x'.repeat(MAX_DIFF_CHARS + 1));
+  const large = await run(async () => { asked = true; return approve; }, 'x'.repeat(MAX_PARTS * MAX_DIFF_CHARS * 2));
   assert.deepEqual([large.event, asked], ['REQUEST_CHANGES', false]);
   assert.match(large.body, /too large to review/);
   // A model id that is not a plain id never reaches the approval line.
   assert.equal((await run(async () => approve, DIFF, 'deepseek) (x')).event, 'COMMENT');
+});
+
+test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-10-27)', () => {
+  const long = 'w'.repeat(MAX_TEXT_CHARS * 3);
+  for (const [name, answer, verdict, findings] of [
+    ['a long summary', { verdict: 'APPROVE', summary: long, findings: [] }, 'APPROVE', 0],
+    ['a long finding', { verdict: 'REQUEST_CHANGES', summary: 's', findings: [long] }, 'REQUEST_CHANGES', 1],
+    ['too many findings', { verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => `f${i}`) }, 'REQUEST_CHANGES', MAX_FINDINGS + 1],
+  ] as [string, object, string, number][]) {
+    const parsed = parseVerdict(JSON.stringify(answer));
+    assert.ok(parsed, name);
+    assert.deepEqual([parsed.verdict, parsed.findings.length], [verdict, findings], name);
+    assert.ok([parsed.summary, ...parsed.findings].every((text) => text.length <= MAX_TEXT_CHARS), `${name}: every text fits`);
+  }
+  assert.match(parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: long, findings: [] }))?.summary ?? '', /…$/, 'a cut text is marked');
+  assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => `f${i}`) }))?.findings.at(-1), '15 more findings not shown.');
+});
+
+test('review: a large diff is split by file, then by hunk; every line is in a part (owner, 2026-10-27)', () => {
+  const file = (name: string, hunks: string[]) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n${hunks.map((h) => `@@ -1 +1 @@\n${h}\n`).join('')}`;
+  const max = 400;
+  for (const [name, diff, count] of [
+    ['small: one part', file('a.ts', ['+a']), 1],
+    ['two files over the cap: one part each', file('a.ts', ['+'.repeat(250)]) + file('b.ts', ['+'.repeat(250)]), 2],
+    ['one file over the cap: split between hunks', file('big.ts', ['+'.repeat(200), '+'.repeat(200), '+'.repeat(200)]), 3],
+    ['one hunk over the cap: sliced', file('huge.ts', ['+'.repeat(1000)]), 3],
+    ['no diff --git line', 'x'.repeat(1000), 4],
+  ] as [string, string, number][]) {
+    const parts = splitDiff(diff, max);
+    assert.equal(parts.length, count, name);
+    assert.ok(parts.every((part) => part.length <= max), `${name}: each part fits`);
+    for (const line of diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'))) {
+      assert.ok(parts.join('').includes(line.slice(0, 50)), `${name}: no line is lost`);
+    }
+    if (name.includes('split') || name.includes('sliced')) assert.ok(parts.every((part) => part.startsWith('diff --git a/')), `${name}: each part names its file`);
+  }
+  assert.deepEqual(filesOf(file('a.ts', ['+a']) + file('src/b.ts', ['+b'])), ['a.ts', 'src/b.ts']);
+});
+
+test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-27)', async () => {
+  const big = Array.from({ length: 3 }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n@@ -1 +1 @@\n+${'x'.repeat(MAX_DIFF_CHARS - 100)}\n`).join('');
+  const ok = JSON.stringify({ verdict: 'APPROVE', summary: 'fine', findings: [] });
+  const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'no', findings: ['f1.ts: wrong'] });
+  const prompts: string[] = [];
+  const run = (answers: string[]) => decideReview({ body: 'b', diff: big, model: MODEL, askModel: async (messages) => { prompts.push(messages[1].content); return answers[prompts.length - 1] ?? ok; } });
+  const all = await run([ok, ok, ok]);
+  assert.equal(all.event, 'APPROVE');
+  assert.equal(prompts.length, 3, 'one call per part');
+  assert.match(prompts[0], /comes in 3 parts; this is part 1[\s\S]*Files the whole pull request changes: f0\.ts, f1\.ts, f2\.ts/);
+  prompts.length = 0;
+  const one = await run([ok, no, ok]);
+  assert.equal(one.event, 'REQUEST_CHANGES');
+  assert.match(one.body, /Part 2 of 3: f1\.ts: wrong/);
+  prompts.length = 0;
+  const unclear = await run([ok, 'sure', ok]);
+  assert.equal(unclear.event, 'COMMENT');
+  assert.match(unclear.body, /part 2 of 3/);
+  assert.deepEqual(mergeVerdicts([{ verdict: 'APPROVE', summary: 's', findings: [] }]), { verdict: 'APPROVE', summary: 's', findings: [] }, 'one part keeps its text as is');
 });
 
 test('review: the diff and body are data; the prompt says so and fences them (#1088)', () => {
