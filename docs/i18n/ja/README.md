@@ -84,7 +84,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 | `npx yokoten` | 足りないものを整え、いまの位置と次の一歩を一画面で見せる |
 | `yokoten desk` | 一つのタスクを一つの AI に渡し、その AI 専用の囲いのデスクで進める |
 | `yokoten kanban` | チームを一目で見せる。リアルタイムで読み取り専用（プレビュー） |
-| `yokoten tidy` | 古いブランチ、worktree、デスクを一覧にする。`--local` は保存してからごみ箱へ移す |
+| `yokoten tidy` | 古いブランチ、worktree、デスクを一覧にする。`--local` は保存してから yokoten のごみ箱フォルダへ移す |
 
 `yokoten help --all` で残りのコマンドが分かります。古いコマンドも動き、移動先を教えてくれます。
 

@@ -612,9 +612,9 @@ Some people arrive with skills alone: `npx skills add yokoten-labs/yokoten` copi
 skills only. A skill is advice to the agent; the guard is what stops a command. So skills
 alone guard nothing: run `npx yokoten install` too, or use the plugin, to turn the guard on.
 
-Most people need one command: `npx yokoten`. It does the work of `install`, `init`,
-`doctor`, `trust` and `update`: it sets up what is missing, then shows where you are and the
-next step. Besides it, a new person sees three commands: `desk`, `kanban` and `tidy`
+Most people need one command: `npx yokoten`. It does the work of `install`, `init`
+and `doctor`: it sets up what is missing, then shows where you are and the next step. `trust`
+and `update` stay their own steps. Besides it, a new person sees three commands: `desk`, `kanban` and `tidy`
 ([record 0043](records/0043-v012-three-commands.md)). The older commands still run, and each
 says where it went. `yokoten help --all` lists them, and the table under [Commands](#commands) explains each.
 
@@ -1191,7 +1191,7 @@ flowchart LR
 - The allowed stop writes `.yokoten-agent.json` at the root of a linked worktree.
   It does not write that file in the main checkout. It sets `checks` to `failing`
   and `updated` to the time in UTC. A pass sets `checks` to `passing`.
-  Other fields stay. The lead reads that file. The kanban shows it as the commit check.
+  Other fields stay. The lead reads that file. Its `/api/state` shows it as the commit check.
   The allowed stop's stderr reaches nobody.
   A status file yokoten cannot read is left unchanged, and the stop check says why.
 - When the try count cannot be saved, one refusal says the next stop is let through.
@@ -1935,7 +1935,7 @@ The setup treats agents like staff on a line, each with a clear role and limited
   commit check stop a change to a test file. The stop hook runs the brief's done-when
   command. After three refusals the worker may stop. Its message to the lead starts with
   "NOT DONE: checks failing". In a linked worktree, `.yokoten-agent.json` records `checks`.
-  The lead reads that file. The kanban shows it as the commit check.
+  The lead reads that file. Its `/api/state` shows it as the commit check.
 - **The bot** is a GitHub App installed on the repo. It opens pull requests. If it has
   the Workflows permission, CODEOWNERS still sends every CI change to you, and a release
   waits for you in the protected `release` environment. A ruleset requires your review,
@@ -2249,11 +2249,13 @@ It shows three things:
   model, the task, and whether it is working, stuck, waiting or done. A session with no
   output for 15 minutes counts as stuck.
 - **Proof.** For each session: whether a system sandbox or only the guard fenced it,
-  whether the commit check passed, and how the tests did on Linux, Windows and macOS.
+  whether the commit check passed, and the tests on Linux, Windows and macOS. Those three
+  read "not proven" until the status file records platforms.
 - **Pull requests and Actions.** The pull requests that wait on you, the ones merged
   lately, and the health of GitHub Actions. The tokens each agent used show with them.
 
-`yokoten kanban --text` prints this as plain text and exits. That works today.
+`yokoten kanban --text` prints the sessions by state, the pull requests and Actions, and exits.
+That works today. The proof and the tokens are in `GET /api/state` for now.
 
 Without `--text`, it serves a page on this machine only, at `http://<repo>.localhost:<port>/`.
 `<repo>` is the folder name, made safe for a hostname. The port stays the same for this
@@ -2303,7 +2305,7 @@ too. One file per worktree.
 | `worktree` | The worktree it works in |
 | `doing` | What it does now, in a few words |
 | `state` | `working`, `waiting` (it needs you) or `done` |
-| `checks` | `passing` or `failing`, from its last test run. The kanban shows it as the commit check |
+| `checks` | `passing` or `failing`, from its last test run. It is in `GET /api/state` as the commit check |
 | `updated` | When it last wrote, such as `2026-10-22T10:00:00Z`. Quiet for 15 minutes shows as stuck |
 | `started` | When this work started, such as `2026-10-22T08:00:00Z`. Without it, the file's birth time is used, then `updated` |
 | `blocked` | A guard stop that needs a decision, in one line |

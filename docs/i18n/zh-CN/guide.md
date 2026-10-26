@@ -478,14 +478,14 @@ Codex 0.163.0 已经不接受 `wire_api = "chat"`。它会提示找不到 `deeps
 下来的仓库跑）。选一种就行，别两种都装。yokoten 写进去的 hook 命令要在 POSIX shell 里跑，
 Windows 上请用 Git Bash。
 
-大多数人只需要一条命令：`npx yokoten`。它做了 `install`、`init`、`doctor`、`trust` 和 `update` 的活：
-补上缺的东西，再给出一屏：你在哪里，下一步做什么。除它之外，新手只会看到三条命令：
-`desk`、`kanban` 和 `tidy`（[记录 0043](../../records/0043-v012-three-commands.md)）。
-旧命令照样能用，并会告诉你它搬到了哪里。`yokoten help --all` 把它们都列出来，下面「命令」里的表一条条讲清。
-
 也有人只装了技能：`npx skills add yokoten-labs/yokoten` 只复制技能。技能只是给 agent 的
 说明，真正拦住命令的是守卫。所以只装技能等于没有守卫：要跑 `npx yokoten install`，或者用插件，
 守卫才会打开。
+
+大多数人只需要一条命令：`npx yokoten`。它做了 `install`、`init` 和 `doctor` 的活：
+补上缺的东西，再给出一屏：你在哪里，下一步做什么。`trust` 和 `update` 仍是各自独立的步骤。除它之外，新手只会看到三条命令：
+`desk`、`kanban` 和 `tidy`（[记录 0043](../../records/0043-v012-three-commands.md)）。
+旧命令照样能用，并会告诉你它搬到了哪里。`yokoten help --all` 把它们都列出来，下面「命令」里的表一条条讲清。
 
 ### 装哪个版本
 
@@ -784,7 +784,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `uninstall [--list]` | 撤掉 `install` 装的东西：带 yokoten 管理标记的入口技能和 agent，Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code 设置里的 hook，OpenCode 的插件，还有 `~/.local/share/yokoten`。私有词表和 mailmap 文件只剩 `install` 写的表头时，也一并删掉；`install` 建的空文件夹和 git 配置文件也删掉。`install` 之前就有的文件夹留着。你自己的文件、改动和设置都留着；拦截记录会被删掉。再跑一次什么也不会变。`--list` 逐行列出它删掉的或留下的每个文件 |
 | `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](../../server.md#3-the-bot-a-github-app) |
 | `train [<pr>...] [--wait <秒>] [--next]` | 按给出的顺序，以 bot 的身份合并一批已批准、检查全绿的 PR；第一个需要人来处理的 PR 就让它停下。不给 PR 编号时只按冲突地图给出的顺序打印计划，什么都不合并；要合并就写出编号。顺序是：先合并移动路径的改动，单独进行；再合并不与其他改动冲突的；然后合并被最多改动冲突的那个，最旧的优先。第一次合并之前先记下每个 PR 的基础分支，所以叠在被 squash 合并的分支上的 PR，会用它和那个分支真正共有的基础来合并。只涉及 import 行的冲突取并集；真正的冲突、测试失败、`check` 失败或缺少批准都会让列车停下。每次合并后的树先测试再推送；推送后的合并要等 CI 通过；`--wait` 设等多久，默认 1800 秒。`--next` 只说出下一个 PR 是哪个、为什么，不合并。只有 lead 能跑 |
-| `kanban [--text] [--no-open]` | 旧名字 `board` 照样能用，先打一行告诉你现在叫 `kanban`。只在这台电脑上开一个只读页面：各个会话、等你处理的 PR，以及 Actions。页面上没有任何东西能启动、停掉或改动工作。启动后自己在浏览器里打开页面并登录好，按 Ctrl-C 停掉（加 `--no-open` 就只打印地址）。登录用的密钥只交给浏览器。加 `--text` 就在终端里用纯文本打印同一份快照。见「团队看板」 |
+| `kanban [--text] [--no-open]` | 旧名字 `board` 照样能用，先打一行告诉你现在叫 `kanban`。只在这台电脑上开一个只读页面：各个会话、等你处理的 PR，以及 Actions。页面上没有任何东西能启动、停掉或改动工作。启动后自己在浏览器里打开页面并登录好，按 Ctrl-C 停掉（加 `--no-open` 就只打印地址）。登录用的密钥只交给浏览器。加 `--text` 就在终端里用纯文本打印同一份快照。见「看板」 |
 | `tidy [--local \| --empty [--yes]]` | 只打 `tidy`：列出旧东西，按你能做的事分组。旧东西指已合并或远端已删的分支、没活了的 worktree 和工位、工位已删但还留着的日志。每行写原因和大小，什么也不改。`--local`：先给每样东西存一份（分支打成 bundle，没提交的改动打成 patch，再写 `index.json`），然后搬进 `~/.local/state/yokoten/trash` 里按时间命名的文件夹。只要有一份没存成，就一样也不搬。正在用的工位和 worktree 不碰。GitHub 上的分支只列出来。`--empty`：问你一句，再删回收站里放了 7 天以上的文件夹；没有终端时要加 `--yes` |
 | `conflicts [--json] [--rebuild <id>]` | 读取每个打开的 PR；没有代码托管时，读取每个本地分支。用平实的话说明哪些改动和 main 冲突、哪些改动互相冲突。它会说出只碰同一个文件的那几对，以及这一对里先合哪个。它不检出、不合并。结果放在 git 目录里，guard 不用跑 git 就能读到。加 `--json` 打印整张地图；加 `--rebuild` 打印一段提示，让 AI 在最新的 main 上重做某个改动 |
 
@@ -1629,11 +1629,12 @@ yokoten msg log
 - **会话。**这个仓库、它的 worktree 和它的工位里的每个 AI 会话：哪个 agent、什么模型、
   什么任务，以及它是在做、卡住了、在等，还是做完了。15 分钟没有输出的会话算卡住。
 - **证据。**每个会话是被系统沙箱围着，还是只有守卫；提交检查过了没有；
-  测试在 Linux、Windows 和 macOS 上的结果。
+  测试在 Linux、Windows 和 macOS 上的结果。状态文件还没记录平台之前，这三项都显示「未证明」。
 - **PR 和 Actions。**等你处理的 PR、最近合并的 PR，以及 GitHub Actions 的健康情况。
   每个 agent 用了多少 token，也一并显示。
 
-`yokoten kanban --text` 用纯文本打印这些内容，然后退出。现在就能用。
+`yokoten kanban --text` 用纯文本按状态打印会话，再打印 PR 和 Actions，然后退出。现在就能用。
+证据和 token 数目前在 `GET /api/state` 里。
 
 不加 `--text` 时，它只在这台电脑上开一个页面，地址是 `http://<repo>.localhost:<port>/`。
 `<repo>` 是文件夹名，改成主机名能用的样子。这个仓库的端口保持不变。
@@ -1677,7 +1678,7 @@ agent 也可以自己写这个文件，比如 `task`；钩子不碰它没设的�
 | `worktree` | 在哪个 worktree 干活 |
 | `doing` | 现在在干什么，一句话 |
 | `state` | `working`、`waiting`（需要你）或 `done` |
-| `checks` | `passing` 或 `failing`，来自它上一次跑测试。看板把它显示成提交检查 |
+| `checks` | `passing` 或 `failing`，来自它上一次跑测试。它在 `/api/state` 里显示成提交检查 |
 | `updated` | 上次写这个文件的时间，比如 `2026-10-22T10:00:00Z`。安静 15 分钟就显示为卡住 |
 | `started` | 这件事什么时候开始的，比如 `2026-10-22T08:00:00Z`。没写就用文件的创建时间，再没有就用 `updated` |
 | `blocked` | 需要决定的 guard 拦截，一句话 |

@@ -84,7 +84,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 | `npx yokoten` | 补上缺的东西，再给出一屏：你在哪里，下一步做什么 |
 | `yokoten desk` | 把一个任务交给一个 AI，在它自己的围栏工位里做 |
 | `yokoten kanban` | 一眼看到整个团队，实时，只读（预览版） |
-| `yokoten tidy` | 列出旧分支、worktree 和工位；加 `--local` 先存一份，再挪进回收站 |
+| `yokoten tidy` | 列出旧分支、worktree 和工位；加 `--local` 先存一份，再挪进 yokoten 自己的回收文件夹 |
 
 `yokoten help --all` 列出其余的命令。旧命令照样能用，并会告诉你它搬到了哪里。
 
