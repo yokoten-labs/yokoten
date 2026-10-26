@@ -673,11 +673,12 @@ export interface ApprovalCommit {
 }
 
 /**
- * The one login whose area lead approval counts (issue #1088, record 0048): the review
- * workflow posts as GitHub Actions, with a token no agent holds. The same approval line
- * from the yokoten bot or any other login is text anyone can write, so it never counts.
+ * The one login whose area lead approval counts (issue #1088, record 0048): the reviewer
+ * GitHub App. Only the review workflow on main can mint its token, from a key in an
+ * environment limited to main. The same approval line from the yokoten bot,
+ * github-actions[bot] or any other login is text anyone can write, so it never counts.
  */
-export const REVIEWER_LOGIN = 'github-actions[bot]';
+export const REVIEWER_LOGIN = 'yokoten-reviewer[bot]';
 
 /** Whether a review was posted by the reviewer identity. Case does not matter, as on GitHub. */
 export const isReviewerLogin = (login: string | undefined): boolean => (login ?? '').toLowerCase() === REVIEWER_LOGIN;

@@ -769,10 +769,14 @@ test('approve: a lead of another model may approve tier A; its own model, stale 
     ['no writers read at all', { writers: undefined }, "the Made-with line names no writer, so the area lead's model can't be checked against the writer's"],
     // Issue #1088: only the reviewer identity's approval counts. The same line from the
     // bot login, or any other login, is refused; a missing login fails closed.
-    ['the reviewer identity, any case', { lead: lead('DeepSeek', 'deepseek-flash', { login: 'GitHub-Actions[bot]' }) }, null],
-    ['the yokoten bot login', { lead: lead('DeepSeek', 'deepseek-flash', { login: 'yokoten-bot[bot]' }) }, `the area lead's approval was posted by yokoten-bot[bot], not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
-    ['a person login', { lead: lead('xAI', 'Grok 4.7', { login: 'grok-lead' }) }, `the area lead's approval was posted by grok-lead, not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
-    ['a look-alike login', { lead: lead('xAI', 'Grok 4.7', { login: 'github-actions' }) }, `the area lead's approval was posted by github-actions, not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
+    ['the reviewer App', { lead: lead('DeepSeek', 'deepseek-flash') }, null],
+    // GitHub logins are case-insensitive, so the check is too.
+    ['the reviewer App, another case', { lead: lead('DeepSeek', 'deepseek-flash', { login: 'Yokoten-Reviewer[bot]' }) }, null],
+    ...['yokoten-bot[bot]', 'github-actions[bot]', 'grok-lead', 'yokoten-reviewer', 'yokoten-reviewer[bot] ', ' yokoten-reviewer[bot]', 'yokoten-reviewer[bot]x', 'yokoten-reviewer-bot'].map((login): [string, Partial<MergeApprovalRead>, string] => [
+      `the login ${JSON.stringify(login)}`,
+      { lead: lead('DeepSeek', 'deepseek-flash', { login }) },
+      `the area lead's approval was posted by ${login}, not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`,
+    ]),
     ['no login', { lead: { ...lead('xAI', 'Grok 4.7'), login: undefined } }, `the area lead's approval was posted by an unknown login, not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
     ['the reviewer identity on an older commit with changes after it', { lead: lead('DeepSeek', 'deepseek-flash', { commit: 'a'.repeat(40), after: 1, sameDiff: false }) }, "the area lead's approval is on aaaaaaa; 1 commit with changes came after it; ask the area lead to approve again"],
     ['a fresh owner Approve wins over a bot-login line', { lead: lead('xAI', 'Grok 4.7', { login: 'yokoten-bot[bot]' }), approved: head }, null],
@@ -783,7 +787,8 @@ test('approve: a lead of another model may approve tier A; its own model, stale 
     if (what) assert.equal(found?.id, 'pr-approve', name);
   }
   // The fix line says what to do in plain words.
-  assert.match(checkMergeApproval(read({ lead: lead('Anthropic', 'Opus 5.5') }))?.fix ?? '', /^ask a reviewer of another model to approve the head commit through the review workflow, which posts as github-actions\[bot\] .*or ask the owner$/);
+  assert.match(checkMergeApproval(read({ lead: lead('Anthropic', 'Opus 5.5') }))?.fix ?? '', /^ask a reviewer of another model to approve the head commit through the review workflow, which posts as yokoten-reviewer\[bot\] .*or ask the owner$/);
+  assert.equal(REVIEWER_LOGIN, 'yokoten-reviewer[bot]', 'the reviewer App login, in one place');
   assert.match(checkMergeApproval(read({ writers: [] }))?.fix ?? '', /names each writer and model.*ask a reviewer of another model/);
   assert.match(checkMergeApproval(read({ lead: lead('Claude Code', 'latest') }))?.fix ?? '', /^name the model in the approval line/);
   assert.match(checkMergeApproval(read({ writers: [{ vendor: 'Claude Code', model: 'latest' }] }))?.fix ?? '', /^name each writer's model in the Made-with line/);

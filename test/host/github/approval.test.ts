@@ -511,6 +511,8 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
     // Issue #1088: the same line from the yokoten bot login, or a newer one beside the reviewer's.
     [58, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z', 'yokoten-bot[bot]')],
     [59, ['a.txt'], `${sonnet(head, '2026-10-23T11:00:00Z', 'yokoten-bot[bot]')}\n${sonnet(approved, '2026-10-23T10:00:00Z')}`],
+    // Any workflow can post as github-actions[bot], so that login is refused too.
+    [60, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z', 'github-actions[bot]')],
   ];
   const routes: Record<string, unknown> = {};
   for (const [number, files, reviews, body] of pulls) {
@@ -542,6 +544,7 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
     [57, 'writers that cannot be read are refused', noWriter],
     [58, 'the bot login is not the reviewer identity', `the area lead's approval was posted by yokoten-bot[bot], not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
     [59, "a newer bot-login line does not hide the reviewer's stale approval", "the area lead's approval is on " + approved.slice(0, 7) + '; 1 commit with changes came after it; ask the area lead to approve again'],
+    [60, 'github-actions[bot] is not the reviewer identity', `the area lead's approval was posted by github-actions[bot], not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
   ];
   for (const [number, name, what, more] of cases) {
     const state = readApprovalState(gh, dir, env, number, 'me/repo');
@@ -631,7 +634,7 @@ test('review: the diff and body are data; the prompt says so and fences them (#1
 });
 
 // The approval the reviewer posts is the one the merge check counts, from its login only.
-test('review: its approval line passes the merge check from github-actions[bot] only (#1088)', () => {
+test('review: its approval line passes the merge check from the reviewer App only (#1088)', () => {
   const head = 'c'.repeat(40);
   const line = parseLeadApproval(`ok\n\n${approvalLine(MODEL)}`);
   assert.deepEqual(line, { lead: 'DeepSeek', vendor: 'DeepSeek', model: MODEL });
@@ -645,21 +648,41 @@ test('review: its approval line passes the merge check from github-actions[bot] 
     lead: { ...line!, login, commit: head, after: 0, sameDiff: true },
   });
   assert.equal(checkMergeApproval(read(REVIEWER_LOGIN)), null);
-  assert.match(checkMergeApproval(read('yokoten-bot[bot]'))?.what ?? '', /posted by yokoten-bot\[bot\], not by github-actions\[bot\]/);
+  assert.equal(checkMergeApproval({ ...read(REVIEWER_LOGIN), lead: { ...read(REVIEWER_LOGIN).lead, commit: 'd'.repeat(40), after: 1, sameDiff: false } })?.what, "the area lead's approval is on ddddddd; 1 commit with changes came after it; ask the area lead to approve again");
+  for (const login of ['yokoten-bot[bot]', 'github-actions[bot]']) {
+    assert.match(checkMergeApproval(read(login))?.what ?? '', /, not by yokoten-reviewer\[bot\]; only the review workflow's approval counts$/, login);
+  }
   // DeepSeek reviewing DeepSeek's own work is still its own model.
   assert.match(checkMergeApproval({ ...read(REVIEWER_LOGIN), writers: [{ vendor: 'DeepSeek', model: 'deepseek-flash' }] })?.what ?? '', /same model family/);
 });
 
-// The workflow pins the model the approval line names, runs the reviewer from the base
-// commit, skips forks, and holds the key in a secret.
-test('review: the workflow runs the base reviewer on same-repo pull requests with the pinned model (#1088)', () => {
+// The workflow comes from main (pull_request_target), runs the reviewer from the base
+// commit and never the pull request's code, skips forks and drafts, mints the App token
+// in the main-only environment, and pins the model the approval line names.
+test('review: the workflow runs the base reviewer from main with the App token and the pinned model (#1088)', () => {
   const text = readFileSync(join(ROOT, '.github/workflows/review.yml'), 'utf8');
-  assert.match(text, /^ {10}DEEPSEEK_MODEL: deepseek-flash$/m);
-  assert.match(text, /^ {10}ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}$/m);
-  assert.match(text, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
-  assert.match(text, /^ {10}DEEPSEEK_API_KEY: \$\{\{ secrets\.DEEPSEEK_API_KEY \}\}$/m);
-  assert.match(text, /^permissions: \{\}$/m);
-  assert.match(text, /^ {4}permissions:\n {6}contents: read\n {6}pull-requests: write\n/m);
+  // The file without its comment lines, so a comment can't satisfy or break a check.
+  const code = text.replace(/^[ \t]*#.*\n/gm, '');
+  assert.match(code, /^on:\n {2}pull_request_target:( +# zizmor: ignore\[dangerous-triggers\] .*)?\n {4}types: \[opened, synchronize, reopened, ready_for_review\]\n/m);
+  assert.doesNotMatch(code, /^ {2}pull_request:/m, 'no plain pull_request trigger: the workflow file would come from the pull request');
+  assert.match(code, /^ {4}environment: reviewer$/m);
+  assert.match(code, /^permissions: \{\}$/m);
+  assert.match(code, /^ {4}permissions:\n {6}contents: read\n {4}steps:/m, 'the job reads only; the App token writes');
+  // The base commit only: no head ref or sha is checked out or fetched.
+  assert.match(code, /^ {10}ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}$/m);
+  assert.equal((code.match(/head\.sha/g) ?? []).length, 1, 'head.sha is read once, as HEAD_SHA for the review');
+  assert.match(code, /^ {10}HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
+  assert.doesNotMatch(code, /head\.ref|github\.head_ref|refs\/pull\//);
+  assert.match(code, /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/);
+  assert.match(code, /!github\.event\.pull_request\.draft/);
+  // The App token, minted by a pinned action from environment secrets, posts the review.
+  assert.match(code, /^ {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+\.\d+\.\d+$/m);
+  assert.match(code, /^ {10}app-id: \$\{\{ secrets\.REVIEWER_APP_ID \}\}$/m);
+  assert.match(code, /^ {10}private-key: \$\{\{ secrets\.REVIEWER_APP_KEY \}\}$/m);
+  assert.match(code, /^ {10}REVIEWER_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}$/m);
+  assert.doesNotMatch(code, /github\.token|secrets\.GITHUB_TOKEN/, 'the review is posted with the App token, not the Actions token');
+  assert.match(code, /^ {10}DEEPSEEK_MODEL: deepseek-flash$/m);
+  assert.match(code, /^ {10}DEEPSEEK_API_KEY: \$\{\{ secrets\.DEEPSEEK_API_KEY \}\}$/m);
   const owners = readFileSync(join(ROOT, '.github/CODEOWNERS'), 'utf8');
   for (const path of ['/.github/workflows/', '/.github/review/']) assert.match(owners, new RegExp(`^${path.replace(/[.]/g, '\\.')} @`, 'm'), `CODEOWNERS owns ${path}`);
 });
