@@ -13,8 +13,8 @@ import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } 
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
-import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { judgeSuite, readReport, SUITE_BUDGET, verdictOf } from '../../scripts/time/suite.ts';
+import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -558,8 +558,8 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
     const needs = results(docsOnly, {});
     const nodes = evaluate(inBraces(testJob, /^ {8}node: \$\{\{ (.+) \}\}$/m), needs, github) as string[];
     const extra = evaluate(inBraces(testJob, /^ {8}include: \$\{\{ (.+) \}\}$/m), needs, github) as { os: string; node: string; shard: number; of: number }[];
-    // Every setup runs each of its shards: three, or the whole suite in one macOS job
-    // on a pull request, so the shared runners stay free (#568).
+    // Every setup runs each of its shards: three, or two macOS shards on a pull request,
+    // so the shared runners stay free (#568).
     // A docs-only pull request runs one job, not three shards (#1051).
     const shards = evaluate(inBraces(testJob, /^ {8}shard: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
     const ofAxis = evaluate(inBraces(testJob, /^ {8}of: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
@@ -575,6 +575,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
     return {
       setups: [...new Set([...nodes.map((node) => `ubuntu-latest ${node}`), ...extra.map((entry) => `${entry.os} ${entry.node}`)])],
       whole: extra.filter((entry) => entry.of === 1).map((entry) => `${entry.os} ${entry.node} ${entry.shard}/${entry.of}`),
+      macos: extra.filter((entry) => entry.os === 'macos-latest').map((entry) => `${entry.shard}/${entry.of}`),
       budgets,
     };
   };
@@ -586,13 +587,14 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.match(jobBlock(text, 'ci'), /never started/, '`ci` names jobs that never got a runner (#568)');
   assert.deepEqual(matrix('true', 'pull_request').setups, ['ubuntu-latest ^24.22.1']);
   // Each test runs once before a merge (#1084). A pull request runs Linux on Node 22 and
-  // the whole suite in one macOS job (#568); its merge queue group runs Linux on Node 24.
-  // A push to main and the schedule run the full matrix. A docs-only run, the docs tests.
+  // macOS in two shards (#568); its merge queue group runs Linux on Node 24. A push to main
+  // runs Linux on both Nodes and no macOS; the schedule runs the full matrix. A docs-only
+  // run, the docs tests.
   const full = ['ubuntu-latest 22.23.4', 'ubuntu-latest ^24.22.1', 'macos-latest ^24.22.1'];
   const pullRequestSetups = ['ubuntu-latest 22.23.4', 'macos-latest ^24.22.1'];
   const pr = matrix('false', 'pull_request');
   assert.deepEqual(pr.setups, pullRequestSetups, 'a pull request runs no Linux Node 24 shards: the queue runs them');
-  assert.deepEqual(pr.whole, ['macos-latest ^24.22.1 1/1'], 'a pull request runs the whole suite in one macOS job (#568)');
+  assert.deepEqual([pr.whole, pr.macos], [[], ['1/2', '2/2']], 'a pull request runs macOS in two shards, about four minutes (#568)');
   assert.deepEqual(matrix('', 'pull_request').setups, pullRequestSetups, '`changes` failed: the pull request\'s full run');
   const queue = matrix('false', 'merge_group');
   assert.deepEqual([queue.setups, queue.whole], [['ubuntu-latest ^24.22.1'], []], 'a queue group runs Linux Node 24 only, all shards');
@@ -600,14 +602,15 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.deepEqual(matrix('', 'merge_group').setups, ['ubuntu-latest ^24.22.1'], '`changes` failed: one Node still, all shards');
   // No setup runs both before the merge: what the pull request runs, the queue does not.
   assert.deepEqual(pr.setups.filter((setup) => queue.setups.includes(setup)), []);
-  for (const event of ['push', 'schedule']) {
-    const run = matrix('false', event);
-    assert.deepEqual(run.setups, full);
-    assert.deepEqual(run.whole, [], `${event}: the full macOS matrix (#568)`);
-    // Every setup that runs keeps its own budget (#475): 90 s for Linux Node 24, the fastest.
-    assert.deepEqual(run.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90', 'macos-latest ^24.22.1 shard': '' });
-  }
-  assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 whole': '--budget 400' });
+  const daily = matrix('false', 'schedule');
+  assert.deepEqual([daily.setups, daily.macos], [full, ['1/3', '2/3', '3/3']], 'the schedule runs the full macOS matrix (#568)');
+  // Every setup that runs keeps its own budget (#475): 90 s for Linux Node 24, the fastest; macOS fails on the daily run.
+  assert.deepEqual(daily.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90', 'macos-latest ^24.22.1 shard': '' });
+  const push = matrix('false', 'push');
+  assert.deepEqual([push.setups, push.macos], [['ubuntu-latest 22.23.4', 'ubuntu-latest ^24.22.1'], []], 'a push to main runs no macOS: the pull request ran it, and a queued macOS job turned main red (2026-10-26)');
+  assert.deepEqual(push.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
+  // A pull request's macOS shards only warn: the same tests took 454 s and 629 s there (PR #1112).
+  assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 shard': '--budget 240 --warn-only' });
   assert.deepEqual(queue.budgets, { 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
   for (const name of ['typecheck', 'action', 'windows', 'lint']) {
@@ -2141,6 +2144,15 @@ test('suite time: a busy runner gets 50% more time for the same work, and a chil
   assert.match(childProblems({ 'test/a.test.ts': childPerTest }, [], {})[0], /starts 5 child processes.*over its cap of 4/);
 });
 
+test('suite time: --warn-only reports a run over the budget and passes; without it, the run fails (PR #1112)', () => {
+  assert.deepEqual(verdictOf(false, false), { code: 0 });
+  assert.deepEqual(verdictOf(false, true), { code: 0 }, 'a run under the budget says nothing more');
+  assert.deepEqual(verdictOf(true, false), { code: 1 }, 'the budget fails a run over it');
+  const warned = verdictOf(true, true);
+  assert.equal(warned.code, 0);
+  assert.match(warned.warning ?? '', /^::warning title=Test time::.*only warns/);
+});
+
 test('suite time: it reads the report node --test writes on this Node (#475)', () => {
   const dir = makeTempDir('yokoten-suite-');
   writeFileSync(join(dir, 'one.test.ts'), "import { test } from 'node:test';\ntest('one: it runs', () => {});\n");
@@ -2186,6 +2198,16 @@ test('windows known: a new failure and a fixed entry both fail the job; a flaky 
   for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
     assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
   }
+});
+
+test('windows known: a slow file gets twice its last time over the cap; a file that timed out fixes nothing (2026-10-26)', () => {
+  const times = readTimes('177 test/run/check.test.ts\n10 test/a.test.ts\n');
+  assert.equal(capOf('test/run/check.test.ts', times, 240), 354);
+  assert.equal(capOf('test\\run\\check.test.ts', times, 240), 354, 'a Windows path');
+  assert.equal(capOf('test/a.test.ts', times, 240), 240, 'a fast file keeps the cap');
+  assert.equal(capOf('test/new.test.ts', times, 240), 240, 'a file with no time keeps the cap');
+  const known = readKnown('test/a.test.ts :: waived\ntest/b.test.ts :: fixed now\n');
+  assert.deepEqual(judgeKnown([`test/a.test.ts :: ${TIMED_OUT}`], known), { added: [`test/a.test.ts :: ${TIMED_OUT}`], fixed: ['test/b.test.ts :: fixed now'] }, "the time-out is new; its file's waiver is not fixed; another file's is");
 });
 
 test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {

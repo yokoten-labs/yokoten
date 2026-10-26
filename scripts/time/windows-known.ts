@@ -10,7 +10,7 @@
 //
 //   node scripts/time/windows-known.ts                     run, compare with the list
 //   node scripts/time/windows-known.ts --out <file>        also write this run's failures
-//   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file, files at once
+//   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file (or twice its last time), files at once
 //   node scripts/time/windows-known.ts --shard 2/3         this machine's third of the files
 //   node scripts/time/windows-known.ts --list              the files that run, and the skipped areas
 //   node scripts/time/windows-known.ts --platform win32    judge as that system (default: this one)
@@ -23,6 +23,10 @@
 // more. If the second run gets through, the job goes on and names the file as FLAKY, with the
 // first run's stderr; if it crashes again, its stderr is printed and it fails as a new failure
 // unless listed. A time-out is not run again: the cap is minutes.
+// A file's cap is --cap, or twice its last time in windows-times.txt when that is longer: the
+// two slowest files took 174 to 208 s against a flat 240 s, and a slow runner passed it on
+// 2026-10-26 with no test failing. A file that timed out ran none of its listed tests, so
+// none of them is called fixed.
 //
 // Speed (owner 2026-10-25: a fast answer is worth more, even a failing one): the job runs on
 // several machines at once, each with a share of the files by the seconds they took last time
@@ -273,13 +277,17 @@ export function readKnown(text: string): { required: string[]; flaky: string[] }
   return { required, flaky };
 }
 
-/** New failures (not on the list) and fixed ones (on the list, now passing). Both fail the job. */
+/**
+ * New failures (not on the list) and fixed ones (on the list, now passing). Both fail the job.
+ * A listed test in a file that timed out did not run, so it is not fixed.
+ */
 export function judgeKnown(failures: string[], known: { required: string[]; flaky: string[] }): { added: string[]; fixed: string[] } {
   const failing = new Set(failures);
   const listed = new Set([...known.required, ...known.flaky]);
+  const timedOut = new Set(failures.filter((f) => f.endsWith(` :: ${TIMED_OUT}`)).map((f) => f.split(' :: ')[0]));
   return {
     added: failures.filter((f) => !listed.has(f)),
-    fixed: known.required.filter((k) => !failing.has(k)),
+    fixed: known.required.filter((k) => !failing.has(k) && !timedOut.has(k.split(' :: ')[0])),
   };
 }
 
@@ -337,6 +345,14 @@ export function readTimes(text: string): Map<string, number> {
     if (entry) times.set(entry[2], Number(entry[1]));
   }
   return times;
+}
+
+/** How many times its last run a slow file may take before it is stopped. */
+export const CAP_FACTOR = 2;
+
+/** A file's time cap, in seconds: the cap, or CAP_FACTOR times its last time when that is longer. */
+export function capOf(file: string, times: Map<string, number>, cap: number): number {
+  return Math.max(cap, CAP_FACTOR * (times.get(file.replace(/\\/g, '/')) ?? 0));
 }
 
 /** Each file's weight: its last time, or the median of the known times for a new file (1 with none). */
@@ -399,7 +415,7 @@ it is named as flaky.
   --list               print the skipped areas and the files that would run; run nothing
   --platform <name>    judge as linux, darwin or win32 (default: this system)
   --shard <i>/<n>      this machine's share of the files (default 1/1)
-  --cap <seconds>      time cap per file (default 240)
+  --cap <seconds>      time cap per file (default 240; twice a file's last time when longer)
   --jobs <n>           files at once (default 4)
   --out <file>         write this run's failures in the list's form
   --times <file>       write this run's seconds per file
@@ -450,7 +466,7 @@ async function main(): Promise<number> {
       const file = files[next++];
       const name = file.replace(/\\/g, '/');
       const started = Date.now();
-      const { last, first, isFlaky } = await runWithRetry(file, (path) => runFile(path, Number(values.cap) * 1000));
+      const { last, first, isFlaky } = await runWithRetry(file, (path) => runFile(path, capOf(name, times, Number(values.cap)) * 1000));
       const { tap, timedOut } = last;
       if (first) {
         // Never hidden: the crash's own words, and whether the second run got through.
