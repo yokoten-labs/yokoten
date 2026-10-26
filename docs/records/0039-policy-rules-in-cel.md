@@ -1,6 +1,6 @@
 # 0039 Policy rules: CEL, Rego or Cedar
 
-Status: proposed; the owner accepts or refuses
+Status: accepted on 2026-10-26: do not adopt CEL now (the Recommendation below)
 Date: 2026-10-24 (UTC)
 
 ## Context

@@ -1,6 +1,7 @@
 # 0025 One panel, many machines: the user's own fleet of agents
 
-Status: proposed
+Status: deferred on 2026-10-26. Not in v0.1.x: a new coder has one machine, and the
+scope is record 0043. The owner decides when to take it up again.
 Date: 2026-10-22 (UTC)
 
 ## Context

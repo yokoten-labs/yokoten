@@ -1,6 +1,7 @@
 # 0023 What others do, done safely; where they fail, a hard rule
 
-Status: proposed
+Status: accepted on 2026-10-26, without the first point. The owner dropped "build what
+others build": the scope is record 0043. The hard rules stay.
 Date: 2026-10-22 (UTC)
 
 ## Context
@@ -32,10 +33,7 @@ Where they fail, from their own reports:
 
 ## Decision
 
-1. **Take the strength, add the fence.** yokoten builds the useful parts (its own desk
-   per task, a merge queue on green checks, planners and reviewers apart from writers,
-   messages between agents of every vendor), each with the rule that keeps it safe.
-2. **Hard rules, from where others failed.** These are checks and the guard, not
+1. **Hard rules, from where others failed.** These are checks and the guard, not
    advice, and an agent cannot turn them off:
    - **Spending money or posting for the user is off until the owner turns it on**: paid
      calls, posts, and pull requests or issues on projects the user does not own.
@@ -49,7 +47,7 @@ Where they fail, from their own reports:
      passes on its own limits, never looser ones.
    - **Who said it comes from where it runs, never from what it claims.** A message names
      its sender by the desk it came from, and it never stands for the owner's approval.
-3. **Within the law and each vendor's terms.** Code from others is used by its license
+2. **Within the law and each vendor's terms.** Code from others is used by its license
    (copied with its notice when the license allows, written fresh from a description when
    it does not). Each vendor's CLI runs with its own sign-in, used as its terms allow; one
    vendor's sign-in is not copied for another's use.
