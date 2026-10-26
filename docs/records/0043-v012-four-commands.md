@@ -142,6 +142,24 @@ The pains that came up most often:
    - A command to copy stays whole on its own line.
    - Every line fits 80 columns. The `help` screen of 0.1.1 is the model.
 
+   From magpie's CLI (yetone/magpie, MIT), which the lead used on 2026-10-26:
+   - **Every switch says its state and turns off.** For each thing yokoten does by itself
+     (a rerun, an issue it opens, the stop log):
+     - `<switch> on|off` changes it;
+     - `<switch>` alone says whether it is on;
+     - an environment variable turns it off for one run.
+   - **A screen explains its own signs.** A last small line says what a symbol means, and
+     that `--json` is for scripts.
+   - **A secret shows only its ends**, such as `sk-8…2af8`. The person can tell which key
+     it is, and the key does not leak. It is never shown whole.
+   - **A plan or a fallback fits one line with an arrow**, such as
+     `1207 → 1209 → 1211` in the `merge` plan.
+   - **An error says what failed and the ways out, in one sentence.**
+   - **Only what is installed is listed.** Setup and the agent list show only the AI tools
+     on this machine.
+   - **`--help` anywhere only prints help** and does nothing else. A test holds it for
+     every command.
+
 9. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
    2. Hide and fold the commands.
@@ -155,7 +173,8 @@ The pains that came up most often:
     skip this.
 
 11. **Undo of an AI's change moves to v0.1.3.** A new coder needs "take back what the AI
-    just did". It gets its own record when it is built.
+    just did". It gets its own record when it is built. It will use one word for "back to
+    before", the same after every command, as magpie's `default` does.
 
 12. **Getting an AI is not built.** For a new coder with no AI, yokoten points to an
     existing model gateway (magpie, MIT) that the person installs and controls. yokoten
