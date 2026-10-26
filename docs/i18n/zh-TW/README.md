@@ -75,6 +75,19 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 - **不亂動你的設定。**你做過的選擇都會保留；改你的檔案之前，先留一份副本。
 - **一個儲存庫裡多個 AI 工作階段。**`yokoten conflicts` 會說先合併哪個開著的變更；一個檔案正被另一個開著的變更移動時，守衛會攔下對它的編輯。
 
+## 常用指令
+
+開始只要一條指令。同時用好幾個 AI 時，再多三條。
+
+| 指令 | 它做什麼 |
+|---|---|
+| `npx yokoten` | 補上缺的東西，再給出一屏：你在哪裡，下一步做什麼 |
+| `yokoten desk` | 把一個任務交給一個 AI，在它自己的圍欄工位裡做 |
+| `yokoten kanban` | 一眼看到整個團隊，即時，唯讀（預覽版） |
+| `yokoten tidy` | 列出舊分支、worktree 和工位；加 `--local` 先存一份，再移進 yokoten 的回收資料夾 |
+
+`yokoten help --all` 列出其餘的指令。舊指令照樣能用，並會告訴你它搬到了哪裡。
+
 ## 支援範圍
 
 任何 AI 模型都可以。守衛檢查的是 agent 要跑的指令，不是模型。
@@ -98,6 +111,8 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 ## 其他安裝方式
 
+`npx yokoten` 會替你把這三步都做完。它們也仍然可以單獨執行：
+
 ```sh
 npx yokoten install     # 每台電腦一次
 npx yokoten init        # 每個專案一次
@@ -112,8 +127,8 @@ npx yokoten doctor      # 走到了第幾關，下一步做什麼
 
 ## 路線圖
 
-- **現在，v0.1.1**：五項保護對所有人開啟；一個儲存庫裡多個 AI 工作階段；每條指令一屏看完。
-- **接下來，v0.1.2**：在命令列裡帶一支 agent 團隊（[issue #823](https://github.com/yokoten-labs/yokoten/issues/823)）。
+- **已完成，v0.1.1**：五項保護對所有人開啟；一個儲存庫裡多個 AI 工作階段。
+- **現在，v0.1.2**：三條指令，`desk`、`kanban` 和 `tidy`；每個變更由和作者不同的模型來審。
 - **以後**：一個專案學到的教訓，變成每個專案的檢查。
 
 *橫展*（yokoten）是豐田工廠裡的說法：一條產線發現的問題，改到每條產線。
