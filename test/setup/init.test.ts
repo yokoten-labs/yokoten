@@ -50,7 +50,7 @@ import { readTrust as grokTrust } from '../../src/agents/runtimes/grok.ts';
 import { readTrust as codexTrust } from '../../src/agents/runtimes/codex.ts';
 import { readTrust as museTrust } from '../../src/agents/runtimes/muse.ts';
 import { readCodeOwners } from '../../src/host/github/index.ts';
-import { shareGuardMeasure } from '../repo/helpers.ts';
+import { shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
 import { KIT, readWorkflowHashes, render, textHash, VERSION } from '../../src/setup/files.ts';
 
 // The version under test, read from package.json: a release bump must not need test edits.
@@ -75,6 +75,7 @@ import {
 } from '../../src/setup/init.ts';
 
 shareGuardMeasure();
+shareSelfTest();
 
 const guarded = (path: string, args: string) => `[ -f ${path} ] 2>/dev/null || { echo '${MISSING_PROJECT}' >&2; exit 1; }; node ${path} ${args}`;
 

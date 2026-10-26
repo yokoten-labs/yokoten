@@ -55,6 +55,7 @@ import { checkCommand } from '../../src/rules/guards/index.ts';
 import type { MachineProbe } from '../../src/setup/doctor/machine.ts';
 import { lineHash } from '../../src/host/sigstore/record.ts';
 import { REAL_MACHINE } from '../../src/setup/doctor/machine.ts';
+import { makeTempDir as makeSelfTestTemp, SELF_TEST } from '../../src/setup/doctor/self-test.ts';
 
 export const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'yokoten.ts');
 
@@ -730,5 +731,26 @@ export function shareGuardMeasure(): void {
   });
   after(() => {
     REAL_MACHINE.measureGuard = realMeasureGuard;
+  });
+}
+
+// One real self-test per test file (#1109), as with the guard measure. Every full doctor
+// runs the self-test, which makes temp folders: about 11 ms on Linux and more on Windows,
+// for each of a hundred runs. The first run is real and the rest reuse its answer. A run
+// with its own temp maker (a test of a missing temp folder, #1108) stays real.
+// test/setup/doctor/self-test.test.ts tests the self-test itself and does not call this.
+/** Call once at the top of a test file: its in-process doctor runs share one self-test. */
+export function shareSelfTest(): void {
+  const realRun = SELF_TEST.run;
+  before(() => {
+    let cached: ReturnType<typeof realRun> | undefined;
+    SELF_TEST.run = (makeTemp = makeSelfTestTemp) => {
+      if (makeTemp !== makeSelfTestTemp) return realRun(makeTemp);
+      cached ??= realRun(makeTemp);
+      return { failed: [...cached.failed], unset: [...cached.unset] };
+    };
+  });
+  after(() => {
+    SELF_TEST.run = realRun;
   });
 }

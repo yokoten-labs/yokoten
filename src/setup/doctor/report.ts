@@ -21,7 +21,7 @@ import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCh
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { pluginSourceNote } from '../advice/marketplace.ts';
-import { makeTempDir, type MakeTemp, noTempLine, selfTestRun } from './self-test.ts';
+import { makeTempDir, type MakeTemp, noTempLine, SELF_TEST } from './self-test.ts';
 import { hostPathPlace } from '../../platform/paths.ts';
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
@@ -320,7 +320,7 @@ function doctorRun(
   { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp },
 ): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
   const lines: string[] = [];
-  const { failed, unset } = selfTestRun(makeTemp);
+  const { failed, unset } = SELF_TEST.run(makeTemp);
   const findings: Finding[] = [];
   if (failed.length) {
     lines.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);

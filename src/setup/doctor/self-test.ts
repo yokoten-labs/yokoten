@@ -92,6 +92,12 @@ export function selfTestRun(makeTemp: MakeTemp = makeTempDir): { failed: string[
 }
 
 /**
+ * The self-test a doctor run calls, as REAL_MACHINE is its machine: one object, so a test
+ * file that runs doctor many times can share one real run (#1109). Doctor never changes it.
+ */
+export const SELF_TEST: { run: typeof selfTestRun } = { run: selfTestRun };
+
+/**
  * A project with `opencode.json` and no plugin must be noted, and a project with the
  * plugin `init` writes must be quiet. A folder with no OpenCode file must be quiet too.
  */

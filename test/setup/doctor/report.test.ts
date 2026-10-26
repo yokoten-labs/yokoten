@@ -8,7 +8,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { syncBuiltinESMExports } from 'node:module';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { shareGuardMeasure } from '../../repo/helpers.ts';
+import { shareGuardMeasure, shareSelfTest } from '../../repo/helpers.ts';
 import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, sessionRoad, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
@@ -18,6 +18,7 @@ import { missingPaths, road, ROAD, serverChecks, stepFinding } from '../../../sr
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
 
 shareGuardMeasure();
+shareSelfTest();
 
 const marks = (s: ServerSettings | Unread) => Object.fromEntries(serverChecks(s).map((c) => [c.id, c.mark]));
 

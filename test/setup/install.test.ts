@@ -25,7 +25,7 @@ import {
   sep,
 } from 'node:path';
 import { test } from 'node:test';
-import { shareGuardMeasure } from '../repo/helpers.ts';
+import { shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
 import {
   at,
   COMMENTED,
@@ -44,6 +44,7 @@ import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, 
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
 
 shareGuardMeasure();
+shareSelfTest();
 
 const BAD_USER_SETTINGS: [content: string, reason: (file: string) => string][] = [
   ['{ not json', (file) => `can't read ${file} ${JSON_FIX('install')}`],
