@@ -155,7 +155,6 @@ test/setup/doctor/report.test.ts :: doctor: on another host, each forge step say
 # Issue #1109 fixes them after the P4 design review; each line goes when its test passes. Remove all by v0.1.3.
 # On a slow GitHub runner the whole file can still pass its cap; then none of the 18 ran, so it may time out instead.
 ? test/setup/init.test.ts :: (timed out)
-test/setup/init.test.ts :: init: a CODEOWNERS owner gh says is a user is written as is (#313)
 test/setup/init.test.ts :: init: a merge commit runs the commit check too (#239)
 test/setup/init.test.ts :: init: a private repo can keep CI off with --no-ci, finish the road, and take CI up again (#377)
 test/setup/init.test.ts :: init: a second run with nothing to do is one line, and --list keeps every file (#1027)
