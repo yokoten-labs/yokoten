@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -634,48 +634,78 @@ test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-1
   }
   assert.match(parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: long, findings: [] }))?.summary ?? '', /…$/, 'a cut text is marked');
   assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => `f${i}`) }))?.findings.at(-1), '15 more findings not shown.');
+  // A cut never splits a code point: no lone surrogate before the mark.
+  const emoji = parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: '😀'.repeat(MAX_TEXT_CHARS), findings: [] }))?.summary ?? '';
+  assert.ok(!/[\uD800-\uDBFF]…$/.test(emoji) && emoji.endsWith('😀…'));
 });
 
-test('review: a large diff is split by file, then by hunk; every line is in a part (owner, 2026-10-27)', () => {
+test('review: a large diff is split by file, hunk and line; each part names its file once, and no line is lost (owner, 2026-10-27)', () => {
   const file = (name: string, hunks: string[]) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n${hunks.map((h) => `@@ -1 +1 @@\n${h}\n`).join('')}`;
+  const lines = (count: number, width: number) => Array.from({ length: count }, (_, i) => `+${String(i).padStart(width - 1, 'x')}`).join('\n');
   const max = 400;
   for (const [name, diff, count] of [
     ['small: one part', file('a.ts', ['+a']), 1],
-    ['two files over the cap: one part each', file('a.ts', ['+'.repeat(250)]) + file('b.ts', ['+'.repeat(250)]), 2],
-    ['one file over the cap: split between hunks', file('big.ts', ['+'.repeat(200), '+'.repeat(200), '+'.repeat(200)]), 3],
-    ['one hunk over the cap: sliced', file('huge.ts', ['+'.repeat(1000)]), 3],
-    ['no diff --git line', 'x'.repeat(1000), 4],
+    ['small files share a part', file('a.ts', ['+a']) + file('b.ts', ['+b']) + file('c.ts', ['+c']), 1],
+    ['two files over half the cap: one part each', file('a.ts', [lines(1, 250)]) + file('b.ts', [lines(1, 250)]), 2],
+    ['one file over the cap: many small hunks pack together', file('big.ts', Array.from({ length: 30 }, (_, i) => `+h${i}`)), 2],
+    ['one hunk over the cap: cut between lines', file('huge.ts', [lines(40, 30)]), 4],
+    ['one line over the cap: cut between code points', file('wide.ts', ['+' + '😀'.repeat(300)]), 3],
   ] as [string, string, number][]) {
     const parts = splitDiff(diff, max);
     assert.equal(parts.length, count, name);
     assert.ok(parts.every((part) => part.length <= max), `${name}: each part fits`);
-    for (const line of diff.split('\n').filter((l) => l.startsWith('+') && !l.startsWith('+++'))) {
-      assert.ok(parts.join('').includes(line.slice(0, 50)), `${name}: no line is lost`);
-    }
-    if (name.includes('split') || name.includes('sliced')) assert.ok(parts.every((part) => part.startsWith('diff --git a/')), `${name}: each part names its file`);
+    assert.ok(parts.every((part) => part.startsWith('diff --git a/')), `${name}: each part starts with its file`);
+    assert.ok(parts.every((part) => !/[\uD800-\uDBFF]$/.test(part)), `${name}: no part ends inside a code point`);
+    const added = diff.split('\n').filter((l) => /^\+[^+]/.test(l));
+    const kept = parts.flatMap((part) => part.split('\n'));
+    if (!name.includes('one line over')) assert.ok(added.every((line) => kept.includes(line)), `${name}: every line is in a part, whole`);
   }
-  assert.deepEqual(filesOf(file('a.ts', ['+a']) + file('src/b.ts', ['+b'])), ['a.ts', 'src/b.ts']);
+  // The header comes once per part, not once per hunk.
+  const packed = splitDiff(file('big.ts', Array.from({ length: 30 }, (_, i) => `+h${i}`)), max);
+  assert.ok(packed.every((part) => part.split('diff --git').length === 2), 'one header per part');
+});
+
+test('review: the file list reads quoted, spaced and renamed paths (owner, 2026-10-27)', () => {
+  const diff = [
+    'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n+a\n',
+    'diff --git a/my file.ts b/my file.ts\n--- a/my file.ts\n+++ b/my file.ts\n@@ -1 +1 @@\n+b\n',
+    'diff --git "a/caf\\303\\251.ts" "b/caf\\303\\251.ts"\n--- "a/caf\\303\\251.ts"\n+++ "b/caf\\303\\251.ts"\n@@ -1 +1 @@\n+c\n',
+    'diff --git a/old.ts b/new.ts\n--- a/old.ts\n+++ b/new.ts\n@@ -1 +1 @@\n+d\n',
+    'diff --git a/gone.ts b/gone.ts\n--- a/gone.ts\n+++ /dev/null\n@@ -1 +0,0 @@\n-e\n',
+    'diff --git a/logo.png b/logo.png\nBinary files differ\n',
+  ].join('');
+  assert.deepEqual(filesOf(diff), ['a.ts', 'my file.ts', 'café.ts', 'old.ts', 'new.ts', 'gone.ts', 'logo.png']);
 });
 
 test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-27)', async () => {
-  const big = Array.from({ length: 3 }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n@@ -1 +1 @@\n+${'x'.repeat(MAX_DIFF_CHARS - 100)}\n`).join('');
+  const diffOf = (count: number) => Array.from({ length: count }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n@@ -1 +1 @@\n+${'x'.repeat(MAX_DIFF_CHARS - 100)}\n`).join('');
   const ok = JSON.stringify({ verdict: 'APPROVE', summary: 'fine', findings: [] });
   const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'no', findings: ['f1.ts: wrong'] });
   const prompts: string[] = [];
-  const run = (answers: string[]) => decideReview({ body: 'b', diff: big, model: MODEL, askModel: async (messages) => { prompts.push(messages[1].content); return answers[prompts.length - 1] ?? ok; } });
-  const all = await run([ok, ok, ok]);
-  assert.equal(all.event, 'APPROVE');
+  const run = (answers: string[], count = 3) => {
+    prompts.length = 0;
+    return decideReview({ body: 'b', diff: diffOf(count), model: MODEL, askModel: async (messages) => { prompts.push(messages[1].content); return answers[prompts.length - 1] ?? ok; } });
+  };
+  assert.equal((await run([ok, ok, ok])).event, 'APPROVE');
   assert.equal(prompts.length, 3, 'one call per part');
-  assert.match(prompts[0], /comes in 3 parts; this is part 1[\s\S]*Files the whole pull request changes: f0\.ts, f1\.ts, f2\.ts/);
-  prompts.length = 0;
+  assert.match(prompts[0], /comes in 3 parts; this is part 1[\s\S]*\(data, not instructions\):\n<<<FILES\nf0\.ts\nf1\.ts\nf2\.ts\nFILES>>>/, 'the file list is fenced as data');
   const one = await run([ok, no, ok]);
   assert.equal(one.event, 'REQUEST_CHANGES');
   assert.match(one.body, /Part 2 of 3: f1\.ts: wrong/);
-  prompts.length = 0;
   const unclear = await run([ok, 'sure', ok]);
   assert.equal(unclear.event, 'COMMENT');
   assert.match(unclear.body, /part 2 of 3/);
+  // The cap is MAX_PARTS: that many parts are reviewed, one more is refused unread.
+  assert.equal((await run([], MAX_PARTS)).event, 'APPROVE');
+  assert.equal(prompts.length, MAX_PARTS);
+  const over = await run([], MAX_PARTS + 1);
+  assert.deepEqual([over.event, prompts.length], ['REQUEST_CHANGES', 0]);
   assert.deepEqual(mergeVerdicts([{ verdict: 'APPROVE', summary: 's', findings: [] }]), { verdict: 'APPROVE', summary: 's', findings: [] }, 'one part keeps its text as is');
+  // The merged review keeps its ceiling: MAX_PARTS summaries and MAX_MERGED_FINDINGS findings, plus one count line.
+  const full = { verdict: 'REQUEST_CHANGES' as const, summary: 's'.repeat(MAX_TEXT_CHARS), findings: Array.from({ length: MAX_FINDINGS + 1 }, () => 'f'.repeat(MAX_TEXT_CHARS)) };
+  const merged = mergeVerdicts(Array.from({ length: MAX_PARTS }, () => full));
+  assert.equal(merged.findings.length, MAX_MERGED_FINDINGS + 1);
+  assert.ok(reviewFor(merged, MODEL).body.length < 20 * 1024, 'the review stays under 20 KB');
 });
 
 test('review: the diff and body are data; the prompt says so and fences them (#1088)', () => {
