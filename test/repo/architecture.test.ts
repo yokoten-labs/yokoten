@@ -1440,18 +1440,125 @@ test('platform: the scan counts process.platform, and not one in a comment or a 
   assert.equal(platformReads(text), 2);
 });
 
-test('platform: no new process.platform read outside the list, and the list only shrinks (record 0040)', () => {
-  const allowed = new Map(PLATFORM_READS);
+// A ratchet: `found` is what a scan counts in each file, `allowed` today's list. A file over
+// its count, or not on the list, fails with `fix`; a listed file under its count fails too, so
+// the list only gets shorter. `where` is the folder the paths are in, for the message.
+function ratchetProblems(found: Map<string, number>, allowed: [string, number][], where: string, list: string, fix: string): string[] {
+  const most = new Map(allowed);
   const problems: string[] = [];
-  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts'))) {
-    const reads = platformReads(readFileSync(join(SRC, path), 'utf8'));
-    const most = allowed.get(path) ?? 0;
-    if (path.startsWith('platform/')) continue;
-    if (reads > most) problems.push(`src/${path}: ${reads} read(s) of process.platform, ${most} allowed. Take the platform as an argument, from the caller.`);
-    if (reads < most) problems.push(`src/${path}: ${reads} read(s) now, ${most} listed. Lower its count in PLATFORM_READS (test/repo/architecture.test.ts).`);
+  for (const [path, count] of found) if (count > (most.get(path) ?? 0)) problems.push(`${where}${path}: ${count} found, ${most.get(path) ?? 0} allowed. ${fix}`);
+  for (const [path, listed] of allowed) {
+    const count = found.get(path) ?? 0;
+    if (count < listed) problems.push(count === 0 ? `${where}${path}: none left. Remove it from ${list} (test/repo/architecture.test.ts).` : `${where}${path}: ${count} now, ${listed} listed. Lower its count in ${list} (test/repo/architecture.test.ts).`);
   }
-  for (const [path] of PLATFORM_READS) if (!existsSync(join(SRC, path))) problems.push(`src/${path} is gone. Remove its line from PLATFORM_READS.`);
-  assert.deepEqual(problems, []);
+  return problems;
+}
+
+const PLATFORM_RULE = 'Rule: only src/platform/ reads process.platform (record 0040, docs/records/0040-one-codebase-platform-layer.md; the move is issue #1000).';
+const PLATFORM_FIX = 'Take the platform as an argument, from the caller.';
+
+test('platform: a new read, a read past the count, and a moved read are each caught (record 0040)', () => {
+  const found = new Map([['rules/new.ts', 1], ['setup/kept.ts', 2], ['run/moved.ts', 0], ['host/fewer.ts', 1]]);
+  const allowed: [string, number][] = [['setup/kept.ts', 1], ['run/moved.ts', 1], ['host/fewer.ts', 3], ['agents/gone.ts', 1]];
+  assert.deepEqual(ratchetProblems(found, allowed, 'src/', 'PLATFORM_READS', PLATFORM_FIX), [
+    `src/rules/new.ts: 1 found, 0 allowed. ${PLATFORM_FIX}`,
+    `src/setup/kept.ts: 2 found, 1 allowed. ${PLATFORM_FIX}`,
+    'src/run/moved.ts: none left. Remove it from PLATFORM_READS (test/repo/architecture.test.ts).',
+    'src/host/fewer.ts: 1 now, 3 listed. Lower its count in PLATFORM_READS (test/repo/architecture.test.ts).',
+    'src/agents/gone.ts: none left. Remove it from PLATFORM_READS (test/repo/architecture.test.ts).',
+  ]);
+  assert.deepEqual(ratchetProblems(new Map([['setup/kept.ts', 1]]), [['setup/kept.ts', 1]], 'src/', 'PLATFORM_READS', PLATFORM_FIX), [], 'a file at its count passes');
+});
+
+test('platform: no new process.platform read outside the list, and the list only shrinks (record 0040)', () => {
+  const found = new Map<string, number>();
+  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && !file.startsWith('platform/'))) found.set(path, platformReads(readFileSync(join(SRC, path), 'utf8')));
+  assert.ok([...found.values()].some((count) => count > 0), 'the scan found no read; it is broken');
+  assert.deepEqual(ratchetProblems(found, PLATFORM_READS, 'src/', 'PLATFORM_READS', PLATFORM_FIX), [], PLATFORM_RULE);
+});
+
+// ---- A test does not skip itself on Windows (#1078) ----
+//
+// A test that asks `process.platform === 'win32'` to skip or cut itself short hides its
+// Windows gap in its own file, where no one counts it. A platform skip belongs in the one
+// per-OS table, TEST_AREAS in scripts/time/windows-known.ts (issue #1068, PR #1076), with a
+// reason. These test files branch on Windows today; the count only goes down.
+const WINDOWS_BRANCHES: [string, number][] = [
+  ['agents/desk/network/bridge.test.ts', 1],
+  ['agents/desk/network/proxy.test.ts', 1],
+  ['agents/hooks-file.test.ts', 1],
+  ['commands/advice/messages.test.ts', 1],
+  ['commands/hook.test.ts', 10],
+  ['host/light.test.ts', 1],
+  ['repo/architecture.test.ts', 1],
+  ['rules/guards/hooks/read.test.ts', 2],
+  ['rules/guards/lead-only/targets.test.ts', 1],
+  ['rules/guards/worker/box.test.ts', 3],
+  ['rules/guards/worker/config-command.test.ts', 1],
+  ['rules/guards/worker/config.test.ts', 1],
+  ['rules/guards/worker/mark.test.ts', 4],
+  ['rules/privacy.test.ts', 3],
+  ['run/check.test.ts', 2],
+  ['run/hook.test.ts', 14],
+  ['run/notes/translations.test.ts', 1],
+  ['setup/doctor/checks.test.ts', 3],
+  ['setup/doctor/machine.test.ts', 1],
+  ['setup/doctor/report.test.ts', 2],
+  ['setup/init.test.ts', 5],
+];
+
+const WINDOWS_NAMES = new Set(['isWindows', 'IS_WINDOWS', 'isWin', 'IS_WIN']);
+const COMPARES = new Set(['===', '!==', '==', '!=']);
+
+/**
+ * How many times `text` compares the running system with 'win32' (`process.platform` or
+ * `platform()`, on either side), or names an isWindows-style helper, outside comments and
+ * strings. A `platform` given as an argument is not counted: that is the right way.
+ */
+function windowsBranches(text: string): number {
+  const tokens = tokenize(text);
+  const isRunning = (at: number) =>
+    (tokens[at]?.text === 'platform' && tokens[at - 1]?.text === '.' && tokens[at - 2]?.text === 'process')
+    || (tokens[at]?.text === ')' && tokens[at - 1]?.text === '(' && tokens[at - 2]?.text === 'platform');
+  const isRunningFrom = (at: number) =>
+    (tokens[at]?.text === 'process' && tokens[at + 1]?.text === '.' && tokens[at + 2]?.text === 'platform')
+    || (tokens[at]?.text === 'platform' && tokens[at + 1]?.text === '(' && tokens[at + 2]?.text === ')');
+  let count = 0;
+  tokens.forEach((token, index) => {
+    if (token.kind === 'name' && WINDOWS_NAMES.has(token.text)) count += 1;
+    if (token.kind !== 'string' || token.text.slice(1, -1) !== 'win32') return;
+    if (COMPARES.has(tokens[index - 1]?.text) && isRunning(index - 2)) count += 1;
+    else if (COMPARES.has(tokens[index + 1]?.text) && isRunningFrom(index + 2)) count += 1;
+  });
+  return count;
+}
+
+const WINDOWS_RULE = 'Rule: a test does not skip itself on Windows; its skip goes in TEST_AREAS, scripts/time/windows-known.ts (issue #1068, record 0040).';
+const WINDOWS_FIX = 'Put the skip, with its reason, in TEST_AREAS (scripts/time/windows-known.ts), or pass the platform in as an argument.';
+
+test('windows skips: the scan counts each test that asks for win32, and not a platform argument, a comment or a string (#1078)', () => {
+  const text = [
+    "// process.platform === 'win32' in a comment",
+    "const said = \"process.platform === 'win32'\";",
+    "test('a', { skip: process.platform === 'win32' && 'no exec bit' }, () => {});",
+    "if (process.platform !== 'win32') check();",
+    "const shell = 'win32' === process.platform ? 'cmd' : 'sh';",
+    "if (platform() === 'win32') return;",
+    "const NO_LINK = isWindows && 'no symlink';",
+    "assert.equal(readTrust(root, env, 'win32').state, 'trusted');",
+    "for (const platform of PLATFORMS) if (platform === 'win32') wide();",
+    "const darwin = process.platform === 'darwin';",
+  ].join('\n');
+  assert.equal(windowsBranches(text), 5);
+  assert.deepEqual(ratchetProblems(new Map([['run/new.test.ts', windowsBranches(text)]]), [], 'test/', 'WINDOWS_BRANCHES', WINDOWS_FIX), [`test/run/new.test.ts: 5 found, 0 allowed. ${WINDOWS_FIX}`], 'a new test file that skips on win32 is caught');
+});
+
+test('windows skips: no new test skips itself on win32, and the list only shrinks (#1078)', () => {
+  const tests = join(ROOT, 'test');
+  const found = new Map<string, number>();
+  for (const path of filesUnder(tests).filter((file) => file.endsWith('.ts'))) found.set(path, windowsBranches(readFileSync(join(tests, path), 'utf8')));
+  assert.ok([...found.values()].some((count) => count > 0), 'the scan found no win32 branch; it is broken');
+  assert.deepEqual(ratchetProblems(found, WINDOWS_BRANCHES, 'test/', 'WINDOWS_BRANCHES', WINDOWS_FIX), [], WINDOWS_RULE);
 });
 
 // ---- Code given to node -e (#329) ----
