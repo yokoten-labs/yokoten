@@ -21,9 +21,10 @@ concurrency:
 jobs:
   # Which files the pull request changes (#438). It is docs-only when each file is under
   # docs/ or changes/, or is a Markdown file outside kit/ and .github/ that is not an
-  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A push to
-  # main is a full run, and so is a merge queue group. So is a file list that can't be
-  # read: docs_only is true only when the list was read and every file fits.
+  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A merge queue
+  # group reads its files the same way: the group's base to its head is the pull request's
+  # change (#1068). A push to main is a full run. So is a file list that can't be read:
+  # docs_only is true only when the list was read and every file fits.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -42,12 +43,12 @@ jobs:
       - id: files
         env:
           EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           docs_only=false
-          if [ "$EVENT" != pull_request ]; then
-            echo "Not a pull request, so every job runs."
+          if [ "$EVENT" != pull_request ] && [ "$EVENT" != merge_group ]; then
+            echo "Not a pull request or a merge queue group, so every job runs."
           elif [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] || ! files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" --) || [ -z "$files" ]; then
             echo "::warning::The pull request's changed files could not be read, so every job runs."
           else
