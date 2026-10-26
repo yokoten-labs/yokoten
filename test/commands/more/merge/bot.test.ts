@@ -23,10 +23,12 @@ import { test } from 'node:test';
 import {
   CLI,
   makeSandbox,
+  runChild,
   writeNodeProgram,
 } from '../../../repo/helpers.ts';
 import { invoke } from '../../../repo/invoke.ts';
-import { botHeading } from '../../../../src/commands/more/merge/bot.ts';
+import { botHeading, emptyPostProblems, type PostProblems, postRefusal } from '../../../../src/commands/more/merge/bot.ts';
+import { finding } from '../../../../src/rules/text/message.ts';
 
 // #117: the bot checks a title before it sends anything, by the rules CI uses. A fake gh
 // and a local API server stand in for GitHub; the real ones are never reached.
@@ -68,15 +70,22 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
   const refused = async (command: string[], pattern: RegExp, extra?: Record<string, string>) => {
     const r = await run(command, extra);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr, /^yokoten bot: 1 problem\(s\) in the title; nothing was sent\. Fix the title and run it again:\n- title: /, command.join(' '));
+    // A body or a cluster with problems of its own is named in the same answer, after the title (#1120).
+    assert.match(r.stderr, /^yokoten bot: (1 problem\(s\) in the title; nothing was sent\. Fix the title and run it again:\n- title: |\d+ problem\(s\) in the title(, [^;]+)? and [^;]+; nothing was sent\. Fix them all and run it again:\n\nIn the title \(1\):\n- title: )/, command.join(' '));
     assert.match(r.stderr, pattern, command.join(' '));
     assert.doesNotMatch(r.stderr, /YOKOTEN_BOT|bot\.pem|GitHub said/, 'the title is the reason, not the bot setup');
-    assert.deepEqual(requests, [], `no token was asked for: ${command.join(' ')}`);
+    // A new issue in this repo still asks for the token, so the one answer can name its
+    // labels too (#1120): the token only reads the label list, and nothing is sent.
+    const words = command.slice(1);
+    const isIssueHere = /^issue (create|new)\b/.test(words.join(' ')) && !words.includes('-R') && !words.some((word) => word.startsWith('--repo'));
+    const asked = isIssueHere && extra !== path ? ['GET /repos/me/repo/installation', 'POST /app/installations/77/access_tokens'] : [];
+    assert.deepEqual(requests, asked, `the token is asked for only to read an issue's labels: ${command.join(' ')}`);
+    requests.length = 0;
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
   try {
     // Positive controls: each bad title is refused with what, why and the fix.
-    await refused(['gh', 'issue', 'create', '--title', `host: ${'a'.repeat(60)}`, '--body', 'x'], /title: 66 characters, over 60\. .+\. Shorten it/);
+    await refused(['gh', 'issue', 'create', '--title', `host: ${'a'.repeat(60)}`, '--body', 'x\n\nMade with worker (opus)\n'],/title: 66 characters, over 60\. .+\. Shorten it/);
     await refused(['gh', 'issue', 'create', '-t', 'guard: add a step', '-l', 'feat'], /not in yokoten\.json "areas"\. .+\. Use one of: host, check\.$/m);
     await refused(['gh', 'issue', 'edit', '5', '--title=host: add a step.'], /title: a full stop at the end\. A title is a name/);
     await refused(['gh', 'pr', 'create', `--title=feat(host): ${'a'.repeat(62)}`, '--body', 'x'], /title: 74 characters, over 72\. .+\. Shorten it/);
@@ -1219,7 +1228,8 @@ test('bot: a new issue needs the Made with line; its labels are still checked (#
   const run = (command: string[], input = '') => sandbox.call(['bot', '--', ...command], { input, extra: bot });
   const ran = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
   try {
-    const refused = await run(['gh', 'issue', 'create', '-t', 'host: a', '--body', 'An issue.\n']);
+    // Good labels, so the body is the one part with a problem (#1120 names every part).
+    const refused = await run(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--body', 'An issue.\n']);
     assert.equal(refused.status, 1, refused.stderr);
     assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
@@ -1598,8 +1608,9 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
   sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
   const bin = join(sandbox.home, 'bin');
   const log = join(sandbox.home, 'gh.log');
-  // A fake gh that works on each system (#1068).
-  const ghEnv = writeNodeProgram(bin, 'gh', `const fs = process.getBuiltinModule('node:fs'); fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, 'utf8') }) + '\\n');`);
+  // A fake gh that works on each system (#1068). It lists no labels, and logs what it sends:
+  // a refused new issue still reads the label list for its one answer (#1120).
+  const ghEnv = writeNodeProgram(bin, 'gh', `if (args[0] === 'label') process.exit(1); const fs = process.getBuiltinModule('node:fs'); fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, 'utf8') }) + '\\n');`);
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
@@ -1707,6 +1718,150 @@ test('bot: a body file changed after the check does not change what is sent (#10
     assert.match(readFileSync(bodyFile, 'utf8'), /ghp_/);
     const [sent] = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
     assert.deepEqual(sent, { args: ['pr', 'create', '-t', 'fix(host): a', '--body-file', '-', '--label', 'bug', '--label', 'tier B', '--milestone', 'M1'], input: checked });
+  } finally {
+    server.close();
+  }
+});
+
+// #1120: every check that can run before sending runs, and the one answer names every
+// problem, grouped by part, with the values each part may take. Nothing is sent.
+test('postRefusal: one part keeps its heading; more parts are one answer, grouped (#1120)', () => {
+  const title = [finding('issue-area', 'title: the area is not in yokoten.json "areas"', 'use one of: host, check')];
+  const labels = [finding('issue-labels', 'labels: no type label', 'add one type label, such as feat, bug, docs')];
+  const body = [finding('pr-made-with', 'body: no `Made with` line at the end', 'end the body with it')];
+  const cases: { name: string; problems: Partial<PostProblems>; heading: string; parts: string[] }[] = [
+    { name: 'none', problems: {}, heading: '', parts: [] },
+    { name: 'the title alone', problems: { title }, heading: 'yokoten bot: 1 problem(s) in the title; nothing was sent. Fix the title and run it again:', parts: [] },
+    { name: 'the labels alone', problems: { labels, choices: ["  This repo's type labels: `bug`."] }, heading: 'yokoten bot: 1 problem(s) in the labels; nothing was sent. Fix the labels and run it again:', parts: [] },
+    { name: 'the title and the labels', problems: { title, labels }, heading: 'yokoten bot: 2 problem(s) in the title and the labels; nothing was sent. Fix them all and run it again:', parts: ['In the title (1):', 'In the labels (1):'] },
+    { name: 'three parts', problems: { title, body, labels: [...labels, ...labels] }, heading: 'yokoten bot: 4 problem(s) in the title, the body and the labels; nothing was sent. Fix them all and run it again:', parts: ['In the title (1):', 'In the body (1):', 'In the labels (2):'] },
+  ];
+  for (const { name, problems, heading, parts } of cases) {
+    const lines = postRefusal({ ...emptyPostProblems(), ...problems });
+    assert.equal(lines[0] ?? '', heading, name);
+    assert.deepEqual(lines.filter((line) => line.startsWith('In ')), parts, name);
+    if (problems.choices) assert.ok(lines.includes(problems.choices[0]), `${name}: the choices follow the labels`);
+  }
+});
+
+test('bot: a new issue with a bad area, no type and no tier label gets one answer naming all three (#1120)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['host', 'check'] }));
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
+  const bin = join(sandbox.home, 'bin');
+  const log = join(sandbox.home, 'gh.log');
+  const ghEnv = writeNodeProgram(bin, 'gh', [
+    "const fs = process.getBuiltinModule('node:fs');",
+    "if (args[0] === 'label') { process.stdout.write(JSON.stringify(['bug', 'feat', 'tier A', 'tier B', 'tier C'].map((name) => ({ name })))); process.exit(0); }",
+    `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');`,
+  ].join('\n'));
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const key = join(sandbox.home, 'bot.pem');
+  writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+  const bot = { ...ghEnv, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  try {
+    const r = await sandbox.call(['bot', '--', 'gh', 'issue', 'create', '-t', 'guard: add a step', '--body', 'An issue.\n\nMade with worker (opus)\n'], { extra: bot });
+    assert.equal(r.status, 1, r.stderr);
+    const [heading, ...rest] = r.stderr.split('\n');
+    assert.equal(heading, 'yokoten bot: 3 problem(s) in the title and the labels; nothing was sent. Fix them all and run it again:');
+    const text = rest.join('\n');
+    assert.match(text, /In the title \(1\):\n- title: the area is not in yokoten\.json "areas"\. .+ Use one of: host, check\./);
+    assert.match(text, /In the labels \(2\):\n- labels: no type label\.[^\n]*\n.*\n- labels: no tier label\. .+`tier A`, `tier B` or `tier C`/);
+    assert.match(text, /This repo's type labels: `bug`, `feat`\.\n {2}This repo's tier labels: `tier A`, `tier B`, `tier C`\./, 'the values to pick from');
+    assert.equal(existsSync(log), false, 'nothing was sent');
+  } finally {
+    server.close();
+  }
+});
+
+// #1120: a push sends only commits dated in UTC. A commit's offset says where its machine
+// is, so a refusal names each commit by its short hash and subject, never by the offset.
+test('bot: git push refuses a commit not dated in UTC, names it without its offset, and the fix works (#1120)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['host'] }));
+  sandbox.write('a.txt', 'a\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const origin = join(sandbox.home, 'github.com', 'me', 'repo.git');
+  mkdirSync(origin, { recursive: true });
+  sandbox.git('init', '-q', '--bare', origin);
+  sandbox.git('remote', 'add', 'origin', origin);
+  sandbox.git('push', '-q', 'origin', 'main');
+  sandbox.git('checkout', '-qb', 'topic');
+  const commit = (subject: string, dates: Record<string, string> = {}) => {
+    sandbox.write(`${subject}.txt`, `${subject}\n`);
+    sandbox.git('add', '.');
+    const made = runChild('git', ['commit', '-qm', subject], { cwd: sandbox.repo, env: { ...sandbox.env, ...dates } });
+    assert.equal(made.status, 0, made.stderr);
+    return sandbox.git('rev-parse', '--short', 'HEAD').stdout.trim();
+  };
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const key = join(sandbox.home, 'bot.pem');
+  writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+  const bot = { YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const push = (...args: string[]) => sandbox.call(['bot', '--', 'git', 'push', '-q', ...args], { extra: bot });
+  const remoteHas = (branch: string) => sandbox.git('ls-remote', origin, `refs/heads/${branch}`).stdout.trim().split(/\s/)[0] ?? '';
+  const head = () => sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  const dates = () => sandbox.git('log', '--format=%ai %ci', 'origin/main..HEAD').stdout.trim().split('\n');
+  try {
+    // A UTC push goes through: the positive control for the gate.
+    commit('utc-one');
+    const good = await push('origin', 'topic');
+    assert.deepEqual([good.status, good.stderr], [0, ''], good.stderr);
+    assert.equal(remoteHas('topic'), head());
+    // The tip with an author date in another zone: refused, named, and the offset never shown.
+    const tip = commit('zoned-tip', { GIT_AUTHOR_DATE: '2026-10-27T10:00:00+0900' });
+    const refused = await push('origin', 'topic');
+    assert.equal(refused.status, 1, refused.stderr);
+    assert.equal(refused.stderr, [
+      'yokoten bot: 1 commit(s) in this push have a time zone other than UTC; nothing was pushed. Give them UTC dates and push again:',
+      `- ${tip} zoned-tip`,
+      "  Why: a commit's time zone tells where the machine that made it is, so every pushed time is UTC.",
+      '  Fix: run `TZ=UTC git commit --amend --no-edit --date=now` on the branch, then push again.',
+      '',
+    ].join('\n'));
+    assert.doesNotMatch(refused.stderr, /0900|\+09|10:00/, 'the offset is never printed');
+    assert.notEqual(remoteHas('topic'), head(), 'nothing was pushed');
+    // Every spelling that sends the branch is checked: no refspec, a remote, HEAD, another name, --all.
+    sandbox.git('branch', '-q', '--set-upstream-to=origin/topic');
+    for (const args of [[], ['origin'], ['origin', 'HEAD'], ['origin', 'HEAD:refs/heads/other'], ['--all', 'origin']]) {
+      const again = await push(...args);
+      assert.equal(again.status, 1, `${args.join(' ')}: ${again.stderr}`);
+      assert.match(again.stderr, new RegExp(`^- ${tip} zoned-tip$`, 'm'), args.join(' '));
+    }
+    // The advice works: the amend gives the tip UTC dates, and the push goes through.
+    sandbox.git('commit', '--amend', '-q', '--no-edit', '--date=now');
+    assert.ok(dates().every((line) => /\+0000 .* \+0000$/.test(line)), dates().join('\n'));
+    const fixed = await push('origin', 'topic');
+    assert.deepEqual([fixed.status, fixed.stderr], [0, ''], fixed.stderr);
+    // Two commits, one with a committer date in another zone: the fix is one rebase, and it works.
+    const first = commit('zoned-committer', { GIT_COMMITTER_DATE: '2026-10-27T10:00:00+0530' });
+    const second = commit('zoned-author', { GIT_AUTHOR_DATE: '2026-10-27T10:00:00-0700' });
+    const two = await push('origin', 'topic');
+    assert.equal(two.status, 1, two.stderr);
+    assert.match(two.stderr, new RegExp(`^- ${second} zoned-author\\n- ${first} zoned-committer\\n`, 'm'));
+    assert.match(two.stderr, new RegExp(`Fix: run \`TZ=UTC git rebase --ignore-date ${first}\\^\` on the branch`));
+    assert.doesNotMatch(two.stderr, /0530|0700|\+05|-07/, 'no offset is printed');
+    sandbox.git('rebase', '-q', '--ignore-date', `${first}^`);
+    assert.ok(dates().every((line) => /\+0000 .* \+0000$/.test(line)), dates().join('\n'));
+    const rebased = await push('origin', 'topic');
+    assert.deepEqual([rebased.status, rebased.stderr], [0, ''], rebased.stderr);
+    // A delete, a dry run and a tag carry no commit dates to check: they go through.
+    commit('zoned-again', { GIT_AUTHOR_DATE: '2026-10-27T10:00:00+0900' });
+    sandbox.git('tag', 'zoned-tag');
+    for (const args of [['--dry-run', 'origin', 'topic'], ['origin', 'refs/tags/zoned-tag'], ['origin', '--delete', 'topic']]) {
+      const passes = await push(...args);
+      assert.deepEqual([passes.status, passes.stderr], [0, ''], `${args.join(' ')}: ${passes.stderr}`);
+    }
+    assert.equal(remoteHas('topic'), '', 'the delete went through');
   } finally {
     server.close();
   }

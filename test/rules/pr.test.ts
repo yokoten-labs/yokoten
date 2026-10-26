@@ -56,6 +56,10 @@ import {
   type PullRequest,
   splitForDependabot,
   visibleLength,
+  issueLabelChoices,
+  nonUtcCommits,
+  readPushPlan,
+  utcFix,
 } from '../../src/rules/pr.ts';
 
 const goodPr = (): PullRequest => ({
@@ -851,4 +855,75 @@ test('pr title: kanban, desk and tidy are areas of this repo; cli is not (#1077)
   const config = loadConfig(ROOT);
   for (const area of ['kanban', 'desk', 'tidy', 'repo']) assert.deepEqual(checkCommandTitle(['gh', 'pr', 'create', '--title', `feat(${area}): x`], config), [], area);
   assert.equal(checkCommandTitle(['gh', 'pr', 'create', '--title', 'feat(cli): x'], config).length, 1);
+});
+
+// #1120: what a `git push` sends, read from its words. Null means no commit date to check.
+test('readPushPlan: the refs a push sends; a delete, a dry run, help and tags alone send none (#1120)', () => {
+  const plan = (sources: string[], remote: string | null = null, options: string[] = [], every = false) => ({ options, remote, sources, every });
+  const cases: [string[], ReturnType<typeof readPushPlan>][] = [
+    [['push'], plan(['HEAD'])],
+    [['push', 'origin'], plan(['HEAD'], 'origin')],
+    [['push', '-u', 'origin', 'topic'], plan(['topic'], 'origin')],
+    [['push', 'origin', '+topic:main', 'HEAD:refs/heads/x'], plan(['topic', 'HEAD'], 'origin')],
+    [['push', '--force-with-lease=topic', 'origin', 'topic'], plan(['topic'], 'origin')],
+    [['push', '-o', 'ci.skip', 'origin', 'topic'], plan(['topic'], 'origin')],
+    [['push', '--repo', 'upstream'], plan(['HEAD'], 'upstream')],
+    [['-C', 'other', '-c', 'a.b=c', 'push', 'origin', 'topic'], plan(['topic'], 'origin', ['-C', 'other', '-c', 'a.b=c'])],
+    [['push', '--all', 'origin'], plan([], 'origin', [], true)],
+    [['push', 'origin', '--', 'topic'], plan(['topic'], 'origin')],
+    [['push', '--tags', 'origin', 'topic'], plan(['topic'], 'origin')],
+    [['push', 'origin', 'tag', 'v1', 'topic'], plan(['topic'], 'origin')],
+    // No commit date to check.
+    [['push', 'origin', '--delete', 'topic'], null],
+    [['push', '-d', 'origin', 'topic'], null],
+    [['push', 'origin', ':topic'], null],
+    [['push', '--dry-run', 'origin', 'topic'], null],
+    [['push', '-n', 'origin', 'topic'], null],
+    [['push', '--help'], null],
+    [['push', '--tags'], null],
+    [['push', 'origin', 'tag', 'v1'], null],
+    [['status'], null],
+    [['-C', 'push', 'status'], null],
+  ];
+  for (const [args, want] of cases) assert.deepEqual(readPushPlan(args), want, args.join(' '));
+  // `--no-dry-run` after `--dry-run` sends for real, as git reads it.
+  assert.deepEqual(readPushPlan(['push', '--dry-run', '--no-dry-run', 'origin', 'topic']), plan(['topic'], 'origin'));
+});
+
+test('nonUtcCommits: an author or committer date not in UTC is caught, and no date is returned (#1120)', () => {
+  const line = (hash: string, parents: string, author: string, committer: string, subject = `commit ${hash}`) => [hash.repeat(40), hash.repeat(7), parents, author, committer, subject].join('\x1f');
+  const utc = '2026-10-27 10:00:00 +0000';
+  const lines = [
+    line('a', 'p', utc, utc),
+    line('b', 'p', '2026-10-27 10:00:00 +0900', utc),
+    line('c', 'p', utc, '2026-10-27 10:00:00 -0700'),
+    line('d', '', '2026-10-27 10:00:00 +0530', '2026-10-27 10:00:00 +0530', 'a\x1fsubject'),
+    '',
+    'not a log line',
+  ];
+  const found = nonUtcCommits(lines);
+  assert.deepEqual(found.map(({ short }) => short), ['bbbbbbb', 'ccccccc', 'ddddddd']);
+  assert.deepEqual(found[2], { hash: 'd'.repeat(40), short: 'ddddddd', isRoot: true, subject: 'a\x1fsubject' });
+  assert.doesNotMatch(JSON.stringify(found), /\+0900|-0700|\+0530|2026/, 'no date or offset comes back');
+  assert.deepEqual(nonUtcCommits([line('a', 'p', utc, utc)]), [], 'all UTC: none');
+});
+
+test('utcFix: an amend for the tip alone, else one rebase from the oldest commit (#1120)', () => {
+  const commit = (hash: string, isRoot = false) => ({ hash: hash.repeat(40), short: hash.repeat(7), isRoot, subject: hash });
+  const cases: [ReturnType<typeof commit>[], string | null, string][] = [
+    [[commit('a')], 'a'.repeat(40), 'TZ=UTC git commit --amend --no-edit --date=now'],
+    [[commit('a')], 'b'.repeat(40), 'TZ=UTC git rebase --ignore-date aaaaaaa^'],
+    [[commit('a'), commit('b')], 'a'.repeat(40), 'TZ=UTC git rebase --ignore-date bbbbbbb^'],
+    [[commit('a'), commit('b', true)], 'a'.repeat(40), 'TZ=UTC git rebase --ignore-date --root'],
+  ];
+  for (const [commits, head, want] of cases) assert.equal(utcFix(commits, head), want, want);
+});
+
+test('issueLabelChoices: the repo labels for each kind an issue leaves out (#1120)', () => {
+  const repo = ['bug', 'feat', 'kit', 'tier A', 'tier B'];
+  assert.deepEqual(issueLabelChoices([], repo), ["  This repo's type labels: `bug`, `feat`.", "  This repo's tier labels: `tier A`, `tier B`."]);
+  assert.deepEqual(issueLabelChoices(['bug'], repo), ["  This repo's tier labels: `tier A`, `tier B`."]);
+  assert.deepEqual(issueLabelChoices(['tier: A'], repo), ["  This repo's type labels: `bug`, `feat`."]);
+  assert.deepEqual(issueLabelChoices(['bug', 'tier A'], repo), []);
+  assert.deepEqual(issueLabelChoices([], ['kit']), [], 'the repo has neither kind');
 });
