@@ -275,7 +275,8 @@ export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJ
     // What a program needs to run: Node, the program's own folders, yokoten's runtime (the guard), and the user's git config.
     readable: [dirname(dirname(process.execPath)), ...(program ? programFolders(program) : []), ...OWN_RUNTIME, join(home, '.gitconfig'), join(home, '.config', 'git')],
     hidden: hiddenFolders(platform, home, spec.root),
-    locked: ['config', 'hooks', 'yokoten-worker'].map((part) => join(spec.root, '.git', part)),
+    // commondir, gitdir and config.worktree point git at another config: locked too, even before they are there.
+    locked: ['config', 'hooks', 'yokoten-worker', 'commondir', 'gitdir', 'config.worktree'].map((part) => join(spec.root, '.git', part)),
     hosts: spec.network,
   };
   const settings = writeSettings(folder, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform));

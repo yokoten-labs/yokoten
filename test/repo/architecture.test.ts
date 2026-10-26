@@ -1924,6 +1924,8 @@ test('windows scope: native Windows skips the desk, its fence and the kanban ser
   for (const entry of windows.skipped) assert.equal(entry.reason, 'the desk runs in WSL on Windows (record 0043)', entry.file);
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/fence/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/kanban/server.test.ts'));
+  // The desk command's tests run git and shell filters in the fence: the desk area, not a skip inside a test (#1056).
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/desk/finish.test.ts' && entry.area === 'desk'), 'test/commands/desk/ is in the desk area');
   // The CLI, the guard hooks and install still run there.
   for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
     assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);

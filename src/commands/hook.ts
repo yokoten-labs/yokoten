@@ -54,7 +54,7 @@ import {
   wasRefusedRecently,
   writeAgentChecks,
 } from '../run/hook.ts';
-import { bullets, count, field, type Invocation, nextLine, type Output, parse, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
+import { bullets, count, field, type Invocation, nextLine, type Output, parse, type Parsed, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
 
 // Each runtime sends its tool call in its own shape; its adapter turns it into an Action.
 // The table below asks the adapters' contract (#395), never a runtime's name.
@@ -945,36 +945,58 @@ function runUnmark(invocation: Invocation, dir: string, fail: (line: string) => 
 /**
  * `desk <agent> <folder> -- <command>`: start a worker's agent in its own fenced desk
  * (#637). Only the lead runs it. The modules load only here, so the guard never loads them.
+ * desk/desk.ts parses the words before `--` and passes them on.
  */
-export async function runDesk(invocation: Invocation): Promise<number> {
+export async function runDesk(invocation: Invocation, options: Parsed): Promise<number> {
   // Inside a Linux desk, its first program: the bridge to the proxy, then the agent.
   if (invocation.args[0] === '--bridge') return (await import('../agents/desk/network/bridge.ts')).runBridge(invocation.args.slice(1), invocation.stderr);
   const end = invocation.args.indexOf('--');
-  const options = parse('desk', end === -1 ? invocation.args : invocation.args.slice(0, end));
-  if (typeof options === 'string') return usage(invocation, options);
   const [runtime, folder] = options.positional;
   const command = end === -1 ? [] : invocation.args.slice(end + 1);
   if (runtime === undefined || folder === undefined || !command.length) return usage(invocation, 'name the agent, the folder and the command: yokoten desk <agent> <folder> -- <command>');
-  const fail = (line: string) => {
-    print(invocation, [`yokoten desk: ${line}`], invocation.stderr);
+  const list = (name: string) => (options.values[name] ?? '').split(',').map((word) => word.trim()).filter(Boolean);
+  const started = await startFencedDesk(invocation, { runtime, folder, command, name: options.values['--name'], read: list('--read'), hosts: list('--host'), marks: options.flags.has('--marks') }, 'inherit');
+  if ('fail' in started) {
+    print(invocation, [`yokoten desk: ${started.fail}`], invocation.stderr);
     return 1;
-  };
-  if (workerRole(invocation.env, [invocation.cwd]) !== null) return fail('only the lead starts a desk: this session is a worker.');
+  }
+  if (started.stderr) invocation.stderr.write(started.stderr);
+  return started.code;
+}
+
+/** What a fenced desk starts: the agent, its clone, the command, and the lead's few choices. */
+export interface FencedDeskRequest {
+  runtime: string;
+  folder: string;
+  command: string[];
+  name?: string;
+  read?: string[];
+  hosts?: string[];
+  marks?: boolean;
+}
+
+/**
+ * Start `command` in the fenced desk at `folder` (#637): the screen first, then the agent,
+ * and its exit code. With 'pipe' (`yokoten desk <issue>` running the tests inside the
+ * fence), no screen, and the output comes back. `{ fail }` is one plain line: nothing started.
+ */
+export async function startFencedDesk(invocation: Invocation, request: FencedDeskRequest, stdio: 'inherit' | 'pipe'): Promise<{ fail: string } | { code: number; stdout: string; stderr: string }> {
+  const { runtime, folder, command } = request;
+  if (workerRole(invocation.env, [invocation.cwd]) !== null) return { fail: 'only the lead starts a desk: this session is a worker.' };
   const [{ cloneProblem, planDesk }, { chooseBackend, startDesk }, { paths }, team, { teamFolderFor, teamName }] = await Promise.all([import('../agents/desk/desk.ts'), import('../agents/desk/start.ts'), import('../setup/install.ts'), import('../agents/desk/team/who.ts'), import('../agents/desk/team/team.ts')]);
   // The folder first: a wrong folder is named before the sandbox is looked for.
   const notClone = cloneProblem(resolve(invocation.cwd, folder));
-  if (notClone) return fail(notClone);
+  if (notClone) return { fail: notClone };
   // srt never comes from the lead's project or the desk (P6 review).
   const backend = chooseBackend(process.platform, invocation.env, [invocation.cwd, resolve(invocation.cwd, folder)]);
-  if (typeof backend === 'string') return fail(backend);
-  const list = (name: string) => (options.values[name] ?? '').split(',').map((word) => word.trim()).filter(Boolean);
+  if (typeof backend === 'string') return { fail: backend };
+  const isShown = stdio === 'inherit';
   const installed = paths(invocation.env);
   // The team of the lead's project (#674): next to its main checkout. The agent's name is
   // --name, or the desk folder's made into a name; a folder name that can't be one joins no team.
   const main = team.leadCheckout(invocation.cwd, invocation.env);
-  const asked = options.values['--name'];
-  const name = asked ?? teamName(basename(resolve(invocation.cwd, folder)));
-  if (typeof main === 'string' && name === null) print(invocation, ['yokoten desk: the folder\'s name can\'t be a name on the team, so this desk joins none. Name it with --name to join.'], invocation.stderr);
+  const name = request.name ?? teamName(basename(resolve(invocation.cwd, folder)));
+  if (isShown && typeof main === 'string' && name === null) print(invocation, ['yokoten desk: the folder\'s name can\'t be a name on the team, so this desk joins none. Name it with --name to join.'], invocation.stderr);
   let plan: ReturnType<typeof planDesk>;
   try {
     plan = planDesk({
@@ -982,40 +1004,41 @@ export async function runDesk(invocation: Invocation): Promise<number> {
       desk: resolve(invocation.cwd, folder),
       command,
       env: invocation.env,
-      extraReadable: list('--read').map((path) => resolve(invocation.cwd, path)),
-      extraHosts: list('--host'),
+      extraReadable: (request.read ?? []).map((path) => resolve(invocation.cwd, path)),
+      extraHosts: request.hosts ?? [],
       runtimes: [installed.runtime],
-      marks: options.flags.has('--marks') ? installed.marks : undefined,
+      marks: request.marks ? installed.marks : undefined,
       team: typeof main === 'string' && name !== null ? { folder: teamFolderFor(main), name } : undefined,
       markDesk: (desk) => markWorktree(invocation.cwd, desk, invocation.env),
     });
   } catch (error) {
-    return fail((error as Error).message);
+    return { fail: (error as Error).message };
   }
   // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
   const shown = hideHome(relative(invocation.cwd, plan.desk) || plan.desk, invocation.env);
-  print(invocation, [
-    ...title('desk', `${runtime} in ${shown}`),
-    '',
-    ...field('writes', `${shown} only`),
-    // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
-    ...field('network', plan.hosts.join(', ') || 'none'),
-    ...field('fence', backend.name),
-    ...field('role', 'worker, TZ=UTC, no tokens'),
-    '',
-    'Starting… (stop with Ctrl+C)',
-  ], invocation.stderr);
+  if (isShown) {
+    print(invocation, [
+      ...title('desk', `${runtime} in ${shown}`),
+      '',
+      ...field('writes', `${shown} only`),
+      // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
+      ...field('network', plan.hosts.join(', ') || 'none'),
+      ...field('fence', backend.name),
+      ...field('role', 'worker, TZ=UTC, no tokens'),
+      '',
+      'Starting… (stop with Ctrl+C)',
+    ], invocation.stderr);
+  }
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
-  if (unlisted) print(invocation, [`yokoten desk: the board won't show this desk: ${unlisted}.`], invocation.stderr);
+  if (isShown && unlisted) print(invocation, [`yokoten desk: the board won't show this desk: ${unlisted}.`], invocation.stderr);
   const refused = new Set<string>();
   const result = await startDesk(plan, backend, {
-    stdio: 'inherit',
+    stdio,
     onEvent: (event) => {
       if (!event.isAllowed) refused.add(event.target);
     },
   });
-  if (result.stderr) invocation.stderr.write(result.stderr);
-  if (refused.size) print(invocation, [`yokoten desk: the proxy refused ${[...refused].join(', ')}. Add an API host with --host if the agent needs it.`], invocation.stderr);
-  return result.code;
+  if (isShown && refused.size) print(invocation, [`yokoten desk: the proxy refused ${[...refused].join(', ')}. Add an API host with --host if the agent needs it.`], invocation.stderr);
+  return result;
 }
