@@ -38,6 +38,7 @@ import {
   doneWhenShell,
   guardDeadline,
   isSameFile,
+  inThreadGuard,
   isWorkerType,
   judge,
   noteRefused,
@@ -304,6 +305,22 @@ test('hook: a guard started before the call judges it as judge does; one never u
   writeFileSync(script, `(await import(${JSON.stringify(new URL('../../src/run/hook.ts', import.meta.url).href)})).startGuard();\n`);
   const result = runChild(process.execPath, [script]);
   assert.deepEqual([result.status, result.signal, result.stderr], [0, null, '']);
+});
+
+// #1109: test/commands/hook.test.ts judges in-process calls in this thread, to save the
+// worker's start on each call. It must answer as `judge` does, and refuse when `judge` throws,
+// as the worker's error event does. The tests above and below keep the real worker: they pin
+// what only the worker boundary does (the early start, the real home, the deadline).
+test('hook: the in-thread guard for tests judges as judge does, and refuses when judge throws (#1109)', async () => {
+  const action = { command: 'git push --tags', paths: [], worker: false };
+  const options = { root: null, config: DEFAULTS, env: {}, cwd: process.cwd() };
+  assert.deepEqual(await inThreadGuard().judge(action, options, 5000), judge(action, options));
+  assert.equal(await inThreadGuard().judge({ ...action, command: 'git status' }, options, 5000), null);
+  // A list that is not a list: `judge` throws reading it.
+  const broken = { ...action, commands: 5 as unknown as string[] };
+  const found = await inThreadGuard().judge(broken, options, 5000);
+  assert.equal(found?.id, 'unreadable-command');
+  assert.match(found?.what ?? '', /^the guard failed while reading this tool call: /);
 });
 
 // #824: a worker thread has its own globals. The guard passes the real home the main

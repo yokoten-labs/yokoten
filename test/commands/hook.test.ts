@@ -27,14 +27,35 @@ import { test } from 'node:test';
 import {
   at,
   CLI,
-  makeSandbox,
+  makeSandbox as makeWorkerSandbox,
   pick,
   makeTempDir,
   runChild,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { chooseDenial, redactCommand } from '../../src/commands/hook.ts';
+import { inThreadGuard, startGuardEarly, takeGuard } from '../../src/run/hook.ts';
 import { parseRefusal } from '../../src/rules/text/message.ts';
+
+// An in-process `hook` call here judges in this thread (#1109): a guard worker costs about
+// 45 ms a call, and this file makes hundreds. The rules are the same `judge`; what the worker
+// adds (env copied as plain data, the real home passed across, the deadline) is pinned in
+// test/run/hook.test.ts with the real worker, and the child-process calls here
+// (`sandbox.run`, `runChild`) always start it.
+function makeSandbox() {
+  const sandbox = makeWorkerSandbox();
+  const call: typeof sandbox.call = async (args, options) => {
+    const isGuard = args[0] === 'hook' && !args.includes('--stop');
+    if (isGuard) startGuardEarly(inThreadGuard);
+    try {
+      return await sandbox.call(args, options);
+    } finally {
+      // A call that ends before it takes the guard (a usage error) leaves none for the next.
+      if (isGuard) takeGuard();
+    }
+  };
+  return { ...sandbox, call };
+}
 
 // A session started outside the repo, or a worker in a worktree elsewhere, loads no project
 // hook: the user-level guard applies the file's own repo's rules, if yokoten is set up there (#307).

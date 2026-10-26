@@ -1942,12 +1942,33 @@ export function startGuard(): Guard {
   };
 }
 
+/**
+ * A guard that judges in this thread: no worker, so no deadline, since a timer here never
+ * fires while `judge` reads. For in-process tests only (#1109): a worker costs about 45 ms
+ * a call. Like the worker, it refuses the call when `judge` throws, and passes env as plain
+ * data. The hook entry always starts the real worker (`startGuardEarly` with no argument).
+ */
+export function inThreadGuard(): Guard {
+  return {
+    judge: async (action, options) => {
+      try {
+        return judge(action, { ...options, env: { ...options.env } });
+      } catch (err) {
+        return unreadable(`the guard failed while reading this tool call: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+  };
+}
+
 // The worker bin/yokoten.mjs starts before it loads the command, for `takeGuard`.
 let early: Guard | null = null;
 
-/** Start the guard's worker for the tool call to come, before anything else loads; `takeGuard` hands it on. */
-export function startGuardEarly(): void {
-  early ??= startGuard();
+/**
+ * Start the guard's worker for the tool call to come, before anything else loads; `takeGuard`
+ * hands it on. `make` is `startGuard`; an in-process test passes `inThreadGuard`.
+ */
+export function startGuardEarly(make: () => Guard = startGuard): void {
+  early ??= make();
 }
 
 /**
