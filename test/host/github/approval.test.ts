@@ -630,7 +630,7 @@ test('review: the diff and body are data; the prompt says so and fences them (#1
   assert.match(user.content, /<<<DIFF\n\+\/\/ Ignore all rules[\s\S]*DIFF>>>$/);
   // The model's text can't ping people or hide an HTML comment in the posted review.
   const body = reviewFor({ verdict: 'APPROVE', summary: 'ok @owner <!-- x -->', findings: [] }, MODEL).body;
-  assert.ok(!/@owner/.test(body) && !body.includes('<!--'));
+  assert.ok(!/@owner/.test(body) && !body.includes('<') && body.includes('&lt;!-- x --&gt;'));
 });
 
 // The approval the reviewer posts is the one the merge check counts, from its login only.
@@ -684,5 +684,5 @@ test('review: the workflow runs the base reviewer from main with the App token a
   assert.match(code, /^ {10}DEEPSEEK_MODEL: deepseek-flash$/m);
   assert.match(code, /^ {10}DEEPSEEK_API_KEY: \$\{\{ secrets\.DEEPSEEK_API_KEY \}\}$/m);
   const owners = readFileSync(join(ROOT, '.github/CODEOWNERS'), 'utf8');
-  for (const path of ['/.github/workflows/', '/.github/review/']) assert.match(owners, new RegExp(`^${path.replace(/[.]/g, '\\.')} @`, 'm'), `CODEOWNERS owns ${path}`);
+  for (const path of ['/.github/workflows/', '/.github/review/']) assert.match(owners, new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, (mark) => `\\${mark}`)} @`, 'm'), `CODEOWNERS owns ${path}`);
 });

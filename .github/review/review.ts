@@ -112,8 +112,8 @@ export function buildMessages(body: string, diff: string): { role: 'system' | 'u
   ];
 }
 
-/** Text from the model, made safe to post: no mention pings, no HTML comments. */
-const quiet = (text: string): string => text.replace(/@(?=[A-Za-z0-9])/g, '@​').replace(/<!--|-->/g, '');
+/** Text from the model, made safe to post: no mention pings, and no HTML at all (every < and > is escaped). */
+const quiet = (text: string): string => text.replace(/@(?=[A-Za-z0-9])/g, '@​').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** The review for a verdict. Only an APPROVE carries the approval line, as its last line. */
 export function reviewFor(verdict: Verdict, model: string): Review {
