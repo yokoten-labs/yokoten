@@ -26,9 +26,10 @@ jobs:
   # Which files the pull request changes (#438). It is docs-only when each file is under
   # docs/ or changes/, or is a Markdown file outside kit/ and .github/ that is not an
   # AGENTS.md (#1051). Then one test job runs the tests that read the docs, and the jobs
-  # that Markdown can't break are skipped. A push to main is a full run, and so is a merge
-  # queue group. So is a file list that can't be read: docs_only is true only when the
-  # list was read and every file fits.
+  # that Markdown can't break are skipped. A merge queue group reads its files the same way:
+  # the group's base to its head is the pull request's change (#1068). A push to main is a
+  # full run. So is a file list that can't be read: docs_only is true only when the list
+  # was read and every file fits.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -47,12 +48,12 @@ jobs:
       - id: files
         env:
           EVENT: ${{ github.event_name }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
         run: |
           docs_only=false
-          if [ "$EVENT" != pull_request ]; then
-            echo "Not a pull request, so every job runs."
+          if [ "$EVENT" != pull_request ] && [ "$EVENT" != merge_group ]; then
+            echo "Not a pull request or a merge queue group, so every job runs."
           elif [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] || ! files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" --) || [ -z "$files" ]; then
             echo "::warning::The pull request's changed files could not be read, so every job runs."
           else
@@ -87,9 +88,11 @@ jobs:
         of: ${{ fromJSON(needs.changes.outputs.docs_only == 'true' && '[1]' || '[3]') }}
         # The oldest Node yokoten supports (package.json "engines": the first 22 with the
         # security fixes of 2026-10-21, #572), and the current LTS from its first fixed release.
-        node: ${{ fromJSON(needs.changes.outputs.docs_only == 'true' && '["^24.22.1"]' || '["22.23.4","^24.22.1"]') }}
+        # A merge queue group runs one Node on Linux: the pull request ran the full matrix,
+        # and a push to main runs it again after the merge (#1068).
+        node: ${{ fromJSON((needs.changes.outputs.docs_only == 'true' || github.event_name == 'merge_group') && '["^24.22.1"]' || '["22.23.4","^24.22.1"]') }}
         # One macOS run: paths there go through symlinks (/var), which hid a real bug (#1).
-        include: ${{ fromJSON(needs.changes.outputs.docs_only == 'true' && '[]' || github.event_name == 'pull_request' && '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":1}]' || '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":2,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":3,"of":3}]') }}
+        include: ${{ fromJSON((needs.changes.outputs.docs_only == 'true' || github.event_name == 'merge_group') && '[]' || github.event_name == 'pull_request' && '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":1}]' || '[{"os":"macos-latest","node":"^24.22.1","shard":1,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":2,"of":3},{"os":"macos-latest","node":"^24.22.1","shard":3,"of":3}]') }}
     runs-on: ${{ matrix.os }}
     # 15 minutes: the whole-suite macOS job's time budget fails past 600 s of tests, and the job
     # must outlive that, or a slow suite is killed with no list of the slowest tests (#943). The
@@ -130,7 +133,10 @@ jobs:
   # LTS. Each test file runs on its own with a four-minute cap, since a few files never ended
   # on Windows and one `node --test` run passed the job's limit (10-25). Tests known to fail
   # there are listed in scripts/time/windows-known.txt (record 0040): a new failure fails the
-  # job, and so does a listed test that passes, so the list only gets shorter.
+  # job, and so does a listed test that passes, so the list only gets shorter. Only what
+  # native Windows supports runs: TEST_AREAS in scripts/time/windows-known.ts skips the desk, its fence and
+  # the kanban server, and the log names each skip's reason. A file that crashes runs once
+  # more, and the log shows its stderr and calls it flaky if the second run gets through (#1068).
   windows:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
