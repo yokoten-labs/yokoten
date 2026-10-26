@@ -1998,6 +1998,15 @@ const withTestsJob = (yml: string): string =>
 /** The kit's yokoten.yml before #451, rebuilt from the newest: one of the versions init wrote. */
 const oldYokotenYml = () =>
   kitWorkflow('yokoten.yml')
+    // Before #1068, a merge queue group was a full run.
+    .replace(
+      "  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A merge queue\n  # group reads its files the same way: the group's base to its head is the pull request's\n  # change (#1068). A push to main is a full run. So is a file list that can't be read:\n  # docs_only is true only when the list was read and every file fits.\n",
+      "  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A push to\n  # main is a full run, and so is a merge queue group. So is a file list that can't be\n  # read: docs_only is true only when the list was read and every file fits.\n",
+    )
+    .replace(
+      '          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}\n          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}\n        run: |\n          docs_only=false\n          if [ "$EVENT" != pull_request ] && [ "$EVENT" != merge_group ]; then\n            echo "Not a pull request or a merge queue group, so every job runs."\n',
+      '          BASE_SHA: ${{ github.event.pull_request.base.sha }}\n          HEAD_SHA: ${{ github.event.pull_request.head.sha }}\n        run: |\n          docs_only=false\n          if [ "$EVENT" != pull_request ]; then\n            echo "Not a pull request, so every job runs."\n',
+    )
     // Before #1051, only docs/, changes/, README.md and CHANGELOG.md were docs-only.
     .replace(
       "  # docs/ or changes/, or is a Markdown file outside kit/ and .github/ that is not an\n  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A push to\n  # main is a full run, and so is a merge queue group. So is a file list that can't be\n  # read: docs_only is true only when the list was read and every file fits.\n",

@@ -513,8 +513,14 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   assert.equal(onPullRequest(['package.json']), 'docs_only=false\n');
   // A push to main: the full run.
   assert.equal(runChanges({ EVENT: 'push', BASE_SHA: '', HEAD_SHA: '' }).output, 'docs_only=false\n');
-  // A merge queue group: the full run. The event names no pull request (#590).
+  // A merge queue group reads its files from the group's base to its head, as a pull request does (#1068).
+  const docsHead = pullRequest(['docs/guide.md']);
+  assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: docsHead }).output, 'docs_only=true\n');
+  assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: pullRequest(['src/a.ts']) }).output, 'docs_only=false\n');
+  // A group whose files can't be read is a full run.
   assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: '', HEAD_SHA: '' }).output, 'docs_only=false\n');
+  // Any other event, such as the daily schedule, is a full run.
+  assert.equal(runChanges({ EVENT: 'schedule', BASE_SHA: base, HEAD_SHA: docsHead }).output, 'docs_only=false\n');
   // The file list can't be read: the full run, and a warning says why.
   const head = pullRequest(['docs/guide.md']);
   for (const [baseSha, headSha] of [['0'.repeat(40), head], ['', head], [base, ''], [head, head]]) {
@@ -558,8 +564,12 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   const pr = matrix('false', 'pull_request');
   assert.deepEqual(pr.setups, full);
   assert.deepEqual(pr.whole, ['macos-latest ^24.22.1 1/1'], 'a pull request runs the whole suite in one macOS job (#568)');
-  // A merge queue group runs the full matrix too: it becomes main (#590).
-  for (const event of ['push', 'schedule', 'merge_group']) {
+  // A merge queue group runs one Node on Linux: the pull request ran the full matrix, and
+  // a push to main runs it again after the merge (#1068). A docs-only group runs the docs tests.
+  assert.deepEqual(matrix('false', 'merge_group'), { setups: ['ubuntu-latest ^24.22.1'], whole: [] });
+  assert.deepEqual(matrix('true', 'merge_group').setups, ['ubuntu-latest ^24.22.1']);
+  assert.deepEqual(matrix('', 'merge_group').setups, ['ubuntu-latest ^24.22.1'], '`changes` failed: one Node still, all shards');
+  for (const event of ['push', 'schedule']) {
     const run = matrix('false', event);
     assert.deepEqual(run.setups, full);
     assert.deepEqual(run.whole, [], `${event}: the full macOS matrix (#568)`);
@@ -616,7 +626,7 @@ test('ci: the kit lets a project skip its own jobs on a docs-only pull request; 
 // `yokoten.yml` reports `ci` and `pr.yml` reports `pr`: both checks are required, so
 // both workflows run on `merge_group`, and a queued merge runs the same checks as a
 // pull request. `issue.yml` is not a check on a merge, so it stays off. There is no
-// pull request on a merge group run: `yokoten.yml` runs every job in full, and the `pr`
+// pull request on a merge group run: `yokoten.yml` reads the group's files as a pull request's, and the `pr`
 // job skips, which the queue counts as green. Read in both dirs: the kit files and
 // this repo's own workflows carry the same trigger lines.
 // The events in the top-level `on:` block: each key two spaces in.
