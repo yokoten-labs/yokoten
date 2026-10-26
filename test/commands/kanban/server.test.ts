@@ -393,7 +393,7 @@ test('kanban --text: pull requests and Actions from gh', async () => {
 });
 
 // #1045: the access key goes only to the browser; the screen shows the link without it.
-test('kanban: the access key is never printed, and the browser gets it', { skip: process.platform === 'win32' }, async () => {
+test('kanban: the access key is never printed, and the browser gets it', async () => {
   const sandbox = makeSandbox();
   const bin = join(sandbox.home, 'bin');
   mkdirSync(bin);
