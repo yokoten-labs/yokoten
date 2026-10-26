@@ -1512,6 +1512,64 @@ test('inside "...", only $, backticks, \\ and ! make the line unsure (#439)', ()
   rmSync(join(postDir, 'body.md'));
 });
 
+// ---- A body file through `yokoten bot` (#1077) ----
+//
+// The bot checks the text it sends, but the yokoten that runs may be an older one, or a
+// stand-in. So the guard reads a bot call's body file exactly as a bare gh's: a file it
+// can't read yet stops the command. The bot's own checks are in bot.test.ts.
+
+test('through yokoten bot, the guard still reads the body file, as for a bare gh (#1077)', () => {
+  rmSync(join(postDir, 'n.md'), { force: true });
+  rmSync(join(postDir, 'new.md'), { force: true });
+  const comment = 'bot -- gh issue comment 3 -F n.md';
+  const vcs = ['g', 'it'].join('');
+  const seen: string[] = [];
+  for (const command of [
+    // A file the command writes: an older bot would send it unchecked.
+    `${vcs} show HEAD:secret > n.md && yokoten ${comment}`,
+    `cat > n.md <<'EOF' && yokoten ${comment}\nx\nEOF`,
+    // Something other than yokoten may run.
+    `yokoten() { gh "$@"; }; yokoten ${comment}`,
+    `export PATH=/tmp/evil:$PATH; yokoten ${comment}`,
+    `hash -p /tmp/evil/yokoten yokoten; yokoten ${comment}`,
+    `cd /tmp/evil && ./yokoten ${comment}`,
+    'printf x > new.md && node /tmp/evil/yokoten.ts bot -- gh issue comment 3 -F new.md',
+  ]) {
+    const f = post(command);
+    assert.notEqual(f, null, command);
+    seen.push(`${f?.id}`);
+  }
+  // As on main: a function named yokoten is refused as an alias, the rest as unreadable.
+  assert.deepEqual(seen, ['unreadable-command', 'unreadable-command', 'alias', 'unreadable-command', 'unreadable-command', 'unreadable-command', 'unreadable-command']);
+  // Positive control: a mark in a body file on disk is found through the bot.
+  writeFileSync(join(postDir, 'n.md'), 'Seen in QuietVale.\n');
+  assert.equal(post(`yokoten ${comment}`)?.id, 'private-mark');
+  writeFileSync(join(postDir, 'n.md'), 'All clean.\n');
+  assert.equal(post(`yokoten ${comment}`), null);
+  rmSync(join(postDir, 'n.md'));
+});
+
+test('a short-option cluster with a body letter is refused, through gh or the bot (#1077)', () => {
+  writeFileSync(join(postDir, 'n.md'), 'All clean.\n');
+  for (const command of [
+    'gh pr create -t t -dF n.md',
+    'yokoten bot -- gh pr create -t t -dF n.md',
+    'gh pr review 5 -aF n.md',
+    'yokoten bot -- gh pr review 5 -aF n.md',
+    'gh pr review 5 -cb "a note"',
+    'gh issue comment 3 -wb "a note"',
+  ]) {
+    const f = post(command);
+    assert.equal(f?.id, 'unreadable-command', command);
+    assert.match(f?.what ?? '', /joins short options with one that takes the body/, command);
+  }
+  // Control: spelled out, or joined to its own value, each option is read and passes.
+  for (const command of ['gh pr create -t t -d -F n.md', 'gh pr create -t t -Fn.md', 'gh pr review 5 -c -b "a note"', 'gh pr comment 3 -b"a note"']) {
+    assert.equal(post(command), null, command);
+  }
+  rmSync(join(postDir, 'n.md'));
+});
+
 // ---- A read-only pipe after a post (#498) ----
 //
 // `bot -- gh … --body-file <full path> 2>&1 | tail -2` was refused, and the message named

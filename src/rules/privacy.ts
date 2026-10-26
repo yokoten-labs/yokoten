@@ -1217,6 +1217,8 @@ export interface GhCommand {
   stdinFile?: string;
   /** The text a `<<<` here-string feeds to stdin. */
   hereString?: string;
+  /** The text the sender read from its own stdin (`yokoten bot`), for a body file `-`. */
+  stdinText?: string;
 }
 
 // The gh commands that post text, by group and subcommand (`new` is gh's alias for `create`).
@@ -1395,9 +1397,8 @@ export interface CommandFiles {
 /** What a gh command posts: its pieces, a file the guard can't find, or a short-option cluster. Null when it posts nothing. */
 type Missing = { missing: string; unsure: boolean; saw?: Risk };
 
-function postedPieces(gh: GhCommand, readFile: (path: string) => FileRead, command: string): { pieces: Piece[] } | Missing | { cluster: true } | null {
-  const { args } = gh;
-  // The group and its subcommand: the first two words that are not options.
+/** The group and subcommand of a gh command that posts (the first two words that are not options), or null. */
+function postKind(args: string[]): { sub: string; isApi: boolean } | null {
   const plain: string[] = [];
   for (let index = 0; index < args.length && plain.length < 2; index++) {
     if (GLOBAL_VALUES.has(args[index])) index++;
@@ -1405,7 +1406,105 @@ function postedPieces(gh: GhCommand, readFile: (path: string) => FileRead, comma
   }
   const [group, sub] = plain;
   const isApi = group === 'api';
-  if (!isApi && !POSTS[group]?.includes(sub)) return null;
+  return isApi || POSTS[group]?.includes(sub) ? { sub, isApi } : null;
+}
+
+/**
+ * A short-option cluster with a body letter in a posting gh command (#1077), or null. gh reads
+ * `-dF body.md` as `--draft --body-file body.md`, and `-ab x` as `--approve --body x`, but the
+ * option tables see only a word's first letter. So a word of letters after one `-` that holds
+ * `F` or `b` past its first letter is refused: spelled out, each option is read. A word that
+ * starts with `-F` or `-b` is that option with its value joined on, and is read as such.
+ */
+function bodyCluster(args: string[]): Finding | null {
+  const kind = postKind(args);
+  if (!kind || kind.isApi) return null;
+  const end = args.indexOf('--');
+  const word = (end === -1 ? args : args.slice(0, end)).find((arg) => /^-[A-Za-z]/.test(arg) && !/^-[Fb]/.test(arg) && /^-[A-Za-z]+/.exec(arg)?.[0].slice(2).match(/[Fb]/));
+  if (word === undefined) return null;
+  return finding('unreadable-command', 'this gh command joins short options with one that takes the body (`-F` or `-b`), so yokoten cannot tell which body it sends', 'write each short option as its own word, such as `-d -F body.md`, or use the long names, such as `--body-file`', {
+    why: 'the privacy check reads a body before it is posted, and an unread one could hold anything',
+  });
+}
+
+/** One place in a gh command that reads a file: where it is, and how to spell it as stdin. */
+type FileWord = { path: string; option: string; toStdin: (args: string[]) => void };
+
+/**
+ * Every word of a posting gh command that may name a file to read (#1077): `--body-file`,
+ * `--notes-file`, `-F`, and for an API call `--input` and `-F key=@file`. Like postedPieces,
+ * each word is read as a possible option, so this finds at least what gh reads.
+ */
+function fileWords(args: string[]): FileWord[] {
+  const kind = postKind(args);
+  if (!kind) return [];
+  const found: FileWord[] = [];
+  const at = (index: number, option: { name: string; value: string | undefined; next: number }, spell: (value: string) => string) => {
+    if (option.value === undefined) return;
+    const separate = option.next === index + 2;
+    const original = args[index];
+    found.push({
+      path: option.value,
+      option: option.name,
+      toStdin: (out) => {
+        if (separate) out[index + 1] = spell('-');
+        else out[index] = original.startsWith('--') ? `${option.name}=${spell('-')}` : `${option.name}${spell('-')}`;
+      },
+    });
+  };
+  for (let index = 0; index < args.length; index++) {
+    if (kind.isApi) {
+      const input = optionValue(args, index, INPUT_OPTIONS);
+      if (input) at(index, input, (value) => value);
+      const field = optionValue(args, index, FIELD_OPTIONS);
+      if (!field || (field.name !== '-F' && field.name !== '--field')) continue;
+      const value = field.value ?? '';
+      const equals = value.indexOf('=');
+      if (equals === -1 || value[equals + 1] !== '@') continue;
+      const key = value.slice(0, equals);
+      at(index, { ...field, value: value.slice(equals + 2) }, (path) => `${key}=@${path}`);
+    } else {
+      const file = optionValue(args, index, FILE_OPTIONS);
+      if (file) at(index, file, (value) => value);
+    }
+  }
+  return found;
+}
+
+/**
+ * What `yokoten bot` hands gh (#1077): the body file read once, and the command changed to
+ * read that same text from stdin, so a file changed after the check can't change what is sent.
+ * A command with more than one place that reads a file or stdin is refused: the bot would have
+ * to guess which text gh sends. So is a file it can't read (missing, not a plain file, over 1 MB).
+ */
+export function readSentBody(args: string[], cwd: string | null): { args: string[]; text?: string } | Finding {
+  const cluster = bodyCluster(args);
+  if (cluster) return cluster;
+  const words = fileWords(args);
+  if (words.length === 0) return { args };
+  if (words.length > 1) {
+    return finding('unreadable-command', `this command reads its text from ${words.length} places (${words.map((word) => word.option).join(', ')}), so yokoten bot can't tell which one gh sends`, 'send one body file, or one `-` for standard input, per command', {
+      why: 'the bot sends exactly the text it checked, and it can do that for one body only',
+    });
+  }
+  const [word] = words;
+  if (word.path === '-') return { args };
+  const read = readSentFile(word.path, cwd);
+  if (typeof read === 'string' || !('texts' in read)) {
+    return finding('unreadable-command', `yokoten bot can't read the file after ${word.option}, so it can't check it before sending`, 'write the body to a plain file under 1 MB, then send it again with its path', {
+      why: 'the bot checks every body before it is sent, and an unread one could hold anything',
+    });
+  }
+  const out = [...args];
+  word.toStdin(out);
+  return { args: out, text: read.texts[0] };
+}
+
+function postedPieces(gh: GhCommand, readFile: (path: string) => FileRead, command: string): { pieces: Piece[] } | Missing | { cluster: true } | null {
+  const { args } = gh;
+  const kind = postKind(args);
+  if (!kind) return null;
+  const { sub, isApi } = kind;
   const pieces: Piece[] = [];
   let missing: Missing | null = null;
   // A file named twice is read once: gh posts one of them, and a long body is scanned once.
@@ -1419,11 +1518,12 @@ function postedPieces(gh: GhCommand, readFile: (path: string) => FileRead, comma
       return;
     }
     if (path === '-') {
-      // stdin: a here-string, a `< file`, or the heredocs in the command.
-      if (gh.hereString !== undefined) pieces.push({ source: 'the here-string text', isFile: false, text: gh.hereString });
+      // stdin: the sender's own, a here-string, a `< file`, or the heredocs in the command.
+      if (gh.stdinText !== undefined) pieces.push({ source: 'the standard input', isFile: false, text: gh.stdinText });
+      else if (gh.hereString !== undefined) pieces.push({ source: 'the here-string text', isFile: false, text: gh.hereString });
       else if (gh.stdinFile !== undefined) addFile('<', gh.stdinFile, key);
       else for (const body of heredocBodies(command)) pieces.push({ source: 'the heredoc text', isFile: false, text: body });
-      if (key === 'query') queries.push(...[gh.hereString, ...heredocBodies(command)].filter((text) => text !== undefined));
+      if (key === 'query') queries.push(...[gh.stdinText, gh.hereString, ...heredocBodies(command)].filter((text) => text !== undefined));
       return;
     }
     if (seen.has(path)) return;
@@ -1490,6 +1590,23 @@ function apiWrites(path: string, method: string, hasFields: boolean, queries: st
   if (path.replace(/^\//, '') === 'graphql') return queries.some((query) => MUTATION.test(query));
   if (method) return WRITE_METHODS.has(method);
   return hasFields && !path.replace(/^\//, '').startsWith('search/');
+}
+
+/**
+ * A body file as `yokoten bot` sends it (#1077): the shell has run, so the path is taken as
+ * written, from `cwd`, the way gh opens it. Anything but a plain file of at most 1 MB is
+ * 'missing', so the send stops: fail closed. A pipe is never read, since gh needs it after.
+ */
+function readSentFile(path: string, cwd: string | null): FileRead {
+  if (!isAbsolute(path) && cwd === null) return 'missing';
+  const at = isAbsolute(path) || cwd === null ? path : resolve(cwd, path);
+  try {
+    const stat = statSync(at);
+    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return 'missing';
+    return { texts: [readFileSync(at, 'utf8')] };
+  } catch {
+    return 'missing';
+  }
 }
 
 // The commit check's reasons end on what git does; a post is public as soon as it is sent.
@@ -1713,11 +1830,21 @@ function isPostHere(gh: GhCommand, { env, command, cwd, from }: { env: Env; comm
  * The first privacy problem in the text a gh command is about to post, or null. `command`
  * is the whole command text, for the heredocs that feed stdin. `cwd` is where the command
  * runs, for a relative file; null when the guard cannot tell.
+ *
+ * One check, two callers (#1077). The guard calls it before the shell runs, for a bare gh and
+ * for `yokoten bot --` alike: the yokoten that runs may be an older one, or a stand-in, so
+ * the guard never leaves a body file to it. The bot calls it again with `isSender` as it
+ * sends: the shell has run, so each path is read as gh gets it, and a file the bot can't
+ * read (missing, not a plain file, over 1 MB) stops the send.
  */
 export function checkPost(
   gh: GhCommand,
-  { env, privacy, cwd, command, from, files }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles },
+  { env, privacy, cwd, command, from, files, isSender = false }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isSender?: boolean },
 ): Finding | null {
+  // A short-option cluster that holds a body letter (`-dF file`, `-aF file`) reads a body
+  // gh takes but the option tables don't see (#1077): refused, for the guard and the bot.
+  const cluster = bodyCluster(gh.args);
+  if (cluster) return cluster;
   // The path goes to the kernel as bash hands it to gh, never normalized: join and resolve
   // drop `..` as text, but the kernel goes up from the real folder when the working folder
   // or home is a symlink (#470).
@@ -1733,6 +1860,7 @@ export function checkPost(
     });
   };
   const readFile = (path: string): FileRead => {
+    if (isSender) return readSentFile(path, cwd);
     let full = path;
     if (path.startsWith('~')) {
       // Bash takes `~` from HOME, or from the system when HOME is unset; only a full HOME
@@ -1781,6 +1909,11 @@ export function checkPost(
     // the running command knows, can't be read yet.
     // What the guard saw is named, so the agent knows what to change (#498).
     const { saw } = posted;
+    if (isSender) {
+      return finding('unreadable-command', `yokoten bot can't read the file after ${posted.missing}, so it can't check it before sending`, 'write the body to a plain file under 1 MB, then send it again with its path', {
+        why: 'the bot checks every body before it is sent, and an unread one could hold anything',
+      });
+    }
     const what = !posted.unsure
       ? `yokoten can't find the file after ${posted.missing} to check it: the file doesn't exist yet when the guard runs`
       : `yokoten can't tell what the file after ${posted.missing} will hold: the guard runs before the command, and ${saw ? `${saw.what} in this command` : 'this command'} may change the file or where it is`;
@@ -1797,7 +1930,8 @@ export function checkPost(
   const withKinds = loadMarkKinds(env);
   const kinds = mapMarkKinds(withKinds);
   const all = withKinds.map((mark) => mark.value);
-  const isHere = all.length > 0 && isPostHere(gh, { env, command, cwd, from });
+  // The bot runs no shell: its own words are the whole post, so only a named target leaves the repo.
+  const isHere = all.length > 0 && (isSender ? cwd !== null && !namesTarget(gh, '', env) : isPostHere(gh, { env, command, cwd, from }));
   const key = isHere && cwd !== null ? repoKey(cwd, env) : null;
   const named = isHere && skipsOwnName(env, privacy) ? sameNameMarks(all, key) : [];
   const own = isHere ? [...ownMarks(all, [...allow, ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];

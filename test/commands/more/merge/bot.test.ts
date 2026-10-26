@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import {
   CLI,
   makeSandbox,
+  writeNodeProgram,
 } from '../../../repo/helpers.ts';
 import { invoke } from '../../../repo/invoke.ts';
 import { botHeading } from '../../../../src/commands/more/merge/bot.ts';
@@ -293,10 +294,11 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     const viewed = readFileSync(views, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
     assert.deepEqual(viewed, [5, 'https://github.com/me/repo/pull/5'].map((n) => ({ args: ['pr', 'view', String(n), '--json', 'headRefName,baseRefName,labels'], token: 'ghs_test' })));
 
-    // (c) A good body passes, and gh gets the command and the body unchanged.
+    // (c) A good body passes, and gh gets the command and the body unchanged. A body file
+    // goes to gh as the checked text on stdin (#1077).
     writeFileSync(join(sandbox.home, 'body.md'), good);
-    const passes: [string[], string][] = [
-      [['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body-file', join(sandbox.home, 'body.md')], ''],
+    const passes: [string[], string, string[]?][] = [
+      [['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body-file', join(sandbox.home, 'body.md')], '', ['gh', 'pr', 'create', '-t', 'feat(kit): a', '--body-file', '-']],
       [['gh', 'pr', 'create', '-t', 'feat(kit): a', '-F', '-'], good],
       // (d) No body: a label edit passes through unchanged.
       [['gh', 'pr', 'edit', '5', '--add-label', 'bug', '--remove-label', 'tier B'], ''],
@@ -310,7 +312,7 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     }
     // #422, #512: a new pull request also gets the type and tier labels and its issue's milestone; nothing else changes.
     const labelled = (args: string[]) => (args[1] === 'create' && !args.includes('-R') ? [...args, '--label', 'feat', '--label', 'tier A', '--milestone', 'M0'] : args);
-    assert.deepEqual(ran(), passes.map(([command, input]) => ({ args: labelled(command.slice(1)), input })));
+    assert.deepEqual(ran(), passes.map(([command, input, sent]) => ({ args: labelled((sent ?? command).slice(1)), input: sent ? good : input })));
     // A branch git can't fetch, or a pull request gh can't look up: the body alone is checked,
     // with a note. The labels are unknown too, so the note says an older tier label may stay (#422).
     const unreadTier = 'yokoten bot: note: gh could not read this pull request\'s labels, so an older tier label may stay next to `tier A`; remove it with --remove-label. `check --pr` refuses two tier labels\n';
@@ -378,7 +380,9 @@ test('bot: a new pull request gets its type and tier labels; a contradicting one
     for (const [command, input, args] of cases) {
       const r = await run(command, input);
       assert.deepEqual([r.status, r.stderr], [0, note], command.join(' '));
-      assert.deepEqual(read(log).at(-1), { args: [...command.slice(1), ...args, '--milestone', 'M0'], input }, command.join(' '));
+      // A body file goes to gh as the checked text on stdin (#1077).
+      const sent = command.slice(1).map((word) => (word === bodyFile ? '-' : word));
+      assert.deepEqual(read(log).at(-1), { args: [...sent, ...args, '--milestone', 'M0'], input: command.includes(bodyFile) ? body('C') : input }, command.join(' '));
     }
     assert.equal(read(lists).length, cases.length, 'one label list per run');
     assert.deepEqual(read(lists)[0], ['label', 'list', '--json', 'name', '--limit', '1000']);
@@ -666,7 +670,8 @@ test('bot: a new pull request takes its issue\'s milestone; none anywhere is ref
     writeFileSync(bodyFile, body('Part of #2\nCloses #1'));
     const first = await run(['gh', 'pr', 'create', '-t', 'feat: a', '--body-file', bodyFile, '--', 'extra']);
     assert.deepEqual([first.status, first.stderr], [0, note]);
-    assert.deepEqual(read(log).at(-1), ['pr', 'create', '-t', 'feat: a', '--body-file', bodyFile, ...labels, '--milestone', 'M1', '--', 'extra'], 'the first linked issue that has one, before any --');
+    // gh reads the checked text from stdin (#1077).
+    assert.deepEqual(read(log).at(-1), ['pr', 'create', '-t', 'feat: a', '--body-file', '-', ...labels, '--milestone', 'M1', '--', 'extra'], 'the first linked issue that has one, before any --');
     assert.equal(readFileSync(bodyFile, 'utf8'), body('Part of #2\nCloses #1'), 'the body file is not changed');
 
     // (2) No linked issue has a milestone: nothing is sent, and the message names --milestone.
@@ -1271,12 +1276,20 @@ test('bot: a note body gh posts is always checked, whatever the spelling (#609)'
     await refused(['gh', '--hostname', 'example.com', 'pr', 'review', '5', '--comment', '-b', 'A review.\n']);
     await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-r', '--body', 'An issue.\n']);
     await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--assignee', '--body', 'An issue.\n']);
-    // A run-together word starting with a boolean letter: gh expands it.
-    await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-wb', 'An issue.\n']);
-    await refused(['gh', 'pr', 'comment', '5', '-wb', 'A note.\n']);
+    // A run-together word with a body letter: gh expands it, so the bot refuses it before any
+    // other check, and asks for the options spelled out (#1077).
+    for (const command of [
+      ['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-wb', 'An issue.\n'],
+      ['gh', 'pr', 'comment', '5', '-wb', 'A note.\n'],
+      ['gh', 'pr', 'review', '5', '--comment', '-rb', 'A review.\n'],
+    ]) {
+      const r = await run(command);
+      assert.equal(r.status, 1, command.join(' '));
+      assert.match(r.stderr.replace(/\s+/g, ' '), /joins short options with one that takes the body/, command.join(' '));
+      assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
+    }
     // On `pr review`, `-a` and `-r` are booleans, not values.
     await refused(['gh', 'pr', 'review', '5', '--comment', '-a', '-b', 'A review.\n']);
-    await refused(['gh', 'pr', 'review', '5', '--comment', '-rb', 'A review.\n']);
     // With the line, a global flag before the noun passes through unchanged.
     const good = 'A note.\n\nMade with worker (opus)\n';
     const sent = await run(['gh', '--hostname', 'example.com', 'pr', 'comment', '5', '--body', good]);
@@ -1371,7 +1384,11 @@ test('bot: a bare -- as a value does not hide the body gh posts (#609)', async (
     // The bypass: `-b --` is the body `--`, and gh still posts `--body TEXT`.
     await refused(['gh', 'pr', 'comment', '5', '-b', '--', '--body', 'A note.\n']);
     await refused(['gh', 'pr', 'review', '5', '--comment', '-b', '--', '--body', 'A review.\n']);
-    await refused(['gh', 'issue', 'comment', '5', '--body-file', '--', '--body', 'An issue.\n']);
+    // `--body-file --` names a file `--`, which the bot can't read, so it sends nothing (#1077).
+    const fileDash = await run(['gh', 'issue', 'comment', '5', '--body-file', '--', '--body', 'An issue.\n']);
+    assert.equal(fileDash.status, 1);
+    assert.match(fileDash.stderr.replace(/\s+/g, ' '), /can't read the file after --body-file/);
+    assert.equal(ran().length, 0, 'gh did not run');
     // With the line: sent unchanged.
     const good = 'A note.\n\nMade with worker (opus)\n';
     const sent = await run(['gh', 'pr', 'comment', '5', '-b', '--', '--body', good]);
@@ -1559,7 +1576,8 @@ test('bot: an empty body passes, from --body or --body-file (#609)', async () =>
     writeFileSync(bodyFile, '');
     const viaFile = await run(['gh', 'pr', 'comment', '5', '--body-file', bodyFile]);
     assert.deepEqual([viaFile.status, viaFile.stderr], [0, ''], viaFile.stderr);
-    assert.deepEqual(ran().at(-1), { args: ['pr', 'comment', '5', '--body-file', bodyFile], input: '' });
+    // The checked text, empty here, goes to gh on stdin (#1077).
+    assert.deepEqual(ran().at(-1), { args: ['pr', 'comment', '5', '--body-file', '-'], input: '' });
   } finally {
     server.close();
   }
@@ -1570,4 +1588,116 @@ test('bot: the heading names the bot and the command (#1027)', () => {
   assert.deepEqual(botHeading({ YOKOTEN_BOT_NAME: 'team-bot' }, ['gh', 'pr', 'create', '--fill']), ['yokoten bot · as team-bot · gh pr create --fill']);
   assert.deepEqual(botHeading({}, ['gh', 'issue', 'list']), ['yokoten bot · as yokoten-bot · gh issue list']);
   for (const line of botHeading({}, ['gh', 'pr', 'create', '--title', 'a'.repeat(60)])) assert.ok(line.length <= 80);
+});
+
+// #1077: the bot is the gate for what it posts. It reads each body file as it sends, after
+// the shell wrote it, runs the privacy check on it, and sends nothing it can't read.
+test('bot: reads and checks the body file it sends, and sends none it cannot read (#1077)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['host'] }));
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
+  const bin = join(sandbox.home, 'bin');
+  const log = join(sandbox.home, 'gh.log');
+  // A fake gh that works on each system (#1068).
+  const ghEnv = writeNodeProgram(bin, 'gh', `const fs = process.getBuiltinModule('node:fs'); fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, 'utf8') }) + '\\n');`);
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const key = join(sandbox.home, 'bot.pem');
+  writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+  const bot = { ...ghEnv, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const run = (command: string[], input = '') => sandbox.call(['bot', '--', ...command], { input, extra: bot });
+  const ran = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  // A token built from pieces, so the repo passes its own privacy check.
+  const secret = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+  const madeWith = '\n\nMade with worker (opus)\n';
+  const file = (name: string, text: string) => {
+    const path = join(sandbox.home, name);
+    writeFileSync(path, text);
+    return path;
+  };
+  const folder = join(sandbox.home, 'a-folder.md');
+  mkdirSync(folder);
+  const missing = join(sandbox.home, 'missing.md');
+  const leak = /in what this command sends; nothing was sent/;
+  const cases: { name: string; command: string[]; input?: string; sent: boolean; says?: RegExp }[] = [
+    { name: 'a clean body file is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', file('clean.md', `All clean.${madeWith}`)], sent: true },
+    { name: 'a clean body on standard input is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', '-'], input: `From stdin.${madeWith}`, sent: true },
+    // Positive controls: a secret is refused, from a file, from standard input, in a release note.
+    { name: 'a secret in a body file is refused', command: ['gh', 'issue', 'comment', '5', '--body-file', file('secret.md', `Key ${secret}${madeWith}`)], sent: false, says: leak },
+    { name: 'a secret on standard input is refused', command: ['gh', 'issue', 'comment', '5', '-F', '-'], input: `Key ${secret}${madeWith}`, sent: false, says: leak },
+    { name: 'a secret in a release note file is refused', command: ['gh', 'release', 'edit', 'v1', '--notes-file', file('notes.md', `Key ${secret}\n`)], sent: false, says: leak },
+    // Fail closed: a file the bot can't read is never sent.
+    { name: 'a missing pull request body file is not sent', command: ['gh', 'pr', 'edit', 'topic', '--body-file', missing], sent: false, says: /can't read the file after --body-file/ },
+    { name: 'a missing comment body file is not sent', command: ['gh', 'issue', 'comment', '5', '--body-file', missing], sent: false, says: /can't read the file after --body-file/ },
+    { name: 'a missing api input file is not sent', command: ['gh', 'api', 'repos/me/repo/issues', '--input', missing], sent: false, says: /can't read the file after --input/ },
+    // A short-option cluster with a body letter: gh reads `-dF file` as `--draft --body-file file`.
+    { name: 'a -dF cluster is refused', command: ['gh', 'pr', 'create', '-t', 'fix(host): a', '-dF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
+    { name: 'a -aF cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-aF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
+    { name: 'a -cb cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-cb', `Key ${secret}`], sent: false, says: /joins short options with one that takes the body/ },
+    // More than one place to read the text from: the bot can't tell which gh sends, so it refuses.
+    { name: 'two body files are refused', command: ['gh', 'issue', 'comment', '5', '--body-file', join(sandbox.home, 'clean.md'), '-F', join(sandbox.home, 'clean.md')], sent: false, says: /reads its text from 2 places/ },
+    { name: 'a body file and standard input are refused', command: ['gh', 'issue', 'comment', '5', '-F', '-', '--body-file', join(sandbox.home, 'clean.md')], input: `x${madeWith}`, sent: false, says: /reads its text from 2 places/ },
+    { name: 'a missing release note file is not sent', command: ['gh', 'release', 'edit', 'v1', '--notes-file', missing], sent: false, says: /can't read the file after --notes-file/ },
+    { name: 'a folder as the note file is not sent', command: ['gh', 'release', 'edit', 'v1', '--notes-file', folder], sent: false, says: /can't read the file after --notes-file/ },
+  ];
+  try {
+    for (const { name, command, input, sent, says } of cases) {
+      const before = ran().length;
+      const result = await run(command, input);
+      assert.equal(result.status, sent ? 0 : 1, `${name}: ${result.stderr}`);
+      assert.equal(ran().length, before + (sent ? 1 : 0), `${name}: gh ${sent ? 'ran' : 'did not run'}`);
+      if (says) assert.match(result.stderr.replace(/\s+/g, ' '), says, name);
+      assert.ok(!result.stderr.includes(secret), `${name}: the secret is never printed`);
+    }
+    // gh gets the checked text on stdin, from a file or from standard input, read once.
+    assert.deepEqual(ran()[0], { args: ['issue', 'comment', '5', '--body-file', '-'], input: `All clean.${madeWith}` });
+    assert.equal(ran()[1].input, `From stdin.${madeWith}`);
+  } finally {
+    server.close();
+  }
+});
+
+// #1077: the bot reads the body once and hands gh that text, so a file changed after the
+// check can't change what is sent. Here gh's own label list rewrites the file in between.
+test('bot: a body file changed after the check does not change what is sent (#1077)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['host'] }));
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
+  const bin = join(sandbox.home, 'bin');
+  const log = join(sandbox.home, 'gh.log');
+  const bodyFile = join(sandbox.home, 'body.md');
+  const secret = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+  const ghEnv = writeNodeProgram(
+    bin,
+    'gh',
+    [
+      'const fs = process.getBuiltinModule("node:fs");',
+      `if (args[0] === "label") { fs.writeFileSync(${JSON.stringify(bodyFile)}, ${JSON.stringify(`Key ${secret}\n`)}); process.stdout.write(JSON.stringify([{ name: "bug" }, { name: "tier B" }])); process.exit(0); }`,
+      'if (args[0] === "issue" && args[1] === "view") { console.log(JSON.stringify({ milestone: { number: 1, title: "M1" } })); process.exit(0); }',
+      `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, "utf8") }) + "\\n");`,
+    ].join('\n'),
+  );
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const key = join(sandbox.home, 'bot.pem');
+  writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+  const bot = { ...ghEnv, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const checked = 'tier: B\nCloses #1\n\n## Why\nx\n\n## What changed\nx\n\n## How tested\nx\n\nMade with worker (opus)\n';
+  writeFileSync(bodyFile, checked);
+  try {
+    const result = await sandbox.call(['bot', '--', 'gh', 'pr', 'create', '-t', 'fix(host): a', '--body-file', bodyFile], { extra: bot });
+    assert.equal(result.status, 0, result.stderr);
+    // The file now holds the secret, but gh got the text that was checked, on stdin.
+    assert.match(readFileSync(bodyFile, 'utf8'), /ghp_/);
+    const [sent] = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(sent, { args: ['pr', 'create', '-t', 'fix(host): a', '--body-file', '-', '--label', 'bug', '--label', 'tier B', '--milestone', 'M1'], input: checked });
+  } finally {
+    server.close();
+  }
 });

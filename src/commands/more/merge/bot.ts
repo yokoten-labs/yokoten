@@ -5,8 +5,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { botConfig, botEnv, botProgram, type Gh, installationToken, readApprovalState, readBranchFiles, readCodeOwners, readIssueMilestone, readRepoLabelNames, repoOf } from '../../../host/github/index.ts';
-import { DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
+import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
 import { finding, type Finding } from '../../../rules/message.ts';
+import { checkPost, readSentBody } from '../../../rules/privacy.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../../rules/pr.ts';
 import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
 
@@ -16,28 +17,46 @@ export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bo
 /** The one line before the command's own output: `yokoten bot · as yokoten-bot · gh pr create`. */
 export const botHeading = (env: Env, command: string[]): string[] => title('bot', `as ${botName(env)} · ${command.join(' ')}`);
 
-async function bot(invocation: Invocation, command: string[]): Promise<number> {
+async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const { env, cwd } = invocation;
+  let command = written;
   // gh and git only (#295): a wrapper such as `env gh` or `sh -c` would run a title unchecked.
   if (command.length && !botProgram(command[0])) {
     print(invocation, [`yokoten bot: runs gh and git only; run \`${command[0]}\` without the bot`], invocation.stderr);
     return 1;
   }
-  // The title first: a bad title is refused before anything is sent, so it never needs a rename.
   const root = rootOf(cwd, env);
-  const titleProblems = checkCommandTitle(command, root ? loadConfig(root) : DEFAULTS);
+  const projectConfig = root ? loadConfig(root) : DEFAULTS;
+  // Standard input is read once, for the checks, and gh then gets the same text.
+  let stdinText: string | undefined;
+  const readStdin = (): string => (stdinText ??= readInput(invocation.stdin));
+  // The title first: a bad title is refused before anything is sent, so it never needs a rename.
+  const titleProblems = checkCommandTitle(command, projectConfig);
   if (titleProblems.length) {
     print(invocation, [`yokoten bot: ${titleProblems.length} problem(s) in the title; nothing was sent. Fix the title and run it again:`, ...bullets(titleProblems)], invocation.stderr);
     return 1;
   }
+  // The body file is read once, here (#1077). gh then gets that same text on stdin, so every
+  // check below reads the text that is sent, and a file changed after the check changes nothing.
+  if (botProgram(command[0] ?? '') === 'gh') {
+    const sent = readSentBody(command.slice(1), cwd);
+    if ('id' in sent) {
+      print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([sent])], invocation.stderr);
+      return 1;
+    }
+    command = [command[0], ...sent.args];
+    if (sent.text !== undefined) stdinText = sent.text;
+  }
   // Then a pull request's body (#406), by the body rules of `check --pr`. A body for this
   // branch, or one `--head` or `gh pr edit <branch>` names, is checked before anything is sent.
-  const body = root ? readPendingBody(invocation, command, root) : null;
+  const body = root ? readPendingBody(invocation, command, root, readStdin) : null;
+  if (body === UNREADABLE) return refuseUnreadable(invocation);
   if (body && !isLookup(body) && refuseBody(invocation, checkBody(body, localBranch(body), env))) return 1;
   // A comment, a review with a body and a new issue carry the same `Made with` line as a
   // pull request body (#609), so a reader can tell which AI wrote them. Only that line is
   // checked here; an edit stays as it is.
-  const note = root ? readPendingNoteBody(invocation, command, root) : null;
+  const note = root ? readPendingNoteBody(invocation, command, root, readStdin) : null;
+  if (note === UNREADABLE) return refuseUnreadable(invocation);
   if (note && refuseBody(invocation, { problems: checkNote(note) })) return 1;
   // Then the labels of `gh pr create` (#422): a tier label the body contradicts is refused.
   const labels = root ? readPendingLabels(command, root, body, env) : null;
@@ -126,10 +145,13 @@ async function bot(invocation: Invocation, command: string[]): Promise<number> {
   // An `api` call on a pull request's merge endpoint merges too (#612): it goes
   // through the same gate, unless it is provably a read.
   if (file === 'gh' && refuseApiMerge(invocation, ghWith(file, cwd, botEnv(env, token)), cwd, env, repo, rest)) return 1;
-  // A body read from standard input was used up by the check, so gh gets it the same way.
-  const input = body?.input ?? note?.input;
+  // Last before sending, the privacy check on every text and body file the command sends
+  // (#1077). The bot is the gate for what it posts: the guard leaves its body files to it, so
+  // they are read here, after the shell wrote them. A file the bot can't read is never sent.
+  if (botProgram(file) === 'gh' && refuseLeak(invocation, projectConfig, rest, readStdin)) return 1;
+  // A body read from standard input was used up by the checks, so gh gets it the same way.
   const { stdin, stdout, stderr } = invocation;
-  const piped = input ?? (stdin.fd === null ? (stdin.text ?? '') : undefined);
+  const piped = stdinText ?? (stdin.fd === null ? (stdin.text ?? '') : undefined);
   // `gh pr status` shows the Approve check too (#612), so the lead sees a stale Approve
   // before trying to merge. Its output is captured to add the lines after gh's table.
   if (file === 'gh' && showsPrStatus(rest)) {
@@ -155,12 +177,33 @@ async function bot(invocation: Invocation, command: string[]): Promise<number> {
 /** The process's own stream by its fd, so gh writes to it straight; else a pipe, copied after (#475). */
 const childStream = (stream: Output): number | 'pipe' => (typeof stream.fd === 'number' ? stream.fd : 'pipe');
 
+/** Whether gh reads a body from standard input: a `-` file, as a word or after `=`, `@` or a short flag. */
+const readsStdin = (args: string[]): boolean => args.some((word) => word === '-' || /(?:=|@|^-[A-Za-z])-$/.test(word));
+
+/**
+ * Runs the privacy check of `rules/privacy.ts` on what gh is about to send, as the sender
+ * (#1077), and prints the problem. True when it refuses.
+ */
+function refuseLeak(invocation: Invocation, config: Config, args: string[], readStdin: () => string): boolean {
+  const { env, cwd } = invocation;
+  const leak = checkPost({ args, stdinText: readsStdin(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
+  if (!leak) return false;
+  print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([leak])], invocation.stderr);
+  return true;
+}
+
+/** A body file the bot can't read: nothing is sent (#1077). */
+const UNREADABLE = 'unreadable';
+
+function refuseUnreadable(invocation: Invocation): number {
+  print(invocation, ['yokoten bot: the body file could not be read; nothing was sent. Write the file, then run it again'], invocation.stderr);
+  return 1;
+}
+
 /** A pull request body a command is about to set, read and not yet checked. */
 interface PendingBody {
   root: string;
   text: string;
-  /** The body as read from standard input, which gh then gets the same way. */
-  input?: string;
   base: string | null;
   head: string | null;
   repo: string | null;
@@ -168,18 +211,18 @@ interface PendingBody {
 
 /**
  * The body `gh pr create` or `gh pr edit` sets, read from the command, a file or standard
- * input. Null when there is none, the repo has no yokoten.json, the command names another
- * repo, or the file can't be read (gh then says why, and sends nothing).
+ * input. Null when there is none, the repo has no yokoten.json, or the command names another
+ * repo. UNREADABLE when the file can't be read: the bot then sends nothing (#1077).
  */
-function readPendingBody(invocation: Invocation, command: string[], root: string): PendingBody | null {
+function readPendingBody(invocation: Invocation, command: string[], root: string, readStdin: () => string): PendingBody | typeof UNREADABLE | null {
   const found = readCommandBody(command);
   if (!found || !existsSync(join(root, 'yokoten.json')) || !isOrigin(root, found.repo, invocation.env)) return null;
   try {
     if ('text' in found.body) return { root, text: found.body.text, base: found.base, head: found.head, repo: found.repo };
-    const input = found.body.file === '-' ? readInput(invocation.stdin) : undefined;
-    return { root, text: input ?? readFileSync(resolve(invocation.cwd, found.body.file), 'utf8'), input, base: found.base, head: found.head, repo: found.repo };
+    const text = found.body.file === '-' ? readStdin() : readFileSync(resolve(invocation.cwd, found.body.file), 'utf8');
+    return { root, text, base: found.base, head: found.head, repo: found.repo };
   } catch {
-    return null;
+    return UNREADABLE;
   }
 }
 
@@ -187,8 +230,6 @@ function readPendingBody(invocation: Invocation, command: string[], root: string
 interface PendingNote {
   root: string;
   text: string;
-  /** The body as read from standard input, which gh then gets the same way. */
-  input?: string;
   repo: string | null;
   /** Whether the command names `--attach`: gh posts those uploads after the body. */
   attach: boolean;
@@ -280,11 +321,11 @@ function readNoteArgs(args: string[], values: Set<string>, shorts: string): Note
  * sets with `--body`, `-b`, `--body-file` or `-F`, in any spelling gh takes. As in gh, the
  * last one wins. Null for any other command, for one with no body and no `--attach` (a
  * plain approve), for an edit (which stays as it is), or when the repo has no yokoten.json,
- * the command names another repo, or the file can't be read (gh then says why, and sends
- * nothing). A `--attach` alone still returns a note, so the upload is refused below: gh
+ * or the command names another repo. UNREADABLE when the file can't be read: the bot then
+ * sends nothing (#1077). A `--attach` alone still returns a note, so the upload is refused below: gh
  * would post it with no `Made with` line.
  */
-function readPendingNoteBody(invocation: Invocation, command: string[], root: string): PendingNote | null {
+function readPendingNoteBody(invocation: Invocation, command: string[], root: string, readStdin: () => string): PendingNote | typeof UNREADABLE | null {
   const [file, ...rest] = command;
   if (!file || botProgram(file) !== 'gh') return null;
   const { words } = readNoteArgs(rest, NOTE_VALUES, NOTE_SHORT_VALUES);
@@ -307,12 +348,11 @@ function readPendingNoteBody(invocation: Invocation, command: string[], root: st
     if (typeof body === 'string' && body === '' && !found.attach) return null;
     if (typeof body === 'string') return { root, text: body, repo, attach: found.attach };
     if (body === null) return { root, text: '', repo, attach: found.attach };
-    const input = body.file === '-' ? readInput(invocation.stdin) : undefined;
-    const text = input ?? readFileSync(resolve(invocation.cwd, body.file), 'utf8');
+    const text = body.file === '-' ? readStdin() : readFileSync(resolve(invocation.cwd, body.file), 'utf8');
     if (text === '' && !found.attach) return null;
-    return { root, text, input, repo, attach: found.attach };
+    return { root, text, repo, attach: found.attach };
   } catch {
-    return null;
+    return UNREADABLE;
   }
 }
 

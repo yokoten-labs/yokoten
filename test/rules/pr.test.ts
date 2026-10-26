@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { makeTempDir } from '../repo/helpers.ts';
-import { DEFAULTS } from '../../src/rules/config.ts';
+import { makeTempDir, ROOT } from '../repo/helpers.ts';
+import { DEFAULTS, loadConfig } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
 import { judge } from '../../src/run/hook.ts';
 import {
@@ -20,6 +20,7 @@ import {
   type MergeApprovalRead,
   type ApprovalCommit,
   checkApprovalFreshness,
+  checkCommandTitle,
   checkMergeApproval,
   checkIssueLabels,
   checkIssueTitle,
@@ -843,4 +844,11 @@ test('approve: the lead approval line names the lead, its vendor and model (#699
   assert.deepEqual(writerAgents('tier: A\nno Made-with line\n'), [], 'unreadable writers are none');
   assert.deepEqual(sameModelWriter([{ vendor: 'Grok', model: 'Grok 4.7' }], { vendor: 'xAI', model: 'Grok 4.7' }), { vendor: 'Grok', model: 'Grok 4.7' });
   assert.equal(vendorFamily({ vendor: 'DeepSeek', model: 'DeepSeek V4.1 Flash' }), 'deepseek');
+});
+
+// #1077 (record 0043): the areas follow the three commands; a change across commands uses `repo`.
+test('pr title: kanban, desk and tidy are areas of this repo; cli is not (#1077)', () => {
+  const config = loadConfig(ROOT);
+  for (const area of ['kanban', 'desk', 'tidy', 'repo']) assert.deepEqual(checkCommandTitle(['gh', 'pr', 'create', '--title', `feat(${area}): x`], config), [], area);
+  assert.equal(checkCommandTitle(['gh', 'pr', 'create', '--title', 'feat(cli): x'], config).length, 1);
 });
