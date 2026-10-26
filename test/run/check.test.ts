@@ -158,7 +158,7 @@ test('check --staged: a readable real-home marks file is used when the default f
 
 test('check --staged: borrowed code carries its source, commit, license and notice (#676)', async () => {
   const sandbox = makeSandbox();
-  const sha ='0123456789abcdef0123456789abcdef01234567';
+  const sha = '0123456789abcdef0123456789abcdef01234567';
   const header = [
     '// source: https://github.com/example/upstream/blob/main/src/thing.ts',
     `// commit: ${sha}`,
@@ -664,13 +664,15 @@ test('check --pr: a base or head commit not in the checkout is one finding, neve
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix them, then `yokoten check` More: \S+#use-it-as-a-github-action $/);
   noGitError(result.stderr);
-  result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }) } });
+  const summary = join(sandbox.home, 'summary.md');
+  result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');
   let report = JSON.parse(result.stdout);
   assert.deepEqual([report.check, report.ok, report.findings.map((f: { id: string }) => f.id)], ['pr', false, ['pr-commits']]);
   assert.match(report.findings[0].what, /base commit/);
   assert.match(report.findings[0].fix, /fetch-depth: 0/);
+  assert.match(readFileSync(summary, 'utf8'), /^### yokoten check --pr: 1 problem\n\n\| Place \| Rule \| What \| Why \| Fix \|\n\|[-|]+\|\n\|  \| \[pr-commits\]\(\S+\) \| the pull request's base commit is not in this checkout \| .+ \| Use `fetch-depth: 0` in actions\/checkout/);
 
   // A full clone, with a head that was never fetched.
   const missing = 'f'.repeat(40);
@@ -1302,6 +1304,61 @@ test('check --staged: a stopped commit says how to unstage the files it names; a
   assert.match(flat(result.stderr), /git rm -r --cached node_modules.*add `node_modules\/` to \.gitignore/);
   assert.match(flat(result.stderr), /To take this folder out of the commit, run `git restore --staged node_modules\/`\. It stays on disk/);
   assert.doesNotMatch(result.stderr, /f29\.js/);
+});
+
+// #521: with no commit yet there is no HEAD to restore from, so a folder is taken out with git rm -r --cached.
+test('check --staged: before the first commit, a staged node_modules says git rm -r --cached on the folder (#521)', async () => {
+  const sandbox = makeSandbox();
+  for (let i = 0; i < 30; i += 1) sandbox.write(`node_modules/pkg/dist/f${i}.js`, `module.exports = ${i};\n`);
+  sandbox.git('add', '.');
+  const result = await sandbox.call(['check', '--staged']);
+  assert.match(flat(result.stderr), /To take this folder out of the commit, run `git rm -r --cached node_modules\/`\. It stays on disk/);
+});
+
+// The kinds in the marks file decide what a file may name: the login is fine where a file names accounts, the git name is not (#410, #434).
+test('check: the marks file kinds are read: a forge login is fine in CODEOWNERS and a LICENSE, the git name is found there (#410, #434)', async () => {
+  const sandbox = makeSandbox();
+  const name = ['Ann', 'Sample'].join(' ');
+  const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
+  mkdirSync(dirname(marks), { recursive: true });
+  writeFileSync(marks, `# added by yokoten from this machine: git name\n${name}\n# added by yokoten from this machine: forge login\nocto-jdoe\n`);
+  sandbox.write('.github/CODEOWNERS', '* @octo-jdoe\n');
+  sandbox.write('LICENSE', `MIT License\n\nCopyright (c) 2026 ${name}, octo-jdoe\n`);
+  sandbox.git('add', '.');
+  const result = await sandbox.call(['check']);
+  assert.equal(result.status, 1);
+  assert.match(flat(result.stderr), /LICENSE:3 matches your git name \(a private mark yokoten added by itself\)/);
+  assert.doesNotMatch(result.stderr, /CODEOWNERS|octo|login/i, 'the login is fine where a file names accounts');
+  assert.ok(!/ann|sample|octo-jdoe/i.test(result.stdout + result.stderr), 'check printed a mark');
+});
+
+// The project's own switch reaches the check (#447, record 0014).
+test('check --staged: privacy.skipOwnName false in yokoten.json looks for the mark that names the repo (#447)', async () => {
+  const sandbox = makeSandbox();
+  const marks = join(sandbox.home, 'marks');
+  writeFileSync(marks, 'quiet vale\n');
+  const extra = { YOKOTEN_PRIVATE_MARKS: marks };
+  sandbox.git('remote', 'add', 'origin', 'https://example.com/octo/quiet-vale.git');
+  sandbox.write('README.md', 'Quiet Vale ships\n');
+  sandbox.git('add', 'README.md');
+  assert.equal((await sandbox.call(['check', '--staged'], { extra })).status, 0, 'skipped by default: the mark names this repo');
+  sandbox.write('yokoten.json', JSON.stringify({ privacy: { skipOwnName: false } }));
+  sandbox.git('add', 'yokoten.json');
+  assert.equal((await sandbox.call(['check', '--staged'], { extra })).status, 1, 'off: stopped');
+  assert.equal((await sandbox.call(['check'], { extra })).status, 1, 'off: stopped in the tree too');
+});
+
+// #403: the check's own git reads are not cut off at Node's 1 MB buffer. Over 1 MiB of staged names, through the real path.
+test('check --staged: reads over 1 MB of staged file names in full (#403)', async () => {
+  const sandbox = makeSandbox();
+  const long = 'n'.repeat(240);
+  mkdirSync(join(sandbox.repo, 'many'));
+  for (let i = 0; i < 4300; i++) writeFileSync(join(sandbox.repo, 'many', `${long}-${i}.txt`), '');
+  sandbox.git('add', '.');
+  const result = await sandbox.call(['check', '--staged', '--json']);
+  const report = JSON.parse(result.stdout);
+  assert.deepEqual(report.findings.map((f: { id: string }) => f.id), ['layout']);
+  assert.match(report.findings[0].what, /^4300 entries, over the cap of 7/);
 });
 
 // #756: `check --pr` reads the Made-with line against the desk status files of the
