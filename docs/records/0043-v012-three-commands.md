@@ -191,7 +191,9 @@ The pains that came up most often:
    3. Hide and fold the commands.
    4. `desk`, `kanban` and `tidy`.
    5. The first-screen issues (#1037 to #1040, #1043, #1044).
-   6. The README (issue #1035) in all four languages.
+   6. The docs, in all four languages: the README (issue #1035) and a short guide teach
+      only the three commands. The long guide (32,000 words) moves to a guide for agents
+      and contributors; nothing in it is deleted (the owner, 2026-10-26).
 
 10. **A walk-through gates the release.** Before the tag, a new user goes through yokoten
     on Windows, macOS and Linux. That user is the owner, or a weak model playing a new
