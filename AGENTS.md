@@ -146,6 +146,29 @@ yokoten is its own first user: this file came from `kit/project/AGENTS.md` by
   `test/<layer>/<module>.test.ts`, and helpers two files share go in `test/repo/helpers.ts`
   (`test/repo/architecture.test.ts` holds this). A branch then adds imports to its own file (#152).
 
+### Architecture
+
+A reviewer checks every pull request against these rules, and a break is blocking. The
+owner does not ask "does this fit?" (#1078). `test/repo/architecture.test.ts` holds what a
+machine can check; the reviewer holds the rest.
+
+1. **Each piece in its layer.** A check or gate lives in `rules/`; a host hand-off lives in
+   `host/` (records 0040, 0046). No new layer and no new command: the front is `desk`,
+   `kanban` and `tidy` (record 0043).
+2. **Platform as an argument.** Per-OS case tables, pure helpers, fail closed. Native
+   Windows runs the CLI, the guard hooks and install; the desk, its fence and the kanban
+   server run in WSL there. Never patch one test for one system: skips live in `TEST_AREAS`.
+3. **Old code gets safety fixes only.** Every other change goes into the new structure.
+4. **Foundation first.** A pull request that changes what CI or the platform table checks
+   merges before the feature pull requests it judges.
+5. **Borrow, build only the gap.** Use what the host or a maintained project gives (the
+   merge queue, sandbox-runtime). Look before you build.
+6. **One check, one place.** A check runs where the thing happens (the bot checks what it
+   sends). The guard allows characters; it learns no new shell grammar.
+7. **Never overwrite user config,** paths or environment on any system. Fallbacks only read.
+8. **It strengthens one of four:** the gate before merge, no lost work, a beginner started in
+   30 seconds, one rule set for every vendor's agent. If none, do not build it.
+
 ### Commits and versions
 
 - **Commit messages** follow [Conventional Commits](https://www.conventionalcommits.org/):
