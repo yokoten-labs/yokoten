@@ -88,7 +88,20 @@ The pains that came up most often:
 
    It never prints its access token on the terminal.
 
-6. **`merge` is the merge queue.** The owner chose the name: "train" said nothing about merging. `train` stays as a hidden old name that still works.**
+6. **`desk` gives one task to one AI, with no setup by hand.** Today a person makes a
+   clone, writes a brief and types the agent's own start command. `yokoten desk 1029`
+   is enough:
+   - yokoten makes the clone, writes the brief from the issue and picks an agent;
+   - it opens the sandbox, runs the commit check when the agent is done, and shows the
+     result on the board;
+   - with no issue number, `desk` lists which AI works on what, and changes nothing.
+
+   It folds in `worker` and `msg`. Our own dispatch scripts (`deepseek-worker.sh`,
+   `dispatch-queue.sh`) already run this flow, so they are the model. OpenCode joins the
+   agents a desk can start. The desk's own help screen gets the one screen shape of item 8.
+
+7. **`merge` is the merge queue.** The owner chose the name: "train" said nothing about
+   merging. `train` stays as a hidden old name that still works.
    - Use GitHub's own merge queue where the repository allows it; ours only where it
      doesn't.
    - A merge needs three things: a review by another vendor's AI, the evidence, and the
@@ -96,7 +109,7 @@ The pains that came up most often:
    - A conflicted pull request is rebuilt on the latest main, never forced.
    - The queue shows on the board.
 
-7. **Every screen keeps one shape.**
+8. **Every screen keeps one shape.**
    - A title line that says what is true now, at most 10 rows, then the `Next` line and
      the `More` line.
    - No word a beginner can't read (worktree, tier, hooksPath); these go under `--all`
@@ -104,26 +117,26 @@ The pains that came up most often:
    - A command to copy stays whole on its own line.
    - Every line fits 80 columns. The `help` screen of 0.1.1 is the model.
 
-8. **Order of work.**
+9. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
    2. Hide and fold the commands.
-   3. `merge` and `board`.
+   3. `merge`, `board` and `desk`.
    4. The first-screen issues (#1037 to #1040, #1043, #1044).
    5. The README (issue #1035) in all four languages.
 
-9. **A walk-through gates the release.** Before the tag, a new user goes through yokoten
-   on Windows, macOS and Linux. That user is the owner, or a weak model playing a new
-   coder. The release waits until the problems found are fixed. Time pressure does not
-   skip this.
+10. **A walk-through gates the release.** Before the tag, a new user goes through yokoten
+    on Windows, macOS and Linux. That user is the owner, or a weak model playing a new
+    coder. The release waits until the problems found are fixed. Time pressure does not
+    skip this.
 
-10. **Undo of an AI's change moves to v0.1.3.** A new coder needs "take back what the AI
+11. **Undo of an AI's change moves to v0.1.3.** A new coder needs "take back what the AI
     just did". It gets its own record when it is built.
 
-11. **Getting an AI is not built.** For a new coder with no AI, yokoten points to an
+12. **Getting an AI is not built.** For a new coder with no AI, yokoten points to an
     existing model gateway (magpie, MIT) that the person installs and controls. yokoten
     does not bundle it or edit any agent's config for it.
 
-12. **Every new feature cites its pain**: a `failure-modes.md` row or an issue.
+13. **Every new feature cites its pain**: a `failure-modes.md` row or an issue.
 
 ## Options not taken
 
