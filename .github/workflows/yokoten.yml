@@ -113,9 +113,11 @@ jobs:
       - if: needs.changes.outputs.docs_only == 'true'
         run: node --test --test-reporter=spec test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
       - if: needs.changes.outputs.docs_only != 'true'
-        run: node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=${{ runner.temp }}/tests.tap --test-shard=${{ matrix.shard }}/${{ matrix.of }}
+        run: node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-shard="$SHARD/$OF"
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+          SHARD: ${{ matrix.shard }}
+          OF: ${{ matrix.of }}
       # The time and the slowest tests go in the job summary. It fails far above the slowest run
       # seen: 180 s a shard, or 90 s on Node 24 on Linux, the fastest setup (#475). The one
       # whole-suite macOS job gets 400 s: it took 191 s once, then 419 to 510 s on 2026-10-24,

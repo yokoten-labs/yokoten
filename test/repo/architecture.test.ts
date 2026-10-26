@@ -548,7 +548,9 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
       whole: extra.filter((entry) => entry.of === 1).map((entry) => `${entry.os} ${entry.node} ${entry.shard}/${entry.of}`),
     };
   };
-  assert.match(testJob, /--test-shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ matrix\.of \}\}/, 'the run step uses the shard');
+  // The shard numbers reach the shell through env, not inside the script (zizmor template-injection).
+  assert.match(testJob, /--test-shard="\$SHARD\/\$OF"/, 'the run step uses the shard');
+  assert.match(testJob, /SHARD: \$\{\{ matrix\.shard \}\}\n\s+OF: \$\{\{ matrix\.of \}\}/, 'the shard numbers come from the matrix');
   assert.match(text, /^  schedule:\n    - cron: '[^']+'$/m, 'the full matrix runs on a schedule (#568)');
   assert.match(jobBlock(text, 'ci'), /never started/, '`ci` names jobs that never got a runner (#568)');
   assert.deepEqual(matrix('true', 'pull_request').setups, ['ubuntu-latest ^24.22.1']);
