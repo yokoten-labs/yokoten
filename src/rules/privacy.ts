@@ -1217,6 +1217,8 @@ export interface GhCommand {
   stdinFile?: string;
   /** The text a `<<<` here-string feeds to stdin. */
   hereString?: string;
+  /** The text the sender read from its own stdin (`yokoten bot`), for a body file `-`. */
+  stdinText?: string;
 }
 
 // The gh commands that post text, by group and subcommand (`new` is gh's alias for `create`).
@@ -1419,11 +1421,12 @@ function postedPieces(gh: GhCommand, readFile: (path: string) => FileRead, comma
       return;
     }
     if (path === '-') {
-      // stdin: a here-string, a `< file`, or the heredocs in the command.
-      if (gh.hereString !== undefined) pieces.push({ source: 'the here-string text', isFile: false, text: gh.hereString });
+      // stdin: the sender's own, a here-string, a `< file`, or the heredocs in the command.
+      if (gh.stdinText !== undefined) pieces.push({ source: 'the standard input', isFile: false, text: gh.stdinText });
+      else if (gh.hereString !== undefined) pieces.push({ source: 'the here-string text', isFile: false, text: gh.hereString });
       else if (gh.stdinFile !== undefined) addFile('<', gh.stdinFile, key);
       else for (const body of heredocBodies(command)) pieces.push({ source: 'the heredoc text', isFile: false, text: body });
-      if (key === 'query') queries.push(...[gh.hereString, ...heredocBodies(command)].filter((text) => text !== undefined));
+      if (key === 'query') queries.push(...[gh.stdinText, gh.hereString, ...heredocBodies(command)].filter((text) => text !== undefined));
       return;
     }
     if (seen.has(path)) return;
@@ -1490,6 +1493,23 @@ function apiWrites(path: string, method: string, hasFields: boolean, queries: st
   if (path.replace(/^\//, '') === 'graphql') return queries.some((query) => MUTATION.test(query));
   if (method) return WRITE_METHODS.has(method);
   return hasFields && !path.replace(/^\//, '').startsWith('search/');
+}
+
+/**
+ * A body file as `yokoten bot` sends it (#1077): the shell has run, so the path is taken as
+ * written, from `cwd`, the way gh opens it. Anything but a plain file of at most 1 MB is
+ * 'missing', so the send stops: fail closed. A pipe is never read, since gh needs it after.
+ */
+function readSentFile(path: string, cwd: string | null): FileRead {
+  if (!isAbsolute(path) && cwd === null) return 'missing';
+  const at = isAbsolute(path) || cwd === null ? path : resolve(cwd, path);
+  try {
+    const stat = statSync(at);
+    if (!stat.isFile() || stat.size > MAX_FILE_BYTES) return 'missing';
+    return { texts: [readFileSync(at, 'utf8')] };
+  } catch {
+    return 'missing';
+  }
 }
 
 // The commit check's reasons end on what git does; a post is public as soon as it is sent.
@@ -1713,10 +1733,16 @@ function isPostHere(gh: GhCommand, { env, command, cwd, from }: { env: Env; comm
  * The first privacy problem in the text a gh command is about to post, or null. `command`
  * is the whole command text, for the heredocs that feed stdin. `cwd` is where the command
  * runs, for a relative file; null when the guard cannot tell.
+ *
+ * One check, two callers (#1077). The guard calls it before the shell runs, with
+ * `isBotCall` when the post goes through `yokoten bot --`: the bot reads the files then, so
+ * the guard reads none, and writing a body file and posting it may be one command. The bot
+ * calls it with `isSender` as it sends: the shell has run, so each path is read as gh gets
+ * it, and a file the bot can't read (missing, not a plain file, over 1 MB) stops the send.
  */
 export function checkPost(
   gh: GhCommand,
-  { env, privacy, cwd, command, from, files }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles },
+  { env, privacy, cwd, command, from, files, isBotCall = false, isSender = false }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isBotCall?: boolean; isSender?: boolean },
 ): Finding | null {
   // The path goes to the kernel as bash hands it to gh, never normalized: join and resolve
   // drop `..` as text, but the kernel goes up from the real folder when the working folder
@@ -1733,6 +1759,9 @@ export function checkPost(
     });
   };
   const readFile = (path: string): FileRead => {
+    // A `yokoten bot` call: the bot reads each file as it sends (#1077).
+    if (isBotCall) return 'skip';
+    if (isSender) return readSentFile(path, cwd);
     let full = path;
     if (path.startsWith('~')) {
       // Bash takes `~` from HOME, or from the system when HOME is unset; only a full HOME
@@ -1781,6 +1810,11 @@ export function checkPost(
     // the running command knows, can't be read yet.
     // What the guard saw is named, so the agent knows what to change (#498).
     const { saw } = posted;
+    if (isSender) {
+      return finding('unreadable-command', `yokoten bot can't read the file after ${posted.missing}, so it can't check it before sending`, 'write the body to a plain file under 1 MB, then send it again with its path', {
+        why: 'the bot checks every body before it is sent, and an unread one could hold anything',
+      });
+    }
     const what = !posted.unsure
       ? `yokoten can't find the file after ${posted.missing} to check it: the file doesn't exist yet when the guard runs`
       : `yokoten can't tell what the file after ${posted.missing} will hold: the guard runs before the command, and ${saw ? `${saw.what} in this command` : 'this command'} may change the file or where it is`;
@@ -1797,7 +1831,8 @@ export function checkPost(
   const withKinds = loadMarkKinds(env);
   const kinds = mapMarkKinds(withKinds);
   const all = withKinds.map((mark) => mark.value);
-  const isHere = all.length > 0 && isPostHere(gh, { env, command, cwd, from });
+  // The bot runs no shell: its own words are the whole post, so only a named target leaves the repo.
+  const isHere = all.length > 0 && (isSender ? cwd !== null && !namesTarget(gh, '', env) : isPostHere(gh, { env, command, cwd, from }));
   const key = isHere && cwd !== null ? repoKey(cwd, env) : null;
   const named = isHere && skipsOwnName(env, privacy) ? sameNameMarks(all, key) : [];
   const own = isHere ? [...ownMarks(all, [...allow, ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];

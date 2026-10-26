@@ -237,7 +237,7 @@ export function tildesPlain(command: string, commands: string[][]): boolean {
 
 // Whether the word at `index` is the yokoten of `yokoten bot --` or `node yokoten.ts bot --`,
 // after only the command's own variables. Which yokoten runs does not change the file gh reads.
-function isBotCallAt(words: string[], index: number): boolean {
+export function isBotCallAt(words: string[], index: number): boolean {
   if (!isBotProgram(words[index]) || words[index + 1] !== 'bot' || words[index + 2] !== '--') return false;
   const start = ownVariables(words);
   return index === start || (index === start + 1 && words[start] === 'node');

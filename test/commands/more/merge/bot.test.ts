@@ -1571,3 +1571,65 @@ test('bot: the heading names the bot and the command (#1027)', () => {
   assert.deepEqual(botHeading({}, ['gh', 'issue', 'list']), ['yokoten bot · as yokoten-bot · gh issue list']);
   for (const line of botHeading({}, ['gh', 'pr', 'create', '--title', 'a'.repeat(60)])) assert.ok(line.length <= 80);
 });
+
+// #1077: the bot is the gate for what it posts. It reads each body file as it sends, after
+// the shell wrote it, runs the privacy check on it, and sends nothing it can't read.
+test('bot: reads and checks the body file it sends, and sends none it cannot read (#1077)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ areas: ['host'] }));
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
+  const bin = join(sandbox.home, 'bin');
+  const log = join(sandbox.home, 'gh.log');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), input: require('node:fs').readFileSync(0, 'utf8') }) + '\\n');\n`);
+  chmodSync(join(bin, 'gh'), 0o755);
+  const server = createServer((req, res) => {
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  const key = join(sandbox.home, 'bot.pem');
+  writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
+  const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const run = (command: string[], input = '') => sandbox.call(['bot', '--', ...command], { input, extra: bot });
+  const ran = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
+  // A token built from pieces, so the repo passes its own privacy check.
+  const secret = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
+  const madeWith = '\n\nMade with worker (opus)\n';
+  const file = (name: string, text: string) => {
+    const path = join(sandbox.home, name);
+    writeFileSync(path, text);
+    return path;
+  };
+  const folder = join(sandbox.home, 'a-folder.md');
+  mkdirSync(folder);
+  const missing = join(sandbox.home, 'missing.md');
+  const leak = /in what this command sends; nothing was sent/;
+  const cases: { name: string; command: string[]; input?: string; sent: boolean; says?: RegExp }[] = [
+    { name: 'a clean body file is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', file('clean.md', `All clean.${madeWith}`)], sent: true },
+    { name: 'a clean body on standard input is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', '-'], input: `From stdin.${madeWith}`, sent: true },
+    // Positive controls: a secret is refused, from a file, from standard input, in a release note.
+    { name: 'a secret in a body file is refused', command: ['gh', 'issue', 'comment', '5', '--body-file', file('secret.md', `Key ${secret}${madeWith}`)], sent: false, says: leak },
+    { name: 'a secret on standard input is refused', command: ['gh', 'issue', 'comment', '5', '-F', '-'], input: `Key ${secret}${madeWith}`, sent: false, says: leak },
+    { name: 'a secret in a release note file is refused', command: ['gh', 'release', 'edit', 'v1', '--notes-file', file('notes.md', `Key ${secret}\n`)], sent: false, says: leak },
+    // Fail closed: a file the bot can't read is never sent.
+    { name: 'a missing pull request body file is not sent', command: ['gh', 'pr', 'edit', 'topic', '--body-file', missing], sent: false, says: /could not be read; nothing was sent/ },
+    { name: 'a missing comment body file is not sent', command: ['gh', 'issue', 'comment', '5', '--body-file', missing], sent: false, says: /could not be read; nothing was sent/ },
+    { name: 'a missing release note file is not sent', command: ['gh', 'release', 'edit', 'v1', '--notes-file', missing], sent: false, says: /can't read the file after --notes-file/ },
+    { name: 'a folder as the note file is not sent', command: ['gh', 'release', 'edit', 'v1', '--notes-file', folder], sent: false, says: /can't read the file after --notes-file/ },
+  ];
+  try {
+    for (const { name, command, input, sent, says } of cases) {
+      const before = ran().length;
+      const result = await run(command, input);
+      assert.equal(result.status, sent ? 0 : 1, `${name}: ${result.stderr}`);
+      assert.equal(ran().length, before + (sent ? 1 : 0), `${name}: gh ${sent ? 'ran' : 'did not run'}`);
+      if (says) assert.match(result.stderr.replace(/\s+/g, ' '), says, name);
+      assert.ok(!result.stderr.includes(secret), `${name}: the secret is never printed`);
+    }
+    // Standard input is read once, and gh gets the same text.
+    assert.equal(ran()[1].input, `From stdin.${madeWith}`);
+  } finally {
+    server.close();
+  }
+});

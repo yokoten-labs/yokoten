@@ -11,7 +11,7 @@ import { base, isGit, GIT_VALUE_OPTIONS, commandPlace, placedPath, resolvedFrom,
 import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner } from './lose-work.ts';
 import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, checkGitSetupWrites, checkHomeSetting, checkWorkerRealHome } from '../hooks/settings.ts';
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
-import { heredocPost, plainBreak, writeRisk, withoutStdin, tildesPlain, isUnsure, writesNoFile, writesFile, QUOTED_TILDE, folderAfter } from '../bash/body.ts';
+import { heredocPost, isBotCallAt, plainBreak, writeRisk, withoutStdin, tildesPlain, isUnsure, writesNoFile, writesFile, QUOTED_TILDE, folderAfter } from '../bash/body.ts';
 import { checkLeadOnlyWrites } from '../lead-only/writes.ts';
 import { fileRules, plainArgs, type FileRules } from '../lead-only/targets.ts';
 import { withBudget } from '../bash/read/run.ts';
@@ -654,7 +654,10 @@ function checkPosted(
   const at = ghIndex(words, findProgramPlaces(words));
   if (at === -1) return null;
   const gh = ghCommand(words, at);
-  const leak = checkPost(gh, { env, privacy: config?.privacy, cwd, from, command, files });
+  // Through `yokoten bot --`, the bot reads and checks the body files as it sends (#1077).
+  // A quoted ~ may not be home, so the guard can't tell that yokoten runs: it reads them then.
+  const isBotCall = at >= 3 && isBotCallAt(words, at - 3) && !QUOTED_TILDE.test(command);
+  const leak = checkPost(gh, { env, privacy: config?.privacy, cwd, from, command, files, isBotCall });
   if (leak || !titles) return leak;
   const [title] = checkCommandTitle([words[at], ...gh.args], config ?? {});
   return title ?? null;
