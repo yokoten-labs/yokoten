@@ -18,6 +18,7 @@ import {
   changedLines,
   type ApprovalRead,
   type MergeApprovalRead,
+  type ApprovalCommit,
   checkApprovalFreshness,
   checkMergeApproval,
   checkIssueLabels,
@@ -32,7 +33,8 @@ import {
   provenanceFindings,
   type DeskAgent,
   vendorFamily,
-  writerVendors,
+  writerAgents,
+  sameModelWriter,
   checkPullRequest,
   checkPullRequestBody,
   checkPullRequestTitle,
@@ -721,40 +723,79 @@ test('provenance: vendor spellings and a commit message are read (#756)', () => 
   assert.deepEqual(parseProvenance('c'.repeat(40), 'docs: a page\n\ntier: C\n\n🤖 Made with lead Claude Code (claude-opus-5-5)\n').writers, [{ vendor: 'Claude Code', model: 'claude-opus-5-5' }], 'a solo lead wrote it');
 });
 
-// #699: an area lead approves in its area, but never its own vendor's work, and never
-// a hard-line file or a looser change. The review names the lead, its vendor and model;
-// GitHub records the commit the review was given on.
-test('approve: another vendor\'s area lead may approve; its own vendor and stale commits may not (#699)', () => {
+// #699, record 0047: an area lead of another model than every writer may approve a
+// tier A change, but never a hard-line file or a looser change, never on a stale
+// commit, and never when the writers can't be read. The review names the lead, its
+// vendor and model; GitHub records the commit the review was given on.
+test('approve: a lead of another model may approve tier A; its own model, stale commits, hard lines and unread writers may not (record 0047)', () => {
   const head = 'b'.repeat(40);
-  const lead = { lead: 'Grok', vendor: 'xAI', model: 'Grok 4.7', commit: head, after: 0, sameDiff: true };
-  const read = (over: Partial<MergeApprovalRead> = {}): MergeApprovalRead => ({ tier: 'A', head, approved: null, after: 0, sameDiff: true, lead, writers: ['anthropic'], ...over });
-  assert.equal(checkMergeApproval(read()), null, 'another vendor\'s lead may approve the head');
-  assert.equal(checkMergeApproval(read({ tier: 'B' })), null, 'tier B is not gated here');
-  const own = checkMergeApproval(read({ writers: ['xai'] }));
-  assert.equal(own?.id, 'pr-approve');
-  assert.equal(own?.what, 'the area lead is from xAI, the same vendor as the writer; another vendor\'s lead must approve');
-  const stale = checkMergeApproval(read({ lead: { ...lead, commit: 'a'.repeat(40), after: 1, sameDiff: false } }));
-  assert.equal(stale?.id, 'pr-approve');
-  assert.equal(stale?.what, "the area lead's approval is on aaaaaaa; 1 commit with changes came after it; ask the area lead to approve again");
-  const moved = checkMergeApproval(read({ lead: { ...lead, commit: 'a'.repeat(40), after: 0, sameDiff: false } }));
-  assert.equal(moved?.what, "the area lead's approval is on aaaaaaa; the pull request's own diff is not the same as at the approval; ask the area lead to approve again");
-  const hard = checkMergeApproval(read({ ownerOnly: true, ownerWhy: 'a hard-line file (AGENTS.md)' }));
-  assert.equal(hard?.what, 'no owner Approve on this pull request', 'a hard-line file still asks the owner');
-  const loose = checkMergeApproval(read({ ownerOnly: true, ownerWhy: 'a looser change (test/rules/pr.test.ts)' }));
-  assert.equal(loose?.what, 'no owner Approve on this pull request', 'a looser change still asks the owner');
-  const unknown = checkMergeApproval(read({ writers: [] }));
-  assert.equal(unknown?.what, "the Made-with line names no writer, so the area lead's vendor can't be checked");
-  const owner = checkMergeApproval(read({ approved: head }));
-  assert.equal(owner, null, 'a fresh owner Approve still passes');
+  const opus = { vendor: 'Claude Code', model: 'claude-opus-5-5' };
+  const lead = (vendor: string, model: string, over: Partial<ApprovalCommit> = {}) => ({ lead: 'Lead', vendor, model, commit: head, after: 0, sameDiff: true, ...over });
+  const read = (over: Partial<MergeApprovalRead> = {}): MergeApprovalRead => ({ tier: 'A', head, approved: null, after: 0, sameDiff: true, lead: lead('Anthropic', 'Claude Sonnet 5.5'), writers: [opus], ...over });
+  const sameOpus = 'the area lead runs Claude Opus 5.5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve';
+  const noOwner = 'no owner Approve on this pull request';
+  const cases: [string, Partial<MergeApprovalRead>, string | null][] = [
+    // Positive controls: these merge.
+    ['another model of the same vendor, on the head', {}, null],
+    ['another vendor, on the head', { lead: lead('xAI', 'Grok 4.7') }, null],
+    ['another model, after only base merges with the same own diff', { lead: lead('Anthropic', 'Sonnet 5.5', { commit: 'a'.repeat(40) }) }, null],
+    ['a fresh owner Approve, whatever the lead', { lead: lead('Anthropic', 'Claude Opus 5.5'), approved: head }, null],
+    ['tier B is not gated here', { tier: 'B', lead: lead('Anthropic', 'Claude Opus 5.5') }, null],
+    ['the second writer is another model too', { writers: [opus, { vendor: 'Grok', model: 'Grok 4.7' }], lead: lead('Meta', 'Muse Spark 1.3') }, null],
+    // The writer's own model never counts, however it is spelled.
+    ['the same model, spelled another way', { lead: lead('Anthropic', 'Claude Opus 5.5') }, sameOpus],
+    ['the same model, the same spelling', { lead: lead('Claude Code', 'claude-opus-5-5') }, 'the area lead runs claude-opus-5-5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['a model name that could be the writer\'s', { lead: lead('Anthropic', 'Opus') }, 'the area lead runs Opus, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['one of two writers is the lead\'s model', { writers: [{ vendor: 'Grok', model: 'Grok 4.7' }, opus], lead: lead('Anthropic', 'Opus 5.5') }, 'the area lead runs Opus 5.5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['the short worker form is read from the model', { writers: [{ vendor: 'worker', model: 'opus 5.5' }], lead: lead('Anthropic', 'Claude Opus 5.5') }, 'the area lead runs Claude Opus 5.5, the same model as the writer worker (opus 5.5); a lead of another model must approve'],
+    // A hard-line file or a looser change keeps the owner's approval.
+    ['a hard-line file', { ownerOnly: true, ownerWhy: 'a hard-line file (package.json)' }, noOwner],
+    ['a looser change', { ownerOnly: true, ownerWhy: 'a looser change (test/rules/pr.test.ts)' }, noOwner],
+    // A stale approval never counts.
+    ['commits with changes came after the approval', { lead: lead('Anthropic', 'Sonnet 5.5', { commit: 'a'.repeat(40), after: 1, sameDiff: false }) }, "the area lead's approval is on aaaaaaa; 1 commit with changes came after it; ask the area lead to approve again"],
+    ['the own diff moved', { lead: lead('Anthropic', 'Sonnet 5.5', { commit: 'a'.repeat(40), sameDiff: false }) }, "the area lead's approval is on aaaaaaa; the pull request's own diff is not the same as at the approval; ask the area lead to approve again"],
+    // Writers that can't be read fail closed.
+    ['no writer on the Made-with line', { writers: [] }, "the Made-with line names no writer, so the area lead's model can't be checked against the writer's"],
+    ['no writers read at all', { writers: undefined }, "the Made-with line names no writer, so the area lead's model can't be checked against the writer's"],
+  ];
+  for (const [name, over, what] of cases) {
+    const found = checkMergeApproval(read(over));
+    assert.equal(found?.what ?? null, what, name);
+    if (what) assert.equal(found?.id, 'pr-approve', name);
+  }
+  // The fix line says what to do in plain words.
+  assert.match(checkMergeApproval(read({ lead: lead('Anthropic', 'Opus 5.5') }))?.fix ?? '', /^ask a reviewer of another model to approve the head commit, .*or ask the owner$/);
+  assert.match(checkMergeApproval(read({ writers: [] }))?.fix ?? '', /names each writer and model.*ask a reviewer of another model/);
 });
 
-// #699: the review line and the writer vendors that the cross-vendor rule reads.
+// Record 0047: model names are compared without case, spacing, dots, dashes or vendor words.
+test('approve: one model however it is spelled; another model or vendor is not the same (record 0047)', () => {
+  const cases: [string, string, string, string, boolean][] = [
+    ['Claude Code', 'claude-opus-5-5', 'Anthropic', 'Claude Opus 5.5', true],
+    ['Claude Code', 'Opus 5.5', 'Anthropic', 'claude-opus-5-5', true],
+    ['Claude Code', 'Opus 5.5', 'Anthropic', 'Opus', true],
+    ['worker', 'opus', 'Anthropic', 'Claude Opus 5.5', true],
+    ['DeepSeek', 'DeepSeek V4.1 Flash', 'deepseek', 'deepseek-v4.1-flash', true],
+    // Positive controls: these are other models.
+    ['Claude Code', 'claude-opus-5-5', 'Anthropic', 'Claude Sonnet 5.5', false],
+    ['Claude Code', 'Opus 5.5', 'Anthropic', 'Opus 5.6', false],
+    ['Claude Code', 'claude-opus-5-5', 'xAI', 'Grok 4.7', false],
+    ['worker', 'opus', 'Anthropic', 'Sonnet 5.5', false],
+  ];
+  for (const [writerVendor, writerModel, leadVendor, leadModel, same] of cases) {
+    assert.equal(isSameModel({ vendor: writerVendor, model: writerModel }, { vendor: leadVendor, model: leadModel }), same, `${writerModel} beside ${leadModel}`);
+  }
+});
+
+// #699: the review line and the writers that the other-model rule reads.
 test('approve: the lead approval line names the lead, its vendor and model (#699)', () => {
   assert.deepEqual(parseLeadApproval('Looks good.\n\nApproved by area lead Grok (xAI, Grok 4.7)\n'), { lead: 'Grok', vendor: 'xAI', model: 'Grok 4.7' });
   assert.deepEqual(parseLeadApproval('🤖 Approved by area lead Muse (Meta, Muse Spark 1.3)'), { lead: 'Muse', vendor: 'Meta', model: 'Muse Spark 1.3' });
   assert.equal(parseLeadApproval('Approved by area lead Grok (xAI)'), null, 'no model');
   assert.equal(parseLeadApproval('Approved by area lead Grok (xAI, Grok 4.7)\nmore text'), null, 'not the last line');
-  assert.deepEqual(writerVendors('tier: A\nMade with worker Claude Code (Opus 5.5)\n'), ['anthropic']);
-  assert.deepEqual(writerVendors('tier: A\nMade with lead Grok (Grok 4.7)\n'), ['xai']);
+  assert.deepEqual(writerAgents('tier: A\nMade with worker Claude Code (Opus 5.5), reviewed by Anthropic (Sonnet 5.5), lead Claude Code (Opus 5.5)\n'), [{ vendor: 'Claude Code', model: 'Opus 5.5' }]);
+  assert.deepEqual(writerAgents('tier: A\nMade with lead Grok (Grok 4.7)\n'), [{ vendor: 'Grok', model: 'Grok 4.7' }]);
+  assert.deepEqual(writerAgents('tier: A\nno Made-with line\n'), [], 'unreadable writers are none');
+  assert.deepEqual(sameModelWriter([{ vendor: 'Grok', model: 'Grok 4.7' }], { vendor: 'xAI', model: 'Grok 4.7' }), { vendor: 'Grok', model: 'Grok 4.7' });
   assert.equal(vendorFamily({ vendor: 'DeepSeek', model: 'DeepSeek V4.1 Flash' }), 'deepseek');
 });
