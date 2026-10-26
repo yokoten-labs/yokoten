@@ -37,8 +37,8 @@ a release.
    re-exports its names; there is no second copy.
 3. **A help page is data.** `HelpSpec` holds the usage, a summary of at most two lines,
    examples, options, and sections of rows. `commandHelp` builds every page from the
-   `COMMANDS` table. An entry with a `help` field is a spec page; the older entries keep
-   `text` and `example` until they move (`desk` is the first spec page).
+   `COMMANDS` table: every entry has a `help` field, and there is no other way to write a
+   help page.
 4. **The limits, measured by `screenProblems`:**
 
    | Limit | Value | Why |

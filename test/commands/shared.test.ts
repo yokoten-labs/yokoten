@@ -334,7 +334,7 @@ test('output colour: help bolds the usage and sections, and names each command i
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
   assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
-  assert.match(one.stdout, /\u001b\[1mExample:\u001b\[0m/, 'the example title is bold');
+  assert.match(one.stdout, /\u001b\[1mExamples?:\u001b\[0m/, 'the example title is bold');
 });
 
 
