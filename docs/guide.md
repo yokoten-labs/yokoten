@@ -1919,8 +1919,8 @@ Rules 1 and 5 need judgement, so the reviewer checks them.
 The setup treats agents like staff on a line, each with a clear role and limited rights:
 
 - **The owner** (you) decides what gets built and when it ships. Only you approve a hard
-  line, create release tags, and change repo settings. An area lead may approve its area
-  (record 0026).
+  line, create release tags, and change repo settings. An area lead of another model may
+  approve its area (records 0026 and 0047).
 - **The lead** is the session you talk to. It plans, splits the work, reviews, and opens
   pull requests through a **bot**, never with your account.
 - **Workers** are sessions the lead starts for one task each, in their own worktree
@@ -1951,7 +1951,7 @@ is to undo (record 0004):
 |------|----------------|-------------|
 | C | Standard: docs, wording, styles | The lead |
 | B | Normal: other code, with tests | An agent of another model reviews; the lead approves |
-| A | Hard to undo: owned files, or a change that makes a rule looser | The owner, or another vendor's area lead for a path that is neither a hard line nor a looser change |
+| A | Hard to undo: owned files, or a change that makes a rule looser | The owner, or an area lead of another model for a path that is neither a hard line nor a looser change |
 
 In yokoten's own repo, `.github/CODEOWNERS` lists the owned files: the core rules,
 CODEOWNERS, CI that publishes or holds a secret, the bot token, guard config and
@@ -1987,13 +1987,17 @@ approves with a GitHub review. The last line of the review body names the lead, 
 vendor and its model:
 
 ```text
-Approved by area lead Grok (xAI, Grok 4.7)
+Approved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)
 ```
 
 GitHub records the commit the review was given on. A later commit needs a new review.
-The check refuses a lead of the same vendor that wrote the change, read from the
-`Made with` line. A file that `.github/CODEOWNERS` owns, and a looser change, still needs
-your approval. Until the diff tier check (#697) lands, a change to a test that already
+The lead must be another model than every writer on the `Made with` line (record
+[0047](records/0047-tier-a-by-another-model.md)). Claude Sonnet may approve work by
+Claude Opus, and a lead from another vendor may too. The check compares names, not
+spellings: `claude-opus-5-5` and `Claude Opus 5.5` are one model. When the `Made with`
+line names no writer, the check refuses. A file that `.github/CODEOWNERS` owns, and a
+looser change, still needs your approval. The release pull request changes
+`package.json`, so it always needs you. Until the diff tier check (#697) lands, a change to a test that already
 exists counts as looser; a new test does not.
 
 Nothing here changes your repository settings. When you are ready, follow these steps.
@@ -2013,7 +2017,7 @@ Nothing here changes your repository settings. When you are ready, follow these 
 
 `yokoten doctor` still expects code-owner review today. Expect that one step to note the
 change until it learns the new lock. When a merge is refused, the message names the
-reason and the next step: another vendor's lead, a new review on the head, or the owner
+reason and the next step: a lead of another model, a new review on the head, or the owner
 for a hard line or a looser change.
 
 A reviewer finds the tier through labels, so `check --pr` also reads them. A pull request

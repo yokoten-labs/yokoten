@@ -1,6 +1,6 @@
 # 0026 The owner is the board: area leads approve, the owner sets the rules
 
-Status: accepted
+Status: replaced in part by 0047 (a lead of another model approves, not only another vendor; rule 2, first point).
 Date: 2026-10-23 (UTC)
 
 ## Context

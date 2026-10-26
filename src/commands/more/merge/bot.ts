@@ -658,8 +658,8 @@ interface MergeStop {
 
 /**
  * Why pull request `number` must not merge yet, or null when it may: not tier A, or the
- * owner's Approve is on its head, or an area lead of another vendor than the writer
- * approved it, or only base merges came after that Approve with the same own diff.
+ * owner's Approve is on its head, or an area lead of another model than every writer
+ * approved it (record 0047), or only base merges came after that Approve with the same own diff.
  * What gh or git can't answer is `unchecked`. It names the cause and does not ask for
  * a new Approve. A missing or stale Approve is `needsApprove`.
  */

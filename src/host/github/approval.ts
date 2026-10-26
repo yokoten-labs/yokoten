@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import type { Env } from '../../rules/config.ts';
 import type { ApprovalCommit, CodeOwners, LeadApproval, MergeApprovalRead } from '../../rules/pr.ts';
-import { ownersOf, parseCodeOwners, parseLeadApproval, prTier, vendorFamily, writerVendors } from '../../rules/pr.ts';
+import { type MadeWithAgent, ownersOf, parseCodeOwners, parseLeadApproval, prTier, sameModelWriter, writerAgents } from '../../rules/pr.ts';
 import { asText, type Gh, isObject, labelNames } from './planning.ts';
 import { CODEOWNERS_PLACES, readCodeOwners } from './pull-request.ts';
 
@@ -73,9 +73,9 @@ type LeadReview = LeadApproval & { commit: string; at: string; login: string };
  * The newest Approve that carries an area lead's line (#699), or null. Only a login
  * that wrote the line on an Approve can approve this way; its newest deciding review
  * then counts, so a later changes-requested or dismissed review refuses it. When more
- * than one lead approved, a lead of another vendor's line is preferred.
+ * than one lead approved, a lead of another model than every writer is preferred (record 0047).
  */
-function latestLeadApproval(text: string, writers: string[]): LeadReview | null {
+function latestLeadApproval(text: string, writers: MadeWithAgent[]): LeadReview | null {
   const eligible = new Set<string>();
   const byLogin = new Map<string, string[]>();
   for (const line of text.split('\n')) {
@@ -101,11 +101,8 @@ function latestLeadApproval(text: string, writers: string[]): LeadReview | null 
     if (approval) candidates.push({ ...approval, commit: newest.commit, at: newest.at, login: newest.login });
   }
   candidates.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-  const otherVendor = candidates.find((candidate) => {
-    const family = vendorFamily({ vendor: candidate.vendor, model: candidate.model });
-    return writers.length > 0 && !writers.includes(family);
-  });
-  return otherVendor ?? candidates[0] ?? null;
+  const otherModel = candidates.find((candidate) => writers.length > 0 && !sameModelWriter(writers, { vendor: candidate.vendor, model: candidate.model }));
+  return otherModel ?? candidates[0] ?? null;
 }
 
 /**
@@ -412,7 +409,7 @@ export function readApprovalState(gh: Gh, root: string, env: Env, number: number
   } catch {
     return { unsure: `gh could not read the reviews of pull request ${number}` };
   }
-  const writers = writerVendors(body);
+  const writers = writerAgents(body);
   const lead = latestLeadApproval(reviews, writers);
   const loaded = loadBaseOwners(gh, root, env, number, repo, base);
   if ('unsure' in loaded) return loaded;

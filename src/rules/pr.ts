@@ -676,8 +676,8 @@ export interface ApprovalCommit {
 export interface MergeApprovalRead extends ApprovalRead {
   /** The lead whose approval may count, or null. */
   lead?: (LeadApproval & ApprovalCommit) | null;
-  /** The vendor families that wrote the change, from the Made-with line. */
-  writers?: string[];
+  /** The agents that wrote the change, from the Made-with line (record 0047). */
+  writers?: MadeWithAgent[];
   /** True when a hard-line file or a looser change keeps the owner's approval. */
   ownerOnly?: boolean;
   /** Why the owner must approve, when `ownerOnly`. */
@@ -718,14 +718,19 @@ export function vendorFamily(agent: MadeWithAgent): string {
 }
 
 /**
- * The vendors that wrote a pull request, from the Made-with line: its workers, or its
- * lead and unnamed others when no worker is named. Empty when the line names nobody.
+ * The agents that wrote a pull request, from the Made-with line: its workers, or its
+ * lead and unnamed others when no worker is named. Empty when the line names nobody,
+ * so the merge check can't tell the writers' models and refuses (record 0047).
  */
-export function writerVendors(body: string): string[] {
+export function writerAgents(body: string): MadeWithAgent[] {
   const roles = parseMadeWith(body)?.roles;
   if (!roles) return [];
-  const writers = roles.writers.length ? roles.writers : [...roles.leads, ...roles.others];
-  return [...new Set(writers.map(vendorFamily))];
+  return roles.writers.length ? roles.writers : [...roles.leads, ...roles.others];
+}
+
+/** The writer whose model is the approver's own, or null when every writer is another model (record 0047). */
+export function sameModelWriter(writers: MadeWithAgent[], approver: MadeWithAgent): MadeWithAgent | null {
+  return writers.find((writer) => isSameModel(writer, approver)) ?? null;
 }
 
 /** Whether an approval is on `head`, or only base merges came after it with the same own diff. */
@@ -735,18 +740,22 @@ const isFreshApproval = (head: string, approval: ApprovalCommit): boolean =>
 /** The finding for a stale area lead approval. */
 function staleLeadApproval(lead: ApprovalCommit): Finding {
   const short = lead.commit.slice(0, 7);
-  const fix = "ask another vendor's area lead to approve the head commit, then merge";
+  const fix = ASK_OTHER_MODEL;
   if (lead.after > 0) {
     return finding('pr-approve', `the area lead's approval is on ${short}; ${lead.after} commit${lead.after === 1 ? '' : 's'} with changes came after it; ask the area lead to approve again`, fix);
   }
   return finding('pr-approve', `the area lead's approval is on ${short}; the pull request's own diff is not the same as at the approval; ask the area lead to approve again`, fix);
 }
 
+/** The next step when a lead approval does not count (record 0047). */
+const ASK_OTHER_MODEL = 'ask a reviewer of another model to approve the head commit, with the last line `Approved by area lead NAME (VENDOR, MODEL)`, or ask the owner';
+
 /**
  * The finding that stops a tier A pull request from merging (#699), or null when it may
  * merge. Without a lead approval this is the owner's gate (#612), unchanged. With one,
  * the owner's fresh Approve still wins, a hard-line file or a looser change still needs
- * the owner, and a lead of the writer's own vendor never counts.
+ * the owner, and a lead of any writer's own model never counts (record 0047). When the
+ * writers can't be read, it refuses.
  */
 export function checkMergeApproval(read: MergeApprovalRead): Finding | null {
   if (read.tier !== 'A') return null;
@@ -754,12 +763,19 @@ export function checkMergeApproval(read: MergeApprovalRead): Finding | null {
   if (!read.lead || read.ownerOnly) return checkApprovalFreshness(read);
   const owner: ApprovalCommit | null = read.approved === null ? null : { commit: read.approved, after: read.after, sameDiff: read.sameDiff };
   if (owner && isFreshApproval(read.head, owner)) return null;
-  const family = vendorFamily({ vendor: read.lead.vendor, model: read.lead.model });
   if (!read.writers?.length) {
-    return finding('pr-approve', "the Made-with line names no writer, so the area lead's vendor can't be checked", "name the writers on the Made-with line, then ask another vendor's area lead to approve");
+    return finding('pr-approve', "the Made-with line names no writer, so the area lead's model can't be checked against the writer's", `end the body with a Made-with line that names each writer and model, such as \`🤖 Made with worker Claude Code (claude-opus-5-5)\`; then ${ASK_OTHER_MODEL}`);
   }
-  if (read.writers.includes(family)) {
-    return finding('pr-approve', `the area lead is from ${read.lead.vendor}, the same vendor as the writer; another vendor's lead must approve`, "ask an area lead of another vendor to approve the head commit");
+  const same = sameModelWriter(read.writers, { vendor: read.lead.vendor, model: read.lead.model });
+  if (same) {
+    // A name with no known model family fails closed: it counts as the writer's own model.
+    if (!modelFamilies(read.lead.model).length) {
+      return finding('pr-approve', `the area lead's model ${read.lead.model || '(empty)'} names no model family yokoten knows, so it counts as the writer's own model`, `name the model in the approval line, such as \`Approved by area lead NAME (Anthropic, Claude Sonnet 5.5)\`; or ${ASK_OTHER_MODEL}`);
+    }
+    if (!modelFamilies(same.model).length) {
+      return finding('pr-approve', `the writer's model ${same.vendor} (${same.model || '(empty)'}) names no model family yokoten knows, so any area lead counts as its own model`, `name each writer's model in the Made-with line, such as \`🤖 Made with worker Claude Code (claude-opus-5-5)\`; then ${ASK_OTHER_MODEL}`);
+    }
+    return finding('pr-approve', `the area lead runs ${read.lead.model}, the same model family as the writer ${same.vendor} (${same.model}); a lead of another model must approve`, ASK_OTHER_MODEL);
   }
   if (isFreshApproval(read.head, read.lead)) return null;
   return staleLeadApproval(read.lead);
@@ -1265,18 +1281,45 @@ export function isSameVendor(left: string, right: string): boolean {
   return one === two || one.includes(two) || two.includes(one) || vendorGroup(left) === vendorGroup(right);
 }
 
-/** A model name trimmed and in lower case, so `Claude-Opus-5-5 ` and `claude-opus-5-5` meet. */
-const modelKey = (model: string): string => model.trim().toLowerCase();
+/**
+ * Model families yokoten knows (record 0047). A word of a model name must start with one,
+ * so `opus5.5`, `claude-opus-5-5` and `Opus-5.5-thinking` are all `opus`. Keep it small.
+ */
+const MODEL_FAMILIES: readonly string[] = [
+  'opus', 'sonnet', 'haiku', 'fable', 'grok', 'gpt', 'gemini', 'gemma', 'deepseek',
+  'qwen', 'glm', 'kimi', 'muse', 'llama', 'mistral', 'mixtral', 'codestral', 'phi', 'nova',
+];
+
+/** The OpenAI o-series (`o3`, `o4-mini`), which has no family word of its own. */
+const O_SERIES = /^o\d/;
+
+/** The model families a model name names, such as `['opus']`, or [] when it names none yokoten knows. */
+export function modelFamilies(model: string): string[] {
+  const found = new Set<string>();
+  for (const word of model.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
+    for (const family of MODEL_FAMILIES) if (word.startsWith(family)) found.add(family);
+    if (O_SERIES.test(word)) found.add('o-series');
+  }
+  return [...found];
+}
+
+/** Whether a model name mentions a family anywhere, even squashed into another word. */
+function mentionsFamily(model: string, family: string): boolean {
+  if (family === 'o-series') return modelFamilies(model).includes(family);
+  return model.toLowerCase().replace(/[^a-z0-9]/g, '').includes(family);
+}
 
 /**
- * Whether a reviewer is the writer's own model (record 0045): the same vendor and the same
- * model. A reviewer whose model is not named, from the writer's vendor, counts as the same,
- * since nothing shows it is another model.
+ * Whether a reviewer or an approver is the writer's own model (records 0045, 0047). It
+ * fails closed: two names are other models only when both name a known model family and
+ * neither mentions the other's family. So `Opus 5.6` is the same model as `Opus 5.5`, and
+ * `Claude`, `5.5` or `latest`, which name no family, count as the writer's own model. The
+ * vendor is not read: the model name says which model ran, a vendor only which tool.
  */
 export function isSameModel(writer: MadeWithAgent, reviewer: MadeWithAgent): boolean {
-  if (!isSameVendor(writer.vendor, reviewer.vendor)) return false;
-  const [one, two] = [modelKey(writer.model), modelKey(reviewer.model)];
-  return !one || !two || one === two;
+  const [one, two] = [modelFamilies(writer.model), modelFamilies(reviewer.model)];
+  if (!one.length || !two.length) return true;
+  return one.some((family) => mentionsFamily(reviewer.model, family)) || two.some((family) => mentionsFamily(writer.model, family));
 }
 
 /** Whether a Made-with pair names the vendor and model a desk ran. An empty desk field says nothing. */
@@ -1311,7 +1354,9 @@ export function provenanceFindings(roles: MadeWithRoles | null, desks: DeskAgent
   if (roles.reviewers.length && roles.reviewers.every((reviewer) => sameAs(reviewer))) {
     const reviewer = roles.reviewers[0]!;
     const writer = sameAs(reviewer)!;
-    problems.push(finding('pr-provenance', `body: every reviewer is the writer's own model; ${reviewer.vendor} (${reviewer.model}) is the writer's model, ${writer.vendor} (${writer.model})`, 'ask a reviewer of another model to review it (record 0045)'));
+    const unnamed = !modelFamilies(reviewer.model).length || !modelFamilies(writer.model).length;
+    const fix = unnamed ? 'name each model with its family, such as `reviewed by Claude Code (claude-sonnet-5-5)`; an unknown name counts as the writer\'s own model (record 0047)' : 'ask a reviewer of another model to review it (record 0045)';
+    problems.push(finding('pr-provenance', `body: every reviewer is the writer's own model; ${reviewer.vendor} (${reviewer.model}) is the writer's model, ${writer.vendor} (${writer.model})`, fix));
   }
   for (const desk of desks) {
     const named = pairsForRole(roles, desk.role);

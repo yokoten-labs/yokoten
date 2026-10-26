@@ -10,7 +10,6 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval } from '../../../src/rules/pr.ts';
-import { finding } from '../../../src/rules/message.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -470,10 +469,10 @@ test('approval: a base commit that stays missing names the short sha (#670)', ()
   assert.ok(!noneCalls.some((args) => args.some((arg) => arg.includes('/contents/'))));
 });
 
-// #699: an area lead approves with a review whose last line names the lead, its vendor
-// and model. The review records the commit. A hard-line file or a looser change still
-// asks the owner, and a lead of the writer's own vendor never counts.
-test('approval: an area lead approves in its area (#699)', () => {
+// #699, record 0047: an area lead approves with a review whose last line names the
+// lead, its vendor and model. The review records the commit. A hard-line file or a
+// looser change still asks the owner, and a lead of a writer's own model never counts.
+test('approval: an area lead of another model approves tier A (#699, record 0047)', () => {
   const dir = makeTempDir('yokoten-');
   const env = makeApprovalEnv(dir);
   runGitOk(dir, env, ['init', '-q', '-b', 'main']);
@@ -493,33 +492,31 @@ test('approval: an area lead approves in its area (#699)', () => {
   runGitOk(dir, env, ['commit', '-qam', 'more']);
   const head = runGitOk(dir, env, ['rev-parse', 'HEAD']).trim();
   runGitOk(dir, env, ['checkout', '-q', base]);
-  const body = 'tier: A\nMade with worker Claude Code (Opus 5.5)\n';
-  const view = (sha: string) => ({ body, labels: [{ name: 'tier A' }], head: { sha, ref: 'topic' }, base: { sha: base, ref: 'main' } });
+  const madeWith = 'tier: A\nMade with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-sonnet-5-5)\n';
+  const view = (sha: string, body = madeWith) => ({ body, labels: [{ name: 'tier A' }], head: { sha, ref: 'topic' }, base: { sha: base, ref: 'main' } });
   const review = (login: string, commit: string, at: string, text: string) => JSON.stringify({ login, assoc: 'MEMBER', state: 'APPROVED', commit, at, body: text });
   const grok = (commit: string, at: string) => review('grok-lead', commit, at, 'LGTM\n\nApproved by area lead Grok (xAI, Grok 4.7)\n');
-  const claude = (commit: string, at: string) => review('claude-lead', commit, at, 'LGTM\n\nApproved by area lead Sonnet (Anthropic, Sonnet 5.5)\n');
-  const routes: Record<string, unknown> = {
-    'repos/me/repo/pulls/50': view(head),
-    'repos/me/repo/pulls/50/files': ['a.txt'],
-    'repos/me/repo/pulls/50/reviews': grok(head, '2026-10-23T11:00:00Z'),
-    'repos/me/repo/pulls/51': view(head),
-    'repos/me/repo/pulls/51/files': ['a.txt'],
-    'repos/me/repo/pulls/51/reviews': claude(head, '2026-10-23T11:00:00Z'),
-    'repos/me/repo/pulls/52': view(head),
-    'repos/me/repo/pulls/52/files': ['a.txt'],
-    'repos/me/repo/pulls/52/reviews': grok(approved, '2026-10-23T10:00:00Z'),
-    'repos/me/repo/pulls/53': view(head),
-    'repos/me/repo/pulls/53/files': ['hard.txt'],
-    'repos/me/repo/pulls/53/reviews': grok(head, '2026-10-23T11:00:00Z'),
-    'repos/me/repo/pulls/54': view(head),
-    'repos/me/repo/pulls/54/files': ['test/a.test.ts'],
-    'repos/me/repo/pulls/54/reviews': grok(head, '2026-10-23T11:00:00Z'),
-    'repos/me/repo/pulls/55': view(head),
-    'repos/me/repo/pulls/55/files': ['a.txt'],
-    'repos/me/repo/pulls/55/reviews': `${claude(head, '2026-10-23T11:00:00Z')}\n${grok(head, '2026-10-23T10:00:00Z')}`,
-  };
+  const sonnet = (commit: string, at: string) => review('sonnet-lead', commit, at, 'LGTM\n\nApproved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)\n');
+  const opus = (commit: string, at: string) => review('opus-lead', commit, at, 'LGTM\n\nApproved by area lead Opus (Anthropic, Claude Opus 5.5)\n');
+  const pulls: [number, string[], string, string?][] = [
+    [50, ['a.txt'], grok(head, '2026-10-23T11:00:00Z')],
+    [51, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z')],
+    [52, ['a.txt'], sonnet(approved, '2026-10-23T10:00:00Z')],
+    [53, ['hard.txt'], sonnet(head, '2026-10-23T11:00:00Z')],
+    [54, ['test/a.test.ts'], sonnet(head, '2026-10-23T11:00:00Z')],
+    [55, ['a.txt'], `${opus(head, '2026-10-23T11:00:00Z')}\n${sonnet(head, '2026-10-23T10:00:00Z')}`],
+    [56, ['a.txt'], opus(head, '2026-10-23T11:00:00Z')],
+    [57, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z'), 'tier: A\nno Made-with line here\n'],
+  ];
+  const routes: Record<string, unknown> = {};
+  for (const [number, files, reviews, body] of pulls) {
+    routes[`repos/me/repo/pulls/${number}`] = view(head, body);
+    routes[`repos/me/repo/pulls/${number}/files`] = files;
+    routes[`repos/me/repo/pulls/${number}/reviews`] = reviews;
+  }
   const { gh } = serverGh(routes);
-  // Another vendor's lead, on the head: may merge.
+  const writer = { vendor: 'Claude Code', model: 'claude-opus-5-5' };
+  // Another vendor's lead, on the head: may merge, and the writers are read as agents.
   assert.deepEqual(readApprovalState(gh, dir, env, 50, 'me/repo'), {
     tier: 'A',
     head,
@@ -527,31 +524,24 @@ test('approval: an area lead approves in its area (#699)', () => {
     after: 0,
     sameDiff: true,
     lead: { lead: 'Grok', vendor: 'xAI', model: 'Grok 4.7', commit: head, after: 0, sameDiff: true },
-    writers: ['anthropic'],
+    writers: [writer],
   });
-  // The same vendor's lead is read, and the rule refuses it.
-  const own = readApprovalState(gh, dir, env, 51, 'me/repo');
-  assert.ok(!('unsure' in own));
-  assert.deepEqual(checkMergeApproval(own), finding('pr-approve', 'the area lead is from Anthropic, the same vendor as the writer; another vendor\'s lead must approve', "ask an area lead of another vendor to approve the head commit"));
-  // An approval on an older commit is not fresh.
-  const stale = readApprovalState(gh, dir, env, 52, 'me/repo');
-  assert.ok(!('unsure' in stale));
-  assert.equal(stale.lead?.after, 1);
-  assert.equal(checkMergeApproval(stale)?.id, 'pr-approve');
-  // A hard-line file and a looser change keep the owner's approval.
-  const hard = readApprovalState(gh, dir, env, 53, 'me/repo');
-  assert.ok(!('unsure' in hard));
-  assert.equal(hard.ownerOnly, true);
-  assert.equal(hard.ownerWhy, 'a hard-line file (hard.txt)');
-  assert.equal(checkMergeApproval(hard)?.what, 'no owner Approve on this pull request');
-  const loose = readApprovalState(gh, dir, env, 54, 'me/repo');
-  assert.ok(!('unsure' in loose));
-  assert.equal(loose.ownerOnly, true);
-  assert.equal(loose.ownerWhy, 'a looser change (test/a.test.ts)');
-  assert.equal(checkMergeApproval(loose)?.what, 'no owner Approve on this pull request');
-  // A newer approval by the writer's own vendor does not hide another vendor's lead.
-  const both = readApprovalState(gh, dir, env, 55, 'me/repo');
-  assert.ok(!('unsure' in both));
-  assert.equal(both.lead?.vendor, 'xAI');
-  assert.equal(checkMergeApproval(both), null);
+  const noWriter = "the Made-with line names no writer, so the area lead's model can't be checked against the writer's";
+  const cases: [number, string, string | null, { ownerWhy?: string; lead?: string }?][] = [
+    [50, 'another vendor on the head merges', null, { lead: 'Grok' }],
+    [51, 'another model of the same vendor on the head merges', null, { lead: 'Sonnet' }],
+    [52, 'an approval on an older commit with changes after it is stale', "the area lead's approval is on " + approved.slice(0, 7) + '; 1 commit with changes came after it; ask the area lead to approve again'],
+    [53, 'a hard-line file still needs the owner', 'no owner Approve on this pull request', { ownerWhy: 'a hard-line file (hard.txt)' }],
+    [54, 'a looser change still needs the owner', 'no owner Approve on this pull request', { ownerWhy: 'a looser change (test/a.test.ts)' }],
+    [55, "a newer approval by the writer's own model does not hide another model's", null, { lead: 'Sonnet' }],
+    [56, "the writer's own model, spelled another way, is refused", 'the area lead runs Claude Opus 5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    [57, 'writers that cannot be read are refused', noWriter],
+  ];
+  for (const [number, name, what, more] of cases) {
+    const state = readApprovalState(gh, dir, env, number, 'me/repo');
+    assert.ok(!('unsure' in state), name);
+    assert.equal(checkMergeApproval(state)?.what ?? null, what, name);
+    if (more?.ownerWhy) assert.deepEqual([state.ownerOnly, state.ownerWhy], [true, more.ownerWhy], name);
+    if (more?.lead) assert.equal(state.lead?.lead, more.lead, name);
+  }
 });
