@@ -22,10 +22,14 @@ import { fileURLToPath } from 'node:url';
 export const MAX_DIFF_CHARS = 120_000;
 /** The part of the pull request body the reviewer reads, in characters. */
 export const MAX_BODY_CHARS = 20_000;
-/** How long one DeepSeek call may take (ms). */
-export const MODEL_TIMEOUT_MS = 240_000;
-/** The longest answer DeepSeek may write, in tokens: room for its reasoning and the JSON. */
-export const MAX_ANSWER_TOKENS = 32_768;
+/** How long one DeepSeek call may take (ms): a full answer, inside the job's 10 minutes. */
+export const MODEL_TIMEOUT_MS = 480_000;
+/**
+ * The longest answer DeepSeek may write, in tokens: its reasoning and the JSON both count.
+ * 64K is DeepSeek's own default in thinking mode; at 32K a large pull request was cut off
+ * before the verdict, twice on PR #1106.
+ */
+export const MAX_ANSWER_TOKENS = 65_536;
 /** How long one GitHub call may take (ms). */
 const GITHUB_TIMEOUT_MS = 30_000;
 /** At most this many findings go in the review. */
