@@ -147,19 +147,26 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
 const FILE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash'];
 type GuardCase = { tool: string; path: string; worker: boolean; refused: boolean };
 
-/** Each guard case through the user hook and the project hook, as Claude Code calls them (#1095). */
-async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: GuardCase[]): Promise<void> {
+/**
+ * Each guard case through the user hook and the project hook, as Claude Code calls them (#1095).
+ * The user hook runs the arguments install wrote. A session opened outside the repo (`cwd`) loads
+ * no project hook, so only the user hook runs there: the incident in #1095.
+ */
+async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: GuardCase[], cwd = sandbox.repo): Promise<void> {
   addUserHooks({ HOME: sandbox.home }, '/x/yokoten.mjs', 'gone');
   addProjectHook(sandbox.repo, '.yokoten/bin/yokoten.mjs');
-  const matcherOf = (file: string) => JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse[0].matcher as string;
+  const groupOf = (file: string) => JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse[0] as { matcher: string; hooks: { command: string }[] };
+  const user = groupOf(join(sandbox.home, '.claude', 'settings.json'));
+  const userArgs = /\/x\/yokoten\.mjs (hook [^;]*?) 2>&1/.exec(user.hooks[0].command)?.[1].split(' ');
+  assert.ok(userArgs, user.hooks[0].command);
   const hooks = [
-    { name: 'user', matcher: matcherOf(join(sandbox.home, '.claude', 'settings.json')), args: ['hook', '--commands-only', '--agent', 'claude-code'] },
-    { name: 'project', matcher: matcherOf(join(sandbox.repo, '.claude', 'settings.json')), args: ['hook'] },
+    { name: 'user', matcher: user.matcher, args: userArgs },
+    ...(cwd === sandbox.repo ? [{ name: 'project', matcher: groupOf(join(sandbox.repo, '.claude', 'settings.json')).matcher, args: ['hook'] }] : []),
   ];
   for (const hook of hooks) assert.equal(hook.matcher, GUARDED_TOOLS, `${hook.name} hook runs on every guarded tool`);
   const inputOf = (tool: string, path: string): Record<string, unknown> => {
     const file = join(sandbox.repo, path);
-    if (tool === 'Bash') return { command: `echo x > ${path}` };
+    if (tool === 'Bash') return { command: `echo x > ${cwd === sandbox.repo ? path : file}` };
     if (tool === 'Write') return { file_path: file, content: 'x' };
     if (tool === 'Edit') return { file_path: file, old_string: 'a', new_string: 'b' };
     if (tool === 'MultiEdit') return { file_path: file, edits: [{ old_string: 'a', new_string: 'b' }] };
@@ -167,9 +174,9 @@ async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: Gua
   };
   for (const hook of hooks) {
     for (const { tool, path, worker, refused } of cases) {
-      const call = { cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: inputOf(tool, path), ...(worker ? { agent_type: 'yokoten:worker' } : {}) };
-      const result = await sandbox.call(hook.args, { input: JSON.stringify(call) });
-      const label = `${hook.name} hook, ${worker ? 'worker' : 'lead'} ${tool} ${path}`;
+      const call = { cwd, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: inputOf(tool, path), ...(worker ? { agent_type: 'yokoten:worker' } : {}) };
+      const result = await sandbox.call(hook.args, { input: JSON.stringify(call), cwd });
+      const label = `${hook.name} hook${cwd === sandbox.repo ? '' : ' outside the repo'}, ${worker ? 'worker' : 'lead'} ${tool} ${path}`;
       assert.ok(new RegExp(`^(?:${hook.matcher})$`).test(tool), `${label}: the hook runs on it`);
       const isRefused = result.status === 2 || /"permissionDecision":"deny"/.test(result.stdout);
       assert.equal(isRefused, refused, `${label}: ${result.stdout}${result.stderr}`);
@@ -188,6 +195,22 @@ test('claude-code guard: a worker writes no lead-only file with any tool; the le
   }
   cases.push({ tool: 'Write', path: 'src/x.ts', worker: true, refused: false });
   await runGuardCases(makeSandbox(), cases);
+});
+
+// #1095 as it happened: the session was opened outside the repo, so the repo's project hook
+// never loaded. The user guard alone finds the repo from the file's own path. The session is in
+// a folder beside the repo: the sandbox's parent also holds its home, and a worker's shell
+// above yokoten's config folder is refused for that first [worker-mark].
+test('claude-code guard: in a session opened outside the repo, the user guard alone keeps lead-only files (#1095)', async () => {
+  const sandbox = makeSandbox();
+  const outside = join(sandbox.repo, '..', 'elsewhere');
+  mkdirSync(outside);
+  const cases: GuardCase[] = FILE_TOOLS.flatMap((tool) => [
+    { tool, path: '.github/workflows/x.yml', worker: true, refused: true },
+    { tool, path: '.github/workflows/x.yml', worker: false, refused: false },
+  ]);
+  cases.push({ tool: 'Write', path: 'src/x.ts', worker: true, refused: false });
+  await runGuardCases(sandbox, cases, outside);
 });
 
 // On Windows a folder may also have a short (8.3) name: `GITHUB~1` is `.github`, and the
