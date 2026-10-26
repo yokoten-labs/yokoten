@@ -1505,7 +1505,7 @@ const PLATFORM_READS: [string, number][] = [
   ['rules/guards/hooks/read.ts', 1],
   ['rules/guards/lead-only/edit.ts', 2],
   ['rules/privacy.ts', 1],
-  ['run/hook.ts', 6],
+  ['run/hook.ts', 5],
   ['setup/advice/unsaved.ts', 5],
   ['setup/doctor/checks.ts', 2],
   ['setup/init.ts', 1],
