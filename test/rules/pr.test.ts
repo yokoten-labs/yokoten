@@ -24,6 +24,7 @@ import {
   checkIssueTitle,
   checkOwnedTier,
   hasMadeWith,
+  isSameModel,
   isSameVendor,
   parseLeadApproval,
   parseMadeWith,
@@ -682,13 +683,23 @@ test('provenance: a desk on the branch must be named with its vendor and model (
   assert.match(wrong.fix, /worker deepseek-harness \(deepseek-v4\.1-flash\)/);
 });
 
-test('provenance: a reviewer from the writer vendor is a finding (record 0021)', () => {
+test('provenance: a reviewer of another model passes; only the writer\'s own model fails (record 0045)', () => {
   const found = (line: string) => provenanceFindings(rolesOf(line), []).map((finding) => finding.id);
-  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-opus-4)'), ['pr-provenance'], 'same vendor, two spellings');
-  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by DeepSeek (deepseek-v4.1-flash)'), [], 'another vendor is fine');
-  assert.deepEqual(found('Made with lead Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-opus-4)'), ['pr-provenance'], 'a solo lead is the writer');
-  const same = provenanceFindings(rolesOf('Made with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-opus-4)'), [])[0];
-  assert.match(same.what, /the reviewer Anthropic \(claude-opus-4\) has the writer's vendor, Claude Code \(claude-opus-5-5\)/);
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-sonnet-5-5)'), [], 'Sonnet reviewing Opus passes');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-opus-5-5)'), ['pr-provenance'], 'Opus reviewed only by Opus fails');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (Claude-Opus-5-5)'), ['pr-provenance'], 'same model, two vendor spellings and cases');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-opus-5-5) and Claude Code (claude-opus-5-5)'), ['pr-provenance'], 'two Opus reviewers of Opus still fail, once');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-sonnet-5-5) and Claude Code (claude-opus-5-5)'), [], 'Sonnet plus a fresh Opus reviewing Opus passes');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-opus-5-5) and Claude Code (claude-sonnet-5-5)'), [], 'the order of reviewers does not matter');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5), reviewed by DeepSeek (deepseek-v4.1-flash)'), [], 'another vendor passes');
+  assert.deepEqual(found('Made with lead Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-opus-5-5)'), ['pr-provenance'], 'a solo lead is the writer');
+  assert.deepEqual(found('Made with lead Claude Code (claude-opus-5-5), reviewed by Claude Code (claude-sonnet-5-5)'), [], 'a solo lead reviewed by Sonnet passes');
+  assert.deepEqual(found('Made with worker Claude Code (claude-opus-5-5)'), [], 'no reviewer named, no reviewer finding');
+  const same = provenanceFindings(rolesOf('Made with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-opus-5-5)'), [])[0];
+  assert.match(same.what, /every reviewer is the writer's own model; Anthropic \(claude-opus-5-5\) is the writer's model, Claude Code \(claude-opus-5-5\)/);
+  assert.match(same.fix, /a reviewer of another model .*record 0045/);
+  assert.equal(isSameModel({ vendor: 'Claude Code', model: 'claude-opus-5-5' }, { vendor: 'Grok', model: 'claude-opus-5-5' }), false, 'another vendor is never the same model');
+  assert.equal(isSameModel({ vendor: 'Claude Code', model: 'claude-opus-5-5' }, { vendor: 'Claude Code', model: '' }), true, 'an unnamed model of the same vendor counts as the same');
 });
 
 test('provenance: vendor spellings and a commit message are read (#756)', () => {
