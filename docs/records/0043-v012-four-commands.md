@@ -44,19 +44,19 @@ The pains that came up most often:
    `--help · --version · help --all`. Besides `yokoten` itself, there is one command per
    role, as the owner put it:
    - the agent works: `desk`;
-   - the human decides: `train`, where the person approves what lands;
+   - the human decides: `merge`, where the person approves what lands;
    - both are watched: `board`.
 
    | Command | What it does | Commands folded in |
    |---|---|---|
    | `yokoten` | sets up what is missing, then one screen: where you are, what waits on you, the next step | install, init, doctor, trust, update |
    | `board` | a live, read-only web board of every AI session | — |
-   | `train` | the pull request merge queue | pr, conflicts, provenance, anchor |
+   | `merge` | the pull request merge queue | train, pr, conflicts, provenance, anchor |
    | `desk` | give one task to one AI, in its own fenced desk | worker, msg |
 
-2. **Hiding is not deleting.** The other 29 commands stay in the code and keep working.
+2. **Hiding is not deleting.** The other 30 commands stay in the code and keep working.
    They are left out of `help` and are listed by `help --all`.
-   - **Folded commands** (11): when someone runs one, it says which command it moved to.
+   - **Folded commands** (12): when someone runs one, it says which command it moved to.
    - **Hidden commands** (16): hook, redact, marks, mcp, bot, changelog, learn,
      borrowed, adopt, ci-health, check, test, explain, stops, uninstall, upgrade. Agents,
      the commit check and CI still call them.
@@ -64,11 +64,11 @@ The pains that came up most often:
      - `uninstall` is on the Undo line after setup;
      - `upgrade` is on the Next line when a newer version exists.
    - **`help` and `version`** are also `--help` and `--version`.
-   - **No new command** is added in v0.1.2.
+   - **No new command** is added in v0.1.2: `merge` is `train` under a clearer name.
 
 3. **A bare command only reads.** A command that changes something must be given its
    arguments:
-   - `train` with no numbers shows the plan and merges nothing;
+   - `merge` (and its old name `train`) with no numbers shows the plan and merges nothing;
    - `ci-health` with no flag writes nothing;
    - a command that reads stdin (`hook`, `redact`) prints its purpose and exits when
      stdin is a terminal.
@@ -88,7 +88,7 @@ The pains that came up most often:
 
    It never prints its access token on the terminal.
 
-6. **`train` is the merge queue.**
+6. **`merge` is the merge queue.** The owner chose the name: "train" said nothing about merging. `train` stays as a hidden old name that still works.**
    - Use GitHub's own merge queue where the repository allows it; ours only where it
      doesn't.
    - A merge needs three things: a review by another vendor's AI, the evidence, and the
@@ -107,7 +107,7 @@ The pains that came up most often:
 8. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
    2. Hide and fold the commands.
-   3. `train` and `board`.
+   3. `merge` and `board`.
    4. The first-screen issues (#1037 to #1040, #1043, #1044).
    5. The README (issue #1035) in all four languages.
 
