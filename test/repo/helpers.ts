@@ -236,6 +236,12 @@ const copySandboxRepo = makeRepoTemplate((repo) => {
   templateGit(repo, env, 'config', 'user.email', `1+test${at}users.noreply.github.com`);
 });
 
+/**
+ * The road at a session start, as two lines (#1099): the stage title, and the Next row with
+ * its wrapped lines joined, so a test reads the step whatever the width.
+ */
+export const sessionRoad = (stdout: string): string => stdout.replace(/\n {12}/g, ' ').split('\n').slice(0, 2).join('\n');
+
 export function makeSandbox() {
   const base = makeTempDir();
   const home = join(base, 'home');

@@ -39,6 +39,7 @@ import {
   pick,
   ROOT,
   runChild,
+  sessionRoad,
   stepMark,
 } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
@@ -256,11 +257,11 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   assert.match(secret.stderr, /leak\.md:1 +a secret \(AWS access key id\)/);
   sandbox.git('reset', '-q', 'leak.md');
   // init does all of stages 1 to 3 but the tests, so with tests the road goes on to the remote.
-  assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: stage 1 of 5, safety net\. Next: no workflow runs a test command/);
+  assert.match(sessionRoad((await sandbox.call(['doctor', '--session'])).stdout), /^yokoten: stage 1 of 5, safety net\n  Next      No workflow runs a test command/);
   sandbox.withTests();
   result = await sandbox.call(['doctor', '--session']);
   assert.equal(result.status, 0);
-  assert.match(result.stdout, /^yokoten: stage 2 of 5, issues and pull requests\. Next: there is no origin remote, so the work is only on this machine; make the repo on your code host, add it as origin \(`git remote add origin <url>`\), and push \(`git push -u origin --all`\)/);
+  assert.match(sessionRoad(result.stdout), /^yokoten: stage 2 of 5, issues and pull requests\n  Next      There is no origin remote, so the work is only on this machine; make the repo on your code host, add it as origin \(`git remote add origin <url>`\), and push \(`git push -u origin --all`\)/);
 });
 
 // #988: yokoten wants TZ=UTC for agent commits, but a TZ the user set in
@@ -1706,7 +1707,7 @@ test('init: a private repo can keep CI off with --no-ci, finish the road, and ta
   assert.deepEqual(notNow(), {}, 'init never makes the choice itself');
   sandbox.write('.github/CODEOWNERS', '* @octo\n');
   sandbox.write('LICENSE', 'placeholder license\n');
-  assert.match((await session())[0], /stage 1 of 5, safety net\. Next: no workflow runs a test command/, 'the tests step still asks for CI');
+  assert.match(sessionRoad((await session()).join('\n')), /stage 1 of 5, safety net\n  Next      No workflow runs a test command/, 'the tests step still asks for CI');
 
   // With the choice: the kit's copies go, a changed one stays and is named, and "notNow" holds the reason.
   sandbox.write('.github/workflows/issue.yml', 'name: ours\n');
@@ -1744,7 +1745,7 @@ test('init: a private repo can keep CI off with --no-ci, finish the road, and ta
   result = await sandbox.call(['init', '--list'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.ok(ciFiles.every(isThere), result.stdout);
-  assert.match((await session())[0], /stage 1 of 5, safety net\. Next: no workflow runs a test command/);
+  assert.match(sessionRoad((await session()).join('\n')), /stage 1 of 5, safety net\n  Next      No workflow runs a test command/);
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'], { extra: machine })).stdout, /no-ci/);
 });
 

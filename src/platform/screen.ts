@@ -17,8 +17,9 @@ export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string
   const indent = ' '.repeat(prefix.length);
   let line = prefix;
   let isEmpty = true;
-  // A command in backticks is one word, so a line never breaks it in two (#1027).
-  for (const word of text.match(/`[^`]*`\S*|\S+/g) ?? []) {
+  // A command in backticks is one word, so a line never breaks it in two (#1027), also
+  // after an opening bracket: `(\`git push -u origin --all\`)` stays whole (#1099).
+  for (const word of text.match(/[^\s`]*`[^`]*`\S*|\S+/g) ?? []) {
     if (!isEmpty && line.length + 1 + word.length > width) {
       lines.push(line);
       line = indent + word;

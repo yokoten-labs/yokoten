@@ -38,6 +38,7 @@ test('layout: wrap breaks once at 80 columns, under the first text, and never in
   assert.ok(lines.slice(1).every((line) => line.startsWith('      ') && line[6] !== ' '), 'later lines start under the first text');
   assert.deepEqual(wrap('', `${'x'.repeat(70)} \`yokoten desk --help\``), ['x'.repeat(70), '`yokoten desk --help`'], 'a command in backticks stays whole');
   assert.deepEqual(wrap('', ''), [''], 'no text is one empty line');
+  assert.deepEqual(wrap('', `${'x'.repeat(60)} push (\`git push -u origin --all\`).`), ['x'.repeat(60) + ' push', '(`git push -u origin --all`).'], 'a command after a bracket stays whole');
 });
 
 test('layout: a title, rows, fields, a section and the Next line, one blank line between blocks (#1099)', () => {
