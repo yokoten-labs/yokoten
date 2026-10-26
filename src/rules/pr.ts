@@ -1262,8 +1262,13 @@ const isUtcDate = (date: string): boolean => / \+0000$/.test(date.trim());
 export function nonUtcCommits(lines: string[]): PushedCommit[] {
   const found: PushedCommit[] = [];
   for (const line of lines) {
+    if (!line.trim()) continue;
     const fields = line.split('\x1f');
-    if (fields.length < 6) continue;
+    // A line git did not give in COMMIT_FORMAT is refused, never skipped: fail closed.
+    if (fields.length < 6) {
+      found.push({ hash: fields[0], short: fields[0].slice(0, 9), isRoot: false, subject: '(a commit yokoten could not read)' });
+      continue;
+    }
     const [hash, short, parents, author, committer, ...subject] = fields;
     if (isUtcDate(author) && isUtcDate(committer)) continue;
     found.push({ hash, short, isRoot: parents.trim() === '', subject: subject.join('\x1f') });

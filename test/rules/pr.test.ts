@@ -902,7 +902,7 @@ test('nonUtcCommits: an author or committer date not in UTC is caught, and no da
     'not a log line',
   ];
   const found = nonUtcCommits(lines);
-  assert.deepEqual(found.map(({ short }) => short), ['bbbbbbb', 'ccccccc', 'ddddddd']);
+  assert.deepEqual(found.map(({ short }) => short), ['bbbbbbb', 'ccccccc', 'ddddddd', 'not a log'], 'a line not in the format is refused');
   assert.deepEqual(found[2], { hash: 'd'.repeat(40), short: 'ddddddd', isRoot: true, subject: 'a\x1fsubject' });
   assert.doesNotMatch(JSON.stringify(found), /\+0900|-0700|\+0530|2026/, 'no date or offset comes back');
   assert.deepEqual(nonUtcCommits([line('a', 'p', utc, utc)]), [], 'all UTC: none');
@@ -926,4 +926,9 @@ test('issueLabelChoices: the repo labels for each kind an issue leaves out (#112
   assert.deepEqual(issueLabelChoices(['tier: A'], repo), ["  This repo's type labels: `bug`, `feat`."]);
   assert.deepEqual(issueLabelChoices(['bug', 'tier A'], repo), []);
   assert.deepEqual(issueLabelChoices([], ['kit']), [], 'the repo has neither kind');
+});
+
+test('nonUtcCommits: a line not in COMMIT_FORMAT is refused, never skipped (#1120)', () => {
+  assert.equal(nonUtcCommits(['abc123 a line with no separators']).length, 1);
+  assert.deepEqual(nonUtcCommits(['', '  ']), []);
 });
