@@ -115,12 +115,13 @@ jobs:
       # cache for every child node, so each test file strips its TypeScript once (#442).
       # The spec reporter on every Node, so the logs read alike (Node 22 defaults to TAP).
       # A TAP copy of the report goes to a file, for the time check below.
+      # Each file's time goes to another file, for the per-file limit (TEST_LIMITS in suite.ts, #1109).
       # A docs-only pull request runs only the tests that read the docs (#1051). A push to
       # main runs the whole suite after the merge, so a miss shows on main the same hour.
       - if: needs.changes.outputs.docs_only == 'true'
         run: node --test --test-reporter=spec test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
       - if: needs.changes.outputs.docs_only != 'true'
-        run: node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-shard="$SHARD/$OF"
+        run: node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" --test-shard="$SHARD/$OF"
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           SHARD: ${{ matrix.shard }}
@@ -133,6 +134,10 @@ jobs:
       # The slow tests behind that growth are #943's second half (record 0016).
       - if: needs.changes.outputs.docs_only != 'true'
         run: node scripts/time/suite.ts ${{ runner.temp }}/tests.tap ${{ matrix.os == 'macos-latest' && github.event_name == 'pull_request' && '--budget 240 --warn-only' || matrix.os == 'ubuntu-latest' && matrix.node == '^24.22.1' && '--budget 90' || '' }}
+      # Each file against TEST_LIMITS' file-seconds row, on Linux only: the macOS runners swing too much,
+      # and Windows runs each file alone under its own cap (#1109).
+      - if: needs.changes.outputs.docs_only != 'true' && matrix.os == 'ubuntu-latest'
+        run: node scripts/time/suite.ts --files ${{ runner.temp }}/file-times.jsonl
   # Windows has the most users (owner 2026-10-25), and the hook's job host there broke once
   # with no Windows run to see it (#735, PR #982). The whole suite in one job, on the current
   # LTS. Each test file runs on its own with a four-minute cap, since a few files never ended

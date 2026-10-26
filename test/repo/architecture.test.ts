@@ -13,7 +13,7 @@ import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } 
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
-import { judgeSuite, readReport, SUITE_BUDGET, verdictOf } from '../../scripts/time/suite.ts';
+import fileTimes, { judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
 import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
@@ -2089,6 +2089,68 @@ test('child processes: each test file starts at most CHILD_CAP, or its allowance
   assert.deepEqual(childProblems(files, helpers), []);
 });
 
+// ---- Whole doctor and init runs (#1109) ----
+//
+// A whole run, in process or not, costs 50 to 400 ms, and init.test.ts once took 240 s on
+// Windows. The limit is TEST_LIMITS' full-runs row; files above it are on FULL_RUN_ALLOWANCE
+// at their count, which may only go down, like CHILD_ALLOWANCE.
+const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
+  'test/setup/init.test.ts': { cap: 136, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/doctor/report.test.ts': { cap: 51, reason: 'the report doctor prints: its order, its notes and the session form' },
+  'test/setup/doctor/checks.test.ts': { cap: 23, reason: 'one whole run for each note that its check and doctor both print' },
+  'test/commands/more/advice/doctor.test.ts': { cap: 22, reason: 'the advice doctor prints for each finding' },
+  'test/agents/runtimes/muse.test.ts': { cap: 15, reason: "init and doctor on a Muse Code project: its settings and trust" },
+  'test/agents/runtimes/grok.test.ts': { cap: 12, reason: "init and doctor on a Grok CLI project: its settings and trust" },
+  'test/setup/install.test.ts': { cap: 11, reason: 'doctor after install, and init from the installed copy' },
+  'test/run/learn.test.ts': { cap: 10, reason: 'the lesson loop: init, then doctor reads the lesson' },
+  'test/commands/hook.test.ts': { cap: 8, reason: 'init writes the hooks that these tests then call' },
+  'test/agents/runtimes/small/opencode.test.ts': { cap: 8, reason: 'init and doctor on an OpenCode project' },
+  'test/repo/architecture.test.ts': { cap: 10, reason: 'the entries the child-process tests run, and four sample runs in the cases for this count' },
+};
+
+/** The whole doctor or init runs a test file writes: sandbox.call or sandbox.run with that command first. */
+const countFullRuns = (text: string): number => text.match(/\b(?:call|run)\(\s*\[\s*'(?:doctor|init)'/g)?.length ?? 0;
+
+/** What is wrong with the whole runs in `files` (test path to source). */
+function fullRunProblems(files: Record<string, string>, allowance = FULL_RUN_ALLOWANCE, { limit, id } = limitOf('full-runs')): string[] {
+  const problems: string[] = [];
+  for (const [path, text] of Object.entries(files)) {
+    const count = countFullRuns(text);
+    const cap = allowance[path]?.cap ?? limit;
+    if (count > cap) problems.push(`${path} writes ${count} whole doctor or init runs, over its cap of ${cap} (${id}): call the function that decides, and keep one whole run for each setting the command passes on`);
+    else if (allowance[path] && count < cap) problems.push(`${path} writes ${count} whole runs, under its allowance of ${cap}: lower it in FULL_RUN_ALLOWANCE to ${count}${count <= limit ? ', or take the file off it' : ''}`);
+  }
+  for (const path of Object.keys(allowance)) if (!(path in files)) problems.push(`FULL_RUN_ALLOWANCE names ${path}, which is not a test file`);
+  return problems;
+}
+
+test('whole runs: a file over the limit fails with the fix, one at it passes, and an allowance only goes down (#1109)', () => {
+  const { limit } = limitOf('full-runs');
+  const runs = (count: number) => Array.from({ length: count }, (_, index) => index % 2 ? "sandbox.call(['doctor', '--all']);" : "sandbox.run([ 'init' ]);").join('\n');
+  assert.equal(countFullRuns("sandbox.call(['doctor']); sandbox.call(['check']); sandbox.run(['init', '--list']); doctor(root);"), 2, 'only doctor and init, by call or run');
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(limit) }, {}), []);
+  assert.match(fullRunProblems({ 'test/a.test.ts': runs(limit + 1) }, {})[0], new RegExp(`writes ${limit + 1} whole doctor or init runs, over its cap of ${limit} \\(full-runs\\): call the function`));
+  const allowance = { 'test/a.test.ts': { cap: 9, reason: 'a test' } };
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(9) }, allowance), []);
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(8) }, allowance), ['test/a.test.ts writes 8 whole runs, under its allowance of 9: lower it in FULL_RUN_ALLOWANCE to 8']);
+  assert.match(fullRunProblems({ 'test/a.test.ts': runs(2) }, allowance)[0], /to 2, or take the file off it$/);
+  assert.deepEqual(fullRunProblems({}, allowance), ['FULL_RUN_ALLOWANCE names test/a.test.ts, which is not a test file']);
+});
+
+test('whole runs: each test file writes at most the full-runs limit, or its allowance (#1109)', () => {
+  const paths = execFileSync('git', ['ls-files', 'test'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((path) => path.endsWith('.test.ts'));
+  const files = Object.fromEntries(paths.map((path) => [path, readFileSync(join(ROOT, path), 'utf8')]));
+  assert.ok(countFullRuns(files['test/setup/init.test.ts'] ?? '') > 0, 'no whole run found in init.test.ts; the count is broken');
+  assert.deepEqual(fullRunProblems(files), []);
+});
+
+test('test limits: each row of the table says what, how much, why and where it was decided (record 0051)', () => {
+  assert.deepEqual(TEST_LIMITS.map((row) => row.id), ['file-seconds', 'full-runs']);
+  for (const row of TEST_LIMITS) {
+    assert.ok(row.limit > 0 && row.what && row.reason && /issue #\d+/.test(row.source), `${row.id} has every field`);
+  }
+});
+
 // ---- The suite's time budget (#475) ----
 //
 // CI checks each shard's run time against a budget with scripts/time/suite.ts, from a TAP
@@ -2142,6 +2204,30 @@ test('suite time: a busy runner gets 50% more time for the same work, and a chil
   // One child process per test is work, not load: the cap still catches it.
   const childPerTest = Array.from({ length: 5 }, (_, index) => `test('case ${index}', () => {\n  sandbox.run(['doctor']);\n});`).join('\n');
   assert.match(childProblems({ 'test/a.test.ts': childPerTest }, [], {})[0], /starts 5 child processes.*over its cap of 4/);
+});
+
+test('file time: the reporter adds up each file\'s top-level tests, and a file over the limit fails with its name (#1109)', async () => {
+  const event = (type: string, file: string | undefined, nesting: number, ms: number) => ({ type, data: { nesting, file: file && join(process.cwd(), file), details: { duration_ms: ms } } });
+  async function* events() {
+    yield event('test:pass', 'test/a.test.ts', 0, 40_000.4);
+    yield event('test:pass', 'test/a.test.ts', 1, 99_999);
+    yield event('test:fail', 'test/a.test.ts', 0, 25_000);
+    yield event('test:start', 'test/b.test.ts', 0, 99_999);
+    yield event('test:pass', 'test/b.test.ts', 0, 1_200);
+    yield event('test:pass', undefined, 0, 99_999);
+  }
+  const lines: string[] = [];
+  for await (const line of fileTimes(events())) lines.push(line);
+  assert.deepEqual(lines, ['{"file":"test/a.test.ts","ms":65000}\n', '{"file":"test/b.test.ts","ms":1200}\n'], 'nested tests, starts and tests with no file are not counted');
+
+  const { limit } = limitOf('file-seconds');
+  const over = judgeFiles(lines.join(''), { ...limitOf('file-seconds'), limit: 60 });
+  assert.equal(over.isOver, true);
+  assert.match(over.text, /^1 test file took longer than 60 s \(file-seconds\): split the file, or test its decisions by calling their functions\. Why: /);
+  assert.match(over.text, /\n- 65\.0 s: test\/a\.test\.ts \(over\)\n- 1\.2 s: test\/b\.test\.ts\n$/);
+  const under = judgeFiles('{"file":"test/b.test.ts","ms":1200}\n');
+  assert.equal(under.isOver, false);
+  assert.equal(under.text, `Every test file took ${limit} s or less.\n\nThe slowest files:\n- 1.2 s: test/b.test.ts\n`);
 });
 
 test('suite time: --warn-only reports a run over the budget and passes; without it, the run fails (PR #1112)', () => {

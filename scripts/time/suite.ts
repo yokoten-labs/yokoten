@@ -6,6 +6,10 @@
 //   node scripts/time/suite.ts <tap file>                against the budget, 180 s
 //   node scripts/time/suite.ts <tap file> --budget 90    another budget, in seconds
 //   node scripts/time/suite.ts <tap file> --warn-only    over the budget warns, exit 0
+//   node scripts/time/suite.ts --files <file>           each file against TEST_LIMITS
+//
+// The --files report comes from this module as a test reporter (its default export):
+// node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination=<file>
 //
 // The budget is for one CI shard on a quiet runner: a third of the test files, four at a
 // time. A shared runner is sometimes busy, and the same work then takes longer: 365 s and
@@ -19,7 +23,7 @@
 // slowest tests still go in the summary, with a warning. The budget fails where the runners
 // are steady: Linux, and macOS on main's daily run.
 import { appendFileSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -31,6 +35,48 @@ export const LOAD_ROOM = 1.5;
 
 /** How many of the slowest tests the summary names. */
 const SLOWEST = 5;
+
+/**
+ * A limit the tests are held to (record 0051, rule 1). One row per rule, read the same way:
+ * what is measured, the limit, why, and where it was decided. The fields leave room for an
+ * `expression` that decides, should rules outgrow plain numbers (issue #899).
+ */
+export type TestLimit = { id: string; what: string; limit: number; unit: 's' | 'runs'; reason: string; source: string };
+
+export const TEST_LIMITS = [
+  { id: 'file-seconds', what: "one test file's tests, added up, on a Linux CI shard", limit: 60, unit: 's', reason: 'the slowest file is the shortest a shard can be, and on Windows a file runs alone under its cap: init.test.ts took 240 s there before issue #1109', source: 'issue #1109; record 0051' },
+  { id: 'full-runs', what: 'whole doctor or init runs one test file writes, through sandbox.call or sandbox.run', limit: 4, unit: 'runs', reason: 'a whole run costs 50 to 400 ms; a decision is tested by calling its function, and one whole run is kept for each setting the command passes on', source: 'issue #1109; record 0051' },
+] as const satisfies readonly TestLimit[];
+
+/** The row of TEST_LIMITS with this id. */
+export const limitOf = (id: (typeof TEST_LIMITS)[number]['id']): TestLimit => TEST_LIMITS.find((row) => row.id === id)!;
+
+/** The test reporter behind --files: one JSON line per test file, its top-level tests' time added up. */
+export default async function* fileTimes(source: AsyncIterable<{ type: string; data: { nesting: number; file?: string; details?: { duration_ms?: number } } }>): AsyncGenerator<string> {
+  const times = new Map<string, number>();
+  for await (const event of source) {
+    if ((event.type !== 'test:pass' && event.type !== 'test:fail') || event.data.nesting !== 0 || !event.data.file) continue;
+    const file = relative(process.cwd(), event.data.file).replace(/\\/g, '/');
+    times.set(file, (times.get(file) ?? 0) + (event.data.details?.duration_ms ?? 0));
+  }
+  for (const [file, ms] of times) yield `${JSON.stringify({ file, ms: Math.round(ms) })}\n`;
+}
+
+/** Each file over the file-seconds limit, slowest first, and the lines for the summary. */
+export function judgeFiles(report: string, limit = limitOf('file-seconds')): { isOver: boolean; text: string } {
+  const files = report.split('\n').filter(Boolean).map((line) => JSON.parse(line) as { file: string; ms: number }).toSorted((a, b) => b.ms - a.ms);
+  const over = files.filter((entry) => entry.ms > limit.limit * 1000);
+  const seconds = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+  const text = [
+    over.length
+      ? `${over.length} test file${over.length === 1 ? '' : 's'} took longer than ${limit.limit} s (${limit.id}): split the file, or test its decisions by calling their functions. Why: ${limit.reason}.`
+      : `Every test file took ${limit.limit} s or less.`,
+    '',
+    'The slowest files:',
+    ...files.slice(0, SLOWEST).map((entry) => `- ${seconds(entry.ms)}: ${entry.file}${entry.ms > limit.limit * 1000 ? ' (over)' : ''}`),
+  ].join('\n');
+  return { isOver: over.length > 0, text: `${text}\n` };
+}
 
 /** The run's duration and each top-level test's, in ms, from a TAP report of node --test. */
 export function readReport(tap: string): { ms: number; tests: { name: string; ms: number }[] } {
@@ -77,16 +123,19 @@ export function verdictOf(isOver: boolean, warnOnly: boolean): { code: number; w
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { budget: { type: 'string', default: String(SUITE_BUDGET) }, 'warn-only': { type: 'boolean', default: false } } });
+  const { values: options, positionals } = parseArgs({ allowPositionals: true, options: { budget: { type: 'string', default: String(SUITE_BUDGET) }, 'warn-only': { type: 'boolean', default: false }, files: { type: 'string' } } });
   const budget = Number(options.budget);
   try {
-    if (positionals.length !== 1) throw new Error('give it one file: the TAP report of node --test');
+    // --files alone is the per-file check, in its own step on the runners whose speed is steady.
+    const isFilesOnly = options.files !== undefined && positionals.length === 0;
+    if (options.files !== undefined && positionals.length > 0) throw new Error('give --files on its own, without the TAP report');
+    if (!isFilesOnly && positionals.length !== 1) throw new Error('give it one file: the TAP report of node --test, or only --files <file>');
     if (!(budget > 0)) throw new Error(`--budget needs a number of seconds above 0, not ${options.budget}`);
-    const { isOver, text } = judgeSuite(readFileSync(positionals[0], 'utf8'), budget);
-    const { code, warning } = verdictOf(isOver, options['warn-only']);
+    const { isOver, text } = isFilesOnly ? judgeFiles(readFileSync(options.files!, 'utf8')) : judgeSuite(readFileSync(positionals[0], 'utf8'), budget);
+    const { code, warning } = isFilesOnly ? { code: isOver ? 1 : 0, warning: undefined } : verdictOf(isOver, options['warn-only']);
     process.stdout.write(text);
     if (warning) process.stdout.write(`${warning}\n`);
-    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Test time\n\n${text}`);
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${isFilesOnly ? 'Test file time' : 'Test time'}\n\n${text}`);
     process.exitCode = code;
   } catch (err) {
     process.stderr.write(`yokoten suite time: ${(err as Error).message}\n`);

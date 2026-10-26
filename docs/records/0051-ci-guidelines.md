@@ -30,8 +30,18 @@ The sources we take from, each for one part:
 
 ## Decision
 
-1. **Fast.** A pull request's CI has a time goal; a slow test file is an issue, not a
-   longer cap. (Fowler.)
+1. **Fast.** A pull request's CI has a goal of 5 minutes. A slow test file is an issue,
+   not a longer cap. (Fowler.) The limits are one table, `TEST_LIMITS` in
+   `scripts/time/suite.ts`. Each row says what is measured, the limit, why, and where it
+   was decided:
+   - `file-seconds`: one test file takes at most 60 s on a Linux CI shard. A file over
+     it fails the shard and is named.
+   - `full-runs`: a test file writes at most 4 whole doctor or init runs. A file above
+     that is on an allowance at its count, which may only go down.
+
+   Rules are data, so a new limit is one more row. If rules outgrow plain numbers, the P4
+   review decides on an `expression` field: a borrowed language such as CEL, never one of
+   our own (issue #899).
 2. **Red means broken, or says why not.** CI is red when a check failed. A cancelled run
    (a newer push) stays red, because GitHub counts a skipped required check as passed, but
    it says it was cancelled; a job that never got a runner says so too. (Fowler; issue #1114.)
@@ -56,6 +66,6 @@ What a program can check, a test or a linter checks; the rest is read in review.
 ## Consequences
 
 - Each new CI change names the rule it serves; a reviewer can refuse one that breaks a rule.
-- Rules 1 and 4 need checks still to build (a time goal per job; a workflow linter such as
-  actionlint, or Scorecard).
+- Rule 1 is checked per file, not yet per job: the 5-minute goal is still read by a person.
+  Rule 4 has actionlint; Scorecard is still to add.
 - The owner decides the six before this record is accepted.
