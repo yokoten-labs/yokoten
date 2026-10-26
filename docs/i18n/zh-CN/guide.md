@@ -779,7 +779,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `uninstall [--list]` | 撤掉 `install` 装的东西：带 yokoten 管理标记的入口技能和 agent，Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code 设置里的 hook，OpenCode 的插件，还有 `~/.local/share/yokoten`。私有词表和 mailmap 文件只剩 `install` 写的表头时，也一并删掉；`install` 建的空文件夹和 git 配置文件也删掉。`install` 之前就有的文件夹留着。你自己的文件、改动和设置都留着；拦截记录会被删掉。再跑一次什么也不会变。`--list` 逐行列出它删掉的或留下的每个文件 |
 | `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](../../server.md#3-the-bot-a-github-app) |
 | `train [<pr>...] [--wait <秒>] [--next]` | 按给出的顺序，以 bot 的身份合并一批已批准、检查全绿的 PR；第一个需要人来处理的 PR 就让它停下。不给 PR 编号时只按冲突地图给出的顺序打印计划，什么都不合并；要合并就写出编号。顺序是：先合并移动路径的改动，单独进行；再合并不与其他改动冲突的；然后合并被最多改动冲突的那个，最旧的优先。第一次合并之前先记下每个 PR 的基础分支，所以叠在被 squash 合并的分支上的 PR，会用它和那个分支真正共有的基础来合并。只涉及 import 行的冲突取并集；真正的冲突、测试失败、`check` 失败或缺少批准都会让列车停下。每次合并后的树先测试再推送；推送后的合并要等 CI 通过；`--wait` 设等多久，默认 1800 秒。`--next` 只说出下一个 PR 是哪个、为什么，不合并。只有 lead 能跑 |
-| `kanban [--text] [--all] [--no-open] [--role name] [--vendor name]` | 旧名字 `board` 照样能用，先打一行告诉你现在叫 `kanban`。加 `--text` 时只显示一屏；再加 `--all`，列出每个 agent、每个 PR、每个 worktree 的所有字段。只在这台电脑上开一个实时页面：按 issue 分组的 agent、选中的 agent、每个 PR 的状态，以及每个 agent 估算的 API 费用。在页面上，owner 还能启动和停掉 agent，看到在等什么。启动后自己在浏览器里打开页面，也打印链接（加 `--no-open` 就只打印），按 Ctrl-C 停掉。页面每 15 秒刷新一次。加 `--text` 就在终端里用纯文本打印 agent、PR、worktree 和用量；这时再用 `--role` 和 `--vendor`，只保留该角色或该厂商的用量行。见「团队看板」 |
+| `kanban [--text] [--no-open]` | 旧名字 `board` 照样能用，先打一行告诉你现在叫 `kanban`。只在这台电脑上开一个只读页面：各个会话、等你处理的 PR，以及 Actions。页面上没有任何东西能启动、停掉或改动工作。启动后自己在浏览器里打开页面并登录好，按 Ctrl-C 停掉（加 `--no-open` 就只打印地址）。登录用的密钥只交给浏览器。加 `--text` 就在终端里用纯文本打印同一份快照。见「团队看板」 |
 | `tidy [--local \| --empty [--yes]]` | 只打 `tidy`：列出旧东西，按你能做的事分组。旧东西指已合并或远端已删的分支、没活了的 worktree 和工位、工位已删但还留着的日志。每行写原因和大小，什么也不改。`--local`：先给每样东西存一份（分支打成 bundle，没提交的改动打成 patch，再写 `index.json`），然后搬进 `~/.local/state/yokoten/trash` 里按时间命名的文件夹。只要有一份没存成，就一样也不搬。正在用的工位和 worktree 不碰。GitHub 上的分支只列出来。`--empty`：问你一句，再删回收站里放了 7 天以上的文件夹；没有终端时要加 `--yes` |
 | `conflicts [--json] [--rebuild <id>]` | 读取每个打开的 PR；没有代码托管时，读取每个本地分支。用平实的话说明哪些改动和 main 冲突、哪些改动互相冲突。它会说出只碰同一个文件的那几对，以及这一对里先合哪个。它不检出、不合并。结果放在 git 目录里，guard 不用跑 git 就能读到。加 `--json` 打印整张地图；加 `--rebuild` 打印一段提示，让 AI 在最新的 main 上重做某个改动 |
 
@@ -1640,7 +1640,7 @@ Codex 用 DeepSeek 模型时，也显示为 DeepSeek。
 按 Esc、点外面，或再点铃铛，列表就关上。同一个 PR 或 issue 只占一行。
 页面开着的时候，这一行也会去掉：PR 已在最新提交上 Approve，或这个 PR、issue 已合并或已关闭。
 超过一天的一行会写明。来了新的一行，数字会闪一下。评审还没结束的 PR 不进这个列表。
-右栏已经去掉，会话因此更宽。PR 仍在 `yokoten board --text` 和 `/data` 里。
+右栏已经去掉，会话因此更宽。PR 仍在 `yokoten kanban --text` 和 `/api/state` 里。
 页面每 15 秒刷新一次，按 Ctrl-C 停掉。
 agent 一打开页面就能看到。PR 和 issue 由 gh 在后台读，同一时间只读一次。
 第一次读完之前，这两个列表显示「正在读取 GitHub…」。
@@ -1667,25 +1667,10 @@ agent 一打开页面就能看到。PR 和 issue 由 gh 在后台读，同一时
 等了多久、一句话原因，以及去哪里处理。这个列表是只读的：
 agent 发的任何请求都清不掉它。没事可做时会说没事。
 
-owner 通过看板启动 agent：把一个打开的 issue、一个 vendor、一个 model 发到
-`/agents/start`。看板会建 `.worktrees/<issue>`，像 `yokoten worker mark` 一样标成 worker
-的（这样丢掉 `YOKOTEN_ROLE` 的 runtime 也是 worker），再用这家 vendor 自己的
-headless 命令启动，带上 `YOKOTEN_ROLE=worker`，和 dispatch skill 一样。model 走
-各家自己的 flag（`--model`）；DeepSeek Harness 没有这个 flag，model 只留在 brief
-里当名字。启动前，看板检查这家 vendor 的 guard 钩子能在那个 worktree 里跑起来，
-跑不起来就用一句话说明原因，拒绝启动（先信任这个文件夹，或跑 `yokoten init`）。
-启动的任务显示在 `/data` 里，通过 `/agents/stop` 停掉。停掉会保留
-worktree 和里面的提交。自己退出来的进程算停掉：名额放出来，之后再 Stop 会说
-已经停了。
-
-限制（limits）说同时能跑几个 agent（默认三个），以及一个 model 能跑几个。
-超了就用一句话说明原因，拒绝启动。
-
-`yokoten board --text` 也打印看板启动的任务。
-
-安全：第一次访问会设置一个 HttpOnly Secure cookie，改动还要带页面的 Origin。看板只停自己启动的进程。
-每次启动和停止都记到仓库根目录的 `.yokoten-board.log`。每个 agent 都过 guard，
-push 和合并只走 bot。没有 Approve 也没有 Merge 按钮：那些留在 host 那边，归 owner。
+看板是只读的（记录 0044）：上面没有任何东西能启动、停掉或改动工作，GET 和 HEAD 以外的请求一律回 405。
+页面读 `GET /api/state`（会话、PR 和 Actions 的一份快照）和 `GET /api/sessions/<id>/stream`
+（一个会话的实时输出，由服务器推送）。id 是会话所在文件夹的哈希，不是路径。
+登录用的密钥只交给浏览器，从不打印。每个 agent 都过 guard，push 和合并只走 bot。
 
 agent 会自己出现在看板上。在这个仓库、它的某个 worktree，或者一个 desk（`yokoten desk`）里
 打开 agent，yokoten 的钩子就会把它的状态写进那个目录根部的 `.yokoten-agent.json`。
@@ -1723,7 +1708,7 @@ agent 也可以自己写这个文件，比如 `task`、`question` 或 `link`；�
 
 每个字段都是文本，每个字段都可以不写。不是 JSON 对象的文件会被跳过。`role` 只认 `engineer`、`reviewer`、`verifier` 这三个词，别的值会被忽略。`blocked` 或 `question` 进了「等你处理」，只要这个 agent 还在，就会一直显示：文件里不写了也清不掉，只有离开才会消失。
 
-页面从 `/data` 读 JSON 数据。这就是看板的接口，页面只是其中一种展示。
+页面从 `/api/state` 读 JSON 数据。这就是看板的接口，页面只是其中一种展示。
 
 ## 隐私
 

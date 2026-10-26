@@ -25,10 +25,6 @@ test/agents/runtimes/small/deepseek-harness.test.ts :: deepseek-harness project 
 ? test/agents/runtimes/small/deepseek-harness.test.ts :: hook --agent deepseek-harness: lowercase bash by command, write and edit by a file_path relative to cwd; a refusal is exit 2 with the reason on stderr (#334)
 test/commands/kanban/agents.test.ts :: board worktrees: the repo lists its own; outside a repo git cannot list them
 test/commands/kanban/feed/read/logs.test.ts :: board stream logs: Claude Code, its own newest session, or a subagent whose task names the worktree
-test/commands/kanban/feed/route.test.ts :: board feed route: a home path, an email, a token and a private mark never reach /feed
-? test/commands/kanban/feed/route.test.ts :: board feed route: a mask that fails sends no line
-test/commands/kanban/feed/route.test.ts :: board feed route: a plain log streams its new lines, with a home path, an email and a token masked
-? test/commands/kanban/feed/route.test.ts :: board feed route: no log falls back to the doing steps
 test/commands/kanban/view.test.ts :: board data: agents from each vendor's hook, and a desk clone, with their own colours
 test/commands/kanban/view.test.ts :: board data: agents, needs, pulls and worktrees; gh runs only with a GitHub remote
 ? test/commands/kanban/view.test.ts :: board view: a stale working agent holds no seat, and seats come from the git folder

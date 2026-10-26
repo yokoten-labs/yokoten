@@ -4,7 +4,7 @@
 // page's own helpers, their arguments and the browser. Every word from the desk file
 // goes in as text.
 
-import type { BoardIssue } from '../../controls.ts';
+import type { BoardIssue } from '../../feed/read/waiting.ts';
 import type { AgentView } from '../../view.ts';
 import { el, type PageState, say } from './script.ts';
 import type { PageData } from './script.ts';

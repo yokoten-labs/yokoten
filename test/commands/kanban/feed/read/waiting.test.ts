@@ -6,8 +6,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeTempDir } from '../../../../repo/helpers.ts';
-import type { BoardWaiting } from '../../../../../src/commands/kanban/controls.ts';
-import { collectBoardWaiting, readBoardAttention, readBoardIssues, readBoardSnapshot, scheduleOf } from '../../../../../src/commands/kanban/feed/read/waiting.ts';
+import { type BoardWaiting, collectBoardWaiting, readBoardAttention, readBoardIssues, scheduleOf } from '../../../../../src/commands/kanban/feed/read/waiting.ts';
 import { EMPTY_DESK } from '../../../../../src/commands/kanban/feed/read/desk.ts';
 import { type AgentView, vendorOf } from '../../../../../src/commands/kanban/view.ts';
 import type { Gh } from '../../../../../src/host/github/index.ts';
@@ -60,33 +59,6 @@ test('board waiting: the wait counts from when the row first showed', () => {
   // The agent rewrites every minute; ten minutes later the wait is ten minutes.
   const later = collectBoardWaiting(board, held('2026-10-22T10:09:00Z'), [], seen, at + 10 * 60 * 1000);
   assert.deepEqual(later.map((row) => row.wait), ['10 min ago'], 'the rewrite resets nothing');
-});
-
-// /data keeps the latch time on the server and shows only the tail of a run's output.
-test('board waiting: the snapshot hides the latch time and the home folder', () => {
-  const home = makeTempDir();
-  const board = { repo: 'r', repoName: 'r', repoUrl: '', desk: EMPTY_DESK, agents: [agent({ key: 'p', name: 'w', role: 'engineer' })], needs: [], pulls: [], merged: [], worktrees: [], updated: '' };
-  const seen: BoardWaiting[] = [{ kind: 'guard', agent: 'w', role: 'engineer', wait: '', why: 'stopped', link: '', latchedAt: '2026-10-22T10:00:00Z' }];
-  const lines = Array.from({ length: 31 }, (_, index) => `line ${index}`);
-  const controls = {
-    limits: { maxAgents: 3, byModel: { 'model-a': 1 }, memoryFloorMb: 1024 },
-    runs: [{ name: 'w', issue: '1', vendor: 'grok', model: 'm', worktree: `${home}/repo/.worktrees/1`, pid: 1, status: 'running' as const, startedAt: '', stoppedAt: '', exitCode: null, output: lines }],
-    seen,
-    handles: new Map(),
-    logPath: '',
-    spawner: () => ({ pid: null, kill: () => undefined }),
-    timeLimitMs: 60_000,
-  };
-  const snapshot = readBoardSnapshot({ HOME: home }, controls, board, [], [{ number: 9, title: 'open', url: '', createdAt: '', updatedAt: '', dependsOn: [] }]);
-  assert.equal('latchedAt' in snapshot.waiting[0], false, 'the latch time stays on the server');
-  assert.equal(snapshot.runs[0].output.length, 30, 'only the tail of the output');
-  assert.equal(snapshot.runs[0].output[0], 'line 1');
-  assert.equal(snapshot.runs[0].worktree, '~/repo/.worktrees/1', 'the home folder stays hidden');
-  assert.deepEqual(snapshot.issues, [{ number: 9, title: 'open', url: '', createdAt: '', updatedAt: '', dependsOn: [] }]);
-  assert.deepEqual(snapshot.limits, { maxAgents: 3, byModel: { 'model-a': 1 }, memoryFloorMb: 1024 });
-  assert.deepEqual(snapshot.schedule, { ready: [9], order: [9], cycles: [], blocked: [], criticalPath: [9] });
-  assert.equal(snapshot.room.running, 1, 'the running run is counted');
-  assert.equal(typeof snapshot.room.freeMemoryMb, 'number', 'the machine is read when the snapshot is made');
 });
 
 // #709: a list longer than the board's limit is cut off, so a missing dependency could

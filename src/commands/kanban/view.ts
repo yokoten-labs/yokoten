@@ -7,7 +7,7 @@ import { type BoardPull, type Gh, readBoardPulls, repoOf, repoPageOf } from '../
 import { type Env } from '../../rules/config.ts';
 import { hideHome } from '../../rules/privacy.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
-import type { BoardIssue } from './controls.ts';
+import type { BoardIssue } from './feed/read/waiting.ts';
 import { ageText, BOARD_AGENT_FILE, type BoardAgent, type BoardRole, type BoardWorktree, type FoundAgent, readBoardAgents, readBoardSeats, readBoardWorktrees } from './agents.ts';
 import { buildNeeds } from './feed/needs.ts';
 import { makeBoardMask, makeFeedMask } from './feed/route.ts';

@@ -1003,7 +1003,7 @@ It puts three safe defaults in `.github/` too:
 | `uninstall [--list]` | Takes back what `install` wrote: the entry skill and agents marked as managed by yokoten, its hooks in the settings of Claude Code, Codex CLI, Gemini CLI, Antigravity CLI, Copilot CLI, Grok CLI and Muse Code, its OpenCode plugin, and `~/.local/share/yokoten`. It removes the private-marks and mailmap files when they hold only install's header, and the folders and git config file it made when they are empty. A folder that was there before `install` stays. Your own files, edits and settings stay; the stop log is removed. A second run changes nothing. `--list` names every file it removes or keeps |
 | `bot -- <command>` | Runs one command (`gh`, `git push`) as the bot, with a one-hour token it never prints. Before `gh issue` or `gh pr` `create` or `edit` with a title, it checks the title by the CI rules. A bad title is refused, and nothing is sent. `gh api` on an issue or pull request path is checked the same way. With `--body` or `--body-file`, `gh pr create` and `gh pr edit` also check the body by the body rules of `check --pr`, against the pull request's branch and the base branch's CODEOWNERS. A bad body is refused too, and nothing is sent. A body whose last line is not `🤖 Made with <agent> (<model>)`, one or more comma-separated pairs, is refused too: each pull request names each AI and model that made it. The line may add one `reviewed by <agent> (<model>)` part, or two reviewers joined by `and`; never more than two. A comment (`gh pr comment`, `gh issue comment`), a review with a body (`gh pr review --body`), and a new issue (`gh issue create --body`) carry the same line: a body whose last line is not the `Made with` line is refused too. A note with `--attach` is refused: the upload lands past the `Made with` line. An edit (`gh pr edit --body`, `gh issue edit --body`) stays as it is. `gh pr create` without a type or tier label gets them added: the type from the title (`bug` for `fix`), the tier from the body's `tier:` line. `gh pr edit` does the same for a new title or body, and removes the old tier label when the body sets a new tier. A label you pass is kept. A tier label that does not match the body is refused, with the message of `check --pr`. A label the repo does not have is named in a note and left out; the bot never creates labels. `gh pr create` without `--milestone` gets the milestone of the first linked issue (`Closes #N`, `Part of #N`) that has one. When no linked issue has one, it is refused, and nothing is sent; add `--milestone`. When gh can't read the issue, the pull request is sent without a milestone, with a note. It runs `gh` and `git` only, so `env gh …` or `sh -c …` is refused. It does not read a gh alias, so a title set through one is not checked. Setup: [server.md](server.md#3-the-bot-a-github-app) |
 | `train [<pr>...] [--wait <seconds>] [--next]` | Merges an approved, green queue in the order given, as the bot, and stops at the first pull request that needs a person. With no numbers it only prints the plan from the conflict map, in that map's order, and merges nothing; name the numbers to merge them. The order is: a change that moves a path first and alone, then a change that collides with nothing, then the one more others collide with, oldest first. It records every base before the first merge, so a pull request stacked on a squash-merged branch merges from the base it truly shares with that branch. A conflict made only of import lines takes the union; a real conflict, a failing test, a failing `check` or a missing approval stops the train. Each merged tree is tested before the push, and CI must pass on the pushed merge; `--wait` sets how long to wait (default 1800 seconds). `--next` says which pull request is next and why, and merges nothing. Only the lead runs it |
-| `kanban [--text] [--all] [--no-open] [--role name] [--vendor name]` | Its old name `board` still runs it, after one line that names `kanban`. With `--text`, one screen; `--all` adds every field of every agent, pull request and worktree. Serves a live page on this machine only: the agents grouped by issue, the picked one, each pull request stage, and each agent's estimated API cost. From the page the owner also starts and stops agents, and sees what waits. It opens the page in your browser (`--no-open` only prints the link) and runs until you stop it. The page refreshes every 15 seconds. `--text` prints the agents, pull requests, worktrees and usage as plain text. With `--text`, `--role` and `--vendor` keep only that role's or vendor's usage rows. See [The team board](#the-team-board) |
+| `kanban [--text] [--no-open]` | Its old name `board` still runs it, after one line that names `kanban`. Serves a read-only page on this machine only: the sessions, the pull requests that wait on you, and Actions. Nothing on it starts, stops or changes work. It opens the page in your browser, signed in, and runs until you stop it (`--no-open` prints the address only). The sign-in key goes only to the browser. `--text` prints the same snapshot as plain text. See [The team board](#the-team-board) |
 | `tidy [--local \| --empty [--yes]]` | Alone, it lists what is old, grouped by what you can do: merged or gone branches, worktrees and desks with no work left, and the logs of desks that are gone. Each row says why, and its size. It changes nothing. `--local` saves each one first (a bundle of its branches, a patch of its unsaved changes, and `index.json`), then moves it into a dated folder in `~/.local/state/yokoten/trash`. If a save fails, nothing moves. A desk or worktree in use is never touched. Branches on GitHub are only listed. `--empty` deletes trash folders older than 7 days, after one question; with no terminal it needs `--yes` |
 | `conflicts [--json] [--rebuild <id>]` | Reads every open pull request, or every local branch when there is no host. It says in plain words which changes collide with main and with each other. It names the pairs that touch one file, and which of the two to merge first. It checks nothing out and merges nothing. It keeps the answer in the git folder, so the guard reads it without running git. `--json` prints the whole map, and `--rebuild` prints a prompt that rebuilds one change on the current main |
 
@@ -2271,8 +2271,7 @@ A new row pulses the badge once.
 A pull request stays off the list while its review is still open.
 
 The right column is gone, so the session is wider.
-Pull requests still show in `yokoten board --text` and in `/data`.
-Start and stop stay on those paths too.
+Pull requests still show in `yokoten kanban --text` and in `/api/state`.
 
 The lead box is a short desk. One line says what the lead is doing now.
 On a phone, open the bell to read the desk.
@@ -2312,7 +2311,6 @@ That table names the day it was checked and each vendor's price page.
 A model with no price, or a log without token counts, says "partial" instead of a guess.
 The dollars are only an estimate: "about $1.20 if paid by API".
 Filter the rows by role (engineers, reviewers, checkers) or by vendor.
-With `--text`, `--role reviewer` and `--vendor claude` keep the same rows.
 
 `yokoten board --text` prints Waiting for you when something waits. It lists tier A
 pull requests with green checks and no Approve on the latest commit, commands the
@@ -2320,30 +2318,12 @@ guard stopped, and questions agents ask. Each row shows the kind, the agent, its
 role, how long it waited, one line on why, and a link to act. The list is read only.
 No request an agent can make clears an item. An empty list says so.
 
-The owner starts an agent through the board: send an open issue, a vendor, and a
-model to `/agents/start`. The board makes `.worktrees/<issue>`, marks it as a worker's
-(as `yokoten worker mark` does, so runtimes that drop `YOKOTEN_ROLE` still run as
-workers), and starts the vendor's own headless command with `YOKOTEN_ROLE=worker`,
-like the dispatch skill. The model goes through the vendor's own flag (`--model`);
-DeepSeek Harness has no such flag, so its model stays a name in the brief. Before
-it starts, the board checks the vendor's guard hooks will run in that worktree, and
-refuses the start with a plain reason when they will not (trust the folder first,
-or run `yokoten init`). The run shows in `/data`, and stops through `/agents/stop`.
-Stopping keeps the worktree and its commits. A process
-that exits by itself counts as stopped: its slot frees and a later Stop says so.
-Starting the same issue again reuses that worktree, and the brief names the last
-commit. The agent reads `git log` and `git status` first, then continues from there.
-
-The limits say how many agents run at once (three at first), and how many of one
-model. Over the limit, the board refuses a start with a plain reason.
-
-`yokoten board --text` also prints the runs the board started.
-
-Safety: the first visit sets an HttpOnly Secure cookie, and a change needs the page's Origin too.
-The board stops only processes it started. Every start and stop goes to
-`.yokoten-board.log` at the repo root. The guard checks each agent, and pushes and
-merges still go only through the bot. There are no Approve or Merge buttons: those
-stay on the host, with the owner.
+The kanban is read only (record 0044): nothing on it starts, stops or changes work,
+and any request but GET or HEAD gets a 405. The page reads `GET /api/state`, one
+snapshot of the sessions, pull requests and Actions, and `GET /api/sessions/<id>/stream`,
+one session's output as server-sent events. The id is a hash of the session's folder,
+never the path. The sign-in key goes only to the browser and is never printed. The guard
+checks each agent, and pushes and merges still go only through the bot.
 
 Agents show by themselves. Start an agent in this repo, in one of its worktrees,
 or in a desk (`yokoten desk`), and yokoten's hooks keep its status in
@@ -2392,7 +2372,7 @@ stops naming it: only leaving clears it.
 The page shows what agents write only as text, never as page code, and links only to
 `http` and `https` addresses. It loads nothing from the internet.
 
-The page reads `/data` as JSON. That is the board's interface. The page is only one
+The page reads `/api/state` as JSON. That is the board's interface. The page is only one
 view of it.
 
 ## Privacy

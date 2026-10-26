@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { FeedEvent } from '../../../../../src/commands/kanban/feed/steps.ts';
 import { ageOf, clearedId, githubNote, groupFeed, loadUi, localDay, onClick, onMenuKey, type PageData, type PageState, pickLang, render, renderBar, renderCenter, renderLimits, renderNeedItem, renderOutput, renderRight, renderRuns, renderSide, renderStart, roleGroup, saveUi, say, summaryOf } from '../../../../../src/commands/kanban/page/browser/script.ts';
-import type { BoardWaiting } from '../../../../../src/commands/kanban/controls.ts';
+import type { BoardWaiting } from '../../../../../src/commands/kanban/feed/read/waiting.ts';
 import { LANG_NAMES, WORDS } from '../../../../../src/commands/kanban/page/words.ts';
 import { EMPTY_DESK } from '../../../../../src/commands/kanban/feed/read/desk.ts';
 import { type AgentView, pullView, vendorOf } from '../../../../../src/commands/kanban/view.ts';
