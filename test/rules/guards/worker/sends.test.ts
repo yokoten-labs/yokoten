@@ -121,14 +121,17 @@ test('guard: in a real worktree, a worker does not prune, move or remove its git
   sandbox.git('worktree', 'add', '-q', '-b', 'task', tree);
   const gitDir = runChild('git', ['rev-parse', '--absolute-git-dir'], { cwd: tree }).stdout.trim();
   const worker = { YOKOTEN_ROLE: 'worker' };
+  // A path in a bash command with forward slashes, as Git Bash on Windows takes it: a
+  // backslash there is an escape, so `rm C:\Users\...` never names the file at all.
+  const inBash = (path: string) => path.replace(/\\/g, '/');
   for (const command of [
-    `rm ${join(gitDir, 'yokoten-worker')}`,
-    `rm -rf ${join(sandbox.repo, '.git', 'worktrees')}`,
+    `rm ${inBash(join(gitDir, 'yokoten-worker'))}`,
+    `rm -rf ${inBash(join(sandbox.repo, '.git', 'worktrees'))}`,
     'rm -rf "$(git rev-parse --absolute-git-dir)"',
-    `git worktree remove --force ${tree}`,
+    `git worktree remove --force ${inBash(tree)}`,
     'git worktree prune',
     'git -C ../repo worktree move wt wt2',
-    `git -C ${sandbox.repo} worktree move ${tree} ${tree}2`,
+    `git -C ${inBash(sandbox.repo)} worktree move ${inBash(tree)} ${inBash(tree)}2`,
     'GIT_DIR=../repo/.git git status',
   ]) {
     assert.equal(checkCommand(command, { cwd: tree, env: worker })?.id, 'worker-mark', command);

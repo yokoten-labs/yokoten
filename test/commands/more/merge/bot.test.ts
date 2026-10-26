@@ -1789,7 +1789,10 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
   const origin = join(sandbox.home, 'github.com', 'me', 'repo.git');
   mkdirSync(origin, { recursive: true });
   sandbox.git('init', '-q', '--bare', origin);
-  sandbox.git('remote', 'add', 'origin', origin);
+  // origin reads as a GitHub repo, as the bot needs, and pushes to the bare repo here. A
+  // local path as the URL is no GitHub repo on Windows, where it has backslashes.
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
+  sandbox.git('remote', 'set-url', '--push', 'origin', origin);
   sandbox.git('push', '-q', 'origin', 'main');
   sandbox.git('checkout', '-qb', 'topic');
   const commit = (subject: string, dates: Record<string, string> = {}) => {
