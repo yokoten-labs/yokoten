@@ -166,7 +166,8 @@ async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: Gua
   for (const hook of hooks) assert.equal(hook.matcher, GUARDED_TOOLS, `${hook.name} hook runs on every guarded tool`);
   const inputOf = (tool: string, path: string): Record<string, unknown> => {
     const file = join(sandbox.repo, path);
-    if (tool === 'Bash') return { command: `echo x > ${cwd === sandbox.repo ? path : file}` };
+    // A path in a bash command is written with forward slashes: bash eats a Windows backslash.
+    if (tool === 'Bash') return { command: `echo x > ${cwd === sandbox.repo ? path : file.replaceAll('\\', '/')}` };
     if (tool === 'Write') return { file_path: file, content: 'x' };
     if (tool === 'Edit') return { file_path: file, old_string: 'a', new_string: 'b' };
     if (tool === 'MultiEdit') return { file_path: file, edits: [{ old_string: 'a', new_string: 'b' }] };
