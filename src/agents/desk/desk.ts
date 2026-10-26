@@ -19,16 +19,18 @@
 //    YOKOTEN_TEAM say where the agent is (team/who.ts).
 //
 // This file turns a request into a `DeskPlan`: plain lists of paths, hosts and names. A
-// backend per system turns the plan into a command: bwrap.ts on Linux and WSL2,
-// seatbelt.ts on macOS. Native Windows has no backend yet (#669), but its plan is built
+// backend per system turns the plan into a command: fence/srt.ts (sandbox-runtime) on Linux,
+// WSL2 and macOS, or with YOKOTEN_FENCE=own the old fence/bwrap.ts on Linux and WSL2 and
+// fence/seatbelt.ts on macOS. Native Windows has no backend (use WSL), but its plan is built
 // here: no case in a path, every profile folder and other drive hidden, and a command
 // found with PATHEXT. Those rules stay testable on every system.
 
 import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join, posix, resolve, win32 } from 'node:path';
+import { dirname, join, posix, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../../rules/config.ts';
 import { homeIn } from '../../rules/privacy.ts';
+import { findProgram, programExtensions } from '../../platform/process.ts';
 import { DESK as CLAUDE_CODE } from '../runtimes/claude-code.ts';
 import { DESK as CODEX } from '../runtimes/codex.ts';
 import { DESK as GROK } from '../runtimes/grok.ts';
@@ -147,29 +149,8 @@ function isLink(path: string): boolean {
   }
 }
 
-/** The file a command name runs, found on PATH like a shell would, or null. */
-export function findProgram(name: string, path: string | undefined, extensions: readonly string[] = ['']): string | null {
-  if (name.includes('/') || name.includes('\\')) return existsSync(name) ? resolve(name) : null;
-  for (const folder of (path ?? '').split(delimiter)) {
-    if (!isAbsolute(folder)) continue;
-    for (const extension of extensions) {
-      const file = join(folder, name + extension);
-      try {
-        if (statSync(file).isFile()) return file;
-      } catch {}
-    }
-  }
-  return null;
-}
-
-/**
- * The extensions a system tries after a command name. Windows reads PATHEXT (`.CMD` and
- * `.EXE` are the usual ones); every other system runs the name as it is.
- */
-export function programExtensions(platform: NodeJS.Platform, env: Env): string[] {
-  if (platform !== 'win32') return [''];
-  return ['', ...(env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').map((extension) => extension.trim()).filter(Boolean)];
-}
+// Finding a program is the platform layer's: the system is passed in (record 0040).
+export { findProgram, programExtensions };
 
 /**
  * The folders a program needs to run: the folder it is named from, and the package or
@@ -248,6 +229,13 @@ export function prepareDeskState(runtime: RuntimeDesk, name: string, desk: strin
   return state;
 }
 
+/** Why `desk` can't be a desk, or null: it must be a git clone of its own, not a worktree. */
+export function cloneProblem(desk: string): string | null {
+  if (!existsSync(join(desk, '.git'))) return `${desk} is not a git clone. Make the desk with \`git clone <repo> <folder>\`.`;
+  if (statSync(join(desk, '.git')).isFile()) return `${desk} is a worktree: its git folder lives in another checkout, which the desk hides. Make the desk with \`git clone\`.`;
+  return null;
+}
+
 /**
  * Turn a request into the desk's plan. It throws, with a reason the lead can act on, when
  * the runtime is unknown, the folder is not a clone, or a path would open a hidden folder.
@@ -270,15 +258,15 @@ export function planDesk(request: DeskRequest): DeskPlan {
   const identity = model && vendor !== vendorOf(request.runtime, '') ? { model, vendor } : null;
   const home = realOr(homeIn(env));
   const desk = realOr(resolve(request.desk));
-  if (!existsSync(join(desk, '.git'))) throw new Error(`${desk} is not a git clone. Make the desk with \`git clone <repo> <folder>\`.`);
-  if (statSync(join(desk, '.git')).isFile()) throw new Error(`${desk} is a worktree: its git folder lives in another checkout, which the desk hides. Make the desk with \`git clone\`.`);
+  const notClone = cloneProblem(desk);
+  if (notClone) throw new Error(notClone);
   requireReal(join(desk, '.git'), 'folder');
   // The lead's own state is hidden too, where it lives outside the home folder.
   const leadState = runtime.leadState(env).map(realOr).filter((path) => existsSync(path));
   const hidden = [...new Set([...hiddenFolders(platform, home, desk), ...leadState.filter((path) => statSync(path).isDirectory())])];
   // A path the agent may see must not open a whole hidden folder, or the desk itself.
   const isTooWide = (path: string) => hidden.some((folder) => isInside(folder, path, platform)) || isInside(desk, path, platform);
-  const program = findProgram(request.command[0], env.PATH, programExtensions(platform, env));
+  const program = findProgram(request.command[0], env.PATH, platform, env);
   if (!program) throw new Error(`can't find ${request.command[0]} on PATH`);
   const node = dirname(dirname(realOr(process.execPath)));
   const wanted = [node, ...programFolders(program), ...(runtime.programParts?.(env) ?? []), ...OWN_RUNTIME, ...(request.runtimes ?? []), join(home, '.gitconfig'), join(home, '.config', 'git')];
@@ -358,8 +346,8 @@ export interface DeskBackend {
   name: string;
   /** Null when the backend can run here; else the reason, in one line. */
   problem: (env: Env) => string | null;
-  /** Where the proxy listens outside: a socket path in `scratch`, or a port (0 for any). */
-  proxyAddress: (scratch: string) => string | number;
+  /** Where the proxy listens outside: a socket path in `scratch`, or a port (0 for any); null when the fence runs its own. */
+  proxyAddress: (scratch: string) => string | number | null;
   /** The command that starts `plan` inside the fence, with the proxy at `address` and a private scratch folder. */
   fence: (plan: DeskPlan, address: string | number, scratch: string) => FencedCommand;
 }

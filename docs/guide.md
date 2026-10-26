@@ -998,6 +998,7 @@ It puts three safe defaults in `.github/` too:
 | `worker mark <dir>` | Marks the worktree at `<dir>` as a worker's. The guard then treats every agent there as a worker, even one whose runtime drops `YOKOTEN_ROLE` (Muse Code). The guard refuses a worker's plain ways to remove it, and a `.git` link it can't read counts as marked; the server and credentials kept from the worker are the real lock. `git worktree remove <dir>` removes the mark. Given a subfolder, it marks the worktree's top folder and says which. A plain clone, such as a desk, is marked too: the mark goes in its own `.git` (#672). The lead marks a clone from its own checkout. The main checkout (the clone the lead runs in, or one with worktrees) and a submodule are never marked. A worker can't mark or unmark. See [Works with](#works-with) |
 | `worker env [runtime]` | Lists the names that yokoten's agent environment would keep from this shell, and counts the names it drops. With a runtime, its own login name counts too. It never shows a value. `desk` starts an agent with it. See [What an agent's environment holds](#what-an-agents-environment-holds) |
 | `msg send <to> [<text>]`, `msg inbox`, `msg who`, `msg log` | Agents of every vendor message each other through files on this machine. Only the lead runs `log`. See [Messages between agents](#messages-between-agents) |
+| `desk [<issue> \| "<task>"] [--agent <name>] [--pr] [--no-install]` | With no words, lists your desks and writes nothing. With an issue or a task, makes the desk `../<repo>-desks/<n>/` (its own clone, branch `desk/<n>`), writes a brief, and starts the AI (Claude Code first) inside the fence. When the AI exits, the check and the tests run in the fence, and one screen shows the evidence. It never pushes; `--pr` pushes the branch and opens the pull request, as the bot when it is set up. A desk that stopped mid-task shows on the next start, and `desk <n>` goes on from its last commit. On native Windows, run it in WSL |
 | `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | Starts a worker's agent in a fenced desk: its own clone, its own state folder, and no network but its model's API. Only the lead runs it. See [The desk](#the-desk) |
 | `uninstall [--list]` | Takes back what `install` wrote: the entry skill and agents marked as managed by yokoten, its hooks in the settings of Claude Code, Codex CLI, Gemini CLI, Antigravity CLI, Copilot CLI, Grok CLI and Muse Code, its OpenCode plugin, and `~/.local/share/yokoten`. It removes the private-marks and mailmap files when they hold only install's header, and the folders and git config file it made when they are empty. A folder that was there before `install` stays. Your own files, edits and settings stay; the stop log is removed. A second run changes nothing. `--list` names every file it removes or keeps |
 | `bot -- <command>` | Runs one command (`gh`, `git push`) as the bot, with a one-hour token it never prints. Before `gh issue` or `gh pr` `create` or `edit` with a title, it checks the title by the CI rules. A bad title is refused, and nothing is sent. `gh api` on an issue or pull request path is checked the same way. With `--body` or `--body-file`, `gh pr create` and `gh pr edit` also check the body by the body rules of `check --pr`, against the pull request's branch and the base branch's CODEOWNERS. A bad body is refused too, and nothing is sent. A body whose last line is not `🤖 Made with <agent> (<model>)`, one or more comma-separated pairs, is refused too: each pull request names each AI and model that made it. The line may add one `reviewed by <agent> (<model>)` part, or two reviewers joined by `and`; never more than two. A comment (`gh pr comment`, `gh issue comment`), a review with a body (`gh pr review --body`), and a new issue (`gh issue create --body`) carry the same line: a body whose last line is not the `Made with` line is refused too. A note with `--attach` is refused: the upload lands past the `Made with` line. An edit (`gh pr edit --body`, `gh issue edit --body`) stays as it is. `gh pr create` without a type or tier label gets them added: the type from the title (`bug` for `fix`), the tier from the body's `tier:` line. `gh pr edit` does the same for a new title or body, and removes the old tier label when the body sets a new tier. A label you pass is kept. A tier label that does not match the body is refused, with the message of `check --pr`. A label the repo does not have is named in a note and left out; the bot never creates labels. `gh pr create` without `--milestone` gets the milestone of the first linked issue (`Closes #N`, `Part of #N`) that has one. When no linked issue has one, it is refused, and nothing is sent; add `--milestone`. When gh can't read the issue, the pull request is sent without a milestone, with a note. It runs `gh` and `git` only, so `env gh …` or `sh -c …` is refused. It does not read a gh alias, so a title set through one is not checked. Setup: [server.md](server.md#3-the-bot-a-github-app) |
@@ -1498,6 +1499,13 @@ our `changes`, and let the tests pass. When the change does not touch the part w
 say so in the issue and close it. To stop using a wheel, delete the file. The way back
 is also the way out: the code was small, and the tests show what it must do (record
 0014).
+
+Some commands run another project's program, as they run `git` or `gh`. yokoten copies none
+of its code and does not list it as a dependency. The version is pinned in the code.
+
+| Program | Used by | Version | License | Where it comes from |
+|---------|---------|---------|---------|---------------------|
+| [sandbox-runtime](https://github.com/anthropics/sandbox-runtime) (`srt`), Anthropic | `yokoten desk`, the fence | 0.0.81, in `src/agents/desk/fence/srt.ts` | Apache-2.0 | `srt` on PATH at that version, else `npx` |
 
 ### Updating the rules
 
@@ -2147,18 +2155,22 @@ desk, read-only. Use it only for an agent you trust with the words.
 
 **Systems.**
 
-- **Linux and WSL2**: `bwrap` (bubblewrap). Install it with `sudo apt install bubblewrap`.
-  The desk gets its own empty network. A small bridge inside passes the agent's proxy
-  connections to the proxy outside.
-- **macOS**: `sandbox-exec`, built in, with a profile written for each desk. The profile
-  starts from "deny everything". It allows only the reads, writes, Mach services and the
-  proxy port that the desk needs. It blocks `open`, `osascript`, Launch Services and Apple
-  events. Not yet run on a Mac: run `node --test test/agents/desk/start.test.ts` there once
-  to check the contract.
-- **Native Windows**: experimental, and not ready yet (#669). It needs a restricted-token
-  helper, ACLs on the desk and a firewall rule. The #637 contract test must pass on real
-  Windows 11 before it starts a worker. Until then run yokoten in WSL2, where the Linux
-  desk works. On native Windows, the guard alone holds the rules.
+The fence is Anthropic's
+[sandbox-runtime](https://github.com/anthropics/sandbox-runtime) (`srt`), the sandbox
+Claude Code uses. yokoten runs `srt` from PATH when it is the pinned version, 0.0.81.
+Otherwise `npx` gets that version once and keeps it in npm's cache. It is not a dependency
+of yokoten. When the sandbox can't start, the desk says why in one line and starts nothing.
+
+- **Linux and WSL2**: install `bubblewrap`, `socat` and `ripgrep`. On Debian and Ubuntu:
+  `sudo apt install bubblewrap socat ripgrep`. The desk gets its own empty network, and
+  only the agent's API hosts pass srt's proxy.
+- **macOS**: `sandbox-exec`, built in. Not yet run on a Mac: run
+  `node --test test/agents/desk/start.test.ts` there once to check the contract.
+- **Native Windows**: no desk. `yokoten desk` starts nothing and says to use WSL. On
+  native Windows, the guard alone holds the rules.
+
+`YOKOTEN_FENCE=own` uses the old fence until v0.1.3: `bwrap` on Linux, `sandbox-exec` on
+macOS.
 
 ### Messages between agents
 

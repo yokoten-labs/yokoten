@@ -774,6 +774,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `worker mark <目录>` | 把 `<目录>` 这个 worktree 标成 worker 的。之后在这里干活的 agent，护栏一律当 worker 看待，哪怕它的运行环境没把 `YOKOTEN_ROLE` 传给钩子（比如 Muse Code）。worker 用常见的办法删这个标记，护栏都会拦下；`.git` 读不出来的时候，也照样当 worker。护栏只看命令文字，真正的锁是服务器，还有别把推送和机器人的凭据交给 worker。`git worktree remove <目录>` 会连同 worktree 一起删掉标记。给的是子目录时，它标的是所在的 worktree，并说出是哪个。普通的 clone（比如 desk）也能标，标记放在它自己的 `.git` 里（#672）。lead 在自己的检出里给 clone 打标记。主检出（lead 自己在里面干活的 clone，或者挂着 worktree 的那个）和子模块永远不会被标记。worker 不能打标记，也不能去掉标记 |
 | `worker env [运行环境]` | 列出 yokoten 给 agent 准备环境变量时，会从这个 shell 留下哪些变量名，并数出去掉了几个。加上运行环境名，会把它自己的登录变量也算进去。从不显示值。`desk` 就用它启动 agent。见 [agent 拿到的环境变量](#agent-拿到的环境变量) |
 | `msg send <收件人> [<文字>]`、`msg inbox`、`msg who`、`msg log` | 各家 agent 通过这台电脑上的文件互相发消息。只有 lead 能跑 `log`。见 [agent 之间发消息](#agent-之间发消息) |
+| `desk [<issue> \| "<任务>"] [--agent <名字>] [--pr] [--no-install]` | 不带参数：列出你的工位，什么都不写。带 issue 号或一句任务：建工位 `../<仓库>-desks/<n>/`（它自己的克隆，分支 `desk/<n>`），写好简报，在围栏里启动 AI（先选 Claude Code）。AI 退出后，在围栏里跑检查和测试，一屏给出证据。它从不 push；`--pr` 才推分支并开 PR（配了 bot 就用 bot）。中途停下的工位，下次启动时会列出来，`desk <n>` 从最后一次提交接着做。原生 Windows 上请在 WSL 里跑 |
 | `desk <agent> <文件夹> [--name <名字>] [--read <路径>] [--host <主机>] [--marks] -- <命令>` | 把 worker 的 agent 放进一个围起来的工位里启动：只有它自己的克隆、自己的状态文件夹，除了模型的 API 不能上网。只有 lead 跑它。见 [工位](#工位) |
 | `uninstall [--list]` | 撤掉 `install` 装的东西：带 yokoten 管理标记的入口技能和 agent，Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code 设置里的 hook，OpenCode 的插件，还有 `~/.local/share/yokoten`。私有词表和 mailmap 文件只剩 `install` 写的表头时，也一并删掉；`install` 建的空文件夹和 git 配置文件也删掉。`install` 之前就有的文件夹留着。你自己的文件、改动和设置都留着；拦截记录会被删掉。再跑一次什么也不会变。`--list` 逐行列出它删掉的或留下的每个文件 |
 | `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](../../server.md#3-the-bot-a-github-app) |
@@ -1550,14 +1551,19 @@ git diff main refs/desks/42
 
 **系统。**
 
-- **Linux 和 WSL2**：用 `bwrap`（bubblewrap）。用 `sudo apt install bubblewrap` 安装。工位有自己的
-  空网络，里面有个小桥，把 agent 连代理的请求转给外面的代理。
-- **macOS**：用系统自带的 `sandbox-exec`，每个工位现写一份规则。规则从「全部不许」开始，只放开工位
-  要用的读、写、Mach 服务和代理端口，挡住 `open`、`osascript`、Launch Services 和 Apple 事件。
-  还没在 Mac 上跑过：请在 Mac 上跑一次 `node --test test/agents/desk/start.test.ts`，检查这套规矩。
-- **原生 Windows**：实验性功能，还没做好（#669）。它需要受限令牌（restricted token）辅助程序、
-  工位上的 ACL 和防火墙规则，并且 #637 的契约测试要在真实的 Windows 11 上通过，才能启动 worker。
-  在那之前，请在 WSL2 里用 yokoten，Linux 工位在那里可用。原生 Windows 上只有守卫在把关。
+围栏用 Anthropic 的 [sandbox-runtime](https://github.com/anthropics/sandbox-runtime)（`srt`），
+就是 Claude Code 自己用的沙箱。PATH 上的 `srt` 是钉死的 0.0.81 版时直接用它；不是的话，`npx`
+第一次把这个版本下载到 npm 的缓存里。它不是 yokoten 的依赖。沙箱起不来时，工位用一句话说明原因，
+什么都不启动。
+
+- **Linux 和 WSL2**：要装 `bubblewrap`、`socat` 和 `ripgrep`。Debian 和 Ubuntu 上：
+  `sudo apt install bubblewrap socat ripgrep`。工位有自己的空网络，只有 agent 的 API 主机能通过
+  srt 的代理。
+- **macOS**：用系统自带的 `sandbox-exec`。还没在 Mac 上跑过：请在 Mac 上跑一次
+  `node --test test/agents/desk/start.test.ts`，检查这套规矩。
+- **原生 Windows**：没有工位。`yokoten desk` 什么都不启动，只提示改用 WSL。原生 Windows 上只有守卫在把关。
+
+`YOKOTEN_FENCE=own` 会用旧的围栏，留到 v0.1.3：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
 
 ### agent 之间发消息
 

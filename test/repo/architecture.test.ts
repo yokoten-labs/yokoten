@@ -69,6 +69,7 @@ const NO_TEST_FILE = [
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
+  'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users
 ];
 
 const filesUnder = (folder: string) =>
@@ -2029,8 +2030,10 @@ test('windows scope: native Windows skips the desk, its fence and the kanban ser
   const skippedAreas = new Set(windows.skipped.map((entry) => entry.area));
   assert.deepEqual([...skippedAreas].sort(), ['desk', 'desk fence', 'kanban server']);
   for (const entry of windows.skipped) assert.equal(entry.reason, 'the desk runs in WSL on Windows (record 0043)', entry.file);
-  assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/fence/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/kanban/server.test.ts'));
+  // The desk command's tests run git and shell filters in the fence: the desk area, not a skip inside a test (#1056).
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/desk/finish.test.ts' && entry.area === 'desk'), 'test/commands/desk/ is in the desk area');
   // The CLI, the guard hooks and install still run there.
   for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
     assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);
