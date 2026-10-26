@@ -52,16 +52,26 @@ test('isInside: Windows paths compare without case, and only after a separator',
 test('findProgram: a name on PATH, a path as it is, null when missing', () => {
   const folder = makeTempDir('bin-');
   writeFileSync(join(folder, 'agent'), '');
-  assert.equal(findProgram('agent', ['relative', folder].join(delimiter)), join(folder, 'agent'));
-  assert.equal(findProgram(join(folder, 'agent'), ''), join(folder, 'agent'));
-  assert.equal(findProgram('missing', folder), null);
+  assert.equal(findProgram('agent', ['relative', folder].join(delimiter), 'linux'), join(folder, 'agent'));
+  assert.equal(findProgram(join(folder, 'agent'), '', 'linux'), join(folder, 'agent'));
+  assert.equal(findProgram('missing', folder, 'linux'), null);
 });
 
-test('findProgram: Windows tries the PATHEXT extensions, and a path with a backslash', () => {
-  const folder = makeTempDir('bin-');
-  writeFileSync(join(folder, 'agent.cmd'), '');
-  assert.equal(findProgram('agent', folder, ['', '.cmd']), join(folder, 'agent.cmd'));
-  assert.equal(findProgram(`C:\\tools\\agent.cmd`, ''), null, 'a Windows path is not on a Mac');
+test('findProgram: each system its own separators and extensions (case table, record 0040)', () => {
+  const files = new Set(['/usr/bin/srt', '/opt/x/agent', 'C:\\tools\\agent.CMD']);
+  const isFile = (path: string) => files.has(path);
+  const cases: [NodeJS.Platform, string, string, Record<string, string>, string | null][] = [
+    ['linux', 'srt', '/usr/local/bin:/usr/bin', {}, '/usr/bin/srt'],
+    ['darwin', 'srt', 'relative:/usr/bin', {}, '/usr/bin/srt'],
+    ['linux', '/opt/x/agent', '', {}, '/opt/x/agent'],
+    ['darwin', 'C:\\tools\\agent.CMD', '', {}, null],
+    ['linux', 'srt', 'C:\\usr\\bin', {}, null],
+    ['win32', 'agent', 'C:\\bin;C:\\tools', { PATHEXT: '.EXE;.CMD' }, 'C:\\tools\\agent.CMD'],
+    ['win32', 'agent', 'C:\\tools', { PATHEXT: '.EXE' }, null],
+    ['win32', 'C:\\tools\\agent', '', { PATHEXT: '.CMD' }, 'C:\\tools\\agent.CMD'],
+    ['win32', 'srt', '/usr/bin', {}, null],
+  ];
+  for (const [platform, name, path, env, want] of cases) assert.equal(findProgram(name, path, platform, env, isFile), want, `${platform} ${name} on ${path}`);
   assert.deepEqual(programExtensions('win32', { PATHEXT: '.EXE;.CMD' }), ['', '.EXE', '.CMD']);
   assert.deepEqual(programExtensions('win32', {}), ['', '.COM', '.EXE', '.BAT', '.CMD']);
   assert.deepEqual(programExtensions('linux', { PATHEXT: '.EXE' }), ['']);

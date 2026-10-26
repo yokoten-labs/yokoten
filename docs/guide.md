@@ -1497,6 +1497,13 @@ say so in the issue and close it. To stop using a wheel, delete the file. The wa
 is also the way out: the code was small, and the tests show what it must do (record
 0014).
 
+Some commands run another project's program, as they run `git` or `gh`. yokoten copies none
+of its code and does not list it as a dependency. The version is pinned in the code.
+
+| Program | Used by | Version | License | Where it comes from |
+|---------|---------|---------|---------|---------------------|
+| [sandbox-runtime](https://github.com/anthropics/sandbox-runtime) (`srt`), Anthropic | `yokoten desk`, the fence | 0.0.81, in `src/agents/desk/fence/srt.ts` | Apache-2.0 | `srt` on PATH at that version, else `npx` |
+
 ### Updating the rules
 
 When yokoten learns a lesson, its core rules change. `yokoten install` updates the
@@ -2145,18 +2152,22 @@ desk, read-only. Use it only for an agent you trust with the words.
 
 **Systems.**
 
-- **Linux and WSL2**: `bwrap` (bubblewrap). Install it with `sudo apt install bubblewrap`.
-  The desk gets its own empty network. A small bridge inside passes the agent's proxy
-  connections to the proxy outside.
-- **macOS**: `sandbox-exec`, built in, with a profile written for each desk. The profile
-  starts from "deny everything". It allows only the reads, writes, Mach services and the
-  proxy port that the desk needs. It blocks `open`, `osascript`, Launch Services and Apple
-  events. Not yet run on a Mac: run `node --test test/agents/desk/start.test.ts` there once
-  to check the contract.
-- **Native Windows**: experimental, and not ready yet (#669). It needs a restricted-token
-  helper, ACLs on the desk and a firewall rule. The #637 contract test must pass on real
-  Windows 11 before it starts a worker. Until then run yokoten in WSL2, where the Linux
-  desk works. On native Windows, the guard alone holds the rules.
+The fence is Anthropic's
+[sandbox-runtime](https://github.com/anthropics/sandbox-runtime) (`srt`), the sandbox
+Claude Code uses. yokoten runs `srt` from PATH when it is the pinned version, 0.0.81.
+Otherwise `npx` gets that version once and keeps it in npm's cache. It is not a dependency
+of yokoten. When the sandbox can't start, the desk says why in one line and starts nothing.
+
+- **Linux and WSL2**: install `bubblewrap`, `socat` and `ripgrep`. On Debian and Ubuntu:
+  `sudo apt install bubblewrap socat ripgrep`. The desk gets its own empty network, and
+  only the agent's API hosts pass srt's proxy.
+- **macOS**: `sandbox-exec`, built in. Not yet run on a Mac: run
+  `node --test test/agents/desk/start.test.ts` there once to check the contract.
+- **Native Windows**: no desk. `yokoten desk` starts nothing and says to use WSL. On
+  native Windows, the guard alone holds the rules.
+
+`YOKOTEN_FENCE=own` uses the old fence until v0.1.3: `bwrap` on Linux, `sandbox-exec` on
+macOS.
 
 ### Messages between agents
 

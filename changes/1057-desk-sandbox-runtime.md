@@ -1,0 +1,3 @@
+Changed
+
+`yokoten desk` now fences the agent with Anthropic's sandbox-runtime 0.0.81 (Apache-2.0), the sandbox Claude Code uses, on Linux, WSL2 and macOS. yokoten runs `srt` from PATH when it is that version, or gets that version with `npx` the first time; it is not a dependency of the package. On Linux, sandbox-runtime also needs `socat` and `ripgrep`. When the sandbox can't start, the desk says why in one line and starts nothing. The screen shows the fence on its own line. `YOKOTEN_FENCE=own` keeps the old fence (`bwrap` or `sandbox-exec`) until v0.1.3. On native Windows the desk starts nothing and says to use WSL (#1057).

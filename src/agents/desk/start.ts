@@ -1,22 +1,40 @@
-// Start a desk (#637): pick the backend for this system, start the proxy outside, start
-// the agent inside the fence, and clean up when it ends. The plan comes from desk.ts.
+// Start a desk (#637): pick the backend for this system, start the proxy outside when the
+// fence has none of its own, start the agent inside the fence, and clean up when it ends.
+// The plan comes from desk.ts.
 
 import { spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { BWRAP } from './bwrap.ts';
+import { BWRAP } from './fence/bwrap.ts';
 import type { DeskBackend, DeskPlan } from './desk.ts';
 import { type ProxyEvent, startProxy } from './network/proxy.ts';
-import { SEATBELT } from './seatbelt.ts';
+import { SEATBELT } from './fence/seatbelt.ts';
+import { findSrt, srtBackend, srtProblem } from './fence/srt.ts';
 
-/** The backend for a system, or the plain reason there is none. */
+/**
+ * The backend for a system, or the plain reason there is none. sandbox-runtime (srt.ts) by
+ * default; `YOKOTEN_FENCE=own` picks the old ones (bwrap, sandbox-exec) until v0.1.3. When the
+ * fence can't start, the desk refuses: it never runs an agent with no fence.
+ */
 export function chooseBackend(platform: NodeJS.Platform, env: Env): DeskBackend | string {
-  if (platform === 'win32') return 'a desk on native Windows is experimental and not ready yet (#669): it needs a restricted-token helper, ACLs and a firewall rule that pass the #637 contract test on real Windows. Until then run yokoten in WSL2, where the Linux desk works. On native Windows, the guard alone holds the rules.';
-  const backend = platform === 'linux' ? BWRAP : platform === 'darwin' ? SEATBELT : null;
-  if (!backend) return `a desk runs on Linux, WSL2 and macOS; not on ${platform} yet.`;
-  return backend.problem(env) ?? backend;
+  if (platform === 'win32') return 'a desk does not run on native Windows. Run yokoten in WSL, where the desk has a sandbox. On native Windows, the guard alone holds the rules.';
+  if (platform !== 'linux' && platform !== 'darwin') return `a desk runs on Linux, WSL and macOS; not on ${platform} yet.`;
+  const fence = env.YOKOTEN_FENCE ?? '';
+  if (fence === 'own') {
+    const backend = platform === 'linux' ? BWRAP : SEATBELT;
+    return backend.problem(env) ?? backend;
+  }
+  if (fence !== '') return `YOKOTEN_FENCE is "${fence}"; it can only be "own", or unset for sandbox-runtime.`;
+  const srt = findSrt(env, platform);
+  if (typeof srt !== 'string') return srt.problem;
+  const probe = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-fence-')));
+  try {
+    return srtProblem(srt, env, probe) ?? srtBackend(srt, platform);
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -56,9 +74,11 @@ export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, o
   // The real path: on macOS the temp folder is a link, and Seatbelt matches real paths.
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-desk-')));
   mkdirSync(join(scratch, 'tmp'));
-  const proxy = await startProxy(backend.proxyAddress(scratch), plan.hosts, onEvent);
+  // A fence with its own proxy (sandbox-runtime) needs none from the desk.
+  const wanted = backend.proxyAddress(scratch);
+  const proxy = wanted === null ? null : await startProxy(wanted, plan.hosts, onEvent);
   try {
-    const address = proxy.server.address();
+    const address = proxy?.server.address();
     const listened = typeof address === 'string' ? address : (address?.port ?? 0);
     const fenced = backend.fence(plan, listened, scratch);
     const child = spawn(fenced.file, fenced.args, { cwd: plan.desk, env: fenced.env, stdio: ['inherit', stdio, stdio] });
@@ -85,7 +105,7 @@ export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, o
     for (const [signal, handler] of handlers) process.off(signal, handler);
     return { code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') };
   } finally {
-    await proxy.close();
+    await proxy?.close();
     rmSync(scratch, { recursive: true, force: true });
   }
 }

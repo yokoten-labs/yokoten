@@ -1549,14 +1549,19 @@ git diff main refs/desks/42
 
 **系统。**
 
-- **Linux 和 WSL2**：用 `bwrap`（bubblewrap）。用 `sudo apt install bubblewrap` 安装。工位有自己的
-  空网络，里面有个小桥，把 agent 连代理的请求转给外面的代理。
-- **macOS**：用系统自带的 `sandbox-exec`，每个工位现写一份规则。规则从「全部不许」开始，只放开工位
-  要用的读、写、Mach 服务和代理端口，挡住 `open`、`osascript`、Launch Services 和 Apple 事件。
-  还没在 Mac 上跑过：请在 Mac 上跑一次 `node --test test/agents/desk/start.test.ts`，检查这套规矩。
-- **原生 Windows**：实验性功能，还没做好（#669）。它需要受限令牌（restricted token）辅助程序、
-  工位上的 ACL 和防火墙规则，并且 #637 的契约测试要在真实的 Windows 11 上通过，才能启动 worker。
-  在那之前，请在 WSL2 里用 yokoten，Linux 工位在那里可用。原生 Windows 上只有守卫在把关。
+围栏用 Anthropic 的 [sandbox-runtime](https://github.com/anthropics/sandbox-runtime)（`srt`），
+就是 Claude Code 自己用的沙箱。PATH 上的 `srt` 是钉死的 0.0.81 版时直接用它；不是的话，`npx`
+第一次把这个版本下载到 npm 的缓存里。它不是 yokoten 的依赖。沙箱起不来时，工位用一句话说明原因，
+什么都不启动。
+
+- **Linux 和 WSL2**：要装 `bubblewrap`、`socat` 和 `ripgrep`。Debian 和 Ubuntu 上：
+  `sudo apt install bubblewrap socat ripgrep`。工位有自己的空网络，只有 agent 的 API 主机能通过
+  srt 的代理。
+- **macOS**：用系统自带的 `sandbox-exec`。还没在 Mac 上跑过：请在 Mac 上跑一次
+  `node --test test/agents/desk/start.test.ts`，检查这套规矩。
+- **原生 Windows**：没有工位。`yokoten desk` 什么都不启动，只提示改用 WSL。原生 Windows 上只有守卫在把关。
+
+`YOKOTEN_FENCE=own` 会用旧的围栏，留到 v0.1.3：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
 
 ### agent 之间发消息
 

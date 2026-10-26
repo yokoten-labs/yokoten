@@ -1,0 +1,208 @@
+// The desk fence on Linux and macOS: anthropics/sandbox-runtime (`srt`, Apache-2.0), the
+// sandbox Claude Code itself uses (bubblewrap on Linux, Seatbelt on macOS, and a proxy that
+// lets through only the allowed hosts). yokoten runs it as a program and ships none of its
+// code: `srt` on PATH when it is the pinned version, else the pinned version through `npx`.
+// It is never a dependency of the package (the core has none).
+//
+// - The plan becomes srt's settings file in a pure function, `srtSettings`.
+// - Fail closed (record 0040): when srt can't start a sandbox here, the desk does not
+//   start, and says why in one line. It never falls back to "no fence".
+// - Native Windows has no system fence in v0.1.2: the guard alone holds the rules, and the
+//   desk says to use WSL.
+// - `YOKOTEN_FENCE=own` picks the old backends (bwrap.ts, seatbelt.ts) for a while, in start.ts.
+
+import { spawnSync } from 'node:child_process';
+import { chmodSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { findProgram } from '../../../platform/process.ts';
+import type { Env } from '../../../rules/config.ts';
+import { homeIn } from '../../../rules/privacy.ts';
+import { type DeskBackend, type DeskPlan, hiddenFolders, isInside, OWN_RUNTIME, programFolders } from '../desk.ts';
+
+/** The pinned version. A new one is a code change, checked by the contract test (#637). */
+export const SRT_VERSION = '0.0.81';
+export const SRT_PACKAGE = '@anthropic-ai/sandbox-runtime';
+
+/** The npx words that run a command with the pinned srt on PATH. */
+export const NPX_ARGS = ['--yes', `--package=${SRT_PACKAGE}@${SRT_VERSION}`, '--'];
+
+/** What the desk asks of the fence: the folder it starts in, what it may write, and the hosts it may reach. */
+export type FenceSpec = { root: string; writable: string[]; network: string[] };
+
+/** The command to run, which fence holds it, and the one line the desk prints about it. */
+export type FencedCommand = { command: string[]; fence: 'system' | 'guard'; notice: string };
+
+/** The parts of a plan srt reads. Every path is absolute and real. */
+export type SrtPlan = Pick<DeskPlan, 'desk' | 'state' | 'readable' | 'hidden' | 'locked' | 'hosts'>;
+
+/** A path entry in srt's settings: a pattern when it reads as one, so a path with `*`, `?`, `[` or `{` is marked literal. */
+type PathEntry = string | { path: string; literal: true };
+
+/** srt's settings file, the fields yokoten sets. */
+export interface SrtSettings {
+  network: { allowedDomains: string[]; deniedDomains: string[]; strictAllowlist: true; allowLocalBinding: false };
+  filesystem: { denyRead: PathEntry[]; allowRead: PathEntry[]; allowWrite: PathEntry[]; denyWrite: PathEntry[]; allowGitConfig: false };
+}
+
+const entry = (path: string): PathEntry => (/[*?[\]{}]/.test(path) ? { path, literal: true } : path);
+const entries = (paths: string[]): PathEntry[] => [...new Set(paths)].map(entry);
+
+/**
+ * The plan as srt's settings. Reads: everything but the hidden folders, inside which only
+ * the desk, its state and the readable paths are shown again. Writes: only the desk and its
+ * state; the locked files and `.git/config` stay read-only. Network: only the plan's hosts,
+ * and no local port.
+ */
+export function srtSettings(plan: SrtPlan): SrtSettings {
+  return {
+    network: { allowedDomains: [...new Set(plan.hosts)], deniedDomains: [], strictAllowlist: true, allowLocalBinding: false },
+    filesystem: {
+      denyRead: entries(plan.hidden),
+      allowRead: entries([plan.desk, ...plan.state, ...plan.readable]),
+      allowWrite: entries([plan.desk, ...plan.state]),
+      denyWrite: entries(plan.locked),
+      allowGitConfig: false,
+    },
+  };
+}
+
+/**
+ * The plan with some hidden folders hidden child by child. srt 0.0.81 on Linux shows a
+ * readable folder inside a hidden one read-only, over any writable path inside it: a
+ * team's own outbox, inside the read-only team folder, could not be written. So a hidden
+ * folder that holds such a readable folder is hidden one level down, each child that is not
+ * on the way to a shown path. The cost: an entry made there after the desk starts is
+ * visible, read-only. A folder `list` can't read (null) stays hidden whole: fail closed.
+ */
+export function splitHidden(plan: SrtPlan, list: (folder: string) => string[] | null, platform: NodeJS.Platform): SrtPlan {
+  const writable = [plan.desk, ...plan.state];
+  const shown = [...writable, ...plan.readable];
+  const nests = plan.readable.filter((read) => writable.some((write) => write !== read && isInside(write, read, platform)));
+  if (!nests.length) return plan;
+  const hidden: string[] = [];
+  const hide = (folder: string) => {
+    const names = nests.some((read) => isInside(read, folder, platform)) ? list(folder) : null;
+    if (!names) return hidden.push(folder);
+    for (const name of names) {
+      const child = join(folder, name);
+      if (!shown.some((path) => isInside(child, path, platform))) hide(child);
+    }
+  };
+  for (const folder of plan.hidden) hide(folder);
+  return { ...plan, hidden: [...new Set(hidden)] };
+}
+
+/** The names in a folder, or null when it can't be read. */
+const listFolder = (folder: string): string[] | null => {
+  try {
+    return readdirSync(folder);
+  } catch {
+    return null;
+  }
+};
+
+/** Runs a program with no shell and gives its output, or null when it fails. A test passes a table. */
+export type RunProgram = (file: string, args: string[]) => string | null;
+
+const runWith = (env: Env): RunProgram => (file, args) => {
+  const ran = spawnSync(file, args, { env, encoding: 'utf8', timeout: 120_000, shell: false });
+  return ran.status === 0 ? ran.stdout : null;
+};
+
+/** The one-line refusal when srt can't start here. */
+export function srtRefusal(reason: string): string {
+  return `the sandbox (sandbox-runtime ${SRT_VERSION}) can't start here: ${reason}. Nothing was started.`;
+}
+
+/**
+ * The srt program to start: the one on PATH when it is the pinned version, else the pinned
+ * version through npx (kept in npm's own cache, never in the project). Else the reason, in one line.
+ */
+export function findSrt(env: Env, platform: NodeJS.Platform, run: RunProgram = runWith(env)): string | { problem: string } {
+  const isPinned = (file: string | null): file is string => file !== null && run(file, ['--version'])?.trim() === SRT_VERSION;
+  const onPath = findProgram('srt', env.PATH, platform, env);
+  if (isPinned(onPath)) return onPath;
+  const npxPath = run('npx', [...NPX_ARGS, 'node', '-e', 'process.stdout.write(process.env.PATH ?? "")']);
+  if (npxPath === null) return { problem: srtRefusal(`npx can't get ${SRT_PACKAGE}@${SRT_VERSION}; check the network, or run npm install -g ${SRT_PACKAGE}@${SRT_VERSION}`) };
+  const fetched = findProgram('srt', npxPath, platform, env);
+  return isPinned(fetched) ? fetched : { problem: srtRefusal(`npx gave no srt ${SRT_VERSION}`) };
+}
+
+/** Write the settings for `plan` into `folder`, read-only, and return the file. */
+function writeSettings(folder: string, name: string, plan: SrtPlan): string {
+  const file = join(folder, name);
+  writeFileSync(file, `${JSON.stringify(srtSettings(plan), null, 2)}\n`, { mode: 0o600 });
+  chmodSync(file, 0o400);
+  return file;
+}
+
+/**
+ * Null when `srt` starts a sandbox here; else the reason in one line. It runs `true` in a
+ * sandbox with no network and no writes.
+ */
+export function srtProblem(srt: string, env: Env, settingsFolder: string): string | null {
+  const settings = writeSettings(settingsFolder, 'srt-probe.json', { desk: settingsFolder, state: [], readable: [], hidden: [], locked: [], hosts: [] });
+  const tried = spawnSync(srt, ['--settings', settings, '--', 'true'], { env, encoding: 'utf8', timeout: 120_000, shell: false });
+  if (tried.error) return srtRefusal(`can't run ${srt} (${(tried.error as NodeJS.ErrnoException).code ?? tried.error.message})`);
+  if (tried.status === 0) return null;
+  const said = `${tried.stderr ?? ''}\n${tried.stdout ?? ''}`.split('\n').map((line) => line.trim()).find(Boolean);
+  return srtRefusal(said ?? `exit ${tried.status ?? tried.signal}`);
+}
+
+/** The one line the desk prints about the fence. */
+export function fenceNotice(hosts: string[]): string {
+  return `fence  sandbox-runtime ${SRT_VERSION} (Anthropic, Apache-2.0): writes only the desk; reaches ${hosts.join(', ') || 'no host'} only`;
+}
+
+const WINDOWS_NOTICE = 'fence  none on native Windows: only the guard holds the rules. Run yokoten in WSL, where the desk has a sandbox.';
+
+/** The plan with srt's own files readable: npx keeps them in the home folder, which is hidden. */
+const withSrtFiles = (plan: SrtPlan, srt: string): SrtPlan => ({ ...plan, readable: [...new Set([...plan.readable, ...programFolders(srt)])] });
+
+/**
+ * The command that starts `command` in `spec.root` inside the fence. On Linux and macOS it
+ * is srt, with a settings file in a new private temp folder; it throws, with one plain line,
+ * when srt can't start (fail closed). On native Windows it is the command as it is, under
+ * the guard alone, with a notice to use WSL: the desk there starts nothing. `env` is the
+ * Invocation's (#475): PATH finds srt, and YOKOTEN_FENCE is read.
+ */
+export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJS.Platform, env: Env): FencedCommand {
+  if (platform === 'win32') return { command, fence: 'guard', notice: WINDOWS_NOTICE };
+  if (env.YOKOTEN_FENCE === 'own') throw new Error('YOKOTEN_FENCE=own runs only through `yokoten desk <agent> <folder> -- <command>`. Unset it to use sandbox-runtime.');
+  const srt = findSrt(env, platform);
+  if (typeof srt !== 'string') throw new Error(srt.problem);
+  const folder = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-fence-')));
+  const problem = srtProblem(srt, env, folder);
+  if (problem) throw new Error(problem);
+  const program = findProgram(command[0] ?? '', env.PATH, platform, env);
+  const home = homeIn(env);
+  const plan: SrtPlan = {
+    desk: spec.root,
+    state: spec.writable,
+    // What a program needs to run: Node, the program's own folders, yokoten's runtime (the guard), and the user's git config.
+    readable: [dirname(dirname(process.execPath)), ...(program ? programFolders(program) : []), ...OWN_RUNTIME, join(home, '.gitconfig'), join(home, '.config', 'git')],
+    hidden: hiddenFolders(platform, home, spec.root),
+    locked: ['config', 'hooks', 'yokoten-worker'].map((part) => join(spec.root, '.git', part)),
+    hosts: spec.network,
+  };
+  const settings = writeSettings(folder, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform));
+  return { command: [srt, '--settings', settings, '--', ...command], fence: 'system', notice: fenceNotice(spec.network) };
+}
+
+/**
+ * The desk backend for start.ts. srt runs its own proxy, so the desk starts none
+ * (`proxyAddress` is null), and srt sets the proxy names in the agent's environment.
+ */
+export function srtBackend(srt: string, platform: NodeJS.Platform): DeskBackend {
+  return {
+    name: `sandbox-runtime ${SRT_VERSION} (Anthropic, Apache-2.0)`,
+    problem: () => null,
+    proxyAddress: () => null,
+    fence: (plan: DeskPlan, _: string | number, scratch: string) => ({
+      file: srt,
+      args: ['--settings', writeSettings(scratch, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform)), '--', ...plan.command],
+      env: plan.env,
+    }),
+  };
+}

@@ -13,18 +13,18 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { planDesk } from '../../../src/agents/desk/desk.ts';
+import { type DeskBackend, planDesk } from '../../../src/agents/desk/desk.ts';
 import { appendMessage } from '../../../src/agents/desk/team/outbox.ts';
 import { LEAD, prepareDeskTeam } from '../../../src/agents/desk/team/team.ts';
 import { chooseBackend, signalEnd, startDesk } from '../../../src/agents/desk/start.ts';
 import { markWorktree } from '../../../src/commands/hook.ts';
 import { CLI, makeTempDir } from '../../repo/helpers.ts';
 
-test('chooseBackend: native Windows is experimental and sent to WSL2, an unknown system is named', () => {
+test('chooseBackend: native Windows is sent to WSL, an unknown system or fence is named', () => {
   const windows = chooseBackend('win32', {}) as string;
-  assert.match(windows, /experimental/);
-  assert.match(windows, /WSL2/);
+  assert.match(windows, /does not run on native Windows\. Run yokoten in WSL/);
   assert.match(chooseBackend('aix', {}) as string, /not on aix/);
+  assert.match(chooseBackend('linux', { YOKOTEN_FENCE: 'none' }) as string, /YOKOTEN_FENCE is "none"; it can only be "own"/);
 });
 
 test('signalEnd: the real signal number, the signal named, and the sandbox hint when quiet', () => {
@@ -96,6 +96,8 @@ answer.markedGuard = muse.status;
 answer.markWrite = tryIt(() => { fs.writeFileSync('.git/yokoten-worker', ''); return 'ok'; });
 answer.mark = fs.existsSync('.git/yokoten-worker');
 const proxy = new URL(process.env.HTTPS_PROXY);
+// A proxy URL with a user and password wants them, as a real client sends them.
+const auth = proxy.username ? 'Proxy-Authorization: Basic ' + Buffer.from(decodeURIComponent(proxy.username) + ':' + decodeURIComponent(proxy.password)).toString('base64') + '\r\n' : '';
 const connectTo = (host, port, send) => new Promise((resolve) => {
   const socket = net.connect({ host, port }, () => socket.write(send));
   let text = '';
@@ -106,16 +108,14 @@ const connectTo = (host, port, send) => new Promise((resolve) => {
 });
 (async () => {
   answer.direct = await connectTo('127.0.0.1', Number(echoPort), 'hello');
-  answer.allowed = await connectTo(proxy.hostname, Number(proxy.port), 'CONNECT localhost:' + echoPort + ' HTTP/1.1\r\nHost: localhost\r\n\r\nhello');
-  answer.refused = await connectTo(proxy.hostname, Number(proxy.port), 'CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n\r\n');
+  answer.allowed = await connectTo(proxy.hostname, Number(proxy.port), 'CONNECT localhost:' + echoPort + ' HTTP/1.1\r\nHost: localhost\r\n' + auth + '\r\nhello');
+  answer.refused = await connectTo(proxy.hostname, Number(proxy.port), 'CONNECT example.com:443 HTTP/1.1\r\nHost: example.com\r\n' + auth + '\r\n');
   console.log(JSON.stringify(answer));
 })();
 `;
 
-const backend = chooseBackend(process.platform, process.env);
-
-test('the desk contract holds on this system', { skip: typeof backend === 'string' && backend }, async () => {
-  if (typeof backend === 'string') return;
+/** The contract, checked by what a probe inside the desk could and could not do. */
+async function holdsContract(backend: DeskBackend): Promise<void> {
   const projects = makeTempDir('projects-');
   const origin = join(projects, 'origin');
   mkdirSync(origin);
@@ -159,12 +159,14 @@ test('the desk contract holds on this system', { skip: typeof backend === 'strin
     const answer = JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}');
     assert.equal(answer.deskWrite, 'ok', 'a write in the desk works');
     assert.equal(answer.commit, 0, `git commit works in the desk: ${answer.commitError}`);
-    assert.match(answer.outsideWrite, /^failed/, 'a write next to the desk fails');
-    assert.match(answer.homeWrite, /^failed/, 'a write in the home folder fails');
+    // A hidden folder is read-only (bwrap, sandbox-exec) or a new empty folder in memory
+    // (sandbox-runtime on Linux). Either way a write there, next to the desk or in the home
+    // folder, never reaches the disk.
     assert.ok(!existsSync(outsideFile) && !existsSync(join(process.env.HOME ?? '', 'outside.txt')), 'nothing was written outside');
-    assert.match(answer.otherList, /^failed/, 'another project is not listed');
+    // Not listed: an error, or an empty folder in its place (sandbox-runtime on Linux).
+    assert.match(answer.otherList, /^(failed|$)/, 'another project is not listed');
     assert.match(answer.otherRead, /^failed/, "another project's file is not read");
-    assert.match(answer.leadProjects, /^failed/, "the lead's projects are not listed");
+    assert.match(answer.leadProjects, /^(failed|$)/, "the lead's projects are not listed");
     assert.match(answer.leadHistory, /^failed/, "the lead's history is not read");
     assert.match(answer.leadSettingsRead, /^failed/, "the lead's settings are not read");
     assert.match(answer.leadSettingsWrite, /^failed/, "the lead's settings are not written");
@@ -200,4 +202,13 @@ test('the desk contract holds on this system', { skip: typeof backend === 'strin
   } finally {
     echo.close();
   }
-});
+}
+
+// The contract runs against each fence this system can start; a fence that can't is skipped with its reason.
+const withoutFence = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'YOKOTEN_FENCE'));
+for (const [name, env] of [['sandbox-runtime', withoutFence], ['the old fence, YOKOTEN_FENCE=own', { ...withoutFence, YOKOTEN_FENCE: 'own' }]] as const) {
+  const backend = chooseBackend(process.platform, env);
+  test(`the desk contract holds on this system: ${name}`, { skip: typeof backend === 'string' && backend }, async () => {
+    if (typeof backend !== 'string') await holdsContract(backend);
+  });
+}

@@ -996,6 +996,7 @@ export async function runDesk(invocation: Invocation): Promise<number> {
     ...field('writes', `${shown} only`),
     // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
     ...field('network', plan.hosts.join(', ') || 'none'),
+    ...field('fence', backend.name),
     ...field('role', 'worker, TZ=UTC, no tokens'),
     '',
     'Starting… (stop with Ctrl+C)',
