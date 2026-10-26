@@ -463,13 +463,13 @@ const WORKFLOWS = ['.github/workflows/yokoten.yml', 'kit/project/.github/workflo
 const jobBlock = (text: string, name: string) => jobs(text).find((job) => job.name === name)?.block ?? '';
 const changesScript = (text: string) => (jobBlock(text, 'changes').match(/^ {8}run: \|\n((?: {10}.*\n|\n)+)/m)?.[1] ?? '').replace(/^ {10}/gm, '');
 type Needs = Record<string, { result: string; outputs?: Record<string, string> }>;
-const evaluate = (expression: string, needs: Needs, github: { event_name: string; event?: object; workflow?: string; ref?: string; run_id?: number } = { event_name: '' }): unknown => {
+const evaluate = (expression: string, needs: Needs, github: { event_name: string; event?: object; workflow?: string; ref?: string; run_id?: number } = { event_name: '' }, matrix?: object): unknown => {
   const code = expression
     .replace(/contains\(needs\.\*\.result, '(\w+)'\)/g, "contains('$1')")
     .replace(/needs\.([\w-]+)\.outputs\.([\w-]+)/g, "(needs['$1'].outputs?.['$2'] ?? '')")
     .replace(/needs\.([\w-]+)\.result/g, "needs['$1'].result");
   const contains = (value: string) => Object.values(needs).some((job) => job.result === value);
-  return new Function('needs', 'contains', 'fromJSON', 'cancelled', 'github', `return (${code});`)(needs, contains, JSON.parse, () => false, github);
+  return new Function('needs', 'contains', 'fromJSON', 'cancelled', 'github', 'matrix', `return (${code});`)(needs, contains, JSON.parse, () => false, github, matrix);
 };
 const inBraces = (block: string, pattern: RegExp) => {
   const found = block.match(pattern)?.[1];
@@ -567,32 +567,46 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
       assert.ok(runs.every((entry) => entry.of === runs[0].of), `${setup}: mixed shard counts`);
       assert.deepEqual(runs.map((entry) => entry.shard), shards.slice(0, runs[0].of), `${setup} runs every shard`);
     }
+    // Each setup's suite-time budget, as the time step reads it from the matrix: `` is 180 s.
+    const entries = [...nodes.flatMap((node) => shards.map((shard) => ({ os: 'ubuntu-latest', node, shard, of: ofAxis[0] }))), ...extra];
+    const budgets = Object.fromEntries(entries.map((entry) => [`${entry.os} ${entry.node} ${entry.of === 1 ? 'whole' : 'shard'}`, evaluate(budgetExpression, needs, github, entry)]));
     return {
       setups: [...new Set([...nodes.map((node) => `ubuntu-latest ${node}`), ...extra.map((entry) => `${entry.os} ${entry.node}`)])],
       whole: extra.filter((entry) => entry.of === 1).map((entry) => `${entry.os} ${entry.node} ${entry.shard}/${entry.of}`),
+      budgets,
     };
   };
+  const budgetExpression = inBraces(testJob, /^ {8}run: node scripts\/time\/suite\.ts \$\{\{ runner\.temp \}\}\/tests\.tap \$\{\{ (.+) \}\}$/m);
   // The shard numbers reach the shell through env, not inside the script (zizmor template-injection).
   assert.match(testJob, /--test-shard="\$SHARD\/\$OF"/, 'the run step uses the shard');
   assert.match(testJob, /SHARD: \$\{\{ matrix\.shard \}\}\n\s+OF: \$\{\{ matrix\.of \}\}/, 'the shard numbers come from the matrix');
   assert.match(text, /^  schedule:\n    - cron: '[^']+'$/m, 'the full matrix runs on a schedule (#568)');
   assert.match(jobBlock(text, 'ci'), /never started/, '`ci` names jobs that never got a runner (#568)');
   assert.deepEqual(matrix('true', 'pull_request').setups, ['ubuntu-latest ^24.22.1']);
+  // Each test runs once before a merge (#1084). A pull request runs Linux on Node 22 and
+  // the whole suite in one macOS job (#568); its merge queue group runs Linux on Node 24.
+  // A push to main and the schedule run the full matrix. A docs-only run, the docs tests.
   const full = ['ubuntu-latest 22.23.4', 'ubuntu-latest ^24.22.1', 'macos-latest ^24.22.1'];
+  const pullRequestSetups = ['ubuntu-latest 22.23.4', 'macos-latest ^24.22.1'];
   const pr = matrix('false', 'pull_request');
-  assert.deepEqual(pr.setups, full);
+  assert.deepEqual(pr.setups, pullRequestSetups, 'a pull request runs no Linux Node 24 shards: the queue runs them');
   assert.deepEqual(pr.whole, ['macos-latest ^24.22.1 1/1'], 'a pull request runs the whole suite in one macOS job (#568)');
-  // A merge queue group runs one Node on Linux: the pull request ran the full matrix, and
-  // a push to main runs it again after the merge (#1068). A docs-only group runs the docs tests.
-  assert.deepEqual(matrix('false', 'merge_group'), { setups: ['ubuntu-latest ^24.22.1'], whole: [] });
+  assert.deepEqual(matrix('', 'pull_request').setups, pullRequestSetups, '`changes` failed: the pull request\'s full run');
+  const queue = matrix('false', 'merge_group');
+  assert.deepEqual([queue.setups, queue.whole], [['ubuntu-latest ^24.22.1'], []], 'a queue group runs Linux Node 24 only, all shards');
   assert.deepEqual(matrix('true', 'merge_group').setups, ['ubuntu-latest ^24.22.1']);
   assert.deepEqual(matrix('', 'merge_group').setups, ['ubuntu-latest ^24.22.1'], '`changes` failed: one Node still, all shards');
+  // No setup runs both before the merge: what the pull request runs, the queue does not.
+  assert.deepEqual(pr.setups.filter((setup) => queue.setups.includes(setup)), []);
   for (const event of ['push', 'schedule']) {
     const run = matrix('false', event);
     assert.deepEqual(run.setups, full);
     assert.deepEqual(run.whole, [], `${event}: the full macOS matrix (#568)`);
+    // Every setup that runs keeps its own budget (#475): 90 s for Linux Node 24, the fastest.
+    assert.deepEqual(run.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90', 'macos-latest ^24.22.1 shard': '' });
   }
-  assert.deepEqual(matrix('', 'pull_request').setups, full, '`changes` failed: the full run');
+  assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 whole': '--budget 400' });
+  assert.deepEqual(queue.budgets, { 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
   for (const name of ['typecheck', 'action', 'windows', 'lint']) {
     const condition = jobCondition(jobBlock(text, name));
@@ -619,6 +633,43 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.equal(isRed('true', { ...docsRun, test: 'cancelled' }), true);
   assert.equal(isRed('false', { ...green, windows: 'failure' }), true, 'a Windows failure is red (record 0040)');
   assert.equal(isRed('', green), true, '`changes` failed: red, though the rest ran in full');
+});
+
+// The per-event table (#1084): a merge queue group leaves out Windows, and `ci` counts
+// that one skip as passed. Any other skip in a group is red: the jobs are read from
+// `ci`'s needs, so a new job that the rule forgets fails here.
+test('ci: a merge queue group skips Windows and nothing else; `ci` stays fail closed (#1084)', () => {
+  const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
+  const runs = (name: string, docsOnly: string, event: string) => evaluate(jobCondition(jobBlock(text, name)), results(docsOnly, {}), { event_name: event });
+  for (const docsOnly of ['false', '']) {
+    assert.equal(runs('windows', docsOnly, 'merge_group'), false, 'Windows is left out of a queue group');
+    for (const event of ['pull_request', 'push', 'schedule']) assert.equal(runs('windows', docsOnly, event), true, `Windows runs on ${event}`);
+    for (const name of ['test', 'typecheck', 'lint', 'action']) assert.equal(runs(name, docsOnly, 'merge_group'), true, `${name} runs in a queue group`);
+  }
+  assert.doesNotMatch(jobBlock(text, 'check'), /^ {4}if:/m, 'check runs on every event');
+  const isRed = (docsOnly: string, jobResults: Record<string, string>, event: string) => evaluate(ciRule(text), results(docsOnly, jobResults), { event_name: event });
+  const needs = inBraces(jobBlock(text, 'ci'), /^ {4}needs: \[(.*)\]$/m).split(',').map((name) => name.trim());
+  assert.ok(needs.includes('windows') && needs.length > 5, 'the read of `ci` needs is broken');
+  const green = Object.fromEntries(needs.filter((name) => name !== 'changes').map((name) => [name, 'success']));
+  const queueRun = { ...green, windows: 'skipped' };
+  assert.equal(isRed('false', queueRun, 'merge_group'), false, 'a queue group without Windows is green');
+  assert.equal(isRed('false', green, 'merge_group'), false);
+  assert.equal(isRed('false', green, 'pull_request'), false, 'a pull request with no Linux Node 24 shards is green');
+  // Positive controls: a queue group that skips or fails a job it needs is red.
+  for (const name of Object.keys(green).filter((job) => job !== 'windows')) {
+    assert.equal(isRed('false', { ...queueRun, [name]: 'skipped' }, 'merge_group'), true, `a queue group that skips ${name} is red`);
+    assert.equal(isRed('', { ...queueRun, [name]: 'skipped' }, 'merge_group'), true, `\`changes\` failed and ${name} skipped: red`);
+    assert.equal(isRed('false', { ...queueRun, [name]: 'failure' }, 'merge_group'), true);
+  }
+  assert.equal(isRed('false', { ...green, windows: 'failure' }, 'merge_group'), true, 'a Windows run that fails is red, even in a group');
+  assert.equal(isRed('false', { ...green, windows: 'cancelled' }, 'merge_group'), true);
+  // The skip counts only in a queue group.
+  for (const event of ['pull_request', 'push', 'schedule']) assert.equal(isRed('false', queueRun, event), true, `Windows skipped on ${event} is red`);
+  // A docs-only group skips what a docs-only pull request skips.
+  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
+  assert.equal(isRed('true', docsRun, 'merge_group'), false);
+  assert.equal(isRed('true', { ...docsRun, test: 'skipped' }, 'merge_group'), true);
+  assert.equal(isRed('false', docsRun, 'merge_group'), true, 'a full group that skips typecheck, lint and action is red');
 });
 
 test('ci: the kit lets a project skip its own jobs on a docs-only pull request; check and lint always run (#438)', () => {
