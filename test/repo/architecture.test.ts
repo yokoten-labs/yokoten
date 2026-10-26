@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { COMMANDS } from '../../src/run/cli.ts';
 import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } from '../../src/run/notes/names.ts';
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
-import { noteWork } from '../../src/rules/message.ts';
+import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
 import { CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
@@ -71,7 +71,7 @@ const NO_TEST_FILE = [
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
   'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users, and test/commands/kanban/ (readProgram, startAndLetGo)
-  'platform/screen.ts', // the same cap; its tests are in test/repo/docs/screens.test.ts, with the screen test of record 0049 (#1099)
+  'rules/text/screen.ts', // its tests are in test/repo/docs/screens.test.ts, with the screen test of record 0049 (#1099)
 ];
 
 const filesUnder = (folder: string) =>
@@ -1570,7 +1570,7 @@ const KANBAN_PORTS = [
   'commands/more/check.ts',
   'commands/shared.ts',
   'host/github/index.ts',
-  'rules/message.ts',
+  'rules/text/message.ts',
   'rules/privacy.ts',
   'run/hook.ts',
   'run/learn.ts',

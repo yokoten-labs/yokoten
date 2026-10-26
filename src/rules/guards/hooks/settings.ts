@@ -1,6 +1,6 @@
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 import { isPathInside } from '../../../platform/paths.ts';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { globMatches, braceForms, base, placedPath, isGit, ASSIGNERS, isAssignment, withoutShellRedirects, realPath, KEYWORDS, LAUNCHERS, programName, findPrograms, findProgramPlaces, REDIRECT, REDIRECT_OPERATOR, redirectLength } from '../bash/read/words.ts';

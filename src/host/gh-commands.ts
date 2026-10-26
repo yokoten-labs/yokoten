@@ -2,7 +2,7 @@
 // Only src/host/ names a host's API (record 0004). The guard calls the functions below
 // in host-neutral words. This file registers them when it loads.
 
-import { type Finding, finding } from '../rules/message.ts';
+import { type Finding, finding } from '../rules/text/message.ts';
 import { findProgramPlaces, plainArgs, useHostCommands, withoutShellRedirects } from '../rules/guards/index.ts';
 import { ghIndex, type HostApiCall, optionValue, useHostApi } from '../rules/privacy.ts';
 

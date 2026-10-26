@@ -8,7 +8,7 @@
 
 import type { Config } from './config.ts';
 import { matcher } from './config.ts';
-import { type Finding, finding } from './message.ts';
+import { type Finding, finding } from './text/message.ts';
 
 /** A pull request, as any code host can describe it. */
 export interface PullRequest {

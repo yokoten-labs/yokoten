@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type Config, type Env } from '../../rules/config.ts';
-import { type Finding, finding, type RuleId } from '../../rules/message.ts';
+import { type Finding, finding, type RuleId } from '../../rules/text/message.ts';
 import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';

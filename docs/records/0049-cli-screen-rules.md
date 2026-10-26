@@ -31,10 +31,12 @@ a release.
      when `TERM=dumb`.
    - **State.** When a command changes something, it says what changed, and the next
      command to type.
-2. **One layout, `src/platform/screen.ts`.** A screen is a title line, short sections under
-   headings, rows, and a `Next:` line, wrapped once at 80 columns. It is pure and in the
-   lowest layer, so `src/rules/` (the guard's refusals) can use it too. `shared.ts`
-   re-exports its names; there is no second copy.
+2. **One layout, `src/rules/text/screen.ts`.** A screen is a title line, short sections under
+   headings, rows, and a `Next:` line, wrapped once at 80 columns. It is pure. It lives in
+   `src/rules/text/` with `message.ts` (refusals, findings, notes): how yokoten's text
+   reads is a rule, and the guard's refusals in `src/rules/` use it. `src/platform/` keeps
+   only the system and its paths (owner, 2026-10-26). `shared.ts` re-exports its names;
+   there is no second copy.
 3. **A help page is data.** `HelpSpec` holds the usage, a summary of at most two lines,
    examples, options, and sections of rows. `commandHelp` builds every page from the
    `COMMANDS` table: every entry has a `help` field, and there is no other way to write a

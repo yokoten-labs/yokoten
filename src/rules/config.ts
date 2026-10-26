@@ -2,7 +2,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Finding, finding } from './message.ts';
+import { type Finding, finding } from './text/message.ts';
 
 export interface Config {
   /** The code host, when the origin remote's address does not name it: `auto`, or `gitea` for a self-hosted Gitea (#505). */

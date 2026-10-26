@@ -18,7 +18,7 @@ import {
 import { invoke } from '../repo/invoke.ts';
 import { canColour, isColourTerminal, paint, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
-import { finding, formatRefusal } from '../../src/rules/message.ts';
+import { finding, formatRefusal } from '../../src/rules/text/message.ts';
 
 // #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
 // dropped the backslashes, and the home mask looked only for the written path.

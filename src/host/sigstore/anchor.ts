@@ -6,7 +6,7 @@
 // after it was anchored can no longer be found, so the message names that day. Today is
 // left out: the day is still growing, and it is anchored the next day.
 
-import { finding, type Finding } from '../../rules/message.ts';
+import { finding, type Finding } from '../../rules/text/message.ts';
 import { dailyHashes, type DailyHash, type EventLog } from './record.ts';
 import type { RekorFind } from './rekor.ts';
 

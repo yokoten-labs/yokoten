@@ -2,8 +2,8 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
-import { type Finding, finding, findingRow, formatFinding, formatNote, sentence } from '../../rules/message.ts';
-import { wrap } from '../../platform/screen.ts';
+import { type Finding, finding, findingRow, formatFinding, formatNote, sentence } from '../../rules/text/message.ts';
+import { wrap } from '../../rules/text/screen.ts';
 import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';

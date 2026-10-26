@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Env } from '../../rules/config.ts';
-import { type Finding } from '../../rules/message.ts';
+import { type Finding } from '../../rules/text/message.ts';
 import { type LessonPlace, listLessons, runLessons } from '../../run/learn.ts';
 import { HOME_DIR, KIT } from '../files.ts';
 import { withGitReads } from '../init.ts';

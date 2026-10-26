@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { checkDamage } from '../../../../src/rules/guards/commands/no-wipe.ts';
 import { climbsPastDrive, fromGitBash, gitBashDrive, isHostPaths, pathsFor } from '../../../../src/platform/paths.ts';
-import { formatRefusal } from '../../../../src/rules/message.ts';
+import { formatRefusal } from '../../../../src/rules/text/message.ts';
 import { TEST_HOME } from '../../../repo/home.ts';
 import { allowed, blocked, refusedAs } from '../../../../test/repo/helpers.ts';
 

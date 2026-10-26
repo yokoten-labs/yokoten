@@ -11,7 +11,7 @@
 // or refuses it, and a refusal names no agent.
 
 import { posix, win32 } from 'node:path';
-import { type Finding, formatFinding, formatRefusal, refusalParts } from '../rules/message.ts';
+import { type Finding, formatFinding, formatRefusal, refusalParts } from '../rules/text/message.ts';
 import type { Action } from './hook.ts';
 
 /** The protocol's name, without its version. */

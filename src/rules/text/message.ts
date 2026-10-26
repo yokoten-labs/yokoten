@@ -6,7 +6,7 @@
 // field never holds a private value (core rule 11): a hit is named by its place and its
 // kind, never by what matched.
 
-import { wrap } from '../platform/screen.ts';
+import { wrap } from './screen.ts';
 
 /** How sure a secret or privacy finding is: only `sure` fails; the others warn. */
 export type FindingGrade = 'sure' | 'likely' | 'unknown';

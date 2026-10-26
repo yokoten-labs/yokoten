@@ -1,6 +1,6 @@
-// Tests for src/rules/message.ts.
+// Tests for src/rules/text/message.ts.
 
-import '../repo/home.ts';
+import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
@@ -16,21 +16,21 @@ import {
   makeTranslatedRepo,
   NAMED,
   makeTempDir,
-} from '../repo/helpers.ts';
+} from '../../repo/helpers.ts';
 import {
   DEFAULTS,
   findUnknownKeys,
-} from '../../src/rules/config.ts';
+} from '../../../src/rules/config.ts';
 import {
   checkCommand,
   checkEdit,
   privateOutput,
-} from '../../src/rules/guards/index.ts';
+} from '../../../src/rules/guards/index.ts';
 import {
   checkBuildOutput,
   checkCodeOwners,
   checkLayout,
-} from '../../src/rules/layout.ts';
+} from '../../../src/rules/layout.ts';
 import {
   DOCS_URL,
   finding,
@@ -44,7 +44,7 @@ import {
   parseRefusal,
   type Rule,
   RULES,
-} from '../../src/rules/message.ts';
+} from '../../../src/rules/text/message.ts';
 import {
   checkApprovalFreshness,
   provenanceFindings,
@@ -54,14 +54,14 @@ import {
   checkPullRequest,
   largeDiff,
   longSentenceNote,
-} from '../../src/rules/pr.ts';
+} from '../../../src/rules/pr.ts';
 import {
   addedIgnores,
   POSITIVE_CONTROL,
   scanText,
-} from '../../src/rules/privacy.ts';
-import { SECRET_CONTROL } from '../../src/rules/privacy/secrets.ts';
-import { parseChange } from '../../src/run/changelog.ts';
+} from '../../../src/rules/privacy.ts';
+import { SECRET_CONTROL } from '../../../src/rules/privacy/secrets.ts';
+import { parseChange } from '../../../src/run/changelog.ts';
 import {
   BORROWED_DIR,
   borrowedProblems,
@@ -71,31 +71,31 @@ import {
   gitReadFinding,
   readGit,
   timeZoneNote,
-} from '../../src/run/check.ts';
-import { lateFinding, repeatStopFinding } from '../../src/run/hook.ts';
+} from '../../../src/run/check.ts';
+import { lateFinding, repeatStopFinding } from '../../../src/run/hook.ts';
 import {
   lintCallResult,
   lintServerEntry,
   lintStdout,
   lintTools,
-} from '../../src/commands/more/advice/mcp.ts';
-import { nameNotes } from '../../src/run/notes/names.ts';
-import { translationNotes } from '../../src/run/notes/translations.ts';
-import { readCurrentPullRequest } from '../../src/host/current-pr.ts';
+} from '../../../src/commands/more/advice/mcp.ts';
+import { nameNotes } from '../../../src/run/notes/names.ts';
+import { translationNotes } from '../../../src/run/notes/translations.ts';
+import { readCurrentPullRequest } from '../../../src/host/current-pr.ts';
 import {
   readIssue,
   readNumberedPullRequest,
   readPullRequest,
-} from '../../src/host/github/index.ts';
+} from '../../../src/host/github/index.ts';
 import {
   explain,
   explainLines,
   ids,
-} from '../../src/setup/advice/explain.ts';
+} from '../../../src/setup/advice/explain.ts';
 import {
   UNSAVED_CONTROL,
   unsavedNotes,
-} from '../../src/setup/advice/unsaved.ts';
+} from '../../../src/setup/advice/unsaved.ts';
 import {
   agentHooks,
   agentTempDirCheck,
@@ -110,15 +110,15 @@ import {
   privacyNotes,
   upstreamNote,
   userAgentHooks,
-} from '../../src/setup/doctor/index.ts';
-import { editedKitCheck, openCodePluginNote } from '../../src/setup/doctor/checks.ts';
-import { KIT, sealManaged } from '../../src/setup/files.ts';
-import { workflowNotes } from '../../src/setup/init.ts';
+} from '../../../src/setup/doctor/index.ts';
+import { editedKitCheck, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
+import { KIT, sealManaged } from '../../../src/setup/files.ts';
+import { workflowNotes } from '../../../src/setup/init.ts';
 import {
   ROAD,
   serverChecks,
   stepFinding,
-} from '../../src/setup/road.ts';
+} from '../../../src/setup/road.ts';
 
 // #94: a finding links to where its rule is explained. The anchors are made as GitHub
 // makes them: lower case, punctuation dropped, spaces to `-`, and `-1`, `-2` for a repeat.
@@ -360,7 +360,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
 });
 
 test('docs: every link goes to a heading of docs/guide.md, so a renamed heading fails (#94)', () => {
-  const anchors = guideAnchors(readFileSync(new URL('../../docs/guide.md', import.meta.url), 'utf8'));
+  const anchors = guideAnchors(readFileSync(new URL('../../../docs/guide.md', import.meta.url), 'utf8'));
   assert.ok(anchors.has('naming') && anchors.has('what-it-doesnt-do'), 'GitHub drops punctuation');
   assert.ok(!anchors.has('githubworkflowsyokotenyml'), 'a `#` line in a code block is not a heading');
   const linked = Object.entries(RULES as Record<string, Rule>).filter(([, rule]) => rule.docs !== undefined);

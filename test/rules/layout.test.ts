@@ -11,7 +11,7 @@ import {
   codeOwnersPatternMatches,
   isBuildOutput,
 } from '../../src/rules/layout.ts';
-import { type Finding, formatFinding } from '../../src/rules/message.ts';
+import { type Finding, formatFinding } from '../../src/rules/text/message.ts';
 
 test('layout: a folder over the cap is reported once, the root never', () => {
   const eight = Array.from({ length: 8 }, (_, i) => `docs/f${i}.md`);

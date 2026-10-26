@@ -24,7 +24,7 @@ import { cores, freeMemory, isLight, NICE_LEVEL, OFF_SWITCH, onPath, testCommand
 import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/current-pr.ts';
 import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
-import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/message.ts';
+import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/text/message.ts';
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
 import { parseChange } from '../../run/changelog.ts';

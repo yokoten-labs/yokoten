@@ -1,7 +1,7 @@
 import { accessSync, closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, statSync, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { isPathInside, isSamePath } from '../../../platform/paths.ts';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { configFolder, configFinding, namesConfigFolder, withHomeRead, configForms, configTargetRefusal, type ConfigContext } from './config.ts';

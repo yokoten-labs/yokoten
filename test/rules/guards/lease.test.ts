@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { makeSandbox } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type LeaseMap, leaseFor } from '../../../src/rules/guards/lease.ts';
-import { formatRefusal } from '../../../src/rules/message.ts';
+import { formatRefusal } from '../../../src/rules/text/message.ts';
 import { judge } from '../../../src/run/hook.ts';
 
 /** A map with one open change moving src/app.ts, and a draft that leases nothing. */

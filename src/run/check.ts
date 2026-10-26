@@ -10,7 +10,7 @@ import type { Config, Env } from '../rules/config.ts';
 import { findUnknownKeys, matcher } from '../rules/config.ts';
 import { checkEdit, withWorkerMark } from '../rules/guards/index.ts';
 import { checkBuildOutput, checkCodeOwners, checkLayout, CODEOWNERS_PLACES, codeOwnersPath } from '../rules/layout.ts';
-import { type Finding, finding, isFailingFinding } from '../rules/message.ts';
+import { type Finding, finding, isFailingFinding } from '../rules/text/message.ts';
 import { isChangeFile, longSentenceNote, longSentences } from '../rules/pr.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneFix } from '../rules/privacy.ts';
 import { parseChange, readChanges } from './changelog.ts';

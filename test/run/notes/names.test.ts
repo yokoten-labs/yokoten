@@ -7,7 +7,7 @@ import { NAMED } from '../../repo/helpers.ts';
 import {
   DOCS_URL,
   formatFinding,
-} from '../../../src/rules/message.ts';
+} from '../../../src/rules/text/message.ts';
 import { addedLinesByFile } from '../../../src/rules/pr.ts';
 import {
   isCodeFile,

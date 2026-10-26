@@ -1,4 +1,4 @@
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { isAssignment, programName } from '../bash/read/words.ts';
 import { commandWords } from '../bash/read/read.ts';
 

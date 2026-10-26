@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../src/rules/guards/commands/check.ts';
-import { formatRefusal } from '../../../src/rules/message.ts';
+import { formatRefusal } from '../../../src/rules/text/message.ts';
 import { ROOT } from '../helpers.ts';
 
 const FILES = ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md'];

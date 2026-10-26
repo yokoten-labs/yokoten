@@ -35,7 +35,7 @@ const MAPPING: [string, string[]][] = [
   ['rules/config.test.ts', ['rules:glob', 'rules:config']],
   ['rules/guards.test.ts', ['guards:*', 'bot:the bot is not a way around the guard', 'cli:the vendored .yokoten/ runtime is lead-only']],
   ['rules/layout.test.ts', ['rules:layout', 'rules:build output']],
-  ['rules/message.test.ts', ['rules:messages', 'rules:docs']],
+  ['rules/text/message.test.ts', ['rules:messages', 'rules:docs']],
   ['rules/pr.test.ts', ['rules:pull request', 'rules:pull request title', 'rules:CODEOWNERS', 'rules:issue title', 'rules:titles', 'rules:large pull request', 'rules:plain English']],
   ['rules/privacy.test.ts', ['privacy:positive control', 'privacy:emails', 'privacy:IPs', 'privacy:web strings', 'privacy:private marks', 'privacy:private marks file', 'privacy:commit times', 'privacy:output']],
   ['rules/privacy/secrets.test.ts', ['privacy:secrets']],

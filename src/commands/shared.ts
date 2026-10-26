@@ -4,9 +4,9 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { row, wrap } from '../platform/screen.ts';
+import { row, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
-import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/message.ts';
+import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
 import { gitRoot } from '../run/check.ts';
 import { closestWord, findCommand, HELP_OPTIONS } from '../run/cli.ts';
@@ -311,11 +311,11 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 }
 
 // One screen per command (issue #1027, the CLI design the owner approved 2026-10-25): a title line,
-// groups of rows, and the command to type last. The layout itself is src/platform/screen.ts
+// groups of rows, and the command to type last. The layout itself is src/rules/text/screen.ts
 // (record 0049, issue #1099): every screen, the guard's refusals in src/rules/ too, builds on it,
 // so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
-export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, title, wrap } from '../platform/screen.ts';
+export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, title, wrap } from '../rules/text/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
 function textColumn(where: string | undefined): number {

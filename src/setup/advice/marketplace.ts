@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { type Finding, finding } from '../../rules/message.ts';
+import { type Finding, finding } from '../../rules/text/message.ts';
 import { homeOf } from '../../rules/privacy.ts';
 import { type PluginChannel, readPluginChannel, userDir } from '../../agents/runtimes/claude-code.ts';
 

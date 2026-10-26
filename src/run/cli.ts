@@ -6,8 +6,8 @@
 // The flags are read one word at a time, so a long line takes linear time and never throws
 // (#431): a regex that repeats a group over the whole line ran out of stack.
 
-import { helpScreen, type HelpExample, type HelpSection, type HelpSpec } from '../platform/screen.ts';
-import { docsLink } from '../rules/message.ts';
+import { helpScreen, type HelpExample, type HelpSection, type HelpSpec } from '../rules/text/screen.ts';
+import { docsLink } from '../rules/text/message.ts';
 
 const RUNNER_HEAD = /^[ \t]*(?:npx|bunx|pnpm[ \t]+dlx|npm[ \t]+exec)/gm;
 const RUNNER_FLAG = /[ \t]+-\S+/y;
