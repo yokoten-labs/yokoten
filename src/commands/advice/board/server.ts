@@ -12,12 +12,13 @@
 
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { realpathSync } from 'node:fs';
+import { chmodSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { ghIn, ghLaterIn, type GhLater, readBoardPullsLater, repoOf } from '../../../host/github/index.ts';
 import { type Env, loadConfig } from '../../../rules/config.ts';
 import { hideHome } from '../../../rules/privacy.ts';
+import { homeOf } from '../../../rules/privacy/home.ts';
 import { readOriginUrl } from '../../../setup/plan.ts';
 import { type Invocation, parse, print, requireRoot, usage } from '../../shared.ts';
 import { BOARD_READ_TIMEOUT_MS, readBoardWorktrees } from './agents.ts';
@@ -230,6 +231,10 @@ export interface BoardServerOptions {
   github?: BoardGitHub;
   /** The mask for /feed. Tests pass their own; the board builds it from the private marks. */
   feedMask?: (text: string) => string;
+  /** Opens the link with its token. Tests pass their own; the board starts the system's browser. */
+  openBrowser?: (url: string) => void;
+  /** Called with the running server once the link is saved. Tests use it to close the board. */
+  started?: (server: Server) => void;
 }
 
 /**
@@ -439,16 +444,48 @@ export function browserCommand(url: string, platform: NodeJS.Platform, env: Env)
   return null;
 }
 
-/** Open the link in the browser, and never wait or fail: the printed link is the way back. */
-function openInBrowser(url: string, env: Env): void {
-  const command = browserCommand(url, process.platform, env);
+/**
+ * Where the board keeps its link with the token (#1045): one file per repo in yokoten's own
+ * folder, ~/.config/yokoten/board/. Never a user's config file. Null with no home folder.
+ */
+export function boardLinkFile(root: string, env: Env): string | null {
+  const home = homeOf(env);
+  return home ? join(home, '.config', 'yokoten', 'board', `${boardHostName(root)}-${boardPort(root)}.url`) : null;
+}
+
+/**
+ * Save the link with its token to boardLinkFile, readable by the owner only (0600), and
+ * return the file, or null when it cannot be saved. The token never goes to the screen or a
+ * log (#1045). A new file is written and renamed over the old one, so a link planted at
+ * the path is replaced, never followed. On Windows the mode bits do not apply (Node only
+ * sets read-only there): the file lives in the user's own profile, so the chmod is skipped.
+ */
+export function saveBoardLink(root: string, url: string, env: Env, platform: NodeJS.Platform): string | null {
+  const file = boardLinkFile(root, env);
+  if (!file) return null;
+  const temporary = `${file}.${process.pid}.${randomBytes(4).toString('hex')}`;
+  try {
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    writeFileSync(temporary, `${url}\n`, { mode: 0o600, flag: 'wx' });
+    if (platform !== 'win32') chmodSync(temporary, 0o600);
+    renameSync(temporary, file);
+    return file;
+  } catch {
+    rmSync(temporary, { force: true });
+    return null;
+  }
+}
+
+/** Open the link in the browser, and never wait or fail: the saved link is the way back. */
+function openInBrowser(url: string, platform: NodeJS.Platform, env: Env): void {
+  const command = browserCommand(url, platform, env);
   if (!command) return;
   try {
     const child = spawn(command[0], command.slice(1), { detached: true, stdio: 'ignore', env });
     child.on('error', () => {});
     child.unref();
   } catch {
-    // No browser to open: the link is printed.
+    // No browser to open: the link is in its file.
   }
 }
 
@@ -484,11 +521,19 @@ export function runBoard(invocation: Invocation, options: BoardServerOptions = {
     print(invocation, parsed.flags.has('--all') ? renderBoardText(board, extra) : renderBoardScreen(board, extra, livePage));
     return 0;
   }
-  return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), { controls }).then(
-    ({ url }) => {
+  return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), { ...options, controls }).then(
+    ({ server, url }) => {
       const isOpening = !parsed.flags.has('--no-open');
-      print(invocation, [`yokoten board: preview. It may change, and team commands come in v0.1.2 (#823).`, `The team is live at ${url}`, `${isOpening ? 'It opens in your browser now. ' : ''}The page refreshes every ${BOARD_REFRESH_SECONDS} seconds. Stop it with Ctrl-C.`]);
-      if (isOpening) openInBrowser(url, invocation.env);
+      // The screen shows the address without the token (#1045); the full link is in a 0600 file.
+      const plain = new URL(url);
+      plain.search = '';
+      // The one read of the platform here: the link file and the browser opener take it as an argument.
+      const platform = process.platform;
+      const file = saveBoardLink(root, url, invocation.env, platform);
+      const where = file ? `The link to open it, with its key, is in ${hideHome(file, invocation.env)} (private: don't share it).` : 'The link with its key could not be saved: set HOME and run it again.';
+      print(invocation, [`yokoten board: preview. It may change, and team commands come in v0.1.2 (#823).`, `The team is live at ${plain.href}`, `${isOpening ? 'It opens in your browser now. ' : ''}${where}`, `The page refreshes every ${BOARD_REFRESH_SECONDS} seconds. Stop it with Ctrl-C.`]);
+      if (isOpening) (options.openBrowser ?? ((link: string) => openInBrowser(link, platform, invocation.env)))(url);
+      options.started?.(server);
       return new Promise<number>(() => {});
     },
     () => {

@@ -2,13 +2,13 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, realpathSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, statSync, existsSync, mkdirSync, realpathSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import { CLI, makeSandbox } from '../../../repo/helpers.ts';
-import { boardHostName, boardPort, browserCommand, runBoard, startBoardServer } from '../../../../src/commands/advice/board/server.ts';
+import { boardHostName, boardLinkFile, saveBoardLink, boardPort, browserCommand, runBoard, startBoardServer } from '../../../../src/commands/advice/board/server.ts';
 import { type BoardData, createBoardGitHub, nicknameId, nicknameOf } from '../../../../src/commands/advice/board/view.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 import { type Gh, ghLaterIn } from '../../../../src/host/github/index.ts';
@@ -784,4 +784,67 @@ test('board: the browser opener for each system', () => {
   assert.deepEqual(browserCommand(url, 'linux', { WSL_DISTRO_NAME: 'Ubuntu' }), ['explorer.exe', url], 'WSL opens the Windows browser');
   assert.deepEqual(browserCommand(url, 'win32', {}), ['rundll32', 'url.dll,FileProtocolHandler', url]);
   assert.equal(browserCommand(url, 'aix', {}), null);
+});
+
+/** Run `yokoten board` in this process until it is live, then close it. Returns what it wrote and opened. */
+async function boardLive(args: string[]): Promise<{ stdout: string; stderr: string; opened: string[]; file: string; sandbox: ReturnType<typeof makeSandbox> }> {
+  const sandbox = makeSandbox();
+  const out: string[] = [];
+  const err: string[] = [];
+  const stream = (into: string[]) => new Writable({ write(chunk, _, done) { into.push(String(chunk)); done(); } });
+  const opened: string[] = [];
+  const controls = createBoardControls(join(sandbox.repo, '.yokoten-board.log'), fakeAgents().spawner);
+  const invocation: Invocation = { command: 'board', args, env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stream(out) as Output, stderr: stream(err) as Output, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
+  await new Promise<void>((done, failed) => {
+    const ran = runBoard(invocation, { controls, openBrowser: (url) => opened.push(url), started: (server) => server.close(() => done()) });
+    if (typeof ran === 'number') failed(new Error(`board stopped with ${ran}: ${err.join('')}`));
+    else ran.then((code) => failed(new Error(`board stopped with ${code}: ${err.join('')}`)), failed);
+  });
+  return { stdout: out.join(''), stderr: err.join(''), opened, file: boardLinkFile(sandbox.repo, sandbox.env) ?? '', sandbox };
+}
+
+// #1045: the screen never shows the token. The browser gets the full link, and the link sits in a 0600 file.
+test('board: the token never reaches the screen; it goes to the browser and a private file', async () => {
+  const { stdout, stderr, opened, file, sandbox } = await boardLive([]);
+  assert.equal(opened.length, 1, 'the browser opens once');
+  assert.match(opened[0], /^http:\/\/repo\.localhost:\d+\/\?token=[0-9a-f]{32}$/, 'the browser gets the link with its token');
+  const token = new URL(opened[0]).searchParams.get('token') ?? '';
+  for (const [name, text] of [['stdout', stdout], ['stderr', stderr]]) {
+    assert.equal(text.includes(token), false, `${name} has no token`);
+    assert.doesNotMatch(text, /[0-9a-f]{32}/, `${name} has nothing of the token's shape`);
+    assert.doesNotMatch(text, /token=/, `${name} has no token query`);
+  }
+  assert.match(stdout, /The team is live at http:\/\/repo\.localhost:\d+\/\n/, 'the address shows without its key');
+  assert.equal(readFileSync(file, 'utf8'), `${opened[0]}\n`, 'the file holds the full link');
+  if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600, 'only the owner reads the file');
+  assert.ok(stdout.includes(`~/${relative(sandbox.home, file).split('\\').join('/')}`), 'the screen names the file, home hidden');
+});
+
+// #1045: with --no-open the browser stays shut, and the screen says which file holds the link.
+test('board --no-open: names the file with the link, never the token', async () => {
+  const { stdout, stderr, opened, file, sandbox } = await boardLive(['--no-open']);
+  assert.deepEqual(opened, [], 'no browser');
+  const token = new URL(readFileSync(file, 'utf8').trim()).searchParams.get('token') ?? '';
+  assert.match(token, /^[0-9a-f]{32}$/);
+  assert.equal(`${stdout}${stderr}`.includes(token), false, 'no token on the screen');
+  assert.doesNotMatch(`${stdout}${stderr}`, /[0-9a-f]{32}/, "nothing of the token's shape");
+  assert.ok(!stdout.includes('opens in your browser'), 'it does not say it opens');
+  assert.ok(stdout.includes(`is in ~/${relative(sandbox.home, file).split('\\').join('/')}`), 'the screen says which file holds the link');
+});
+
+// #1045: a second start replaces the old link instead of following a planted symlink, and
+// Windows, where mode bits do not apply, saves the file without a crash.
+test('saveBoardLink: replaces a symlink, and Windows skips the mode without a crash', () => {
+  const sandbox = makeSandbox();
+  const file = boardLinkFile(sandbox.repo, sandbox.env) ?? '';
+  mkdirSync(dirname(file), { recursive: true });
+  const target = join(sandbox.home, 'elsewhere.txt');
+  writeFileSync(target, 'keep\n');
+  symlinkSync(target, file);
+  assert.equal(saveBoardLink(sandbox.repo, 'http://repo.localhost:1/?token=a', sandbox.env, 'linux'), file);
+  assert.equal(readFileSync(target, 'utf8'), 'keep\n', 'the symlink target is untouched');
+  assert.equal(readFileSync(file, 'utf8'), 'http://repo.localhost:1/?token=a\n');
+  assert.equal(saveBoardLink(sandbox.repo, 'http://repo.localhost:1/?token=b', sandbox.env, 'win32'), file);
+  assert.equal(readFileSync(file, 'utf8'), 'http://repo.localhost:1/?token=b\n');
+  assert.equal(saveBoardLink(sandbox.repo, 'x', { ...sandbox.env, HOME: '' }, 'linux'), null, 'no home folder: nothing saved');
 });

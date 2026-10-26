@@ -619,7 +619,7 @@ export const COMMANDS: Command[] = [
       'The folder name is the host. The port stays with this repo. The first visit',
       'sets a cookie and opens the page without the token. Agents sit on the left.',
       'The picked one fills the rest. Needs you is a bell next to Live. The',
-      'board opens the page in your browser, prints the link, and runs until you stop it.',
+      'board opens the page in your browser, keeps its link in a private file, and runs until you stop it.',
       'Chrome and Edge can install it as its own window. The page refreshes every 15',
       'seconds. Agents in this repo, its worktrees and its desks show by themselves:',
       'the hooks write .yokoten-agent.json for them.',
@@ -627,7 +627,7 @@ export const COMMANDS: Command[] = [
     options: [
       { name: '--text', text: 'print the agents, pull requests and worktrees as plain text and exit' },
       { name: '--all', text: 'with --text: every field of every agent, pull request and worktree' },
-      { name: '--no-open', text: 'only print the link; do not open the browser' },
+      { name: '--no-open', text: 'do not open the browser; the screen says which file holds the link' },
       { name: '--role', value: 'name', text: 'with --text: only this role in the usage view: engineer, reviewer or checker' },
       { name: '--vendor', value: 'name', text: 'with --text: only this vendor in the usage view, such as claude or muse' },
     ],

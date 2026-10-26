@@ -778,7 +778,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `uninstall [--list]` | 撤掉 `install` 装的东西：带 yokoten 管理标记的入口技能和 agent，Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code 设置里的 hook，OpenCode 的插件，还有 `~/.local/share/yokoten`。私有词表和 mailmap 文件只剩 `install` 写的表头时，也一并删掉；`install` 建的空文件夹和 git 配置文件也删掉。`install` 之前就有的文件夹留着。你自己的文件、改动和设置都留着；拦截记录会被删掉。再跑一次什么也不会变。`--list` 逐行列出它删掉的或留下的每个文件 |
 | `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](../../server.md#3-the-bot-a-github-app) |
 | `train [<pr>...] [--wait <秒>] [--next]` | 按给出的顺序，以 bot 的身份合并一批已批准、检查全绿的 PR；第一个需要人来处理的 PR 就让它停下。不给 PR 编号时，按冲突地图给出的顺序：先合并移动路径的改动，单独进行；再合并不与其他改动冲突的；然后合并被最多改动冲突的那个，最旧的优先。第一次合并之前先记下每个 PR 的基础分支，所以叠在被 squash 合并的分支上的 PR，会用它和那个分支真正共有的基础来合并。只涉及 import 行的冲突取并集；真正的冲突、测试失败、`check` 失败或缺少批准都会让列车停下。每次合并后的树先测试再推送；推送后的合并要等 CI 通过；`--wait` 设等多久，默认 1800 秒。`--next` 只说出下一个 PR 是哪个、为什么，不合并。只有 lead 能跑 |
-| `board [--text] [--all] [--no-open] [--role name] [--vendor name]` | 加 `--text` 时只显示一屏；再加 `--all`，列出每个 agent、每个 PR、每个 worktree 的所有字段。只在这台电脑上开一个实时页面：按 issue 分组的 agent、选中的 agent、每个 PR 的状态，以及每个 agent 估算的 API 费用。在页面上，owner 还能启动和停掉 agent，看到在等什么。启动后自己在浏览器里打开页面，也打印链接（加 `--no-open` 就只打印），按 Ctrl-C 停掉。页面每 15 秒刷新一次。加 `--text` 就在终端里用纯文本打印 agent、PR、worktree 和用量；这时再用 `--role` 和 `--vendor`，只保留该角色或该厂商的用量行。见「团队看板」 |
+| `board [--text] [--all] [--no-open] [--role name] [--vendor name]` | 加 `--text` 时只显示一屏；再加 `--all`，列出每个 agent、每个 PR、每个 worktree 的所有字段。只在这台电脑上开一个实时页面：按 issue 分组的 agent、选中的 agent、每个 PR 的状态，以及每个 agent 估算的 API 费用。在页面上，owner 还能启动和停掉 agent，看到在等什么。启动后自己在浏览器里打开页面，完整链接存在只有你能读的文件里，屏幕只说是哪个文件（加 `--no-open` 就不开浏览器），按 Ctrl-C 停掉。页面每 15 秒刷新一次。加 `--text` 就在终端里用纯文本打印 agent、PR、worktree 和用量；这时再用 `--role` 和 `--vendor`，只保留该角色或该厂商的用量行。见「团队看板」 |
 | `conflicts [--json] [--rebuild <id>]` | 读取每个打开的 PR；没有代码托管时，读取每个本地分支。用平实的话说明哪些改动和 main 冲突、哪些改动互相冲突。它会说出只碰同一个文件的那几对，以及这一对里先合哪个。它不检出、不合并。结果放在 git 目录里，guard 不用跑 git 就能读到。加 `--json` 打印整张地图；加 `--rebuild` 打印一段提示，让 AI 在最新的 main 上重做某个改动 |
 
 每个命令后面加 `--help` 或 `-h`，就会打出它自己的说明：做什么、有哪些选项、一个例子。
@@ -1598,10 +1598,10 @@ yokoten msg log
 页面地址是 `http://<repo>.localhost:<port>/`。
 `<repo>` 是文件夹名，改成主机名能用的样子。
 这个仓库的端口保持不变。端口被占用时，看板会试后面的端口。
-启动后它会自己在浏览器里打开页面，并打印链接（加 `--no-open` 就只打印）。
+启动后它会自己在浏览器里打开页面。屏幕上的地址不带口令；完整链接存在只有你能读的文件里，屏幕会说是哪个文件（加 `--no-open` 就不开浏览器）。
 第一次打开用链接里的 `?token=`。
 这一次会设置 HttpOnly、Secure、SameSite=Strict 的 cookie，然后打开没有口令的地址。
-之后的访问用这个 cookie。只有能看到终端的人能打开页面。错误的主机名会被拒绝。
+之后的访问用这个 cookie。只有能读那个文件的人能打开页面。错误的主机名会被拒绝。
 
 Chrome 和 Edge 可以把看板安装成自己的窗口。
 在浏览器菜单里选「安装」。
