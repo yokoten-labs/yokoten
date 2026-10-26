@@ -18,8 +18,16 @@ export const UNREAD_POSTS: Record<string, string[]> = {
 /** gh's global option that takes a value before the subcommand: `gh -R o/r issue create`. */
 export const GLOBAL_VALUES = new Set(['-R', '--repo']);
 
-/** Options that make gh read text from a file the checks don't know (#1104): `--recover` holds a title and body. */
-const UNREAD_OPTIONS = ['--recover'];
+/**
+ * Options that make gh take a post's text from somewhere the checks don't read (#1104), with
+ * their short letters: `--recover` and `--template` read a file, `--editor` runs a program
+ * that writes the text. Refused in every posting command, whatever their meaning there.
+ */
+const UNREAD_OPTIONS: { long: string; short?: string; what: string; fix: string }[] = [
+  { long: '--recover', what: '`--recover` reads a title and body from a file that the privacy check does not read', fix: 'leave out `--recover`, and give the text with `--title` and `--body-file`' },
+  { long: '--template', short: 'T', what: '`--template` takes the body from a file that the privacy check does not read', fix: 'leave out `--template`, and give the text with `--title` and `--body-file`' },
+  { long: '--editor', short: 'e', what: '`--editor` lets a program write the title and body, so the privacy check cannot read them', fix: 'leave out `--editor`, and give the text with `--title` and `--body-file`' },
+];
 
 /**
  * The short letters that take text or a text file in a posting command (#1077, #1104):
@@ -103,8 +111,11 @@ export function unreadPost(args: string[]): UnreadPost | null {
       fix: 'write each short option as its own word, such as `-d -t title`, or use the long names, such as `--title`',
     };
   }
-  const option = words.find((word) => UNREAD_OPTIONS.some((name) => word === name || word.startsWith(`${name}=`)));
-  if (option !== undefined) return { what: '`--recover` reads a title and body from a file that the privacy check does not read', fix: 'leave out `--recover`, and give the text with `--title` and `--body-file`' };
+  // A short letter counts alone or in a cluster (`-dT`), not inside another option's value (`-tTitle`).
+  const unread = UNREAD_OPTIONS.find(({ long, short }) =>
+    words.some((word) => word === long || word.startsWith(`${long}=`) || (short !== undefined && /^-[A-Za-z]/.test(word) && !valueFirst.test(word) && (/^-[A-Za-z]+/.exec(word)?.[0] ?? '').includes(short))),
+  );
+  if (unread !== undefined) return { what: unread.what, fix: unread.fix };
   // A release reads all its words: each one after `--` is a file to upload.
   if (kind.group === 'release' && (kind.sub === 'create' || kind.sub === 'new')) return unreadRelease(args);
   return null;

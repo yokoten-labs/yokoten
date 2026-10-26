@@ -1586,6 +1586,8 @@ test('guard: a gh post outside the known shapes goes to the bot; through the bot
     ['gist edit 3 --add n.md', /as an issue or pull request comment/],
     ['issue create --recover n.md', /leave out `--recover`/],
     ['pr create --recover=n.md', /leave out `--recover`/],
+    ['pr create -t x --template secret.md', /leave out `--template`/],
+    ['issue comment 3 --editor', /leave out `--editor`/],
   ];
   for (const [args, botFix] of cases) {
     const bare = post(`gh ${args}`);

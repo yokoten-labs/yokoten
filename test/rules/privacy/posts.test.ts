@@ -24,6 +24,14 @@ test('unreadPost: each form outside the allowlist is named, and a known form is 
     [['release', 'new', 'v1', '--', '--draft'], /uploads files/],
     [['issue', 'create', '--recover', 'n.md'], /--recover/],
     [['pr', 'create', '--recover=n.md'], /--recover/],
+    // A body from a template file or an editor program: the checks read neither (DeepSeek, PR #1118).
+    [['pr', 'create', '-t', 'x', '--template', 'secret.md'], /--template/],
+    [['pr', 'create', '-t', 'x', '--template=secret.md'], /--template/],
+    [['pr', 'create', '-t', 'x', '-T', 'secret.md'], /--template/],
+    [['pr', 'create', '-t', 'x', '-dT', 'secret.md'], /--template/],
+    [['issue', 'create', '-T', 'bug'], /--template/],
+    [['pr', 'create', '--editor'], /--editor/],
+    [['issue', 'comment', '3', '-e'], /--editor/],
     // Known forms: spelled out, joined to its own value, after `--`, or a value that starts with -R.
     [['pr', 'create', '-d', '-t', 'a title', '-F', 'n.md'], null],
     [['pr', 'create', '-tTitle', '-Fn.md'], null],
