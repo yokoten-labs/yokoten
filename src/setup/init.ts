@@ -387,7 +387,7 @@ function keepCiOff(root: string, cli: string, kit: string): string[] {
  * changes: the rest of the file keeps its formatting. When the edit can't be placed
  * safely, the file stays as it is and the line says to add the key by hand.
  */
-function recordNotNow(root: string, key: string, reason: string): string {
+export function recordNotNow(root: string, key: string, reason: string): string {
   const path = join(root, 'yokoten.json');
   const byHand = `skipped "notNow" ${key} in yokoten.json: add "${key}": ${JSON.stringify(reason)} to "notNow" yourself`;
   let text = '{}\n';
@@ -484,7 +484,7 @@ const readRemoteOwner = (root: string, env: Env): string | null => repoOf(readOr
  * remote owner is one, the file gets the placeholder (#313). When gh can't tell, the
  * remote owner stays: most repos belong to a person.
  */
-function writeCodeOwners(root: string, gh: Gh, env: Env): string {
+export function writeCodeOwners(root: string, gh: Gh, env: Env): string {
   const found = CODEOWNERS_PLACES.find((place) => existsSync(join(root, place)));
   if (found) return `kept ${found}`;
   const remote = readRemoteOwner(root, env);
@@ -588,7 +588,7 @@ const IGNORED_FOLDERS: Record<string, string[]> = {
 const folderOf = (line: string): string => line.trim().replace(/^\//, '').replace(/\/$/, '');
 
 /** Add the worker worktrees folder, the board's agent file, and the dependency folders of the project's package managers to .gitignore. */
-function writeGitignore(root: string): string {
+export function writeGitignore(root: string): string {
   const folders = [...new Set([...findEcosystems(root).keys()].flatMap((name) => IGNORED_FOLDERS[name] ?? []))];
   const wanted = [`${WORKTREES_DIR}/`, ...folders, AGENT_STATUS_FILE];
   const path = join(root, '.gitignore');
@@ -629,7 +629,7 @@ export const readDependabotEcosystems = (text: string): Set<string> =>
   new Set([...text.matchAll(/^\s*-?\s*package-ecosystem:\s*["']?([\w-]+)/gm)].map((match) => match[1]));
 
 /** The dependabot.yml init writes here: the kit's file and a block for each ecosystem found. */
-function dependabotText(root: string, kitText: string): { text: string; found: Map<string, string[]> } {
+export function dependabotText(root: string, kitText: string): { text: string; found: Map<string, string[]> } {
   const found = findEcosystems(root);
   const blocks = [...found].map(([name, dirs]) => formatDependabotBlock(name, dirs)).join('');
   return { text: kitText.replace(/\n*$/, '\n') + blocks, found };
@@ -639,7 +639,7 @@ function dependabotText(root: string, kitText: string): { text: string; found: M
  * Write .github/dependabot.yml: the kit's file and a block for each ecosystem found. A
  * dependabot.yml or .yaml that is there is kept, and the line names what it doesn't update.
  */
-function writeDependabot(root: string, kitText: string): string {
+export function writeDependabot(root: string, kitText: string): string {
   const { text, found } = dependabotText(root, kitText);
   const existing = ['.github/dependabot.yml', '.github/dependabot.yaml'].find((place) => existsSync(join(root, place)));
   if (existing) {
@@ -934,7 +934,7 @@ function findMainNewline(text: string): string {
 }
 
 /** Add the AGENTS.md import to the CLAUDE.md that lacks it. Returns the report line, or null when nothing changed. */
-function importRules(root: string): string | null {
+export function importRules(root: string): string | null {
   const gap = findRulesGap(root);
   if (!gap) return null;
   // A link is the owner's to change: writing through it would change the file it points to (#428).
