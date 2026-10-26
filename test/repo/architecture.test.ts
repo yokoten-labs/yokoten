@@ -1482,7 +1482,8 @@ test('platform: no new process.platform read outside the list, and the list only
 // A test that asks `process.platform === 'win32'` to skip or cut itself short hides its
 // Windows gap in its own file, where no one counts it. A platform skip belongs in the one
 // per-OS table, TEST_AREAS in scripts/time/windows-known.ts (issue #1068, PR #1076), with a
-// reason. These test files branch on Windows today; the count only goes down.
+// reason. These test files branch on Windows today; the count only goes down. The scan
+// counts direct comparisons and the usual helper names only: a reviewer catches the rest.
 const WINDOWS_BRANCHES: [string, number][] = [
   ['agents/desk/network/bridge.test.ts', 1],
   ['agents/desk/network/proxy.test.ts', 1],

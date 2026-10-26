@@ -156,18 +156,19 @@ machine can check; the reviewer holds the rest.
    `host/` (records 0040, 0046). No new layer and no new command: the front is `desk`,
    `kanban` and `tidy` (record 0043).
 2. **Platform as an argument.** Per-OS case tables, pure helpers, fail closed. Native
-   Windows runs the CLI, the guard hooks and install; the desk, its fence and the kanban
-   server run in WSL there. Never patch one test for one system: skips live in `TEST_AREAS`.
+   Windows runs the CLI, the guard hooks and install. The desk, its fence and the kanban
+   server run in WSL there. Never patch one test for one system. Skips live in `TEST_AREAS`.
 3. **Old code gets safety fixes only.** Every other change goes into the new structure.
-4. **Foundation first.** A pull request that changes what CI or the platform table checks
-   merges before the feature pull requests it judges.
-5. **Borrow, build only the gap.** Use what the host or a maintained project gives (the
-   merge queue, sandbox-runtime). Look before you build.
-6. **One check, one place.** A check runs where the thing happens (the bot checks what it
-   sends). The guard allows characters; it learns no new shell grammar.
+4. **Foundation first.** Some pull requests change what CI or the platform table checks.
+   They merge before the feature pull requests they judge.
+5. **Borrow, build only the gap.** Use what the host or a maintained project gives, such as
+   sandbox-runtime. Build only the gap: the host's merge queue works under our gate (record 0046).
+6. **One check, one place.** Each check lives in the one program that does the action. The
+   bot checks the text it sends; the guard does not check it again. The guard allows
+   characters; it learns no new shell grammar.
 7. **Never overwrite user config,** paths or environment on any system. Fallbacks only read.
-8. **It strengthens one of four:** the gate before merge, no lost work, a beginner started in
-   30 seconds, one rule set for every vendor's agent. If none, do not build it.
+8. **It strengthens one of four.** The gate before merge. No lost work. A beginner started in
+   30 seconds. One rule set for every vendor's agent. If it strengthens none, do not build it.
 
 ### Commits and versions
 
