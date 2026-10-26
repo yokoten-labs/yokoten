@@ -38,7 +38,7 @@ test('find: a folder\'s size counts its files and never follows a link out (#105
   writeFileSync(join(folder, 'sub', 'file'), 'x'.repeat(5000));
   symlinkSync(outside, join(folder, 'link'));
   const size = folderSize(folder);
-  assert.ok(size >= 5000 && size < 100_000, String(size));
+  assert.equal(size, 5000, "only the file inside counts: not the folders, not the link");
   assert.equal(folderSize(join(folder, 'missing')), 0);
 });
 

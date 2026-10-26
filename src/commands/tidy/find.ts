@@ -107,7 +107,10 @@ export function readProcessFolders(platform: NodeJS.Platform): string[] {
   return folders;
 }
 
-/** Bytes in a folder, links not followed, up to SIZE_ENTRY_LIMIT entries; 0 when it can't be read. */
+/**
+ * Bytes of the files in a folder, links not followed, up to SIZE_ENTRY_LIMIT entries; 0 when it
+ * can't be read. Folders themselves count 0: their size differs by file system (4 KB on ext4).
+ */
 export function folderSize(path: string): number {
   let total = 0;
   let seen = 0;
@@ -121,8 +124,10 @@ export function folderSize(path: string): number {
       continue;
     }
     seen++;
-    total += entry.size;
-    if (!entry.isDirectory()) continue;
+    if (!entry.isDirectory()) {
+      if (entry.isFile()) total += entry.size;
+      continue;
+    }
     try {
       for (const name of readdirSync(current)) stack.push(join(current, name));
     } catch {

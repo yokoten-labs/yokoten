@@ -3,7 +3,7 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir, runChild } from '../../repo/helpers.ts';
@@ -132,11 +132,11 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
   const putAway = group('Can put away:');
   assert.match(putAway, /merged-one +branch: merged into the main branch, and no change for a day; no commit of its own\./);
   assert.match(putAway, /desk-7 +desk at .*repo-desks\/desk-7: merged into the main branch/);
-  assert.match(putAway, /desk-gone\.state logs at .*: its desk is gone; [\d.]+ KB\./);
+  assert.match(putAway, /desk-gone\.state logs at .*: its desk is gone; 3 B\./);
   assert.match(putAway, /wt-n{100} worktree at .*o{90}\/wt-n{100}: merged/);
   const saved = group('Can put away with a saved copy:');
   assert.match(saved, /gone-one +branch: its branch on the remote is gone, but 1 commit on no remote; 1 commit not in the main branch\./);
-  assert.match(saved, /wt-done +worktree at .*: merged into the main branch, and no change for a day, but changes not committed; [\d.]+ KB\./);
+  assert.match(saved, /wt-done +worktree at .*: merged into the main branch, and no change for a day, but changes not committed; \d+ B\./);
   assert.match(group('In use, never touched:'), /desk-8 +desk at .*: it changed \d+ min ago; /);
   assert.match(group('On the remote, only listed:'), /origin\/merged-one +merged into origin\/main/);
   assert.match(text, /ok +1 more thing still in work: tidy leaves them\./);
@@ -149,6 +149,9 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
 test('tidy --local: saves, then moves; the bundle and the patch bring the work back; a desk in use stays (#1055)', async () => {
   const messy = makeMessyRepo();
   const goneHead = messy.ok('rev-parse', 'gone-one');
+  // The index keeps real paths; on macOS the temp folder is a link (/var to /private/var).
+  const realBase = realpathSync(messy.base);
+  const real = (path: string) => realBase + path.slice(messy.base.length);
   const result = await messy.call(['tidy', '--local']);
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.match(result.stdout, /^yokoten tidy --local · put away 6 things in\s+~\/\.local\/state\/yokoten\/trash\//);
@@ -167,7 +170,7 @@ test('tidy --local: saves, then moves; the bundle and the patch bring the work b
   assert.equal(index.items.length, 6);
   assert.ok(index.items.every((item) => item.isMoved && item.restore.length > 0));
   assert.ok(Math.abs(Date.parse(index.created) - Date.now()) < 60_000);
-  const longEntry = index.items.find((item) => item.from === messy.long);
+  const longEntry = index.items.find((item) => item.from === real(messy.long));
   assert.ok(longEntry && longEntry.moves.every((move) => move.to.length < 80), 'a long path gets a short name in the trash');
 
   // The positive control of the bundle: a new, empty repo gets the squash-merged commit back.
@@ -180,7 +183,7 @@ test('tidy --local: saves, then moves; the bundle and the patch bring the work b
   assert.equal(runChild('git', ['show', 'gone-one:b.txt'], { cwd: fresh, env: messy.env }).stdout, 'squashed work\n');
 
   // The positive control of the patch: a new checkout at the same commit gets both changes back.
-  const done = index.items.find((item) => item.from === messy.done);
+  const done = index.items.find((item) => item.from === real(messy.done));
   assert.ok(done?.patch);
   const again = join(messy.base, 'restored');
   messy.ok('worktree', 'add', '-q', '--detach', again, done.head);
@@ -225,8 +228,9 @@ test('tidy --empty: deletes only trash over 7 days old, after one question; no t
   const put = (name: string, days: number) => {
     mkdirSync(join(trash, name, 'items'), { recursive: true });
     writeFileSync(join(trash, name, 'items', 'file'), 'x'.repeat(2048));
-    writeFileSync(join(trash, name, 'index.json'), JSON.stringify({ version: 1, created: new Date(Date.now() - days * DAY).toISOString(), repo: '', items: [] }));
+    writeFileSync(join(trash, name, 'index.json'), indexOf(days));
   };
+  const indexOf = (days: number) => JSON.stringify({ version: 1, created: new Date(Date.now() - days * DAY).toISOString(), repo: '', items: [] });
   put('2026-10-10T000000Z', 8);
   put('2026-10-20T000000Z', 6);
   // Not tidy's: no index, an index with no time, and a link to a folder outside.
@@ -239,16 +243,20 @@ test('tidy --empty: deletes only trash over 7 days old, after one question; no t
   symlinkSync(outside, join(trash, 'a-link'));
   const left = () => readdirSync(trash).sort();
   const all = left();
+  // Files only: the 2 KB file and the index; a folder counts 0 on every file system.
+  const size = formatSize(2048 + Buffer.byteLength(indexOf(8)));
 
   const piped = await sandbox.call(['tidy', '--empty']);
   assert.equal(piped.status, 1);
-  assert.match(piped.stdout, /^yokoten tidy --empty · 1 trash folder over 7 days old, \d+ KB\n\n +next +2026-10-10T000000Z/);
+  assert.ok(piped.stdout.startsWith(`yokoten tidy --empty · 1 trash folder over 7 days old, ${size}\n\n`), piped.stdout);
+  assert.match(piped.stdout, /\n\n +next +2026-10-10T000000Z\n +[\d.]+ KB, put away \d{4}-\d{2}-\d{2}\.\n/);
   assert.match(piped.stderr, /no terminal to ask in\. Nothing was deleted\. Run it in a terminal, or add --yes\./);
   assert.deepEqual(left(), all);
 
   const no = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'n\n', extra: { NO_COLOR: '1' } });
   assert.equal(no.status, 0);
-  assert.match(no.stdout, /Delete 1 folder \(\d+ KB\) for good\? \[y\/N\] \n +ok +nothing was deleted\./);
+  assert.ok(no.stdout.includes(`Delete 1 folder (${size}) for good? [y/N] \n`), no.stdout);
+  assert.match(no.stdout, /\[y\/N\] \n +ok +nothing was deleted\./);
   assert.deepEqual(left(), all);
 
   const yes = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'y\n', extra: { NO_COLOR: '1' } });
