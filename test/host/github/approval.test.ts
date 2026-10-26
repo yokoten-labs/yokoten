@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -833,4 +833,13 @@ test('review: the answer cap fits DeepSeek, and the model call fits the job (#11
   assert.ok(minutes > 0, 'the review job has a time limit');
   // Two minutes stay for checkout, the diff, and the GitHub calls around the model.
   assert.ok(MODEL_TIMEOUT_MS + 120_000 <= minutes * 60_000, `the model call (${MODEL_TIMEOUT_MS} ms) leaves two minutes of the job's ${minutes}`);
+});
+
+test('requestBody: the effort and the answer cap are set, never left to the API default', () => {
+  const body = JSON.parse(requestBody('deepseek-flash', buildMessages('body', 'diff')));
+  assert.equal(body.reasoning_effort, 'high');
+  assert.equal(body.max_tokens, MAX_ANSWER_TOKENS);
+  assert.equal(body.model, 'deepseek-flash');
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(body.stream, false);
 });
