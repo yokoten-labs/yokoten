@@ -177,8 +177,8 @@ Who reads. The board page, and `/data` through `feedsJson`.
 How yokoten checks it. `recordFeed` compares the last view with the new one.
 Version 1. The event has no version field.
 
-Code: [src/commands/advice/board/feed/steps.ts](../src/commands/advice/board/feed/steps.ts) and [src/commands/advice/board/page/browser/script.ts](../src/commands/advice/board/page/browser/script.ts).
-Tests: [test/commands/advice/board/feed/steps.test.ts](../test/commands/advice/board/feed/steps.test.ts) and [test/commands/advice/board/page/browser/script.test.ts](../test/commands/advice/board/page/browser/script.test.ts).
+Code: [src/commands/kanban/feed/steps.ts](../src/commands/kanban/feed/steps.ts) and [src/commands/kanban/page/browser/script.ts](../src/commands/kanban/page/browser/script.ts).
+Tests: [test/commands/kanban/feed/steps.test.ts](../test/commands/kanban/feed/steps.test.ts) and [test/commands/kanban/page/browser/script.test.ts](../test/commands/kanban/page/browser/script.test.ts).
 
 ## A tool call
 
@@ -340,9 +340,9 @@ Version 1. The file has no version field.
 
 - [src/run/hook.ts](../src/run/hook.ts) and [test/run/hook.test.ts](../test/run/hook.test.ts).
 - [src/commands/hook.ts](../src/commands/hook.ts) and [test/commands/hook.test.ts](../test/commands/hook.test.ts).
-- [src/commands/advice/board/agents.ts](../src/commands/advice/board/agents.ts) and [test/commands/advice/board/agents.test.ts](../test/commands/advice/board/agents.test.ts).
-- [src/commands/advice/board/controls.ts](../src/commands/advice/board/controls.ts) and [test/commands/advice/board/controls.test.ts](../test/commands/advice/board/controls.test.ts).
-- [src/commands/advice/board/view.ts](../src/commands/advice/board/view.ts) and [test/commands/advice/board/view.test.ts](../test/commands/advice/board/view.test.ts).
+- [src/commands/kanban/agents.ts](../src/commands/kanban/agents.ts) and [test/commands/kanban/agents.test.ts](../test/commands/kanban/agents.test.ts).
+- [src/commands/kanban/controls.ts](../src/commands/kanban/controls.ts) and [test/commands/kanban/controls.test.ts](../test/commands/kanban/controls.test.ts).
+- [src/commands/kanban/view.ts](../src/commands/kanban/view.ts) and [test/commands/kanban/view.test.ts](../test/commands/kanban/view.test.ts).
 
 ## The Made-with line
 
@@ -385,7 +385,7 @@ How yokoten checks it. `parseMadeWith` reads the last line. `madeWithFindings` r
 Version 1. The line has no version field.
 
 - [src/rules/pr.ts](../src/rules/pr.ts) and [test/rules/pr.test.ts](../test/rules/pr.test.ts).
-- [src/commands/merge/bot.ts](../src/commands/merge/bot.ts) and [test/commands/merge/bot.test.ts](../test/commands/merge/bot.test.ts).
+- [src/commands/more/merge/bot.ts](../src/commands/more/merge/bot.ts) and [test/commands/more/merge/bot.test.ts](../test/commands/more/merge/bot.test.ts).
 
 ## Provenance
 
@@ -429,7 +429,7 @@ Version 1. This is the first form. It has no version field.
 
 - [src/rules/pr.ts](../src/rules/pr.ts) and [test/rules/pr.test.ts](../test/rules/pr.test.ts).
 - [src/run/hook.ts](../src/run/hook.ts) and [test/run/check.test.ts](../test/run/check.test.ts).
-- [src/commands/check.ts](../src/commands/check.ts) and [test/commands/check.test.ts](../test/commands/check.test.ts).
+- [src/commands/more/check.ts](../src/commands/more/check.ts) and [test/commands/more/check.test.ts](../test/commands/more/check.test.ts).
 
 ## The lesson file
 

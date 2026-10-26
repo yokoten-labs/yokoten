@@ -7,7 +7,7 @@
 
 /**
  * The part of the shared conflict map a lease reads (#914). The shared type lives in
- * `src/commands/merge/conflicts/types.ts`, which this low layer may not import: the
+ * `src/commands/more/merge/conflicts/types.ts`, which this low layer may not import: the
  * architecture test stops a `rules` module that imports from `commands` (record 0004).
  * A `ConflictMap` is wider than this and is accepted as it is.
  */

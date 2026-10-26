@@ -64,7 +64,8 @@ const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
   'host/github/index.ts', // re-exports the GitHub adapter's public names
-  'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
+  'commands/more/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
+  'commands/kanban/types.ts', // the kanban page's API types only, no code: tsc checks them where the core and the page use them (#1054)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
@@ -122,6 +123,22 @@ test('test files: every src module has one, but the few on NO_TEST_FILE (#152)',
     [],
     'a new src module gets its test file next to the others',
   );
+});
+
+// src/commands/ holds the three commands up front, the hidden ones in more/, and the two
+// files the guard's hot path loads (issue #1054, architecture §5). Anything else is a new
+// top-level command: it goes into one of the folders.
+const COMMANDS_TOP = ['desk', 'hook.ts', 'kanban', 'more', 'shared.ts', 'tidy'];
+const commandsTopProblems = (entries: string[]): string[] => [
+  ...entries.filter((entry) => !COMMANDS_TOP.includes(entry)).map((entry) => `src/commands/${entry}: put it in desk/, kanban/, tidy/ or more/`),
+  ...COMMANDS_TOP.filter((entry) => !entries.includes(entry)).map((entry) => `src/commands/${entry} is missing`),
+];
+
+test('commands: src/commands/ holds only desk/, kanban/, tidy/, more/, hook.ts and shared.ts (#1054)', () => {
+  // The positive control: a new file at the top and a lost folder are both caught.
+  assert.deepEqual(commandsTopProblems(['desk', 'hook.ts', 'kanban', 'more', 'shared.ts', 'check.ts']), ['src/commands/check.ts: put it in desk/, kanban/, tidy/ or more/', 'src/commands/tidy is missing']);
+  assert.deepEqual(commandsTopProblems(readdirSync(join(SRC, 'commands')).sort()), []);
+  assert.deepEqual(readdirSync(join(ROOT, 'test', 'commands')).sort(), ['desk', 'hook.test.ts', 'kanban', 'more', 'shared.test.ts', 'tidy'], 'test/commands/ moves the same way');
 });
 
 // A step names what it needs in host-neutral words; only src/host/ talks to a host's API
@@ -1421,11 +1438,11 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/desk/desk.ts', 2],
   ['agents/desk/start.ts', 1],
   ['agents/runtimes/small/deepseek-harness.ts', 1],
-  ['commands/advice/board/server.ts', 1],
-  ['commands/check.ts', 1],
+  ['commands/kanban/server.ts', 1],
+  ['commands/more/check.ts', 1],
   ['commands/hook.ts', 1],
-  ['commands/merge/train.ts', 1],
-  ['commands/setup.ts', 2],
+  ['commands/more/merge/train.ts', 1],
+  ['commands/more/setup.ts', 2],
   ['host/light.ts', 1],
   ['rules/guards/commands/no-wipe.ts', 2],
   ['rules/guards/hooks/read.ts', 1],
@@ -1649,8 +1666,8 @@ const CHILD_CAP = 4;
 // Files that need more, each at its count: the count may only go down. Keep it short; a
 // file leaves the table once it is at CHILD_CAP or under.
 const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
-  'test/commands/check.test.ts': { cap: 8, reason: 'the entries of two commands, check --pr and redact; redact also runs in a shell pipe and on an 8 MB stream, as its hook runs it' },
-  'test/commands/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
+  'test/commands/more/check.test.ts': { cap: 8, reason: 'the entries of two commands, check --pr and redact; redact also runs in a shell pipe and on an 8 MB stream, as its hook runs it' },
+  'test/commands/more/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
   'test/run/cli.test.ts': { cap: 9, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache, the demo loop and --help through the real entry' },
   'test/setup/init.test.ts': { cap: 12, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
@@ -1905,7 +1922,7 @@ test('windows scope: native Windows skips the desk, its fence and the kanban ser
   assert.deepEqual([...skippedAreas].sort(), ['desk', 'desk fence', 'kanban server']);
   for (const entry of windows.skipped) assert.equal(entry.reason, 'the desk runs in WSL on Windows (record 0043)', entry.file);
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
-  assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/advice/board/server.test.ts'));
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/kanban/server.test.ts'));
   // The CLI, the guard hooks and install still run there.
   for (const kept of ['test/commands/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
     assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);

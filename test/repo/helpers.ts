@@ -504,7 +504,7 @@ export function fakeMachine(free: number, more: Partial<MachineProbe> & { progra
     ...rest,
   };
 }
-// The team of #674 (test/agents/desk/team/, test/commands/advice/messages.test.ts).
+// The team of #674 (test/agents/desk/team/, test/commands/more/advice/messages.test.ts).
 /**
  * A small MCP server for the mcp tests (#370). `clean` answers with portable tools and
  * both result forms; `traps` writes a log line, a non-UTF-8 byte and CRLF endings, and
