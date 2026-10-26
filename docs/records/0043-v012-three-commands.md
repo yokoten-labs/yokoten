@@ -1,4 +1,4 @@
-# 0043 v0.1.2: four commands: the agent works, the human decides, the kanban watches
+# 0043 v0.1.2: three commands: desk, kanban, tidy
 
 Status: accepted
 Date: 2026-10-26 (UTC)
@@ -25,7 +25,8 @@ evidence:
 - the guard's stop log: 104 stops in two days, 22 of them the same `--body-file` shape;
 - the fix commits: 45 guard fixes across v0.1.0 and v0.1.1, most of them new ways
   around the guard;
-- the walk-through issues.
+- the walk-through issues;
+- a clean-up on 2026-10-26 (below).
 
 The pains that came up most often:
 
@@ -37,39 +38,49 @@ The pains that came up most often:
    approval during a merge pass did not wake the merge loop.
 4. **An agent hits the same refusal again and again.**
 5. **Commands act without being asked.** These are the three safety issues above.
+6. **Old work piles up and nobody dares remove it.** The clean-up on 2026-10-26 found:
+   - on the machine: 877 desk clones (about 13 GB), 64 old worktrees, 256 local
+     branches, and 21 stale lock and backup files;
+   - on GitHub: 33 open pull requests, most of them conflicted, and 22 branches with no
+     pull request.
+
+   Nobody could tell which of them still held work. A desk never removed itself
+   (issue #708).
 
 ## Decision
 
-1. **A new coder sees four commands.** `help` lists only these, plus one line:
-   `--help · --version · help --all`. Besides `yokoten` itself, there is one command per
-   role, as the owner put it:
-   - the agent works: `desk`;
-   - the human decides: `merge`, where the person approves what lands;
-   - both are watched: `kanban`.
+1. **A new coder sees three commands.** `help` lists only these, plus one line:
+   `--help · --version · help --all`. Besides `yokoten` itself:
 
    | Command | What it does | Commands folded in |
    |---|---|---|
    | `yokoten` | sets up what is missing, then one screen: where you are, what waits on you, the next step | install, init, doctor, trust, update |
-   | `kanban` | a live, read-only web board of every AI session | board (old name) |
-   | `merge` | the pull request merge queue | train, pr, conflicts, provenance, anchor |
    | `desk` | give one task to one AI, in its own fenced desk | worker, msg |
+   | `kanban` | a live, read-only web view of every AI session, its proof and its CI | board (old name) |
+   | `tidy` | find old work, keep a copy, and move it out of the way | — |
 
-2. **Hiding is not deleting.** The other 30 commands stay in the code and keep working.
+   The owner chose these three, and decided that merging is not worth a command. A
+   person approves and merges a pull request on GitHub, where they already do. yokoten
+   only shows what waits on them.
+
+2. **Hiding is not deleting.** The other commands stay in the code and keep working.
    They are left out of `help` and are listed by `help --all`.
-   - **Folded commands** (12): when someone runs one, it says which command it moved to.
-   - **Hidden commands** (16): hook, redact, marks, mcp, bot, changelog, learn,
-     borrowed, adopt, ci-health, check, test, explain, stops, uninstall, upgrade. Agents,
-     the commit check and CI still call them.
+   - **Folded commands**: when someone runs one, it says which command it moved to.
+   - **Hidden commands**: hook, redact, marks, mcp, bot, changelog, learn, borrowed,
+     adopt, ci-health, check, test, explain, stops, uninstall, upgrade, and the merge
+     group (train, pr, conflicts, provenance, anchor). Agents, the commit check and CI
+     still call them.
    - **Shown only when needed**:
      - `uninstall` is on the Undo line after setup;
      - `upgrade` is on the Next line when a newer version exists.
    - **`help` and `version`** are also `--help` and `--version`.
-   - **No new command** is added in v0.1.2: `merge` is `train` under a clearer name.
+   - **One new command**, `tidy`. `kanban` is `board` under a new name.
 
 3. **A bare command only reads.** A command that changes something must be given its
    arguments:
-   - `merge` (and its old name `train`) with no numbers shows the plan and merges nothing;
+   - `train` with no numbers shows the plan and merges nothing;
    - `ci-health` with no flag writes nothing;
+   - `tidy` with no flag lists what is old and changes nothing;
    - a command that reads stdin (`hook`, `redact`) prints its purpose and exits when
      stdin is a terminal.
 
@@ -89,13 +100,15 @@ The pains that came up most often:
    It never prints its access token on the terminal.
 
    **The name is `kanban`** (the owner, 2026-10-26): the Toyota word for the signboard
-   that shows the state of work, from the same production system as yokoten (横展).
+   that shows the state of work, from the same production system as the word yokoten.
    `board` stays as a hidden old name that still works.
 
-   **The kanban also owns GitHub Actions.** The work splits by what GitHub holds:
+   **The kanban shows pull requests and GitHub Actions too.** The work splits by what
+   GitHub holds:
    - `desk` takes issues;
-   - `merge` takes pull requests;
-   - `kanban` watches Actions.
+   - the person merges pull requests on GitHub; the kanban shows which ones wait on
+     them, and why a pull request is not ready;
+   - the kanban watches Actions.
 
    CI runs by itself, so the person only needs to know its state and that someone acts
    on a failure. The kanban shows, read-only:
@@ -105,12 +118,11 @@ The pains that came up most often:
    - a test that passes and fails by turns.
 
    This is the job of the hidden `ci-health` and of our Actions check. It moves to the
-   kanban and writes nothing to GitHub. A failure goes to the other two commands, so no
-   fourth command is needed:
+   kanban and writes nothing to GitHub. A failure goes on from there:
    - **main fails, or a test is flaky:** yokoten opens an issue, and `desk` gives it to
      an AI;
-   - **a pull request's CI fails:** `merge` does not merge it, and sends it back to the AI
-     that made it;
+   - **a pull request's CI fails:** the kanban marks it not ready, and its desk gets the
+     failure;
    - **a run is stuck:** the bot reruns it once (the owner allowed reruns on
      2026-10-22) and the kanban notes it. A second failure opens an issue.
 
@@ -123,20 +135,27 @@ The pains that came up most often:
    - yokoten makes the clone, writes the brief from the issue and picks an agent;
    - it opens the sandbox, runs the commit check when the agent is done, and shows the
      result on the kanban;
+   - when the pull request merges or the issue closes, the desk moves itself out of the
+     way, as `tidy` does (issue #708);
    - with no issue number, `desk` lists which AI works on what, and changes nothing.
 
    It folds in `worker` and `msg`. Our own dispatch scripts (`deepseek-worker.sh`,
    `dispatch-queue.sh`) already run this flow, so they are the model. OpenCode joins the
    agents a desk can start. The desk's own help screen gets the one screen shape of item 8.
 
-7. **`merge` is the merge queue.** The owner chose the name: "train" said nothing about
-   merging. `train` stays as a hidden old name that still works.
-   - Use GitHub's own merge queue where the repository allows it; ours only where it
-     doesn't.
-   - A merge needs three things: a review by another vendor's AI, the evidence, and the
-     owner's approval for tier A.
-   - A conflicted pull request is rebuilt on the latest main, never forced.
-   - The queue shows on the kanban.
+7. **`tidy` finds old work, keeps a copy, and moves it out of the way.** It is the
+   backstop for what desks leave behind.
+   - `yokoten tidy` lists what is old, why, and what it would do. It changes nothing.
+   - `yokoten tidy --local` first keeps a copy of anything not on GitHub: unpushed
+     commits as a git bundle, uncommitted changes as a patch, worker reports as files.
+     Then it moves the old folders, worktrees and branches into a trash folder. It
+     deletes nothing.
+   - `yokoten tidy --empty` deletes trash older than 7 days.
+   - Old pull requests, issues and branches on GitHub are listed with their links. In
+     v0.1.2 `tidy` does not close or delete them.
+   - It never touches a desk whose agent still runs, or a user's config file. If the
+     copy fails, nothing moves.
+   - When old work piles up, the `yokoten` screen says so on its Next line.
 
 8. **Every screen keeps one shape.**
    - A title line that says what is true now, at most 10 rows, then the `Next` line and
@@ -157,7 +176,7 @@ The pains that came up most often:
    - **A secret shows only its ends**, such as `sk-8…2af8`. The person can tell which key
      it is, and the key does not leak. It is never shown whole.
    - **A plan or a fallback fits one line with an arrow**, such as
-     `1207 → 1209 → 1211` in the `merge` plan.
+     `1207 → 1209 → 1211` for pull requests that wait on each other.
    - **An error says what failed and the ways out, in one sentence.**
    - **Only what is installed is listed.** Setup and the agent list show only the AI tools
      on this machine.
@@ -167,7 +186,7 @@ The pains that came up most often:
 9. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
    2. Hide and fold the commands.
-   3. `merge`, `kanban` and `desk`.
+   3. `desk`, `kanban` and `tidy`.
    4. The first-screen issues (#1037 to #1040, #1043, #1044).
    5. The README (issue #1035) in all four languages.
 
@@ -191,10 +210,16 @@ The pains that came up most often:
 - **Six new commands** (`run`, `watch`, `prove`, `land`, `why`, `undo`). Each name was
   clearer on its own. But six new commands mean new docs, guides, tests and skills in four
   languages, the area where we break things most. The existing names carry the same jobs.
+- **A `merge` command for the merge queue.** It was in the first version of this record.
+  The owner decided it is not worth a command: GitHub already has the approve and merge
+  buttons, and its own merge queue where the repository allows one. Our own queue was
+  where `train` merged without being asked. The code stays as the hidden `train`.
 - **Delete the commands nobody new uses.** The owner chose to hide them. Agents, CI and
   our own pipeline still use them, and deleting code is hard to take back.
 - **Keep `check` and `explain` visible.** Proof that a person has to ask for is proof a
   new coder never sees. The kanban and the refusal already bring it to them.
+- **A `tidy` that deletes.** The clean-up on 2026-10-26 found unpushed commits in 232
+  desk clones. A delete would have lost them. Moving to trash after a copy can be undone.
 - **Polish all 32 screens one by one.** It costs the most and leaves the structure as it
   is.
 - **Build the model gateway into yokoten.** It would be a large project in another
@@ -206,14 +231,18 @@ The pains that came up most often:
 - **Easier:** a narrow scope makes the work light (the owner: "缩小范围我们可以轻松").
   - the first screen and `help` fit a beginner;
   - the three commands that acted on their own become safe;
+  - old work no longer piles up out of sight;
   - the work has an order.
 - **Harder:**
   - every hidden command still needs its tests;
   - folded commands need a "moved to" line, with a test;
-  - docs must stop teaching the hidden names.
+  - docs must stop teaching the hidden names;
+  - `tidy` must work the same on Windows, macOS and Linux, long paths included.
 - **To check:**
-  - `help` lists exactly the four commands;
+  - `help` lists exactly the three commands;
   - each folded command names its new home;
   - no bare command writes, merges or posts (a test per command);
+  - `tidy --local` moves nothing when the copy fails, and a test restores a branch from
+    its bundle;
   - the kanban prints no token;
   - the release walk-through finds zero problems before the tag.
