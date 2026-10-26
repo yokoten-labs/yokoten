@@ -1353,6 +1353,8 @@ test('check --staged: privacy.skipOwnName false in yokoten.json looks for the ma
 test('check --staged: reads over 1 MB of staged file names in full (#403)', async () => {
   const sandbox = makeSandbox();
   const long = 'n'.repeat(240);
+  // Each path is past Windows' 260 characters; Git for Windows adds such a file only with this.
+  sandbox.git('config', 'core.longpaths', 'true');
   mkdirSync(join(sandbox.repo, 'many'));
   for (let i = 0; i < 4300; i++) writeFileSync(join(sandbox.repo, 'many', `${long}-${i}.txt`), '');
   sandbox.git('add', '.');
