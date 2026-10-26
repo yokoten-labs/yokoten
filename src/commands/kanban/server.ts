@@ -179,6 +179,8 @@ export interface BoardServerOptions {
   feedMask?: (text: string) => string;
   /** The built page's folder. Tests pass their own. */
   pageDir?: string;
+  /** How often a stream looks for new output, in ms. Tests pass a short one. */
+  streamEveryMs?: number;
 }
 
 /**
@@ -332,13 +334,14 @@ export function startBoardServer(root: string, env: Env, gh: GhLater, options: B
           res.end('event: failed\ndata: {}\n\n');
           stop();
         }
-      }, STREAM_EVERY_MS);
+      }, options.streamEveryMs ?? STREAM_EVERY_MS);
       const stop = () => {
         clearInterval(timer);
         streamTimers.delete(timer);
       };
       streamTimers.add(timer);
-      req.on('close', stop);
+      // The answer closes when the page goes; the request may close as soon as it is read.
+      res.on('close', stop);
       return;
     }
     return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');

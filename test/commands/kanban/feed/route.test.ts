@@ -191,3 +191,44 @@ test('kanban stream: a mask that fails sends no line', async () => {
     server.closeAllConnections();
   }
 });
+
+// #694: the stream stays open and sends each new part as its own event.
+test('kanban stream: a new line arrives as the next event on the open stream', { timeout: 10000 }, async () => {
+  const sandbox = makeSandbox();
+  const log = join(sandbox.repo, 'runner.log');
+  writeFileSync(log, 'first line\n');
+  writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'w', vendor: 'opencode', worktree: sandbox.repo, log }));
+  const env = { ...sandbox.env, HOME: dirname(sandbox.repo) };
+  const { server, url } = await startBoardServer(sandbox.repo, env, () => '[]', { feedMask: (text) => text, streamEveryMs: 20 });
+  try {
+    const base = new URL(url.split('?')[0]);
+    const cookie = await boardCookie(url);
+    const events: { items: { text: string }[] }[] = [];
+    await new Promise<void>((done, failed) => {
+      const path = `/api/sessions/${sessionId('~/repo')}/stream`;
+      const asked = request({ host: dialHost(base.hostname), port: base.port, path, headers: { cookie, host: base.host } }, (res) => {
+        let text = '';
+        res.on('data', (chunk: Buffer) => {
+          text += chunk.toString('utf8');
+          for (let cut = text.indexOf('\n\n'); cut >= 0; cut = text.indexOf('\n\n')) {
+            const data = /^data: (.*)$/m.exec(text.slice(0, cut))?.[1];
+            text = text.slice(cut + 2);
+            if (!data) continue;
+            events.push(JSON.parse(data) as { items: { text: string }[] });
+            if (events.length === 1) appendFileSync(log, 'second line\n');
+            if (events.length === 2) {
+              res.destroy();
+              done();
+            }
+          }
+        });
+      });
+      asked.on('error', failed);
+      asked.end();
+    });
+    assert.deepEqual(events.map((event) => event.items.map((item) => item.text)), [['first line'], ['second line']]);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+});
