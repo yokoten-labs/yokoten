@@ -109,7 +109,6 @@ test/rules/privacy.test.ts :: privacy comes before the title, and a file path in
 test/rules/privacy.test.ts :: reading a pipe at the end stays linear (#498)
 test/rules/privacy.test.ts :: the fold: a long run of mixed combining marks stays linear (#507)
 test/rules/privacy.test.ts :: the lead's command with a body file on disk: commands that write no file don't stop it (#439)
-test/run/check.test.ts :: check --staged: reads 5,000 staged files in full, past the default buffer (#403)
 test/run/check.test.ts :: marks allow: no mark is echoed, -- takes a mark that starts with -, a linked file stays a link, and a failed save says so plainly (#447)
 test/run/cli.test.ts :: demo: scripts/demo/loop.ts walks the loop from an incident to a doctor note, and leaves nothing
 test/run/cli.test.ts :: hooks: a missing runtime says one plain line with no path, never a stack trace (#204)
@@ -141,7 +140,6 @@ test/setup/doctor/checks.test.ts :: doctor --session: with the plugin on, takes 
 test/setup/doctor/checks.test.ts :: doctor --session: without the plugin, an install stays as it is (#935)
 test/setup/doctor/checks.test.ts :: doctor: a home install and a project copy each get their own fix (#540)
 test/setup/doctor/checks.test.ts :: doctor: a note when no yokoten on the PATH runs the installed copy (#433)
-test/setup/doctor/checks.test.ts :: doctor: a runtime-only home with a project copy says only which folder to delete (#540)
 test/setup/doctor/checks.test.ts :: doctor: a skills-only copy alone is a note that names the duplicate (#540)
 test/setup/doctor/checks.test.ts :: doctor: names a newer kit copy that waits behind an edit (#477)
 test/setup/doctor/checks.test.ts :: doctor: the plugin and install both on is a note that says to uninstall (#300)
@@ -158,7 +156,6 @@ test/setup/doctor/report.test.ts :: doctor: on another host, each forge step say
 # On a slow GitHub runner the whole file can still pass its cap; then none of the 18 ran, so it may time out instead.
 ? test/setup/init.test.ts :: (timed out)
 test/setup/init.test.ts :: init: a CODEOWNERS owner gh says is a user is written as is (#313)
-test/setup/init.test.ts :: init: a Codex home shows the one trust command, and the other agents stay one line (#654, #661)
 test/setup/init.test.ts :: init: a merge commit runs the commit check too (#239)
 test/setup/init.test.ts :: init: a private repo can keep CI off with --no-ci, finish the road, and take CI up again (#377)
 test/setup/init.test.ts :: init: a second run with nothing to do is one line, and --list keeps every file (#1027)
@@ -169,7 +166,6 @@ test/setup/init.test.ts :: init: husky keeps its hooks folder; .husky/pre-commit
 test/setup/init.test.ts :: init: reads GitHub and says what it would do; --github --yes does it, and a second run changes nothing (#10)
 test/setup/init.test.ts :: init: with no agent installed, the git hook line leads and trust steps fold into the guide (#654)
 test/setup/init.test.ts :: trust (#661): Grok CLI gets one folder entry; undo leaves another folder alone
-test/setup/init.test.ts :: trust (#661): Muse Code gets its project decision; undo leaves another project alone
 test/setup/init.test.ts :: trust (#661): a foreign hook is never trusted, even when it ends with yokoten's flags
 test/setup/init.test.ts :: trust (#661): a hook edited after trust stays off until init puts it back
 test/setup/init.test.ts :: trust (#661): init without a terminal writes nothing and names the command; trust writes only yokoten entries
