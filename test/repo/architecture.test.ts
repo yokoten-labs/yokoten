@@ -500,6 +500,11 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   const onPullRequest = (paths: string[]) => runChanges({ EVENT: 'pull_request', BASE_SHA: base, HEAD_SHA: pullRequest(paths) }).output;
   // Docs-only: the short run.
   assert.equal(onPullRequest(['docs/guide.md', 'changes/1-a.md', 'README.md', 'docs/i18n/README.md', 'CHANGELOG.md', 'src/CHANGELOG.md']), 'docs_only=true\n');
+  // Any Markdown file counts, outside the rules, the kit and CI (#1051).
+  assert.equal(onPullRequest(['CONTRIBUTING.md', 'src/notes.md', 'docs/records/0099-a.md']), 'docs_only=true\n');
+  assert.equal(onPullRequest(['src/AGENTS.md']), 'docs_only=false\n', 'an AGENTS.md holds rules');
+  assert.equal(onPullRequest(['.github/SECURITY.md']), 'docs_only=false\n');
+  assert.equal(onPullRequest(['kit/user/skills/record/SKILL.md']), 'docs_only=false\n', 'kit/ is what other projects get');
   // One file that is not docs: the full run.
   assert.equal(onPullRequest(['docs/guide.md', 'src/a.ts']), 'docs_only=false\n');
   assert.equal(onPullRequest(['kit/project/README.md']), 'docs_only=false\n', 'kit/ is what other projects get');
@@ -519,7 +524,7 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   }
 });
 
-test('ci: a docs-only pull request runs one test job, skips typecheck, action and Windows, and `ci` is green (#438)', () => {
+test('ci: a docs-only pull request runs one test job, skips typecheck, action, lint and Windows, and `ci` is green (#438, #1051)', () => {
   const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
   const testJob = jobBlock(text, 'test');
   const matrix = (docsOnly: string, event: string) => {
@@ -529,10 +534,10 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action an
     const extra = evaluate(inBraces(testJob, /^ {8}include: \$\{\{ (.+) \}\}$/m), needs, github) as { os: string; node: string; shard: number; of: number }[];
     // Every setup runs each of its shards: three, or the whole suite in one macOS job
     // on a pull request, so the shared runners stay free (#568).
-    const shards = JSON.parse(inBraces(testJob, /^ {8}shard: (\[.+\])$/m)) as number[];
-    assert.deepEqual(shards, [1, 2, 3]);
-    const ofAxis = JSON.parse(inBraces(testJob, /^ {8}of: (\[.+\])$/m)) as number[];
-    assert.deepEqual(ofAxis, [3]);
+    // A docs-only pull request runs one job, not three shards (#1051).
+    const shards = evaluate(inBraces(testJob, /^ {8}shard: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
+    const ofAxis = evaluate(inBraces(testJob, /^ {8}of: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
+    assert.deepEqual([shards, ofAxis], docsOnly === 'true' ? [[1], [1]] : [[1, 2, 3], [3]]);
     for (const setup of new Set(extra.map((entry) => `${entry.os} ${entry.node}`))) {
       const runs = extra.filter((entry) => `${entry.os} ${entry.node}` === setup);
       assert.ok(runs.every((entry) => entry.of === runs[0].of), `${setup}: mixed shard counts`);
@@ -559,22 +564,27 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action an
   }
   assert.deepEqual(matrix('', 'pull_request').setups, full, '`changes` failed: the full run');
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
-  for (const name of ['typecheck', 'action', 'windows']) {
+  for (const name of ['typecheck', 'action', 'windows', 'lint']) {
     const condition = jobCondition(jobBlock(text, name));
     assert.equal(evaluate(condition, results('true', {})), false, `${name} is skipped on a docs-only pull request`);
     assert.equal(evaluate(condition, results('false', {})), true, `${name} runs in full`);
     assert.equal(evaluate(condition, results('', {})), true, `${name} runs when \`changes\` failed`);
   }
-  for (const name of ['check', 'lint']) assert.doesNotMatch(jobBlock(text, name), /^ {4}(?:if|needs):/m, `${name} runs as before, on every pull request`);
+  assert.doesNotMatch(jobBlock(text, 'check'), /^ {4}(?:if|needs):/m, 'check runs on every pull request: it holds the privacy rule');
+  // A docs-only pull request runs only the tests that read the docs; the time budget is for the whole suite.
+  assert.match(testJob, /- if: needs\.changes\.outputs\.docs_only == 'true'\n {8}run: node --test [^\n]*test\/repo\/docs\//);
+  assert.match(testJob, /- if: needs\.changes\.outputs\.docs_only != 'true'\n {8}run: node --test --test-concurrency/);
+  assert.match(testJob, /- if: needs\.changes\.outputs\.docs_only != 'true'\n {8}run: node scripts\/time\/suite\.ts/);
   // `ci` is red when this is true.
   const isRed = (docsOnly: string, jobResults: Record<string, string>) => evaluate(ciRule(text), results(docsOnly, jobResults));
   const green = { test: 'success', windows: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
-  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped' };
+  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
   assert.equal(isRed('true', docsRun), false, 'docs-only: typecheck and action skipped on purpose');
   assert.equal(isRed('false', green), false);
   assert.equal(isRed('false', docsRun), true, 'skipped on a full run is red');
   assert.equal(isRed('true', { ...docsRun, test: 'skipped' }), true, 'test always runs');
-  assert.equal(isRed('true', { ...docsRun, lint: 'skipped' }), true, 'lint always runs');
+  assert.equal(isRed('false', { ...green, lint: 'skipped' }), true, 'lint runs in full');
+  assert.equal(isRed('true', { ...docsRun, lint: 'failure' }), true);
   assert.equal(isRed('true', { ...docsRun, check: 'failure' }), true);
   assert.equal(isRed('true', { ...docsRun, test: 'cancelled' }), true);
   assert.equal(isRed('false', { ...green, windows: 'failure' }), true, 'a Windows failure is red (record 0040)');

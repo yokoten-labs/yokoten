@@ -1998,6 +1998,15 @@ const withTestsJob = (yml: string): string =>
 /** The kit's yokoten.yml before #451, rebuilt from the newest: one of the versions init wrote. */
 const oldYokotenYml = () =>
   kitWorkflow('yokoten.yml')
+    // Before #1051, only docs/, changes/, README.md and CHANGELOG.md were docs-only.
+    .replace(
+      "  # docs/ or changes/, or is a Markdown file outside kit/ and .github/ that is not an\n  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A push to\n  # main is a full run, and so is a merge queue group. So is a file list that can't be\n  # read: docs_only is true only when the list was read and every file fits.\n",
+      "  # docs/ or changes/, or is a README.md or CHANGELOG.md outside kit/. Then the jobs that\n  # Markdown can't break are skipped. A push to main is a full run, and so is a merge\n  # queue group. So is a file list that can't be read: docs_only is true only when the\n  # list was read and every file fits.\n",
+    )
+    .replace(
+      '                kit/*|.github/*|AGENTS.md|*/AGENTS.md) docs_only=false ;;\n                docs/*|changes/*|*.md) ;;\n',
+      '                kit/*) docs_only=false ;;\n                docs/*|changes/*|README.md|*/README.md|CHANGELOG.md|*/CHANGELOG.md) ;;\n',
+    )
     // Before #129, the kit ran only its own copy of yokoten, not the released Action.
     .replace(
       `      # yokoten as a released Action (#129), pinned to the first release by its full\n      # commit: a tag can move, a commit cannot. Dependabot keeps it current. It runs the\n      # release's own copy, so a pull request that changes .yokoten/ still meets a check\n      # it cannot edit. pr.yml and issue.yml still run the project's copy.\n      - ${releasedActionPin()}\n        with:\n          pr-check: 'false'\n          issue-check: 'false'\n          node-version: '^22.23.4'\n`,
