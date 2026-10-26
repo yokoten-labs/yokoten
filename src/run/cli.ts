@@ -676,7 +676,7 @@ export const COMMANDS: Command[] = [
     options: [
       { name: '--agent', value: 'name', text: 'the runtime that sends the call: claude-code (the default), codex, gemini, antigravity, muse, deepseek-harness, grok or opencode' },
       { name: '--stop', text: 'read the end-of-turn event of the runtime and check the changed files; a worker also runs the done-when command' },
-      { name: '--commands-only', text: 'judge commands only, and leave files to the project' },
+      { name: '--commands-only', text: 'the user-level guard: skip what only the project hook checks, such as titles' },
       { name: '--json', text: 'the result as JSON on stdout' },
       { name: '--denial', value: 'mode', text: 'the answer a refusal gets: exit2 puts the reason on stderr and exits 2, for a host that ignores a JSON deny' },
       { name: '--protocol', text: 'read one yokoten-guard/1 call on stdin and answer in the same protocol on stdout; any agent tool can send it' },
