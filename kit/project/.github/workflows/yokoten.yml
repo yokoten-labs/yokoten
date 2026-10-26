@@ -20,10 +20,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   # Which files the pull request changes (#438). It is docs-only when each file is under
-  # docs/ or changes/, or is a README.md or CHANGELOG.md outside kit/. Then the jobs that
-  # Markdown can't break are skipped. A push to main is a full run, and so is a merge
-  # queue group. So is a file list that can't be read: docs_only is true only when the
-  # list was read and every file fits.
+  # docs/ or changes/, or is a Markdown file outside kit/ and .github/ that is not an
+  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A push to
+  # main is a full run, and so is a merge queue group. So is a file list that can't be
+  # read: docs_only is true only when the list was read and every file fits.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -54,8 +54,8 @@ jobs:
             docs_only=true
             while IFS= read -r file; do
               case "$file" in
-                kit/*) docs_only=false ;;
-                docs/*|changes/*|README.md|*/README.md|CHANGELOG.md|*/CHANGELOG.md) ;;
+                kit/*|.github/*|AGENTS.md|*/AGENTS.md) docs_only=false ;;
+                docs/*|changes/*|*.md) ;;
                 *) docs_only=false ;;
               esac
             done <<< "$files"
