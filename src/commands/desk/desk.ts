@@ -120,14 +120,14 @@ async function startOrGoOn(invocation: Invocation, world: DeskDeps, root: string
     const refused = deskGitProblem(desk);
     if (refused) return fail(`${refusedLine(refused)}.`);
     const saved = await saveWork((command) => world.fenced(desk, agent.runtime, command, 'pipe'), world.run, desk, record.task);
-    if (typeof saved === 'object') print(invocation, [`yokoten desk: ${saved.problem}. It is still in ${shownPath(invocation.cwd, desk)}.`], invocation.stderr);
+    if (typeof saved === 'object') print(invocation, [`yokoten desk: ${saved.problem}. It is still in ${shownPath(invocation.cwd, desk, invocation.env.HOME)}.`], invocation.stderr);
     const first = existsSync(briefFile(home, name)) ? readFileSync(briefFile(home, name), 'utf8') : briefText({ ...textTask(record.task.title), name }, record.branch);
     brief = `${first.trimEnd()}\n\n## Done so far (you stopped; go on from here)\n\n${commitsSince(world.run, desk, record.base).map((line) => `- ${line}`).join('\n') || '- no commits yet'}\n`;
   } else {
-    if (existsSync(desk)) return fail(`${shownPath(invocation.cwd, desk)} is there but has no record. Move it away, then run this again.`);
+    if (existsSync(desk)) return fail(`${shownPath(invocation.cwd, desk, invocation.env.HOME)} is there but has no record. Move it away, then run this again.`);
     const task: DeskTask | { problem: string } = 'number' in asked ? readIssue(asked.number, world.run, root) : textTask(asked.text);
     if ('problem' in task) return fail(task.problem);
-    print(invocation, [...row('next', `making the desk ${shownPath(invocation.cwd, desk)}`)], invocation.stderr);
+    print(invocation, [...row('next', `making the desk ${shownPath(invocation.cwd, desk, invocation.env.HOME)}`)], invocation.stderr);
     const made = makeClone({ root, name, run: world.run, install: choices.install });
     if ('problem' in made) return fail(made.problem);
     brief = briefText(task, deskBranch(name));
@@ -192,8 +192,8 @@ async function finish(invocation: Invocation, world: DeskDeps, root: string, rec
   writeRecord(home, kept);
   if (ending === 'clean') {
     const moved = moveAside(world.run, home, record.name, world.now());
-    extra.push(...('problem' in moved ? row('note', moved.problem, 'moved') : row('done', `to ${shownPath(invocation.cwd, moved.to)}, with a bundle`, 'moved')));
+    extra.push(...('problem' in moved ? row('note', moved.problem, 'moved') : row('done', `to ${shownPath(invocation.cwd, moved.to, invocation.env.HOME)}, with a bundle`, 'moved')));
   }
-  print(invocation, endingScreen(record.name, ending, evidence, shownPath(invocation.cwd, desk), extra));
+  print(invocation, endingScreen(record.name, ending, evidence, shownPath(invocation.cwd, desk, invocation.env.HOME), extra));
   return ending === 'failed' ? 1 : 0;
 }

@@ -8,7 +8,8 @@
 // push goes from the project's own checkout.
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
+import { showPath } from '../../setup/advice/unsaved.ts';
 import { count, field, nextLine, row, SCREEN_WIDTH, title } from '../shared.ts';
 import type { DeskTask } from './brief.ts';
 import { type Ran, type Run } from './clone.ts';
@@ -228,5 +229,5 @@ export function openPullRequest({ run, root, desk, record, bot, evidence }: Pull
   return { url: lines(opened.stdout).slice(-1)[0] ?? '' };
 }
 
-/** The desk's folder as the person sees it: relative to where they are. */
-export const shownPath = (cwd: string, path: string): string => relative(cwd, path) || path;
+/** The desk's folder as the person sees it, by the one path rule: near is relative, under home is ~. */
+export const shownPath = (cwd: string, path: string, home: string | undefined): string => showPath(path, cwd, home);
