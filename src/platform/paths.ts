@@ -73,3 +73,28 @@ export function pathsFor(platform: NodeJS.Platform): typeof posix {
 export function isHostPaths(platform: NodeJS.Platform): boolean {
   return pathsFor(platform) === nodePath;
 }
+
+// ---- Comparing full paths (#1095) ----
+//
+// Two full paths, each already read through the guard's `realPath`, name the same place when
+// they match as the system compares names. Windows ignores case and reads `/` as `\`, so a
+// comparison there folds both; a system that keeps case compares them as written. Every check
+// that stores or compares a real path goes through these two, so no caller folds its own way.
+
+/** A full path as `platform` compares it: on Windows, `\` separators and lower case. */
+function comparable(path: string, platform: NodeJS.Platform): string {
+  return platform === 'win32' ? path.replace(/\//g, '\\').toLowerCase() : path;
+}
+
+/** Whether `a` and `b` name the same place on `platform`. */
+export function isSamePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
+  return comparable(a, platform) === comparable(b, platform);
+}
+
+/** Whether `path` is `folder` or inside it, on `platform`. */
+export function isPathInside(path: string, folder: string, platform: NodeJS.Platform = process.platform): boolean {
+  const { sep } = pathsFor(platform);
+  const inner = comparable(path, platform);
+  const outer = comparable(folder, platform);
+  return inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
+}

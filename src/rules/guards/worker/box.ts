@@ -1,4 +1,5 @@
-import { isAbsolute, resolve, sep } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
+import { isPathInside } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
@@ -163,7 +164,7 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         const expanded = read === null ? null : placedPath(read, folder);
         const full = expanded === null ? null : isAbsolute(expanded) ? expanded : folder === null ? null : resolve(folder, expanded);
         const real = full === null ? null : realPath(full);
-        if (real === null || box === null || (real !== box && !real.startsWith(box + sep))) {
+        if (real === null || box === null || !isPathInside(real, box)) {
           return boxFinding(`a worker's ${name} stays inside its worktree; ${target} is outside it, or yokoten can't tell where it goes`);
         }
         folder = full;

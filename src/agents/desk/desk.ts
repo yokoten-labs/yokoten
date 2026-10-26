@@ -26,10 +26,11 @@
 // found with PATHEXT. Those rules stay testable on every system.
 
 import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, posix, resolve, win32 } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../../rules/config.ts';
 import { homeIn } from '../../rules/privacy.ts';
+import { isPathInside } from '../../platform/paths.ts';
 import { findProgram, programExtensions } from '../../platform/process.ts';
 import { DESK as CLAUDE_CODE } from '../runtimes/claude-code.ts';
 import { DESK as CODEX } from '../runtimes/codex.ts';
@@ -123,13 +124,7 @@ const WINDOWS_PROFILES = 'Users';
  * Whether `path` is `folder` or inside it. Windows names folders without case, so the
  * comparison there ignores case; a system that keeps case compares it as written.
  */
-export const isInside = (path: string, folder: string, platform: NodeJS.Platform = process.platform): boolean => {
-  const { sep: separator } = platform === 'win32' ? win32 : posix;
-  const same = platform === 'win32' ? path.toLowerCase() === folder.toLowerCase() : path === folder;
-  const prefix = folder.endsWith(separator) ? folder : folder + separator;
-  if (platform === 'win32') return same || path.toLowerCase().startsWith(prefix.toLowerCase());
-  return same || path.startsWith(prefix);
-};
+export const isInside = isPathInside;
 
 /** The real path, or the path itself when it is not there. */
 function realOr(path: string): string {

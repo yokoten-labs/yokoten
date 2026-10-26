@@ -1487,7 +1487,7 @@ test('process: below bin/main.ts, src/ reads no env, folder or stream of the pro
 // fails. When a read moves out, lower its count here, so the list only gets shorter.
 const PLATFORM_READS: [string, number][] = [
   ['agents/copilot.ts', 1],
-  ['agents/desk/desk.ts', 2],
+  ['agents/desk/desk.ts', 1],
   ['agents/desk/start.ts', 1],
   ['agents/runtimes/small/deepseek-harness.ts', 1],
   ['commands/kanban/server.ts', 1],

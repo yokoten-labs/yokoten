@@ -1,10 +1,11 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { addWorkerPath, checkCommand, listedWorker, loadWorkerPaths, markNote, removeWorkerPath, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
+import { addWorkerPath, checkCommand, listedWorker, loadWorkerPaths, markNote, realPath, removeWorkerPath, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
 import { makeTempDir } from '../../../../test/repo/helpers.ts';
+import { isPathInside, isSamePath } from '../../../../src/platform/paths.ts';
 
 test('worker list: a listed path stays a worker with .git moved away (#566)', () => {
   const base = makeTempDir('yokoten-list-');
@@ -24,7 +25,7 @@ test('worker list: a listed path stays a worker with .git moved away (#566)', ()
   writeFileSync(join(store, 'yokoten-worker'), 'x');
   addWorkerPath(env, tree);
   addWorkerPath(env, tree);
-  const top = realpathSync(tree);
+  const top = realPath(tree);
   assert.deepEqual(loadWorkerPaths(env), [top], 'marking twice keeps one entry');
   assert.equal(workerMarkAt(join(tree, 'src'), env), 'mark');
   assert.equal(workerRole(env, [join(tree, 'src')]), 'mark');
@@ -50,7 +51,31 @@ test('worker list: a listed path stays a worker with .git moved away (#566)', ()
   const other = join(base, 'other');
   mkdirSync(other);
   addWorkerPath(env, other);
-  assert.deepEqual(loadWorkerPaths(env), [realpathSync(other)], 'the next mark drops the gone entry');
+  assert.deepEqual(loadWorkerPaths(env), [realPath(other)], 'the next mark drops the gone entry');
+});
+
+// #1095: every stored or compared real path is compared one way. Windows ignores case and
+// reads `/` as `\`; Linux and macOS compare as written.
+test('paths: isSamePath and isPathInside compare as each system compares names (#1095)', () => {
+  const cases: [string, string, NodeJS.Platform, boolean, boolean][] = [
+    // path, folder, platform, same, inside
+    ['C:\\Users\\runneradmin\\wt', 'c:\\users\\RUNNERADMIN\\wt', 'win32', true, true],
+    ['C:\\Users\\runneradmin\\wt\\src', 'C:/Users/RunnerAdmin/wt', 'win32', false, true],
+    ['C:\\Users\\runneradmin\\wt-2', 'C:\\Users\\runneradmin\\wt', 'win32', false, false],
+    ['C:\\Users\\runneradmin', 'C:\\Users\\runneradmin\\wt', 'win32', false, false],
+    ['D:\\', 'D:\\', 'win32', true, true],
+    ['D:\\x', 'D:\\', 'win32', false, true],
+    ['/home/u/wt', '/home/u/wt', 'linux', true, true],
+    ['/home/u/WT', '/home/u/wt', 'linux', false, false],
+    ['/home/u/wt/src', '/home/u/wt', 'linux', false, true],
+    ['/home/u/wt-2', '/home/u/wt', 'linux', false, false],
+    ['/x', '/', 'linux', false, true],
+    ['/Users/u/WT', '/Users/u/wt', 'darwin', false, false],
+  ];
+  for (const [path, folder, platform, same, inside] of cases) {
+    assert.equal(isSamePath(path, folder, platform), same, `same: ${path} ${folder} ${platform}`);
+    assert.equal(isPathInside(path, folder, platform), inside, `inside: ${path} ${folder} ${platform}`);
+  }
 });
 
 // #566: `yokoten worker unmark` is the lead's: the command guard refuses it for a
