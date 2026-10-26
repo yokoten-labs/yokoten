@@ -1128,8 +1128,8 @@ test('worker mark: a missing folder, a submodule and an unwritable git folder ea
     chmodSync(gitDir, 0o755);
   }
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten worker: can't write the mark in .*\(EACCES\)/);
-  assert.equal(result.stderr.trim().split('\n').length, 1, result.stderr);
+  assert.match(result.stderr, /^yokoten worker: can't write the mark in .*\(EACCES\)/m);
+  assert.equal(result.stderr.trim().split('\n').length, 2, 'the moved line, then one line');
 });
 
 // #566: `worker mark` keeps the role on the worker list when `.git` is moved away;
