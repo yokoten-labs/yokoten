@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import {
   CLI,
   makeSandbox,
+  writeNodeProgram,
 } from '../../../repo/helpers.ts';
 import { invoke } from '../../../repo/invoke.ts';
 import { botHeading } from '../../../../src/commands/more/merge/bot.ts';
@@ -1597,9 +1598,8 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
   sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
   const bin = join(sandbox.home, 'bin');
   const log = join(sandbox.home, 'gh.log');
-  mkdirSync(bin);
-  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args: process.argv.slice(2), input: require('node:fs').readFileSync(0, 'utf8') }) + '\\n');\n`);
-  chmodSync(join(bin, 'gh'), 0o755);
+  // A fake gh that works on each system (#1068).
+  const ghEnv = writeNodeProgram(bin, 'gh', `const fs = process.getBuiltinModule('node:fs'); fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, 'utf8') }) + '\\n');`);
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
@@ -1607,7 +1607,7 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const key = join(sandbox.home, 'bot.pem');
   writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
-  const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const bot = { ...ghEnv, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
   const run = (command: string[], input = '') => sandbox.call(['bot', '--', ...command], { input, extra: bot });
   const ran = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : []);
   // A token built from pieces, so the repo passes its own privacy check.
@@ -1670,18 +1670,16 @@ test('bot: a body file changed after the check does not change what is sent (#10
   const log = join(sandbox.home, 'gh.log');
   const bodyFile = join(sandbox.home, 'body.md');
   const secret = `ghp_${'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8'}`;
-  mkdirSync(bin);
-  writeFileSync(
-    join(bin, 'gh'),
+  const ghEnv = writeNodeProgram(
+    bin,
+    'gh',
     [
-      '#!/usr/bin/env node',
-      'const fs = require("node:fs"); const args = process.argv.slice(2);',
+      'const fs = process.getBuiltinModule("node:fs");',
       `if (args[0] === "label") { fs.writeFileSync(${JSON.stringify(bodyFile)}, ${JSON.stringify(`Key ${secret}\n`)}); process.stdout.write(JSON.stringify([{ name: "bug" }, { name: "tier B" }])); process.exit(0); }`,
       'if (args[0] === "issue" && args[1] === "view") { console.log(JSON.stringify({ milestone: { number: 1, title: "M1" } })); process.exit(0); }',
       `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, input: fs.readFileSync(0, "utf8") }) + "\\n");`,
     ].join('\n'),
   );
-  chmodSync(join(bin, 'gh'), 0o755);
   const server = createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify(req.method === 'GET' ? { id: 77 } : { token: 'ghs_test' }));
@@ -1689,7 +1687,7 @@ test('bot: a body file changed after the check does not change what is sent (#10
   await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
   const key = join(sandbox.home, 'bot.pem');
   writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
-  const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+  const bot = { ...ghEnv, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
   const checked = 'tier: B\nCloses #1\n\n## Why\nx\n\n## What changed\nx\n\n## How tested\nx\n\nMade with worker (opus)\n';
   writeFileSync(bodyFile, checked);
   try {
