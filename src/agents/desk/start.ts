@@ -32,7 +32,7 @@ export function chooseBackend(platform: NodeJS.Platform, env: Env, projects: str
   if (typeof srt !== 'string') return srt.problem;
   const probe = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-fence-')));
   try {
-    return srtProblem(srt, env, probe) ?? srtBackend(srt, platform);
+    return srtProblem(srt, env, probe, projects) ?? srtBackend(srt, platform, projects);
   } finally {
     rmSync(probe, { recursive: true, force: true });
   }

@@ -6,10 +6,11 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { fenceCommand, findSrt, NPX_ARGS, splitHidden, SRT_VERSION, type SrtPlan, srtProblem, srtSettings, trustedPath } from '../../../../src/agents/desk/fence/srt.ts';
+import type { DeskPlan } from '../../../../src/agents/desk/desk.ts';
+import { fenceCommand, findSrt, NPX_ARGS, splitHidden, SRT_VERSION, type SrtPlan, srtBackend, srtProblem, srtSettings, trustedPath } from '../../../../src/agents/desk/fence/srt.ts';
 import { startOptions, treeKill } from '../../../../src/platform/process.ts';
 import { makeTempDir } from '../../../repo/helpers.ts';
 
@@ -136,12 +137,45 @@ test('findSrt: an srt the project planted is never chosen, nor run (positive con
 test('srtProblem: srt that fails to start gives its first line; one that starts gives null', () => {
   const settings = realpathSync(makeTempDir('fence-'));
   const broken = join(fakeProgram('srt', SRT_VERSION, 1), 'srt');
-  assert.equal(srtProblem(broken, {}, settings), "the sandbox (sandbox-runtime 0.0.81) can't start here: Error: socat not installed. Nothing was started.");
-  assert.match(srtProblem(join(settings, 'missing'), {}, makeTempDir('fence-')) ?? '', /can't run .*missing \(ENOENT\)/);
-  assert.equal(srtProblem(join(fakeProgram('srt', SRT_VERSION, 0), 'srt'), {}, makeTempDir('fence-')), null);
+  assert.equal(srtProblem(broken, {}, settings, []), "the sandbox (sandbox-runtime 0.0.81) can't start here: Error: socat not installed. Nothing was started.");
+  assert.match(srtProblem(join(settings, 'missing'), {}, makeTempDir('fence-'), []) ?? '', /can't run .*missing \(ENOENT\)/);
+  assert.equal(srtProblem(join(fakeProgram('srt', SRT_VERSION, 0), 'srt'), {}, makeTempDir('fence-'), []), null);
   // The probe's settings: no network, no writes outside its own folder, and read-only.
   const written = JSON.parse(readFileSync(join(settings, 'srt-probe.json'), 'utf8'));
   assert.deepEqual(written.network.allowedDomains, []);
+});
+
+test('srt starts with no program a project planted on PATH: not node, bwrap, socat or rg (positive control)', () => {
+  const project = realpathSync(makeTempDir('project-'));
+  mkdirSync(join(project, '.git'));
+  const desk = join(project, 'desk');
+  mkdirSync(desk);
+  const planted = join(project, 'node_modules', '.bin');
+  mkdirSync(planted, { recursive: true });
+  const marker = join(realpathSync(makeTempDir('marker-')), 'ran.txt');
+  for (const name of ['node', 'bwrap', 'socat', 'rg']) {
+    writeFileSync(join(planted, name), `#!/bin/sh\necho $0 >> ${JSON.stringify(marker)}\nexit 1\n`);
+    chmodSync(join(planted, name), 0o755);
+  }
+  // An srt shaped like npm's: `#!/usr/bin/env node`, and it looks up its helpers on PATH.
+  const trusted = realpathSync(makeTempDir('bin-'));
+  writeFileSync(join(trusted, 'srt'), `#!/usr/bin/env node\nif (process.argv[2] === '--version') { console.log(${JSON.stringify(SRT_VERSION)}); process.exit(0); }\nfor (const helper of ['bwrap', 'socat', 'rg']) require('child_process').spawnSync(helper, ['--version']);\n`);
+  chmodSync(join(trusted, 'srt'), 0o755);
+  const srt = join(trusted, 'srt');
+  const env = { HOME: process.env.HOME ?? '', PATH: [planted, './node_modules/.bin', trusted, dirname(process.execPath), '/usr/bin', '/bin'].join(':') };
+  // The setup is real: started the plain way, the planted node runs.
+  spawnSync(srt, ['--version'], { env, cwd: project });
+  assert.ok(existsSync(marker), 'control: a plain start runs the planted node');
+  rmSync(marker);
+  const settings = realpathSync(makeTempDir('fence-'));
+  assert.equal(srtProblem(srt, env, settings, [desk]), null, 'the probe');
+  const plan = { desk, state: [], readable: [], hidden: [], locked: [], hosts: [], env, command: ['true'] } as unknown as DeskPlan;
+  const fenced = srtBackend(srt, 'linux', [desk]).fence(plan, 0, settings);
+  assert.ok(!fenced.env.PATH?.split(':').includes(planted), 'the agent PATH drops the project folder');
+  assert.equal(spawnSync(fenced.file, fenced.args, { env: fenced.env, cwd: desk }).status, 0, 'the desk start');
+  const command = fenceCommand({ root: desk, writable: [], network: [] }, ['true'], 'linux', env);
+  assert.equal(spawnSync(command.command[0], command.command.slice(1), { env, cwd: desk }).status, 0, 'fenceCommand');
+  assert.ok(!existsSync(marker), `a planted program ran: ${existsSync(marker) ? readFileSync(marker, 'utf8') : ''}`);
 });
 
 test('fenceCommand: native Windows gets the guard and WSL; a fence that cannot start refuses (fail closed)', () => {
@@ -154,7 +188,7 @@ test('fenceCommand: native Windows gets the guard and WSL; a fence that cannot s
 });
 
 const real = findSrt(process.env, process.platform, [process.cwd()]);
-const reason = typeof real === 'string' ? srtProblem(real, process.env, makeTempDir('fence-')) : real.problem;
+const reason = typeof real === 'string' ? srtProblem(real, process.env, makeTempDir('fence-'), [process.cwd()]) : real.problem;
 
 test('fenceCommand: with srt here, the command writes in the root and nowhere else', { skip: (process.platform === 'win32' && 'no srt fence on native Windows') || reason || false }, () => {
   const projects = realpathSync(makeTempDir('projects-'));

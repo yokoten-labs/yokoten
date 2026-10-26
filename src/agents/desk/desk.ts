@@ -229,6 +229,13 @@ export function prepareDeskState(runtime: RuntimeDesk, name: string, desk: strin
   return state;
 }
 
+/** Why `desk` can't be a desk, or null: it must be a git clone of its own, not a worktree. */
+export function cloneProblem(desk: string): string | null {
+  if (!existsSync(join(desk, '.git'))) return `${desk} is not a git clone. Make the desk with \`git clone <repo> <folder>\`.`;
+  if (statSync(join(desk, '.git')).isFile()) return `${desk} is a worktree: its git folder lives in another checkout, which the desk hides. Make the desk with \`git clone\`.`;
+  return null;
+}
+
 /**
  * Turn a request into the desk's plan. It throws, with a reason the lead can act on, when
  * the runtime is unknown, the folder is not a clone, or a path would open a hidden folder.
@@ -251,8 +258,8 @@ export function planDesk(request: DeskRequest): DeskPlan {
   const identity = model && vendor !== vendorOf(request.runtime, '') ? { model, vendor } : null;
   const home = realOr(homeIn(env));
   const desk = realOr(resolve(request.desk));
-  if (!existsSync(join(desk, '.git'))) throw new Error(`${desk} is not a git clone. Make the desk with \`git clone <repo> <folder>\`.`);
-  if (statSync(join(desk, '.git')).isFile()) throw new Error(`${desk} is a worktree: its git folder lives in another checkout, which the desk hides. Make the desk with \`git clone\`.`);
+  const notClone = cloneProblem(desk);
+  if (notClone) throw new Error(notClone);
   requireReal(join(desk, '.git'), 'folder');
   // The lead's own state is hidden too, where it lives outside the home folder.
   const leadState = runtime.leadState(env).map(realOr).filter((path) => existsSync(path));

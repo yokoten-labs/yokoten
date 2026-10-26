@@ -13,7 +13,7 @@
 // - `YOKOTEN_FENCE=own` picks the old backends (bwrap.ts, seatbelt.ts) for a while, in start.ts.
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, mkdtempSync, openSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { findProgram } from '../../../platform/process.ts';
@@ -186,6 +186,35 @@ export function findSrt(env: Env, platform: NodeJS.Platform, projects: string[],
   }
 }
 
+/** True when `file` is a Node script whose first line asks PATH (or a fixed path) for `node`. */
+const isNodeScript = (file: string): boolean => {
+  let fd: number | null = null;
+  try {
+    fd = openSync(file, 'r');
+    const head = Buffer.alloc(256);
+    const line = head.subarray(0, readSync(fd, head, 0, head.length, 0)).toString('utf8').split('\n')[0] ?? '';
+    return /^#!\s*(\/usr\/bin\/env\s+node|\/\S*\/node)\s*$/.test(line);
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
+};
+
+/** How srt starts: the program, the words before its own, and its environment. */
+export type SrtLaunch = { file: string; args: string[]; env: Env };
+
+/**
+ * How to start `srt` so that nothing from a project runs before the fence holds. npm's srt is
+ * a Node script (`#!/usr/bin/env node`), so this Node runs it straight and PATH is never asked
+ * for `node`. srt finds bwrap, socat and rg on PATH, so its PATH keeps only the trusted
+ * folders (`trustedPath`). That PATH is the agent's inside the fence too.
+ */
+export function srtLaunch(srt: string, env: Env, projects: string[]): SrtLaunch {
+  const safe: Env = { ...env, PATH: trustedPath(env.PATH, projects, false) };
+  return isNodeScript(srt) ? { file: process.execPath, args: [realOr(srt)], env: safe } : { file: srt, args: [], env: safe };
+}
+
 /** Write the settings for `plan` into `folder`, read-only, and return the file. */
 function writeSettings(folder: string, name: string, plan: SrtPlan): string {
   const file = join(folder, name);
@@ -196,11 +225,13 @@ function writeSettings(folder: string, name: string, plan: SrtPlan): string {
 
 /**
  * Null when `srt` starts a sandbox here; else the reason in one line. It runs `true` in a
- * sandbox with no network and no writes.
+ * sandbox with no network and no writes. srt starts as `srtLaunch` gives, so a program a
+ * project planted on PATH never runs here.
  */
-export function srtProblem(srt: string, env: Env, settingsFolder: string): string | null {
+export function srtProblem(srt: string, env: Env, settingsFolder: string, projects: string[]): string | null {
   const settings = writeSettings(settingsFolder, 'srt-probe.json', { desk: settingsFolder, state: [], readable: [], hidden: [], locked: [], hosts: [] });
-  const tried = spawnSync(srt, ['--settings', settings, '--', 'true'], { env, encoding: 'utf8', timeout: 120_000, shell: false });
+  const launch = srtLaunch(srt, env, projects);
+  const tried = spawnSync(launch.file, [...launch.args, '--settings', settings, '--', 'true'], { env: launch.env, encoding: 'utf8', timeout: 120_000, shell: false });
   if (tried.error) return srtRefusal(`can't run ${srt} (${(tried.error as NodeJS.ErrnoException).code ?? tried.error.message})`);
   if (tried.status === 0) return null;
   const said = `${tried.stderr ?? ''}\n${tried.stdout ?? ''}`.split('\n').map((line) => line.trim()).find(Boolean);
@@ -222,7 +253,8 @@ const withSrtFiles = (plan: SrtPlan, srt: string): SrtPlan => ({ ...plan, readab
  * is srt, with a settings file in a new private temp folder; it throws, with one plain line,
  * when srt can't start (fail closed). On native Windows it is the command as it is, under
  * the guard alone, with a notice to use WSL: the desk there starts nothing. `env` is the
- * Invocation's (#475): PATH finds srt, and YOKOTEN_FENCE is read.
+ * Invocation's (#475): PATH finds srt, and YOKOTEN_FENCE is read. The command sets srt's
+ * own PATH (`srtLaunch`) through `env`, so it is safe whatever environment starts it.
  */
 export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJS.Platform, env: Env): FencedCommand {
   if (platform === 'win32') return { command, fence: 'guard', notice: WINDOWS_NOTICE };
@@ -230,8 +262,11 @@ export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJ
   const srt = findSrt(env, platform, [spec.root]);
   if (typeof srt !== 'string') throw new Error(srt.problem);
   const folder = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-fence-')));
-  const problem = srtProblem(srt, env, folder);
+  const problem = srtProblem(srt, env, folder, [spec.root]);
   if (problem) throw new Error(problem);
+  const launch = srtLaunch(srt, env, [spec.root]);
+  const setEnv = findProgram('env', launch.env.PATH, platform, env);
+  if (!setEnv) throw new Error(srtRefusal('no env program on a trusted PATH folder'));
   const program = findProgram(command[0] ?? '', env.PATH, platform, env);
   const home = homeIn(env);
   const plan: SrtPlan = {
@@ -244,22 +279,23 @@ export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJ
     hosts: spec.network,
   };
   const settings = writeSettings(folder, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform));
-  return { command: [srt, '--settings', settings, '--', ...command], fence: 'system', notice: fenceNotice(spec.network) };
+  return { command: [setEnv, `PATH=${launch.env.PATH ?? ''}`, launch.file, ...launch.args, '--settings', settings, '--', ...command], fence: 'system', notice: fenceNotice(spec.network) };
 }
 
 /**
  * The desk backend for start.ts. srt runs its own proxy, so the desk starts none
  * (`proxyAddress` is null), and srt sets the proxy names in the agent's environment.
+ * srt starts as `srtLaunch` gives: `projects` are the folders no program may come from.
  */
-export function srtBackend(srt: string, platform: NodeJS.Platform): DeskBackend {
+export function srtBackend(srt: string, platform: NodeJS.Platform, projects: string[]): DeskBackend {
   return {
     name: `sandbox-runtime ${SRT_VERSION} (Anthropic, Apache-2.0)`,
     problem: () => null,
     proxyAddress: () => null,
-    fence: (plan: DeskPlan, _: string | number, scratch: string) => ({
-      file: srt,
-      args: ['--settings', writeSettings(scratch, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform)), '--', ...plan.command],
-      env: plan.env,
-    }),
+    fence: (plan: DeskPlan, _: string | number, scratch: string) => {
+      const launch = srtLaunch(srt, plan.env, projects);
+      const settings = writeSettings(scratch, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform));
+      return { file: launch.file, args: [...launch.args, '--settings', settings, '--', ...plan.command], env: { ...plan.env, PATH: launch.env.PATH ?? '' } };
+    },
   };
 }
