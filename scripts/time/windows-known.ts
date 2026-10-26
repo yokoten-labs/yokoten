@@ -233,14 +233,14 @@ export function isCrash(file: string, run: FileRun): boolean {
 
 /**
  * Run a file, and once more when the first run crashed. `first` is the crashed run, kept for
- * its stderr; `isFlaky` is true when the second run did not crash. A crash is never hidden:
+ * its stderr; `isFlaky` is true when the second run neither crashed nor timed out. A crash is never hidden:
  * the caller prints both runs.
  */
 export async function runWithRetry(file: string, run: (file: string) => Promise<FileRun>): Promise<{ last: FileRun; first?: FileRun; isFlaky: boolean }> {
   const once = await run(file);
   if (!isCrash(file, once)) return { last: once, isFlaky: false };
   const again = await run(file);
-  return { last: again, first: once, isFlaky: !isCrash(file, again) };
+  return { last: again, first: once, isFlaky: !again.timedOut && !isCrash(file, again) };
 }
 
 /**
@@ -455,7 +455,7 @@ async function main(): Promise<number> {
       if (first) {
         // Never hidden: the crash's own words, and whether the second run got through.
         if (isFlaky) flakyFiles.push(name);
-        const said = [`${isFlaky ? 'FLAKY  ' : 'CRASHED'} ${name}: crashed, ran once more, ${isFlaky ? 'and the second run got through' : 'and crashed again'}. The first run said:`, ...crashLines(first, folders)];
+        const said = [`${isFlaky ? 'FLAKY  ' : 'CRASHED'} ${name}: crashed, ran once more, ${isFlaky ? 'and the second run did not crash (its test results count as usual)' : 'and the second run crashed or timed out'}. The first run said:`, ...crashLines(first, folders)];
         if (!isFlaky) said.push('    The second run said:', ...crashLines(last, folders));
         process.stdout.write(`${said.join('\n')}\n`);
       }
