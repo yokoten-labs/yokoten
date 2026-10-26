@@ -44,7 +44,7 @@ import {
 import { DEFAULTS } from '../../src/rules/config.ts';
 import { parseCodeOwners } from '../../src/rules/pr.ts';
 import { hasHook, skippedBecause, UnreadableHooksFile } from '../../src/agents/hooks-file.ts';
-import { checkProjectSettings } from '../../src/agents/runtimes/claude-code.ts';
+import { addProjectSandbox as addClaudeSandbox, checkProjectSettings } from '../../src/agents/runtimes/claude-code.ts';
 import { checkProjectHooks as codexCheckHooks } from '../../src/agents/runtimes/codex.ts';
 import { checkProjectHooks as geminiCheckHooks } from '../../src/agents/runtimes/gemini.ts';
 import { readTrust as copilotTrust } from '../../src/agents/copilot.ts';
@@ -83,6 +83,7 @@ import {
   writeDependabot,
   writeGitignore,
 } from '../../src/setup/init.ts';
+import { ROAD } from '../../src/setup/road.ts';
 
 shareGuardMeasure();
 shareSelfTest();
@@ -566,6 +567,8 @@ const importedLine = (file: string) => `updated ${file}: it now reads AGENTS.md 
 function checkRulesGap(files: Record<string, string>, want: { file: string; line: string; link?: string } | null, what: string): { root: string; said: string | null } {
   const root = folderWith({ 'AGENTS.md': '# shared rules\n', ...files });
   assert.deepEqual(findRulesGap(root), want, `${what}: the gap doctor's rules step reads`);
+  assert.equal(rulesStepDone(root), want === null, `${what}: doctor's rules step`);
+  if (want && !want.link) assert.equal(rulesStepFix(root), `add a line \`${want.line}\` at the end of ${want.file}, or run \`yokoten init\``, `${what}: doctor's advice`);
   const said = importRules(root);
   if (want === null) {
     assert.equal(said, null, `${what}: init says nothing of CLAUDE.md`);
@@ -573,9 +576,15 @@ function checkRulesGap(files: Record<string, string>, want: { file: string; line
   } else if (!want.link) {
     assert.equal(said, importedLine(want.file), what);
     assert.equal(findRulesGap(root), null, `${what}: after init, the rules step is done`);
+    assert.equal(rulesStepDone(root), true, `${what}: after init, doctor's rules step is done`);
   }
   return { root, said };
 }
+
+/** doctor's rules step from the road, called directly: done, and its advice. */
+const RULES_STEP = ROAD.find((step) => step.key === 'rules')!;
+const rulesStepDone = (root: string) => RULES_STEP.check(root, {}, undefined);
+const rulesStepFix = (root: string) => RULES_STEP.fix(root, {}, undefined);
 
 test('init: which CLAUDE.md imports AGENTS.md, and which gets the import, in one table (#206)', () => {
   const fence = '```';
@@ -623,6 +632,8 @@ test('init: which CLAUDE.md imports AGENTS.md, and which gets the import, in one
     if (want.file === '.claude/CLAUDE.md') assert.equal(existsSync(join(dir, 'CLAUDE.md')), false);
   }
 
+  // doctor's advice for .claude/CLAUDE.md names the import from that folder, not the root one.
+  assert.equal(rulesStepFix(folderWith({ 'AGENTS.md': '# shared rules\n', '.claude/CLAUDE.md': '# rules\n' })), `add a line \`${at}../AGENTS.md\` at the end of .claude/CLAUDE.md, or run \`yokoten init\``);
   // Both files, neither importing AGENTS.md: the root one gets the import.
   const both = checkRulesGap({ 'CLAUDE.md': '# root rules\n', '.claude/CLAUDE.md': '# folder rules\n' }, rootFile, 'both files');
   assert.match(readFileSync(join(both.root, 'CLAUDE.md'), 'utf8'), /\n@AGENTS\.md\n$/);
@@ -641,6 +652,7 @@ test('init: a CLAUDE.md that is a link reads the rules through it, or is left as
       symlinkSync(target, join(dir, file));
     }
     assert.equal(findRulesGap(dir), null, `${links}: no rules gap`);
+    assert.equal(rulesStepDone(dir), true, `${links}: doctor's rules step is done`);
     assert.equal(importRules(dir), null, `${links}`);
     assert.equal(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), '# shared rules\n\n## This project\n\nRun the tests first.\n', `${links}: AGENTS.md does not import itself`);
     for (const [file, target] of links) assert.equal(readlinkSync(join(dir, file)), target, `${file} is the same link`);
@@ -658,6 +670,8 @@ test('init: a CLAUDE.md that is a link reads the rules through it, or is left as
     writeFileSync(real, '# our rules\n');
     symlinkSync(outside ? real : 'docs/claude.md', join(dir, 'CLAUDE.md'));
     assert.deepEqual(findRulesGap(dir), { file: 'CLAUDE.md', line: `${at}AGENTS.md`, link: named }, 'doctor: add a line `@AGENTS.md` to that file');
+    assert.equal(rulesStepDone(dir), false, `${named}: doctor's rules step is not done`);
+    assert.equal(rulesStepFix(dir), `CLAUDE.md is a link to ${named}: add a line \`${at}AGENTS.md\` to that file, or make CLAUDE.md a plain file`);
     assert.equal(importRules(dir), `left CLAUDE.md as it is: it is a link to ${named}, so Claude Code does not read AGENTS.md; add a line \`${at}AGENTS.md\` to that file, or make CLAUDE.md a plain file`);
     assert.equal(readFileSync(real, 'utf8'), '# our rules\n', 'nothing is written through the link');
     assert.equal(lstatSync(join(dir, 'CLAUDE.md')).isSymbolicLink(), true);
@@ -667,6 +681,8 @@ test('init: a CLAUDE.md that is a link reads the rules through it, or is left as
   const dir = folderWith({ 'AGENTS.md': '# shared rules\n', 'docs/claude.md': '# linked rules\n', '.claude/CLAUDE.md': '# folder rules\n' });
   symlinkSync('docs/claude.md', join(dir, 'CLAUDE.md'));
   assert.deepEqual(findRulesGap(dir), { file: '.claude/CLAUDE.md', line: `${at}../AGENTS.md` });
+  assert.equal(rulesStepDone(dir), false);
+  assert.equal(rulesStepFix(dir), `add a line \`${at}../AGENTS.md\` at the end of .claude/CLAUDE.md, or run \`yokoten init\``);
   assert.equal(importRules(dir), importedLine('.claude/CLAUDE.md'));
   assert.equal(readFileSync(join(dir, 'docs', 'claude.md'), 'utf8'), '# linked rules\n');
   assert.match(readFileSync(join(dir, '.claude', 'CLAUDE.md'), 'utf8'), /\n@\.\.\/AGENTS\.md\n$/);
@@ -741,6 +757,9 @@ test("init: husky keeps its hooks folder; .husky/pre-commit gets the check and k
   assert.equal(commit.status, 0, commit.stderr);
   assert.match(commit.stderr, /yokoten check --staged · clean/, 'the check ran');
   assert.ok(existsSync(join(sandbox.repo, 'own-hook-ran')), 'the project\'s own hook still runs');
+  sandbox.write('leak.md', `me${at}gmail.com\n`);
+  sandbox.git('add', 'leak.md');
+  assert.notEqual(sandbox.git('commit', '-qm', 'leak').status, 0, 'the check in .husky/pre-commit refuses a leak');
 });
 
 test('init: husky not yet installed in this clone; init leaves core.hooksPath unset and says to run npm install (#206)', async () => {
@@ -1374,11 +1393,22 @@ test('init: a commented .gemini/settings.json is left as it was and gets the hoo
 test('init: an unreadable project .claude/settings.json is skipped, the rest goes on, and init exits 1 (#254)', async () => {
   // Every bad file is read by the check init runs first, and skipped with the line init
   // prints, before anything is written.
+  // The sandbox step and doctor read it too, and leave it byte for byte: yokoten never
+  // overwrites the user's config. One sandbox, one file at a time, doctor in this process.
+  const reader = makeSandbox();
+  const readerFile = join(reader.repo, '.claude', 'settings.json');
+  mkdirSync(dirname(readerFile));
   for (const [content, reason] of BAD_PROJECT_SETTINGS) {
     const root = folderWith({ '.claude/settings.json': content });
     const what = JSON.stringify(content);
     assert.throws(() => checkProjectSettings(root), (err) => err instanceof UnreadableHooksFile && skippedBecause('.claude/settings.json', err.problem, 'init') === reason('.claude/settings.json'), what);
     assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), content, `${what}: the file changed`);
+    assert.doesNotThrow(() => addClaudeSandbox(root), what);
+    assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), content, `${what}: the sandbox step changed the file`);
+    writeFileSync(readerFile, content);
+    const doctor = await reader.call(['doctor', '--all']);
+    assert.doesNotMatch(doctor.stderr, /SyntaxError|TypeError|at /, what);
+    assert.equal(readFileSync(readerFile, 'utf8'), content, `${what}: doctor changed the file`);
   }
   // End to end, two of them: a file that won't parse, and a bad Stop hook, read before the
   // first hook is written. The rest of init goes on.
@@ -1457,9 +1487,22 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   assert.match(result.stderr, /GitHub: skipped, because there is no origin remote yet\. Make the repo on GitHub, add it as origin, and push; then run `yokoten init --github --yes`/);
   assert.match(result.stderr, /\nyokoten init: --github --yes changed nothing on GitHub \(the reason is above\)\. The project files are as listed above\.\n$/);
   assert.equal(calls().length, 0);
-  // With a remote, what init reads, would do and does on GitHub, and that a second run
-  // changes nothing, is in test/setup/plan.test.ts, with a gh in the test process.
+  // With a remote: plain init only reads GitHub and says what it would do; --github --yes
+  // asks gh for the changes. The gh here answers the two reads with an empty repo and fails
+  // every change, so the log shows what was asked. Each change's text, and that a second run
+  // changes nothing, are in test/setup/plan.test.ts, with a gh in the test process.
   sandbox.git('remote', 'add', 'origin', 'https://github.com/example/repo.git');
+  stubGh(sandbox, {
+    'api --paginate repos/example/repo/labels?per_page=100 --jq .[] | {name, color, description} | tojson': '',
+    'api --paginate repos/example/repo/milestones?state=all&per_page=100 --jq .[] | "\\(.state) \\(.title)"': '',
+  });
+  const changes = () => calls().filter((call) => call.startsWith('label create ') || call.includes(' POST '));
+  result = await sandbox.call(['init', '--list'], { extra });
+  assert.match(result.stdout, /GitHub: example\/repo\n[^]*Would do:\n- make label "/, result.stdout + result.stderr);
+  assert.deepEqual(changes(), [], 'plain init only reads');
+  await sandbox.call(['init', '--list', '--github', '--yes'], { extra });
+  assert.ok(changes().some((call) => call.startsWith('label create ')), 'a label is made');
+  assert.ok(changes().some((call) => call.includes(' POST ') && call.includes('repos/example/repo/milestones')), 'a milestone is made');
   // Without gh on the PATH, plain init still succeeds and says so. Only node and git are there.
   const noGh = join(sandbox.home, 'no-gh');
   mkdirSync(noGh);
