@@ -534,7 +534,7 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
     [53, 'a hard-line file still needs the owner', 'no owner Approve on this pull request', { ownerWhy: 'a hard-line file (hard.txt)' }],
     [54, 'a looser change still needs the owner', 'no owner Approve on this pull request', { ownerWhy: 'a looser change (test/a.test.ts)' }],
     [55, "a newer approval by the writer's own model does not hide another model's", null, { lead: 'Sonnet' }],
-    [56, "the writer's own model, spelled another way, is refused", 'the area lead runs Claude Opus 5.5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    [56, "the writer's own model, spelled another way, is refused", 'the area lead runs Claude Opus 5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
     [57, 'writers that cannot be read are refused', noWriter],
   ];
   for (const [number, name, what, more] of cases) {

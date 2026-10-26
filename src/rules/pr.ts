@@ -768,7 +768,14 @@ export function checkMergeApproval(read: MergeApprovalRead): Finding | null {
   }
   const same = sameModelWriter(read.writers, { vendor: read.lead.vendor, model: read.lead.model });
   if (same) {
-    return finding('pr-approve', `the area lead runs ${read.lead.model}, the same model as the writer ${same.vendor} (${same.model}); a lead of another model must approve`, ASK_OTHER_MODEL);
+    // A name with no known model family fails closed: it counts as the writer's own model.
+    if (!modelFamilies(read.lead.model).length) {
+      return finding('pr-approve', `the area lead's model ${read.lead.model || '(empty)'} names no model family yokoten knows, so it counts as the writer's own model`, `name the model in the approval line, such as \`Approved by area lead NAME (Anthropic, Claude Sonnet 5.5)\`; or ${ASK_OTHER_MODEL}`);
+    }
+    if (!modelFamilies(same.model).length) {
+      return finding('pr-approve', `the writer's model ${same.vendor} (${same.model || '(empty)'}) names no model family yokoten knows, so any area lead counts as its own model`, `name each writer's model in the Made-with line, such as \`🤖 Made with worker Claude Code (claude-opus-5-5)\`; then ${ASK_OTHER_MODEL}`);
+    }
+    return finding('pr-approve', `the area lead runs ${read.lead.model}, the same model family as the writer ${same.vendor} (${same.model}); a lead of another model must approve`, ASK_OTHER_MODEL);
   }
   if (isFreshApproval(read.head, read.lead)) return null;
   return staleLeadApproval(read.lead);
@@ -1274,44 +1281,46 @@ export function isSameVendor(left: string, right: string): boolean {
   return one === two || one.includes(two) || two.includes(one) || vendorGroup(left) === vendorGroup(right);
 }
 
-/** Words that name a vendor, not a model, so `Claude Opus 5.5` and `opus-5-5` meet. */
-const VENDOR_WORDS = new Set(VENDOR_GROUPS.flat());
-
 /**
- * A model name as its lower-case words and numbers, without vendor words: `Claude Opus 5.5`
- * and `claude-opus-5-5` are both `opus 5 5`. A name of vendor words only keeps them.
+ * Model families yokoten knows (record 0047). A word of a model name must start with one,
+ * so `opus5.5`, `claude-opus-5-5` and `Opus-5.5-thinking` are all `opus`. Keep it small.
  */
-function modelWords(model: string): string[] {
-  const words = model.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const kept = words.filter((word) => !VENDOR_WORDS.has(word));
-  return kept.length ? kept : words;
+const MODEL_FAMILIES: readonly string[] = [
+  'opus', 'sonnet', 'haiku', 'fable', 'grok', 'gpt', 'gemini', 'gemma', 'deepseek',
+  'qwen', 'glm', 'kimi', 'muse', 'llama', 'mistral', 'mixtral', 'codestral', 'phi', 'nova',
+];
+
+/** The OpenAI o-series (`o3`, `o4-mini`), which has no family word of its own. */
+const O_SERIES = /^o\d/;
+
+/** The model families a model name names, such as `['opus']`, or [] when it names none yokoten knows. */
+export function modelFamilies(model: string): string[] {
+  const found = new Set<string>();
+  for (const word of model.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)) {
+    for (const family of MODEL_FAMILIES) if (word.startsWith(family)) found.add(family);
+    if (O_SERIES.test(word)) found.add('o-series');
+  }
+  return [...found];
+}
+
+/** Whether a model name mentions a family anywhere, even squashed into another word. */
+function mentionsFamily(model: string, family: string): boolean {
+  if (family === 'o-series') return modelFamilies(model).includes(family);
+  return model.toLowerCase().replace(/[^a-z0-9]/g, '').includes(family);
 }
 
 /**
- * Whether two model names may be one model: equal words, or one name is the start of the
- * other, as `Opus` is of `Opus 5.5`. A name with no words says nothing, so it may be any.
- */
-function maySameModel(left: string, right: string): boolean {
-  const [one, two] = [modelWords(left), modelWords(right)];
-  const [short, long] = one.length <= two.length ? [one, two] : [two, one];
-  return short.every((word, at) => long[at] === word);
-}
-
-/**
- * Whether a reviewer or an approver is the writer's own model (records 0045, 0047): the
- * same vendor and the same model. A vendor that names no known vendor, as in the short
- * `worker (opus)`, is read from the model too, so it is Anthropic. Names are compared without case, spacing, dots or dashes,
- * so `claude-opus-5-5` and `Claude Opus 5.5` are one model. When a name could be either,
- * such as `Opus` beside `Opus 5.5`, it counts as the same: nothing shows another model.
+ * Whether a reviewer or an approver is the writer's own model (records 0045, 0047). It
+ * fails closed: two names are other models only when both name a known model family and
+ * neither mentions the other's family. So `Opus 5.6` is the same model as `Opus 5.5`, and
+ * `Claude`, `5.5` or `latest`, which name no family, count as the writer's own model. The
+ * vendor is not read: the model name says which model ran, a vendor only which tool.
  */
 export function isSameModel(writer: MadeWithAgent, reviewer: MadeWithAgent): boolean {
-  const unknown = !isKnownVendor(writer.vendor) || !isKnownVendor(reviewer.vendor);
-  const sameVendor = isSameVendor(writer.vendor, reviewer.vendor) || (unknown && vendorFamily(writer) === vendorFamily(reviewer));
-  return sameVendor && maySameModel(writer.model, reviewer.model);
+  const [one, two] = [modelFamilies(writer.model), modelFamilies(reviewer.model)];
+  if (!one.length || !two.length) return true;
+  return one.some((family) => mentionsFamily(reviewer.model, family)) || two.some((family) => mentionsFamily(writer.model, family));
 }
-
-/** Whether a vendor name belongs to a known vendor group, so `Claude Code` does and `worker` does not. */
-const isKnownVendor = (vendor: string): boolean => VENDOR_GROUPS.some((words) => words.some((word) => vendorKey(vendor).includes(word)));
 
 /** Whether a Made-with pair names the vendor and model a desk ran. An empty desk field says nothing. */
 function isSameDeskAgent(pair: MadeWithAgent, desk: DeskAgent): boolean {
@@ -1345,7 +1354,9 @@ export function provenanceFindings(roles: MadeWithRoles | null, desks: DeskAgent
   if (roles.reviewers.length && roles.reviewers.every((reviewer) => sameAs(reviewer))) {
     const reviewer = roles.reviewers[0]!;
     const writer = sameAs(reviewer)!;
-    problems.push(finding('pr-provenance', `body: every reviewer is the writer's own model; ${reviewer.vendor} (${reviewer.model}) is the writer's model, ${writer.vendor} (${writer.model})`, 'ask a reviewer of another model to review it (record 0045)'));
+    const unnamed = !modelFamilies(reviewer.model).length || !modelFamilies(writer.model).length;
+    const fix = unnamed ? 'name each model with its family, such as `reviewed by Claude Code (claude-sonnet-5-5)`; an unknown name counts as the writer\'s own model (record 0047)' : 'ask a reviewer of another model to review it (record 0045)';
+    problems.push(finding('pr-provenance', `body: every reviewer is the writer's own model; ${reviewer.vendor} (${reviewer.model}) is the writer's model, ${writer.vendor} (${writer.model})`, fix));
   }
   for (const desk of desks) {
     const named = pairsForRole(roles, desk.role);

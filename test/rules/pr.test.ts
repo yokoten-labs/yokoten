@@ -700,7 +700,9 @@ test('provenance: a reviewer of another model passes; only the writer\'s own mod
   const same = provenanceFindings(rolesOf('Made with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-opus-5-5)'), [])[0];
   assert.match(same.what, /every reviewer is the writer's own model; Anthropic \(claude-opus-5-5\) is the writer's model, Claude Code \(claude-opus-5-5\)/);
   assert.match(same.fix, /a reviewer of another model .*record 0045/);
-  assert.equal(isSameModel({ vendor: 'Claude Code', model: 'claude-opus-5-5' }, { vendor: 'Grok', model: 'claude-opus-5-5' }), false, 'another vendor is never the same model');
+  assert.equal(isSameModel({ vendor: 'Claude Code', model: 'claude-opus-5-5' }, { vendor: 'Grok', model: 'claude-opus-5-5' }), true, 'the model name decides, not the vendor (record 0047)');
+  const unnamed = provenanceFindings(rolesOf('Made with worker Claude Code (claude-opus-5-5), reviewed by Claude Code (latest)'), [])[0];
+  assert.match(unnamed.fix, /^name each model with its family/, 'an unknown reviewer model says to name the model');
   assert.equal(isSameModel({ vendor: 'Claude Code', model: 'claude-opus-5-5' }, { vendor: 'Claude Code', model: '' }), true, 'an unnamed model of the same vendor counts as the same');
 });
 
@@ -732,7 +734,7 @@ test('approve: a lead of another model may approve tier A; its own model, stale 
   const opus = { vendor: 'Claude Code', model: 'claude-opus-5-5' };
   const lead = (vendor: string, model: string, over: Partial<ApprovalCommit> = {}) => ({ lead: 'Lead', vendor, model, commit: head, after: 0, sameDiff: true, ...over });
   const read = (over: Partial<MergeApprovalRead> = {}): MergeApprovalRead => ({ tier: 'A', head, approved: null, after: 0, sameDiff: true, lead: lead('Anthropic', 'Claude Sonnet 5.5'), writers: [opus], ...over });
-  const sameOpus = 'the area lead runs Claude Opus 5.5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve';
+  const sameOpus = 'the area lead runs Claude Opus 5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve';
   const noOwner = 'no owner Approve on this pull request';
   const cases: [string, Partial<MergeApprovalRead>, string | null][] = [
     // Positive controls: these merge.
@@ -744,10 +746,17 @@ test('approve: a lead of another model may approve tier A; its own model, stale 
     ['the second writer is another model too', { writers: [opus, { vendor: 'Grok', model: 'Grok 4.7' }], lead: lead('Meta', 'Muse Spark 1.3') }, null],
     // The writer's own model never counts, however it is spelled.
     ['the same model, spelled another way', { lead: lead('Anthropic', 'Claude Opus 5.5') }, sameOpus],
-    ['the same model, the same spelling', { lead: lead('Claude Code', 'claude-opus-5-5') }, 'the area lead runs claude-opus-5-5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
-    ['a model name that could be the writer\'s', { lead: lead('Anthropic', 'Opus') }, 'the area lead runs Opus, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
-    ['one of two writers is the lead\'s model', { writers: [{ vendor: 'Grok', model: 'Grok 4.7' }, opus], lead: lead('Anthropic', 'Opus 5.5') }, 'the area lead runs Opus 5.5, the same model as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
-    ['the short worker form is read from the model', { writers: [{ vendor: 'worker', model: 'opus 5.5' }], lead: lead('Anthropic', 'Claude Opus 5.5') }, 'the area lead runs Claude Opus 5.5, the same model as the writer worker (opus 5.5); a lead of another model must approve'],
+    ['the same model, the same spelling', { lead: lead('Claude Code', 'claude-opus-5-5') }, 'the area lead runs claude-opus-5-5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['a model name that could be the writer\'s', { lead: lead('Anthropic', 'Opus') }, 'the area lead runs Opus, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['one of two writers is the lead\'s model', { writers: [{ vendor: 'Grok', model: 'Grok 4.7' }, opus], lead: lead('Anthropic', 'Opus 5.5') }, 'the area lead runs Opus 5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['the short worker form is read from the model', { writers: [{ vendor: 'worker', model: 'opus 5.5' }], lead: lead('Anthropic', 'Claude Opus 5.5') }, 'the area lead runs Claude Opus 5.5, the same model family as the writer worker (opus 5.5); a lead of another model must approve'],
+    // Another model means another model family; an unknown name fails closed (security review of #1086).
+    ['a newer model of the writer\'s family', { lead: lead('Anthropic', 'Opus 5.6') }, 'the area lead runs Opus 5.6, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['the writer\'s family, squashed', { lead: lead('Claude Code', 'opus5.5') }, 'the area lead runs opus5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
+    ['a vendor name only', { lead: lead('Anthropic', 'Claude') }, "the area lead's model Claude names no model family yokoten knows, so it counts as the writer's own model"],
+    ['a version only', { lead: lead('Claude Code', '5.5') }, "the area lead's model 5.5 names no model family yokoten knows, so it counts as the writer's own model"],
+    ['a tag only', { lead: lead('Claude Code', 'latest') }, "the area lead's model latest names no model family yokoten knows, so it counts as the writer's own model"],
+    ['a writer with no known family', { writers: [{ vendor: 'Claude Code', model: 'latest' }], lead: lead('xAI', 'Grok 4.7') }, "the writer's model Claude Code (latest) names no model family yokoten knows, so any area lead counts as its own model"],
     // A hard-line file or a looser change keeps the owner's approval.
     ['a hard-line file', { ownerOnly: true, ownerWhy: 'a hard-line file (package.json)' }, noOwner],
     ['a looser change', { ownerOnly: true, ownerWhy: 'a looser change (test/rules/pr.test.ts)' }, noOwner],
@@ -766,20 +775,41 @@ test('approve: a lead of another model may approve tier A; its own model, stale 
   // The fix line says what to do in plain words.
   assert.match(checkMergeApproval(read({ lead: lead('Anthropic', 'Opus 5.5') }))?.fix ?? '', /^ask a reviewer of another model to approve the head commit, .*or ask the owner$/);
   assert.match(checkMergeApproval(read({ writers: [] }))?.fix ?? '', /names each writer and model.*ask a reviewer of another model/);
+  assert.match(checkMergeApproval(read({ lead: lead('Claude Code', 'latest') }))?.fix ?? '', /^name the model in the approval line/);
+  assert.match(checkMergeApproval(read({ writers: [{ vendor: 'Claude Code', model: 'latest' }] }))?.fix ?? '', /^name each writer's model in the Made-with line/);
 });
 
-// Record 0047: model names are compared without case, spacing, dots, dashes or vendor words.
-test('approve: one model however it is spelled; another model or vendor is not the same (record 0047)', () => {
+// Record 0047: another model means another model family, and it fails closed. A name
+// with no known family, or of the writer's own family, counts as the writer's model.
+test('approve: one model family however it is spelled; an unknown name fails closed (record 0047)', () => {
   const cases: [string, string, string, string, boolean][] = [
     ['Claude Code', 'claude-opus-5-5', 'Anthropic', 'Claude Opus 5.5', true],
     ['Claude Code', 'Opus 5.5', 'Anthropic', 'claude-opus-5-5', true],
     ['Claude Code', 'Opus 5.5', 'Anthropic', 'Opus', true],
     ['worker', 'opus', 'Anthropic', 'Claude Opus 5.5', true],
     ['DeepSeek', 'DeepSeek V4.1 Flash', 'deepseek', 'deepseek-v4.1-flash', true],
-    // Positive controls: these are other models.
+    // The same family is the same model, whatever the version or the vendor.
+    ['Claude Code', 'Opus 5.5', 'Anthropic', 'Opus 5.6', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', 'opus5.5', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', 'Opus-5.5-thinking', true],
+    ['Claude Code', 'claude-opus-5-5', 'Grok', 'claude-opus-5-5', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', 'claudeopus55', true],
+    // A name with no known family fails closed: it counts as the same model.
+    ['Claude Code', 'claude-opus-5-5', 'Anthropic', 'Claude', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', '5.5', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', 'latest', true],
+    ['Claude Code', 'claude-opus-5-5', 'Claude Code', '', true],
+    // A look-alike letter (Cyrillic er) is no family word.
+    ['Claude Code', 'claude-opus-5-5', 'xAI', `O${String.fromCodePoint(0x440)}us 5.5`, true],
+    ['Claude Code', 'latest', 'xAI', 'Grok 4.7', true],
+    // Positive controls: these are other model families.
     ['Claude Code', 'claude-opus-5-5', 'Anthropic', 'Claude Sonnet 5.5', false],
-    ['Claude Code', 'Opus 5.5', 'Anthropic', 'Opus 5.6', false],
     ['Claude Code', 'claude-opus-5-5', 'xAI', 'Grok 4.7', false],
+    ['Claude Code', 'claude-opus-5-5', 'Meta', 'Muse Spark 1.3', false],
+    ['Claude Code', 'claude-opus-5-5', 'DeepSeek', 'deepseek-v4.1-flash', false],
+    ['Claude Code', 'claude-opus-5-5', 'OpenAI', 'o4-mini', false],
+    ['Claude Code', 'claude-opus-5-5', 'OpenAI', 'gpt-5.5', false],
+    ['Grok', 'grok-4.7', 'Claude Code', 'opus5.5', false],
     ['worker', 'opus', 'Anthropic', 'Sonnet 5.5', false],
   ];
   for (const [writerVendor, writerModel, leadVendor, leadModel, same] of cases) {
