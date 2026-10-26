@@ -13,8 +13,10 @@ skill: find the cause, add or fix the check, then carry the fix to the other pro
 
 ## Roles
 
-- **The owner** decides what is built and when it ships. Only the owner approves tier A
-  pull requests, creates release tags, and changes repo settings.
+- **The owner** decides what is built and when it ships. Only the owner approves a pull
+  request that touches a hard line (a CODEOWNERS path, such as the release), creates release
+  tags, and changes repo settings. Another tier A pull request merges once a reviewer of
+  another model approves it and every check passes.
 - **The lead** is the session the owner talks to. It plans, splits the work, reviews,
   commits and opens pull requests (as the bot, never as the owner).
 - **A worker** is a session the lead starts for one task, in its own worktree, with
