@@ -1,16 +1,16 @@
-// Tests for src/commands/kanban/waiting.ts.
+// Tests for src/commands/kanban/feed/read/waiting.ts.
 
-import '../../repo/home.ts';
+import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { makeTempDir } from '../../repo/helpers.ts';
-import type { BoardWaiting } from '../../../src/commands/kanban/controls.ts';
-import { collectBoardWaiting, readBoardAttention, readBoardIssues, readBoardSnapshot, scheduleOf } from '../../../src/commands/kanban/waiting.ts';
-import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
-import { type AgentView, vendorOf } from '../../../src/commands/kanban/view.ts';
-import type { Gh } from '../../../src/host/github/index.ts';
+import { makeTempDir } from '../../../../repo/helpers.ts';
+import type { BoardWaiting } from '../../../../../src/commands/kanban/controls.ts';
+import { collectBoardWaiting, readBoardAttention, readBoardIssues, readBoardSnapshot, scheduleOf } from '../../../../../src/commands/kanban/feed/read/waiting.ts';
+import { EMPTY_DESK } from '../../../../../src/commands/kanban/feed/read/desk.ts';
+import { type AgentView, vendorOf } from '../../../../../src/commands/kanban/view.ts';
+import type { Gh } from '../../../../../src/host/github/index.ts';
 
 const agent = (fields: Partial<AgentView>): AgentView => ({ key: '', name: 'a', nickname: '', isMain: false, vendor: vendorOf(''), model: '', effort: '', role: '', dot: 'idle', task: '', title: '', ref: null, doing: '', checks: '', age: '', updated: '', started: '', branch: '', ...fields });
 

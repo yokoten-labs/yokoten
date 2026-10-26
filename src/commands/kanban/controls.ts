@@ -28,7 +28,7 @@ import { hideHome } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
 import { hookCliPath } from '../../setup/init.ts';
 import { type MachineState, type ScheduleRoom, type ScheduleSettings, type ScheduleSummary, roomStateOf, SCHEDULE_DEFAULTS, takeStarts } from '../more/advice/schedule.ts';
-import { planOf, roomOf } from './waiting.ts';
+import { planOf, roomOf } from './feed/read/waiting.ts';
 import { markWorktree } from '../hook.ts';
 import { BOARD_READ_TIMEOUT_MS, type BoardRole } from './agents.ts';
 
@@ -674,4 +674,4 @@ export {
   readBoardIssuesLater,
   readBoardSnapshot,
   scheduleOf,
-} from './waiting.ts';
+} from './feed/read/waiting.ts';

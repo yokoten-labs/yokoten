@@ -288,7 +288,7 @@ function collectWords(): string[] {
   const feed = read('src/commands/kanban/feed/steps.ts');
   const agents = read('src/commands/kanban/agents.ts');
   // The attention box and its link live in two files since the board split (#693).
-  const controls = read('src/commands/kanban/controls.ts') + read('src/commands/kanban/waiting.ts');
+  const controls = read('src/commands/kanban/controls.ts') + read('src/commands/kanban/feed/read/waiting.ts');
   const view = read('src/commands/kanban/view.ts');
   const script = read('src/commands/kanban/page/browser/script.ts');
   const pr = read('src/rules/pr.ts');

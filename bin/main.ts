@@ -8,21 +8,22 @@
 
 import { withHome } from '../src/rules/privacy.ts';
 import { type Invocation, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
-import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList } from '../src/run/cli.ts';
+import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).
-// The first step comes first, then the commands in groups, then the details (#944).
-const HELP = [
+// The first step comes first, then the three commands, then the details (#944, #1054).
+// With --all, the commands that moved and the ones agents and CI use follow.
+const help = (all: boolean): string => [
   `yokoten ${VERSION}`,
   '',
   'Start here: run `yokoten` in your project.',
   '',
   'Usage: yokoten <command> [options]',
   '',
-  ...commandList(),
+  ...commandList(all),
   '',
-  'More: `yokoten <command> --help`',
+  all ? 'More: `yokoten <command> --help`' : 'More: `yokoten help --all` lists every command; `yokoten <command> --help` explains one',
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
@@ -50,7 +51,11 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     print(invocation, commandHelp(command));
     return 0;
   }
-  switch (cmd) {
+  // A folded command or an old name says where it moved, then runs as before (#1054). The
+  // line is for a person: the session-start hook (`doctor --session`) and JSON for a script go without it.
+  const moved = cmd === undefined || args.includes('--session') || args.includes('--json') ? undefined : movedNote(cmd);
+  if (moved) print(invocation, [moved], invocation.stderr);
+  switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).
       const guard = args.includes('--stop') ? undefined : import('../src/run/hook.ts').then((m) => m.takeGuard());
@@ -63,7 +68,9 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'worker':
       return import('../src/commands/hook.ts').then((m) => m.runWorker(invocation));
     case 'desk':
-      return import('../src/commands/hook.ts').then((m) => m.runDesk(invocation));
+      return import('../src/commands/desk/desk.ts').then((m) => m.runDesk(invocation));
+    case 'tidy':
+      return import('../src/commands/tidy/tidy.ts').then((m) => m.runTidy(invocation));
     case 'msg':
       return import('../src/commands/more/advice/messages.ts').then((m) => m.runMsg(invocation));
     case 'check':
@@ -108,7 +115,7 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       return import('../src/commands/more/merge/train.ts').then((m) => m.runTrain(invocation));
     case 'conflicts':
       return import('../src/commands/more/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
-    case 'board':
+    case 'kanban':
       return import('../src/commands/kanban/server.ts').then((m) => m.runBoard(invocation));
     case 'install':
       return import('../src/commands/more/setup.ts').then((m) => m.runInstall(invocation));
@@ -128,7 +135,10 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       const options = parse('help', args);
       if (typeof options === 'string') return usage(invocation, options);
       const [name] = options.positional;
-      if (name === undefined) break;
+      if (name === undefined) {
+        print(invocation, [help(options.flags.has('--all'))]);
+        return 0;
+      }
       const named = findCommand(name);
       if (!named) return unknownCommand(invocation, name);
       print(invocation, commandHelp(named));
@@ -141,9 +151,9 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case '-h':
       break;
     default:
-      return unknownCommand(invocation, cmd);
+      return unknownCommand(invocation, cmd ?? '');
   }
-  print(invocation, [HELP]);
+  print(invocation, [help(false)]);
   return 0;
 }
 

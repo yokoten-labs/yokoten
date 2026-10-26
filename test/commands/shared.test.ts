@@ -59,7 +59,8 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
     const result = await sandbox.call(args, { cwd: away, extra });
     assert.equal(result.status, 1, args.join(' '));
     assert.equal(result.stdout, '', `${args.join(' ')}: nothing on stdout`);
-    assert.match(result.stderr, said(command), args.join(' '));
+    // A moved command says so first (#1054); the error is the rest.
+    assert.match(result.stderr.replace(/^note: .*\n/, ''), said(command), args.join(' '));
     assert.deepEqual(readdirSync(away), [], `${args.join(' ')}: nothing written`);
   }
   // --json: the same finding, as data.
@@ -74,7 +75,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
   const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'yokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
+  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
   // A session in a non-repo folder gets no noise, and starts.
   const session = await sandbox.call(['doctor', '--session'], { cwd: away });
@@ -92,7 +93,7 @@ test('git not installed: a command that needs a repo says git is missing, not "n
   for (const command of ['check', 'doctor']) {
     const result = await sandbox.call([command], { extra: { PATH: noGit } });
     assert.equal(result.status, 1, command);
-    assert.match(result.stderr, new RegExp(`^yokoten ${command}: git is not installed \\(or not on PATH\\); yokoten needs git\\. `), command);
+    assert.match(result.stderr.replace(/^note: .*\n/, ''), new RegExp(`^yokoten ${command}: git is not installed \\(or not on PATH\\); yokoten needs git\\. `), command);
   }
 });
 
@@ -327,9 +328,8 @@ test('output colour: help bolds the usage and sections, and names each command i
   const sandbox = makeSandbox();
   const list = await sandbox.call(['help'], { isTTY: true });
   assert.match(list.stdout, /\u001b\[1mUsage: yokoten <command> \[options\]\u001b\[0m/, 'the usage line is bold');
-  assert.match(list.stdout, /\u001b\[36mcheck\u001b\[0m/, 'a command name is cyan');
-  assert.match(list.stdout, /\u001b\[1mStart:\u001b\[0m/, 'a group title is bold');
-  assert.match(list.stdout, /\u001b\[1mA team of agents:\u001b\[0m/, 'a longer group title is bold');
+  assert.match(list.stdout, /\u001b\[36mkanban\u001b\[0m/, 'a command name is cyan');
+  assert.match(list.stdout, /\u001b\[1mCommands:\u001b\[0m/, 'a group title is bold');
   assert.match(list.stdout, /\u001b\[1mMore: /, 'the last section title is bold');
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');

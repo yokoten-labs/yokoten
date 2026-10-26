@@ -65,6 +65,7 @@ const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
   'host/github/index.ts', // re-exports the GitHub adapter's public names
   'commands/more/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
+  'commands/kanban/types.ts', // the kanban page's API types only, no code: tsc checks them where the core and the page use them (#1054)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
@@ -122,6 +123,22 @@ test('test files: every src module has one, but the few on NO_TEST_FILE (#152)',
     [],
     'a new src module gets its test file next to the others',
   );
+});
+
+// src/commands/ holds the three commands up front, the hidden ones in more/, and the two
+// files the guard's hot path loads (issue #1054, architecture §5). Anything else is a new
+// top-level command: it goes into one of the folders.
+const COMMANDS_TOP = ['desk', 'hook.ts', 'kanban', 'more', 'shared.ts', 'tidy'];
+const commandsTopProblems = (entries: string[]): string[] => [
+  ...entries.filter((entry) => !COMMANDS_TOP.includes(entry)).map((entry) => `src/commands/${entry}: put it in desk/, kanban/, tidy/ or more/`),
+  ...COMMANDS_TOP.filter((entry) => !entries.includes(entry)).map((entry) => `src/commands/${entry} is missing`),
+];
+
+test('commands: src/commands/ holds only desk/, kanban/, tidy/, more/, hook.ts and shared.ts (#1054)', () => {
+  // The positive control: a new file at the top and a lost folder are both caught.
+  assert.deepEqual(commandsTopProblems(['desk', 'hook.ts', 'kanban', 'more', 'shared.ts', 'check.ts']), ['src/commands/check.ts: put it in desk/, kanban/, tidy/ or more/', 'src/commands/tidy is missing']);
+  assert.deepEqual(commandsTopProblems(readdirSync(join(SRC, 'commands')).sort()), []);
+  assert.deepEqual(readdirSync(join(ROOT, 'test', 'commands')).sort(), ['desk', 'hook.test.ts', 'kanban', 'more', 'shared.test.ts', 'tidy'], 'test/commands/ moves the same way');
 });
 
 // A step names what it needs in host-neutral words; only src/host/ talks to a host's API

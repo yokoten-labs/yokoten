@@ -453,7 +453,7 @@ function openInBrowser(url: string, env: Env): void {
 }
 
 export function runBoard(invocation: Invocation, options: BoardServerOptions = {}): number | Promise<number> {
-  const parsed = parse('board', invocation.args);
+  const parsed = parse('kanban', invocation.args);
   if (typeof parsed === 'string') return usage(invocation, parsed);
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;

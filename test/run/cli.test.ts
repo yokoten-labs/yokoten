@@ -34,12 +34,13 @@ import { invoke } from '../repo/invoke.ts';
 import {
   closestWord,
   commandHelp,
+  ALL_GROUPS,
   commandList,
-  COMMAND_GROUPS,
   COMMANDS,
   editDistance,
   findCommand,
   guardCommand,
+  movedNote,
   HELP_OPTIONS,
   PLUGIN_COPY_GONE,
   PLUGIN_GUARD_MISSING,
@@ -187,9 +188,9 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
     }
   }
   assert.deepEqual(before(), start, '--help writes nothing');
-  // The command list names every command, and -h and -v work alone. Bare `yokoten` is the
+  // `help --all` names every command, and -h and -v work alone. Bare `yokoten` is the
   // start now, not the list (#548): test/commands/more/setup.test.ts holds it.
-  for (const args of [['--help'], ['-h'], ['help']]) {
+  for (const args of [['help', '--all']]) {
     const r = await run(args);
     assert.equal(r.code, 0, args.join(' '));
     for (const command of COMMANDS) assert.match(r.stdout, new RegExp(`^ {2}${command.name} `, 'm'), `${args.join(' ')}: lists ${command.name}`);
@@ -197,11 +198,11 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
   assert.equal((await run(['-v'])).stdout, (await run(['--version'])).stdout);
 });
 
-// #933: the board is a preview, and `yokoten help` and `yokoten board --help` say so.
-test('help: the board row and `board --help` say preview (#933)', () => {
-  const board = findCommand('board');
-  assert.ok(board !== undefined, 'board is a command');
-  const row = commandList().find((line) => line.trimStart().startsWith('board '));
+// #933: the kanban is a preview, and `yokoten help` and `yokoten kanban --help` say so.
+test('help: the kanban row and `kanban --help` say preview (#933)', () => {
+  const board = findCommand('kanban');
+  assert.ok(board !== undefined, 'kanban is a command');
+  const row = commandList().find((line) => line.trimStart().startsWith('kanban '));
   assert.match(row ?? '', /\(preview\)/);
   assert.match(commandHelp(board).join('\n'), /preview: it may change, and team commands come in v0\.1\.2 \(#823\)/i);
 });
@@ -300,7 +301,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
     [['docter'], 'yokoten: unknown command "docter". Did you mean "doctor"? Run `yokoten help`.\n'],
     [['help', 'chek'], 'yokoten: unknown command "chek". Did you mean "check"? Run `yokoten help`.\n'],
     [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run `yokoten check --help`.\n'],
-    [['doctor', '--hepl'], 'yokoten doctor: unknown option --hepl. Did you mean --help? Run `yokoten doctor --help`.\n'],
+    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\nyokoten doctor: unknown option --hepl. Did you mean --help? Run `yokoten doctor --help`.\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -772,11 +773,57 @@ test('main: an error names its command, and bare yokoten when there is none (#54
   assert.equal(errorLabel('doctor'), 'yokoten doctor');
 });
 
-test('help: every command is in exactly one group, and the first step comes first (#944)', async () => {
-  const grouped = COMMAND_GROUPS.flatMap((group) => group.names);
-  assert.deepEqual([...grouped].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once, and no name without a command');
-  assert.equal(new Set(grouped).size, grouped.length, 'no command in two groups');
-  const help = (await makeSandbox().call(['help'])).stdout;
-  assert.ok(help.indexOf('Start here:') < help.indexOf('Usage:'), 'the first step comes before the list');
-  for (const { title } of COMMAND_GROUPS) assert.match(help, new RegExp(`^${title}:$`, 'm'), `${title} has a heading`);
+// Issue #1054: `help` lists the always rows of the table, and nothing else; `help --all`
+// adds the two groups, each from the table's `shown`. The rows come from the table, so a
+// command that joins or leaves the short list needs no change here.
+test('help: lists exactly the always rows; help --all lists the rest in two groups (#944, #1054)', async () => {
+  const always = COMMANDS.filter((command) => command.shown === 'always').map((command) => command.name);
+  assert.ok(always.length > 0 && always.length < COMMANDS.length, 'some rows are up front, not all');
+  const listed = (text: string) => [...text.matchAll(/^ {2}([a-z][\w-]*) /gm)].map((m) => m[1]);
+  const sandbox = makeSandbox();
+  for (const words of [['help'], ['--help'], ['-h']]) {
+    const short = await sandbox.call(words);
+    assert.equal(short.status, 0, words.join(' '));
+    assert.deepEqual(listed(short.stdout), always, `${words.join(' ')}: only the always rows`);
+    assert.ok(short.stdout.indexOf('Start here:') < short.stdout.indexOf('Usage:'), 'the first step comes before the list');
+    assert.match(short.stdout, /yokoten help --all/, 'it says how to see the rest');
+  }
+  const all = (await sandbox.call(['help', '--all'])).stdout;
+  for (const { title, shown } of ALL_GROUPS) {
+    assert.match(all, new RegExp(`^${title.replace(/[()]/g, '\\$&')}:$`, 'm'), `${title} has a heading`);
+    const block = all.slice(all.indexOf(`${title}:`)).split('\n\n')[0];
+    assert.deepEqual(listed(block), COMMANDS.filter((command) => command.shown === shown).map((command) => command.name), `${title}: its rows`);
+  }
+  assert.deepEqual([...listed(all)].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once with --all');
+  // The positive control: a table with one more always row lists it.
+  const extra = { ...COMMANDS[0], shown: 'always' as const };
+  COMMANDS.push({ ...extra, name: 'zz-extra' });
+  try {
+    assert.ok(commandList().some((line) => line.startsWith('  zz-extra ')), 'a new always row shows in help');
+  } finally {
+    COMMANDS.pop();
+  }
+});
+
+// Issue #1054: a folded command and an old name still run, after a first line on stderr
+// that says where they moved. `board` and `kanban` run the same code.
+test('help: a moved command still runs, and its first line says where it went (#1054)', async () => {
+  const folded = COMMANDS.filter((command) => command.shown === 'folded');
+  assert.ok(folded.length > 0, 'some rows are folded');
+  for (const command of folded) assert.ok(command.into, `${command.name} says where it went`);
+  assert.equal(movedNote('init'), 'note: yokoten init moved to yokoten. It runs as before this time.');
+  assert.equal(movedNote('worker'), 'note: yokoten worker moved to yokoten desk. It runs as before this time.');
+  assert.equal(movedNote('board'), 'note: yokoten board moved to yokoten kanban. It runs as before this time.');
+  for (const name of ['kanban', 'desk', 'check', 'nope']) assert.equal(movedNote(name), undefined, `${name} did not move`);
+  assert.equal(findCommand('board'), findCommand('kanban'), 'board is the kanban row');
+  const sandbox = makeSandbox();
+  const old = await sandbox.call(['board', '--text', '--nope']);
+  const now = await sandbox.call(['kanban', '--text', '--nope']);
+  assert.equal(old.stderr.split('\n')[0], movedNote('board'));
+  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(1).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
+  const worker = await sandbox.call(['worker']);
+  assert.equal(worker.stderr.split('\n')[0], movedNote('worker'), 'a folded command says it first');
+  assert.match(worker.stderr, /yokoten worker: say what to do/, 'and then runs as before');
+  // The line is for a person: the session-start hook and JSON for a script go without it.
+  for (const words of [['doctor', '--session'], ['doctor', '--json']]) assert.doesNotMatch((await sandbox.call(words)).stderr, /^note: /m, words.join(' '));
 });

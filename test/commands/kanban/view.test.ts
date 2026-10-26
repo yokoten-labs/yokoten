@@ -11,7 +11,7 @@ import type { BoardAgent } from '../../../src/commands/kanban/agents.ts';
 import { claudeFolder, LEAD_SESSION_FILE } from '../../../src/commands/kanban/feed/read/logs.ts';
 import { createBoardControls } from '../../../src/commands/kanban/controls.ts';
 import { boardDataBody } from '../../../src/commands/kanban/server.ts';
-import { readBoardSnapshot } from '../../../src/commands/kanban/waiting.ts';
+import { readBoardSnapshot } from '../../../src/commands/kanban/feed/read/waiting.ts';
 import { type AgentView, collectBoard, collectBoardWith, dotOf, issueNumbersOf, LEAD_ROW_CHARS, needsOf, nicknameId, nicknameOf, pullView, refOf, taskTitle, vendorOf } from '../../../src/commands/kanban/view.ts';
 import type { BoardPull, Gh } from '../../../src/host/github/index.ts';
 

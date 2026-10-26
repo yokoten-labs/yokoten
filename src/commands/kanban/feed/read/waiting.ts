@@ -4,15 +4,15 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Gh, type GhLater } from '../../host/github/index.ts';
-import { type Env } from '../../rules/config.ts';
-import { hideHome } from '../../rules/privacy.ts';
-import { ageText, BOARD_AGENT_FILE, parseBoardAgent, type BoardWorktree } from './agents.ts';
-import { type BoardAttention, type BoardControls, type BoardIssue, type BoardRun, type BoardSnapshot, type BoardWaiting } from './controls.ts';
-import { EMPTY_SCHEDULE, freeMemoryMb as freeMemory, planSchedule, roomStateOf, scheduleIssueOf, type SchedulePlan, type ScheduleRoom, type ScheduleSummary, summarizeSchedule } from '../more/advice/schedule.ts';
-import { dependsOf } from './feed/read/desk.ts';
-import { makeBoardMask } from './feed/route.ts';
-import { type AgentView, type BoardData, BOARD_ISSUE_LIMIT, type PullView } from './view.ts';
+import { type Gh, type GhLater } from '../../../../host/github/index.ts';
+import { type Env } from '../../../../rules/config.ts';
+import { hideHome } from '../../../../rules/privacy.ts';
+import { ageText, BOARD_AGENT_FILE, parseBoardAgent, type BoardWorktree } from '../../agents.ts';
+import { type BoardAttention, type BoardControls, type BoardIssue, type BoardRun, type BoardSnapshot, type BoardWaiting } from '../../controls.ts';
+import { EMPTY_SCHEDULE, freeMemoryMb as freeMemory, planSchedule, roomStateOf, scheduleIssueOf, type SchedulePlan, type ScheduleRoom, type ScheduleSummary, summarizeSchedule } from '../../../more/advice/schedule.ts';
+import { dependsOf } from './desk.ts';
+import { makeBoardMask } from '../route.ts';
+import { type AgentView, type BoardData, BOARD_ISSUE_LIMIT, type PullView } from '../../view.ts';
 
 /** How many of a run's output lines /data serves. */
 const BOARD_OUTPUT_SHOWN = 30;
