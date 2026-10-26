@@ -55,6 +55,7 @@ test/commands/more/advice/doctor.test.ts :: doctor --session: a stdin pipe left 
 test/commands/more/check.test.ts :: check --issue: an issue needs the type and tier labels its repo has (#544)
 test/commands/more/check.test.ts :: check --pr <number>: reads the pull request through gh and checks it with the commits here (#377)
 test/commands/more/check.test.ts :: ci-health --dry-run: prints the report and touches no issue
+test/commands/more/check.test.ts :: ci-health with no flag prints the report, writes no issue and names --write
 test/commands/more/check.test.ts :: ci-health: opens and pins the one report issue, then edits it in place
 ? test/commands/more/check.test.ts :: marks add, marks and marks remove: one value from stdin, never in stdout or stderr (#434)
 test/commands/more/check.test.ts :: marks: the count names both files when the setting adds one (#656)

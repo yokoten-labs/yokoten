@@ -33,7 +33,7 @@ jobs:
           node-version: '^22.23.4'
       # The token is this run's own. It can read Actions and pull requests here and write
       # this repo's issues; it can do nothing else. yokoten never prints it.
-      - run: node {{cli}} ci-health
+      - run: node {{cli}} ci-health --write
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
