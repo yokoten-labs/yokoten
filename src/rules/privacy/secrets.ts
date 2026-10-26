@@ -4,7 +4,7 @@
 // A hit names the kind of secret, never the secret: the output may land in a CI log.
 
 import type { Env } from '../config.ts';
-import { noteWork, type FindingGrade } from '../message.ts';
+import { noteWork, type FindingGrade } from '../text/message.ts';
 
 /** What `yokoten redact` writes in place of a secret (#390). */
 export const SECRET = '<secret>';

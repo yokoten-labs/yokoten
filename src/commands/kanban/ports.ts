@@ -6,7 +6,7 @@
 // Nothing is re-exported: a port is a function or a type written here.
 
 import { ghIn, ghLaterIn, readBoardPulls, readBoardPullsLater, repoOf, repoPageOf } from '../../host/github/index.ts';
-import { parseRefusal } from '../../rules/message.ts';
+import { parseRefusal } from '../../rules/text/message.ts';
 import { hideHome, homeOf, loadMarks, makeRedactor } from '../../rules/privacy.ts';
 import { commonGitDir, DESK_LIST_FILE, readStatusText } from '../../run/hook.ts';
 import { terminalText } from '../../run/learn.ts';

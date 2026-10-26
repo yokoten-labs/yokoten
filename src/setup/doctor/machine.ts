@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { type Env } from '../../rules/config.ts';
 import { type GuardCost, measureRun } from '../../host/light.ts';
 import { GUARD_HEAP } from '../../run/cli.ts';
-import { type Finding, finding } from '../../rules/message.ts';
+import { type Finding, finding } from '../../rules/text/message.ts';
 import { tempDir as claudeTempDir } from '../../agents/runtimes/claude-code.ts';
 import { findTempDirs } from '../advice/unsaved.ts';
 import { compareVersions } from '../init.ts';

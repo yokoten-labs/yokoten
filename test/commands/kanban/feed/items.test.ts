@@ -5,7 +5,7 @@ import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { claudeItems, codexItems, cut, describeCall, grokItems, museItems } from '../../../../src/commands/kanban/feed/items.ts';
-import { finding, formatRefusal } from '../../../../src/rules/message.ts';
+import { finding, formatRefusal } from '../../../../src/rules/text/message.ts';
 
 const TREE = '/work/repo';
 

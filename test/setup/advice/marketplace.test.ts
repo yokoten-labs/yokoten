@@ -7,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { enabledPlugin, pluginSourceNote, readPluginMarketplace } from '../../../src/setup/advice/marketplace.ts';
-import { formatFinding } from '../../../src/rules/message.ts';
+import { formatFinding } from '../../../src/rules/text/message.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 
 /** Writes the two files Claude Code keeps the plugin in, into `home`. */

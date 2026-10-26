@@ -1,5 +1,5 @@
 import { isAbsolute, join, resolve } from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { globMatches, braceForms, realPath, placedPath } from '../bash/read/words.ts';

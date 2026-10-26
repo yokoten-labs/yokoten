@@ -4,7 +4,7 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { makeSandbox } from '../../repo/helpers.ts';
-import { RULES } from '../../../src/rules/message.ts';
+import { RULES } from '../../../src/rules/text/message.ts';
 import {
   explain,
   ids,

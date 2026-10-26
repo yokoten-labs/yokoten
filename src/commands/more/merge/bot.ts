@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { botConfig, botEnv, botProgram, type Gh, installationToken, readApprovalState, readBranchFiles, readCodeOwners, readIssueMilestone, readRepoLabelNames, repoOf } from '../../../host/github/index.ts';
 import { DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
-import { finding, type Finding } from '../../../rules/message.ts';
+import { finding, type Finding } from '../../../rules/text/message.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../../rules/pr.ts';
 import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
 

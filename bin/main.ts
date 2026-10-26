@@ -9,7 +9,7 @@
 import { withHome } from '../src/rules/privacy.ts';
 import { type Invocation, isTerminal, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
 import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
-import { wrap } from '../src/platform/screen.ts';
+import { wrap } from '../src/rules/text/screen.ts';
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).

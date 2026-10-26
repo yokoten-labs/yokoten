@@ -34,7 +34,7 @@ import {
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { chooseDenial, redactCommand } from '../../src/commands/hook.ts';
-import { parseRefusal } from '../../src/rules/message.ts';
+import { parseRefusal } from '../../src/rules/text/message.ts';
 
 // A session started outside the repo, or a worker in a worktree elsewhere, loads no project
 // hook: the user-level guard applies the file's own repo's rules, if yokoten is set up there (#307).

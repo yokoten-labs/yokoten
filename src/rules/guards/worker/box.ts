@@ -1,5 +1,5 @@
 import { isAbsolute, resolve, sep } from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';

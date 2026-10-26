@@ -1,6 +1,6 @@
 import { matcher, type Config, type Env } from '../../config.ts';
 import { WORKTREES_DIR } from '../../layout.ts';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 
 /** A file edit, by path relative to the repo root. */
 export function checkEdit(path: string, { config, env }: { config: Config; env: Env }): Finding | null {

@@ -1,4 +1,4 @@
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { ghIndex, hostApiValues } from '../../privacy.ts';
 import { withoutShellRedirects, programName, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';

@@ -1,6 +1,6 @@
 import { existsSync, globSync, lstatSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { ghIndex, homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { WORKER_MARK, protectedGitDirs, markFinding, FIND_WRITES } from './mark.ts';

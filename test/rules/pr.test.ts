@@ -13,7 +13,7 @@ import {
   finding,
   type Finding,
   formatFinding,
-} from '../../src/rules/message.ts';
+} from '../../src/rules/text/message.ts';
 import {
   changedLines,
   type ApprovalRead,

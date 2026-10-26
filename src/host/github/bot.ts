@@ -9,7 +9,7 @@ import { createPrivateKey, sign } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { docsLink } from '../../rules/message.ts';
+import { docsLink } from '../../rules/text/message.ts';
 import { homeOf, NO_HOME } from '../../rules/privacy.ts';
 
 export interface BotConfig {

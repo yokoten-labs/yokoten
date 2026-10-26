@@ -3,14 +3,14 @@
 // `screenProblems` on the text a person reads. A new command joins by itself: its help page and
 // its usage error are rendered from COMMANDS. Today's offenders are on WAIVED, each with its
 // reason; the list only shrinks. The limits are calibrated on the six screens the owner judged
-// (captured-screens.ts). The layout module, src/platform/screen.ts, is tested here too: test/
+// (captured-screens.ts). The layout module, src/rules/text/screen.ts, is tested here too: test/
 // holds 7 entries, the cap, so it has no test/platform/ folder.
 import '../home.ts';
 import assert from 'node:assert/strict';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { field, helpScreen, moreLine, nextLine, row, screen, screenProblems, SCREEN_LIMITS, section, table, title, wrap } from '../../../src/platform/screen.ts';
+import { field, helpScreen, moreLine, nextLine, row, screen, screenProblems, SCREEN_LIMITS, section, table, title, wrap } from '../../../src/rules/text/screen.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { makeSandbox } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
@@ -161,7 +161,7 @@ function screensOf(repo: string): ScreenRun[] {
 
 /**
  * Today's offenders (issue #1099, stage 1). Each is a screen built before the layout; stage 2
- * moves it onto src/platform/screen.ts and takes it off. The list only shrinks: a waived
+ * moves it onto src/rules/text/screen.ts and takes it off. The list only shrinks: a waived
  * screen that passes fails the test until its line is removed, and a new screen is never waived.
  */
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
@@ -194,7 +194,7 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const keys = new Set(runs.map((run) => run.key));
   const stale = Object.keys(WAIVED).filter((key) => !keys.has(key)).map((key) => `${key}: no such screen; take it off WAIVED`);
   assert.equal(keys.size, runs.length, 'each screen has its own key');
-  assert.deepEqual([...broken, ...healed, ...stale], [], 'build the screen with src/platform/screen.ts (record 0049)');
+  assert.deepEqual([...broken, ...healed, ...stale], [], 'build the screen with src/rules/text/screen.ts (record 0049)');
   assert.ok(Object.values(WAIVED).every((reason) => reason.includes('#1099')), 'each waiver names issue #1099');
   assert.ok(Object.keys(WAIVED).length <= WAIVED_MOST, `WAIVED holds ${Object.keys(WAIVED).length}; the most is ${WAIVED_MOST}, and it only goes down`);
   console.log(`screens: ${runs.length} rendered, ${Object.keys(WAIVED).length} waived, ${Math.round(performance.now() - started)} ms`);

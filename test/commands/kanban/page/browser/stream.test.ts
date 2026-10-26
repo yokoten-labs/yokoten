@@ -10,7 +10,7 @@ import { makeStreamStore, readStream } from '../../../../../src/commands/kanban/
 import { boardPage, boardScript } from '../../../../../src/commands/kanban/page/page.ts';
 import { loadUi, type PageData, type PageState, renderCenter } from '../../../../../src/commands/kanban/page/browser/script.ts';
 import { addStream, emptyStream, newStreamNode, renderStream } from '../../../../../src/commands/kanban/page/browser/stream.ts';
-import { finding, formatRefusal } from '../../../../../src/rules/message.ts';
+import { finding, formatRefusal } from '../../../../../src/rules/text/message.ts';
 import { makeRedactor } from '../../../../../src/rules/privacy.ts';
 import { SECRET } from '../../../../../src/rules/privacy/secrets.ts';
 import { makeTempDir } from '../../../../repo/helpers.ts';

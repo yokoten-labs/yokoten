@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
 import { isAbsolute, resolve, sep } from 'node:path';
 import { matcher, type Config, type Env } from '../../config.ts';
-import { finding, type Finding, isFailingFinding, type RuleId } from '../../message.ts';
+import { finding, type Finding, isFailingFinding, type RuleId } from '../../text/message.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, repoMarkKinds, scanText } from '../../privacy.ts';
 import { findPrograms, isGit, withoutShellRedirects, placedPath } from '../bash/read/words.ts';
 import { gitParts, gitRootAbove, parseCommitOptions } from '../lead-only/targets.ts';
