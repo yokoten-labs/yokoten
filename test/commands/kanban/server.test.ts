@@ -13,6 +13,7 @@ import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
 import { boardHostName, boardPort, browserCommand, PAGE_NOT_BUILT, printableLink, startBoardServer } from '../../../src/commands/kanban/server.ts';
 import { stateOf } from '../../../src/commands/kanban/state.ts';
 import { createBoardGitHub } from '../../../src/commands/kanban/view.ts';
+import { startAndLetGo } from '../../../src/platform/process.ts';
 import { type GhLater, ghLaterIn } from '../../../src/host/github/index.ts';
 
 /** `*.localhost` is loopback in a browser. This machine's DNS does not resolve it, so tests dial 127.0.0.1 and send the Host header. */
@@ -99,7 +100,7 @@ const closeServer = (server: { close: (done: () => void) => void; closeAllConnec
 
 /** Every required key of each interface in types.ts, read from the file, so a new key cannot skip the check. */
 function requiredKeys(name: string): string[] {
-  const types = readFileSync(join(ROOT, 'src/commands/kanban/types.ts'), 'utf8');
+  const types = readFileSync(join(ROOT, 'src/commands/kanban/page/browser/types.ts'), 'utf8');
   const body = new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(types)?.[1];
   assert.ok(body, `types.ts has ${name}`);
   return [...body.matchAll(/^ {2}(\w+):/gm)].map((match) => match[1]);
@@ -436,4 +437,13 @@ test('kanban: the browser opener for each system', () => {
   assert.deepEqual(browserCommand(url, 'linux', { WSL_DISTRO_NAME: 'Ubuntu' }), ['explorer.exe', url], 'WSL opens the Windows browser');
   assert.deepEqual(browserCommand(url, 'win32', {}), ['rundll32', 'url.dll,FileProtocolHandler', url]);
   assert.equal(browserCommand(url, 'aix', {}), null);
+});
+
+test('startAndLetGo: a program starts and is let go; one that cannot start is let go too (#1091)', async () => {
+  const sandbox = makeSandbox();
+  const done = join(sandbox.home, 'started');
+  startAndLetGo('node', ['-e', 'require("node:fs").writeFileSync(process.argv[1], "x")', done], sandbox.env);
+  for (let tries = 0; tries < 100 && !existsSync(done); tries++) await new Promise((wake) => setTimeout(wake, 50));
+  assert.ok(existsSync(done), 'the program ran');
+  assert.doesNotThrow(() => startAndLetGo(join(sandbox.home, 'no-such-program'), [], sandbox.env));
 });

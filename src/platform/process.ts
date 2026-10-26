@@ -1,12 +1,14 @@
 // ---- Programs and processes on each system (record 0040) ----
 //
-// Three things a command that starts another program needs, written once with the system
+// What a command that starts another program needs, written once with the system
 // passed in, so Linux CI tests every system's case:
 // - find a program on PATH as that system's shell would (Windows tries PATHEXT);
 // - start it with no shell between, so no word of the command is read twice;
-// - end it and every program it started.
+// - end it and every program it started;
+// - read what a program prints, or start one and let it go (the kanban area, #1091).
 // Nothing here reads process.platform: the entry point passes the system down.
 
+import { execFileSync, spawn } from 'node:child_process';
 import { statSync } from 'node:fs';
 import { posix, win32 } from 'node:path';
 
@@ -81,4 +83,26 @@ export type TreeKill = { kind: 'signal'; pid: number; signal: NodeJS.Signals } |
 export function treeKill(pid: number, signal: NodeJS.Signals, platform: NodeJS.Platform, group: boolean): TreeKill {
   if (platform === 'win32') return { kind: 'run', file: 'taskkill', args: ['/PID', String(pid), '/T', '/F'] };
   return { kind: 'signal', pid: group ? -pid : pid, signal };
+}
+
+/**
+ * What `file` prints, run with `args` in `cwd` and no shell between. Its input and its
+ * errors are not read. Throws when it fails, or when it runs past `timeout` ms.
+ */
+export function readProgram(file: string, args: string[], { cwd, env, timeout }: { cwd: string; env: Env; timeout?: number }): string {
+  return execFileSync(file, args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout, shell: false });
+}
+
+/**
+ * Start `file` on its own, with no shell, and never wait for it or fail: a program that
+ * cannot start is let go. For a program the user looks at, such as a browser.
+ */
+export function startAndLetGo(file: string, args: string[], env: Env): void {
+  try {
+    const child = spawn(file, args, { detached: true, stdio: 'ignore', env, shell: false });
+    child.on('error', () => {});
+    child.unref();
+  } catch {
+    // Nothing to start: the caller has said how to try again.
+  }
 }

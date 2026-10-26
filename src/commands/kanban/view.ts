@@ -3,10 +3,7 @@
 
 import { realpathSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { type BoardPull, type Gh, readBoardPulls, repoOf, repoPageOf } from '../../host/github/index.ts';
-import { type Env } from '../../rules/config.ts';
-import { hideHome } from '../../rules/privacy.ts';
-import { readOriginUrl } from '../../setup/plan.ts';
+import { type GhCall, hideHomeIn, type KanbanEnv, originUrl, type PullRow, readPulls, repoNameOf, repoPage } from './ports.ts';
 import type { BoardIssue } from './feed/read/waiting.ts';
 import { ageText, BOARD_AGENT_FILE, type BoardAgent, type BoardRole, type BoardWorktree, type FoundAgent, readBoardAgents, readBoardSeats, readBoardWorktrees } from './agents.ts';
 import { buildNeeds } from './feed/needs.ts';
@@ -205,7 +202,7 @@ export interface PullView {
   /** The address, only when it is http(s); else ''. */
   url: string;
   branch: string;
-  tier: BoardPull['tier'];
+  tier: PullRow['tier'];
   steps: StepMark[];
   /** The current step, as a word and in English, and whether it is moving, failed, or ready. */
   status: PullStatus;
@@ -227,7 +224,7 @@ function webUrl(url: string): string {
 }
 
 /** The steps of one open or draft pull request, and the current step in words. */
-export function pullView(pull: BoardPull): PullView {
+export function pullView(pull: PullRow): PullView {
   const you: StepMark = pull.tier === 'A' ? '' : 'skip';
   const base = { number: pull.number, title: pull.title, url: webUrl(pull.url), branch: pull.branch, tier: pull.tier };
   const at = (steps: StepMark[], status: PullStatus, label: string, tone: PullView['tone']): PullView => ({ ...base, steps, status, label, tone });
@@ -246,7 +243,7 @@ export function pullView(pull: BoardPull): PullView {
  * built in the feed, so a finished one leaves on the next read. The page shows them
  * under the header bell.
  */
-export function needsOf(agents: AgentView[], pulls: BoardPull[], openIssues: number[] | null = null): NeedView[] {
+export function needsOf(agents: AgentView[], pulls: PullRow[], openIssues: number[] | null = null): NeedView[] {
   return buildNeeds(agents, pulls, openIssues);
 }
 
@@ -264,7 +261,7 @@ function fileChangedAt(file: string): number | null {
  * True when the agent says it is working and its status file or its own log changed
  * within 15 minutes. A stale "working" holds no seat. The log is read only when the file is stale.
  */
-function isAgentLive(tree: string, vendor: string, state: BoardAgent['state'], env: Env, cache: LogCache, now: number, logPath = ''): boolean {
+function isAgentLive(tree: string, vendor: string, state: BoardAgent['state'], env: KanbanEnv, cache: LogCache, now: number, logPath = ''): boolean {
   if (state !== 'working') return false;
   const statusAt = fileChangedAt(join(tree, BOARD_AGENT_FILE));
   if (statusAt !== null && now - statusAt < LIVE_WINDOW_MS) return true;
@@ -276,7 +273,7 @@ function isAgentLive(tree: string, vendor: string, state: BoardAgent['state'], e
  * The lead row's one line (#700): the first line of what the lead last said, masked as
  * the stream masks it, then cut to the row. No log, or no mask: the status file's line.
  */
-function leadLine(tree: string, vendor: string, env: Env, root: string, cache: LogCache, fallback: string, logPath = ''): string {
+function leadLine(tree: string, vendor: string, env: KanbanEnv, root: string, cache: LogCache, fallback: string, logPath = ''): string {
   const log = findAgentLog(tree, vendor, env, cache, logPath);
   if (!log) return fallback;
   const text = lastAssistantLine(log.file, log.source, tree);
@@ -303,12 +300,12 @@ function workStarted(agent: BoardAgent, tree: string): string {
 }
 
 /** One found agent as the page shows it. Agent text is masked before it can reach /data. */
-function agentView(found: FoundAgent, env: Env, now: number, nickname: string, isMain: boolean, cache: LogCache, root: string, mask: (text: string) => string): AgentView {
+function agentView(found: FoundAgent, env: KanbanEnv, now: number, nickname: string, isMain: boolean, cache: LogCache, root: string, mask: (text: string) => string): AgentView {
   const { agent, tree } = found;
   const look = vendorOf(agent.vendor, agent.model);
   const filed = agent.role === 'lead' ? leadLine(tree.path, agent.vendor, env, root, cache, agent.doing, agent.log) : agent.doing;
   return {
-    key: hideHome(tree.path, env),
+    key: hideHomeIn(tree.path, env),
     name: mask(agent.name),
     nickname,
     vendor: { name: mask(look.name), color: look.color },
@@ -372,13 +369,13 @@ export function issueNumbersOf(issues: { number: number }[] | string): number[] 
 }
 
 /** The board's data from the status files, `gh pr list` and `git worktree list`. Every shown path shows `~` for home. */
-export function collectBoard(root: string, env: Env, gh: Gh, now: number = Date.now(), openIssues: number[] | null = null): BoardData {
-  const remote = repoOf(readOriginUrl(root, env));
-  return collectBoardWith(root, env, remote, remote ? readBoardPulls(gh, remote) : BOARD_NO_REMOTE_PULLS, now, openIssues);
+export function collectBoard(root: string, env: KanbanEnv, gh: GhCall, now: number = Date.now(), openIssues: number[] | null = null): BoardData {
+  const remote = repoNameOf(originUrl(root, env));
+  return collectBoardWith(root, env, remote, remote ? readPulls(gh, remote) : BOARD_NO_REMOTE_PULLS, now, openIssues);
 }
 
 /** The lead's desk for this read: the file when it is good, and the reply from its session. */
-function leadDesk(root: string, env: Env, found: FoundAgent[]): LeadDesk {
+function leadDesk(root: string, env: KanbanEnv, found: FoundAgent[]): LeadDesk {
   const filed = readLeadDesk(root, env);
   const lead = found.find((one) => one.agent.role === 'lead');
   const reply = lead ? readLeadReply(lead.tree.path, lead.agent.vendor, env, root) : { reply: '', rest: '' };
@@ -390,7 +387,7 @@ function leadDesk(root: string, env: Env, found: FoundAgent[]): LeadDesk {
  * the local parts are read here: the status files and `git worktree list`. `openIssues`
  * is the open issue numbers, or null when that list cannot prove an issue is closed.
  */
-export function collectBoardWith(root: string, env: Env, remote: string | null, pulls: BoardPull[] | string, now: number = Date.now(), openIssues: number[] | null = null): BoardData {
+export function collectBoardWith(root: string, env: KanbanEnv, remote: string | null, pulls: PullRow[] | string, now: number = Date.now(), openIssues: number[] | null = null): BoardData {
   const worktrees = readBoardWorktrees(root, env);
   // git lists the main checkout first. Desks are clones added after that list.
   const mainPath = typeof worktrees === 'string' ? root : worktrees[0]?.path || root;
@@ -420,16 +417,16 @@ export function collectBoardWith(root: string, env: Env, remote: string | null, 
     mask,
   );
   return {
-    repo: hideHome(root, env),
+    repo: hideHomeIn(root, env),
     repoName: basename(mainPath),
-    repoUrl: remote ? repoPageOf(remote) : '',
+    repoUrl: remote ? repoPage(remote) : '',
     agents,
     needs: needsOf(agents, rows, openIssues),
     pulls: typeof pulls === 'string' ? pulls : rows.filter((pull) => pull.stage === 'open' || pull.stage === 'draft').map(pullView),
     merged: rows
       .filter((pull) => pull.stage === 'merged' && now - Date.parse(pull.mergedAt) < MERGED_WINDOW_MS)
       .map((pull) => ({ number: pull.number, title: pull.title, url: webUrl(pull.url), mergedAt: pull.mergedAt })),
-    worktrees: typeof worktrees === 'string' ? worktrees : worktrees.map((tree) => ({ path: hideHome(tree.path, env), branch: tree.branch })),
+    worktrees: typeof worktrees === 'string' ? worktrees : worktrees.map((tree) => ({ path: hideHomeIn(tree.path, env), branch: tree.branch })),
     usage,
     desk: leadDesk(root, env, found),
     updated: new Date(now).toISOString(),
@@ -439,7 +436,7 @@ export function collectBoardWith(root: string, env: Env, remote: string | null, 
 
 /** The two lists the board reads from GitHub: each its rows, or why gh can't read them. */
 export interface BoardGitHubLists {
-  pulls: BoardPull[] | string;
+  pulls: PullRow[] | string;
   issues: BoardIssue[] | string;
 }
 

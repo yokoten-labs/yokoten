@@ -8,7 +8,7 @@
 
 import { statSync } from 'node:fs';
 import { openSync, closeSync, fstatSync, readSync } from 'node:fs';
-import { type Env } from '../../../../rules/config.ts';
+import { type KanbanEnv } from '../../ports.ts';
 import { roleGroup } from '../../page/groups.ts';
 import { findAgentLogs, type LogCache } from './logs.ts';
 import { costOf, modelPrice, PRICES_CHECKED, priceSources } from './prices.ts';
@@ -267,7 +267,7 @@ export function dayOf(at: string): string {
 }
 
 /** The board's usage from the logs of `sources`: one cell per agent, model and day. */
-export function collectUsage(sources: readonly UsageSource[], env: Env, now: number = Date.now(), mask: (text: string) => string = (text) => text): BoardUsage {
+export function collectUsage(sources: readonly UsageSource[], env: KanbanEnv, now: number = Date.now(), mask: (text: string) => string = (text) => text): BoardUsage {
   const logs: LogCache = new Map();
   const cells = new Map<string, UsageCell>();
   const partial = new Set<string>();

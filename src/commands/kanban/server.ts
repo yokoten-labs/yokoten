@@ -9,22 +9,17 @@
 // needs the right Host and the kanban's cookie. The first visit, with ?token=, sets that
 // cookie and redirects. The token goes only to the browser: it is never printed (#1045).
 
-import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { basename, extname, join } from 'node:path';
-import { ghIn, ghLaterIn, type GhLater, readBoardPulls, readBoardPullsLater, repoOf } from '../../host/github/index.ts';
-import { type Env } from '../../rules/config.ts';
-import { HOME_DIR } from '../../setup/files.ts';
-import { readOriginUrl } from '../../setup/plan.ts';
-import { actionsRunPage, actionsRunsQuery, type HealthRun, healthReadFailed, readActionsRuns, readDefaultBranch } from '../more/check.ts';
-import { type Invocation, parse, print, requireRoot, usage } from '../shared.ts';
+import { startAndLetGo } from '../../platform/process.ts';
+import { type ActionsRun, type CommandRun, defaultBranchOf, type GhCallLater, ghRunner, ghRunnerLater, type KanbanEnv, originUrl, parseWords, printLines, projectRoot, readFailedText, readPulls, readPullsLater, readRuns, repoNameOf, runsPage, runsQuery, usageError, yokotenHome } from './ports.ts';
 import { BOARD_READ_TIMEOUT_MS } from './agents.ts';
 import { makeBoardMask, makeFeedStreams, sessionAnswer } from './feed/route.ts';
 import { type StreamAnswer } from './feed/tail.ts';
 import { collectState, renderStateText } from './state.ts';
-import type { KanbanState } from './types.ts';
+import type { KanbanState } from './page/browser/types.ts';
 import { BOARD_NO_REMOTE_PULLS, BOARD_READING_GITHUB, type BoardGitHub, createBoardGitHub, refreshBoardGitHub } from './view.ts';
 
 /** How many random bytes the link's token holds. */
@@ -52,7 +47,7 @@ const STREAM_EVERY_MS = 2_000;
 const BOARD_PATHS = new Set(['/', '/api/state']);
 
 /** The built page, in the package (record 0044). */
-export const KANBAN_PAGE_DIR = join(HOME_DIR, 'web', 'kanban', 'dist');
+export const KANBAN_PAGE_DIR = join(yokotenHome(), 'web', 'kanban', 'dist');
 
 /** What `/` says when the page is not built. */
 export const PAGE_NOT_BUILT = 'The kanban page is not built: run `npm --prefix web/kanban run build`. /api/state works now.';
@@ -199,7 +194,7 @@ export function maskBoardPayload(value: unknown, mask: (text: string) => string)
 }
 
 /** The /api/state body. Every string is masked at this boundary, then sent as JSON. */
-export function boardDataBody(env: Env, root: string, payload: unknown): string {
+export function boardDataBody(env: KanbanEnv, root: string, payload: unknown): string {
   return JSON.stringify(maskBoardPayload(payload, makeBoardMask(env, root)));
 }
 
@@ -215,14 +210,14 @@ function pageFile(dir: string, name: string): { kind: string; body: Buffer } | n
 }
 
 /** The Actions runs and the branch merges land on, without blocking. A failed read says why. */
-async function readActionsLater(gh: GhLater, repo: string, signal: AbortSignal): Promise<{ runs: HealthRun[] | string; defaultBranch: string }> {
+async function readActionsLater(gh: GhCallLater, repo: string, signal: AbortSignal): Promise<{ runs: ActionsRun[] | string; defaultBranch: string }> {
   const [runs, branch] = await Promise.all([
     (async () => {
       try {
-        const page = actionsRunPage(await gh(actionsRunsQuery(repo), signal));
+        const page = runsPage(await gh(runsQuery(repo), signal));
         return typeof page === 'string' ? page : page.runs;
       } catch (err) {
-        return healthReadFailed(err, 'Actions runs');
+        return readFailedText(err, 'Actions runs');
       }
     })(),
     (async () => {
@@ -243,20 +238,20 @@ async function readActionsLater(gh: GhLater, repo: string, signal: AbortSignal):
  * missing cookie or a wrong cookie gets a 403; any method but GET and HEAD gets a 405.
  * gh reads in the background: the first read starts now, and /api/state never waits for it.
  */
-export function startBoardServer(root: string, env: Env, gh: GhLater, options: BoardServerOptions = {}): Promise<{ server: Server; url: string }> {
+export function startBoardServer(root: string, env: KanbanEnv, gh: GhCallLater, options: BoardServerOptions = {}): Promise<{ server: Server; url: string }> {
   const token = randomBytes(BOARD_TOKEN_BYTES).toString('hex');
   const hostName = boardHostName(root);
   const pageDir = options.pageDir ?? KANBAN_PAGE_DIR;
   const github = options.github ?? createBoardGitHub();
-  let actions: { runs: HealthRun[] | string; defaultBranch: string } = { runs: BOARD_READING_GITHUB, defaultBranch: 'main' };
+  let actions: { runs: ActionsRun[] | string; defaultBranch: string } = { runs: BOARD_READING_GITHUB, defaultBranch: 'main' };
   const stopReads = new AbortController();
   const streamTimers = new Set<NodeJS.Timeout>();
   // The GitHub repo, or null without a GitHub remote. Starts a background read when the lists are old.
   const refreshGitHub = (): string | null => {
-    const remote = repoOf(readOriginUrl(root, env));
+    const remote = repoNameOf(originUrl(root, env));
     if (!remote) return null;
     const read = async () => {
-      const [pulls, health] = await Promise.all([readBoardPullsLater(gh, remote, stopReads.signal), readActionsLater(gh, remote, stopReads.signal)]);
+      const [pulls, health] = await Promise.all([readPullsLater(gh, remote, stopReads.signal), readActionsLater(gh, remote, stopReads.signal)]);
       if (typeof health.runs !== 'string' || typeof actions.runs === 'string') actions = health;
       return { pulls, issues: [] };
     };
@@ -403,7 +398,7 @@ export function printableLink(url: string): string {
  * or null where none is known. WSL opens the Windows browser. The link goes as one word,
  * never through a shell.
  */
-export function browserCommand(url: string, platform: NodeJS.Platform, env: Env): string[] | null {
+export function browserCommand(url: string, platform: NodeJS.Platform, env: KanbanEnv): string[] | null {
   if (platform === 'darwin') return ['open', url];
   if (platform === 'win32') return ['rundll32', 'url.dll,FileProtocolHandler', url];
   if (platform === 'linux') return env.WSL_DISTRO_NAME ? ['explorer.exe', url] : ['xdg-open', url];
@@ -411,38 +406,32 @@ export function browserCommand(url: string, platform: NodeJS.Platform, env: Env)
 }
 
 /** Open the link in the browser, and never wait or fail. */
-function openInBrowser(url: string, env: Env): void {
+function openInBrowser(url: string, env: KanbanEnv): void {
   const command = browserCommand(url, process.platform, env);
-  if (!command) return;
-  try {
-    const child = spawn(command[0], command.slice(1), { detached: true, stdio: 'ignore', env });
-    child.on('error', () => {});
-    child.unref();
-  } catch {
-    // No browser to open: the printed line says how to try again.
-  }
+  // No browser to open: the printed line says how to try again.
+  if (command) startAndLetGo(command[0], command.slice(1), env);
 }
 
-export function runBoard(invocation: Invocation, options: BoardServerOptions = {}): number | Promise<number> {
-  const parsed = parse('kanban', invocation.args);
-  if (typeof parsed === 'string') return usage(invocation, parsed);
-  const root = requireRoot(invocation, invocation.cwd);
+export function runBoard(invocation: CommandRun, options: BoardServerOptions = {}): number | Promise<number> {
+  const parsed = parseWords('kanban', invocation.args);
+  if (typeof parsed === 'string') return usageError(invocation, parsed);
+  const root = projectRoot(invocation, invocation.cwd);
   if (!root) return 1;
   if (parsed.flags.has('--text')) {
-    const gh = ghIn(root, invocation.env, BOARD_READ_TIMEOUT_MS);
-    const remote = repoOf(readOriginUrl(root, invocation.env));
+    const gh = ghRunner(root, invocation.env, BOARD_READ_TIMEOUT_MS);
+    const remote = repoNameOf(originUrl(root, invocation.env));
     const sources = remote
-      ? { remote, pulls: readBoardPulls(gh, remote), runs: readActionsRuns(gh, remote, 100), defaultBranch: readDefaultBranch(gh, remote) }
+      ? { remote, pulls: readPulls(gh, remote), runs: readRuns(gh, remote, 100), defaultBranch: defaultBranchOf(gh, remote) }
       : { remote: null, pulls: BOARD_NO_REMOTE_PULLS, runs: [], defaultBranch: 'main' };
     const state = maskBoardPayload(collectState(root, invocation.env, sources), makeBoardMask(invocation.env, root));
-    print(invocation, renderStateText(state as KanbanState));
+    printLines(invocation, renderStateText(state as KanbanState));
     return 0;
   }
-  return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), options).then(
+  return startBoardServer(root, invocation.env, ghRunnerLater(root, invocation.env, BOARD_READ_TIMEOUT_MS), options).then(
     ({ url }) => {
       const isOpening = !parsed.flags.has('--no-open');
       // The link with its token goes only to the browser; the screen shows it without (#1045).
-      print(invocation, [
+      printLines(invocation, [
         'yokoten kanban: preview, read only. It may change.',
         `The team is live at ${printableLink(url)}`,
         isOpening ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.' : 'The sign-in link goes only to your browser: run `yokoten kanban` without --no-open to open it. Stop it with Ctrl-C.',
@@ -451,7 +440,7 @@ export function runBoard(invocation: Invocation, options: BoardServerOptions = {
       return new Promise<number>(() => {});
     },
     () => {
-      print(invocation, ['yokoten kanban: the page could not start: run it again.'], invocation.stderr);
+      printLines(invocation, ['yokoten kanban: the page could not start: run it again.'], invocation.stderr);
       return 1;
     },
   );
