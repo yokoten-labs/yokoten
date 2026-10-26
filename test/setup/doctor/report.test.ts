@@ -40,6 +40,7 @@ test('doctor: no temp folder is one line with the fix, not BROKEN (#1108)', () =
   const full = () => { throw new Error('ENOSPC: no space left on device'); };
   const result = doctor(null, { env: { HOME: '/home/a' }, config: DEFAULTS, makeTemp: full });
   assert.equal(result.report.selfTest.ok, true);
+  assert.deepEqual(result.report.selfTest, { ok: true, failed: [], ran: false, skipped: ['user guard check', 'OpenCode plugin note'], reason: 'no temp folder to test in' }, 'the JSON says the self-test did not run');
   assert.ok(!result.lines.some((line) => line.includes('BROKEN')), result.lines.join('\n'));
   const noTemp = result.lines.filter((line) => line.includes('could not set up a temp folder'));
   assert.equal(noTemp.length, 1, result.lines.join('\n'));
@@ -440,7 +441,7 @@ test('doctor: shows the review step in stage 4, and a session never asks gh abou
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
   const full = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh({ ...ADMIN, [RULES]: withApprovals(1) }).gh });
   assert.deepEqual(full.report.steps?.find((s) => s.id === 'review'), { id: 'review', stage: 4, mark: 'done', standard: 'Scorecard: Code-Review' });
-  assert.deepEqual(full.report.selfTest, { ok: true, failed: [] }, 'the server control still passes no step');
+  assert.deepEqual(full.report.selfTest, { ok: true, failed: [], ran: true, skipped: [] }, 'the server control still passes no step');
   const session = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: () => { throw new Error('a session called gh'); } });
   assert.notEqual(session.report.next?.id, 'review');
   rmSync(root, { recursive: true, force: true });

@@ -225,7 +225,11 @@ export interface DoctorReport {
   /** The release channel this machine runs: stable, beta or dev (#632). */
   channel: string;
   ok: boolean;
-  selfTest: { ok: boolean; failed: string[] };
+  /**
+   * `ok` means no check failed. `ran` is false when a control found no temp folder and did
+   * not run (#1108): `skipped` names it, `reason` says why, and `ok` stays true.
+   */
+  selfTest: { ok: boolean; failed: string[]; ran: boolean; skipped: string[]; reason?: string };
   /** False outside a git repo: then there is no road to walk. */
   repo: boolean;
   stage: number | null;
@@ -327,7 +331,7 @@ function doctorRun(
     const place = hostPathPlace();
     lines.push(noTempLine(unset, place.tmp, homeOf(env), place.platform));
   }
-  const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed }, stages: STAGES };
+  const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed, ran: !unset.length, skipped: unset, ...(unset.length ? { reason: 'no temp folder to test in' } : {}) }, stages: STAGES };
   if (!root) return { ok: !failed.length, lines, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings } };
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).

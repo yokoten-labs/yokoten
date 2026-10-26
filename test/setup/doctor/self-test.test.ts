@@ -40,6 +40,9 @@ test('self-test: a control with no temp folder says it could not set up, and a f
   // A real temp folder with a check that passes everything: still a failure.
   assert.deepEqual(guardControl(undefined, () => []), ['user guard check']);
   assert.deepEqual(openCodeControl(undefined, () => null), ['OpenCode plugin note']);
+  // A genuinely failing control is named, and is never turned into "did not run".
+  const failing = guardControl(undefined, () => []);
+  assert.ok(failing.length > 0 && !failing.includes(NO_TEMP), 'a failing control is named, not unset');
   // Positive control: the real checks pass with a real temp folder.
   assert.deepEqual(guardControl(), []);
   assert.deepEqual(openCodeControl(), []);
@@ -54,6 +57,9 @@ test('self-test: the no-temp line names the controls and the fix, with home show
     ['darwin', '/Users/a/tmp', '/Users/a', '(~/tmp)'],
     ['win32', 'C:\\Users\\a\\AppData\\Local\\Temp', 'C:\\Users\\a', '(~\\AppData\\Local\\Temp)'],
     ['linux', '/tmp', null, '(/tmp)'],
+    ['win32', 'c:\\users\\a\\appdata\\local\\temp', 'C:\\Users\\A', '(~\\appdata\\local\\temp)'],
+    ['win32', 'C:\\Users\\a\\AppData\\Local\\Temp', 'C:\\Users\\a\\', '(~\\AppData\\Local\\Temp)'],
+    ['linux', '/home/a/tmp', '/home/a/', '(~/tmp)'],
   ];
   for (const [platform, temp, home, shown] of cases) {
     const line = noTempLine(['user guard check'], temp, home, platform);

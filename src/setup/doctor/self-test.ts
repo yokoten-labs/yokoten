@@ -40,7 +40,9 @@ export const NO_TEMP = 'no temp folder';
  * did not run, which is not a broken yokoten. The home folder in the path shows as `~`.
  */
 export function noTempLine(unset: string[], temp: string, home: string | null, platform: NodeJS.Platform): string {
-  const shown = home && isPathInside(temp, home, platform) ? `~${temp.slice(home.length)}` : temp;
+  // A trailing separator on the home folder is not part of its name; paths on Windows ignore letter case.
+  const base = home?.replace(/[\\/]+$/, '');
+  const shown = base && isPathInside(temp, base, platform) ? `~${temp.slice(base.length)}` : temp;
   return `yokoten: the self-test could not set up a temp folder, so the ${unset.join(' and ')} did not run; free space in the temp folder (${shown}), then run \`yokoten doctor\` again.`;
 }
 
