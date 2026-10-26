@@ -1,4 +1,4 @@
-# 0043 v0.1.2: four commands: the agent works, the human decides, the board watches
+# 0043 v0.1.2: four commands: the agent works, the human decides, the kanban watches
 
 Status: accepted
 Date: 2026-10-26 (UTC)
@@ -45,12 +45,12 @@ The pains that came up most often:
    role, as the owner put it:
    - the agent works: `desk`;
    - the human decides: `merge`, where the person approves what lands;
-   - both are watched: `board`.
+   - both are watched: `kanban`.
 
    | Command | What it does | Commands folded in |
    |---|---|---|
    | `yokoten` | sets up what is missing, then one screen: where you are, what waits on you, the next step | install, init, doctor, trust, update |
-   | `board` | a live, read-only web board of every AI session | — |
+   | `kanban` | a live, read-only web board of every AI session | board (old name) |
    | `merge` | the pull request merge queue | train, pr, conflicts, provenance, anchor |
    | `desk` | give one task to one AI, in its own fenced desk | worker, msg |
 
@@ -74,13 +74,13 @@ The pains that came up most often:
      stdin is a terminal.
 
 4. **Proof and the reason for a stop come to the person; they are not commands.**
-   - The commit check and CI produce the evidence. The board shows it on each session:
+   - The commit check and CI produce the evidence. The kanban shows it on each session:
      each platform's checks pass or fail, and a session with no evidence is marked
      "not proven".
    - A refusal carries its reason and the fix. When the same rule stops an agent a second
      time, the refusal gives the right shape of the command.
 
-5. **The board is the first web view in v0.1.x.** The owner allowed it: read-only. It is
+5. **The kanban is the first web view in v0.1.x.** The owner allowed it: read-only. It is
    laid out like the Cloud v5 sessions page:
    - left: sessions grouped by state: working, stuck (for how long), waiting on you, done;
    - middle: the selected session's live output;
@@ -88,27 +88,31 @@ The pains that came up most often:
 
    It never prints its access token on the terminal.
 
-   **The board also owns GitHub Actions.** The work splits by what GitHub holds:
+   **The name is `kanban`** (the owner, 2026-10-26): the Toyota word for the signboard
+   that shows the state of work, from the same production system as yokoten (横展).
+   `board` stays as a hidden old name that still works.
+
+   **The kanban also owns GitHub Actions.** The work splits by what GitHub holds:
    - `desk` takes issues;
    - `merge` takes pull requests;
-   - `board` watches Actions.
+   - `kanban` watches Actions.
 
    CI runs by itself, so the person only needs to know its state and that someone acts
-   on a failure. The board shows, read-only:
+   on a failure. The kanban shows, read-only:
    - a failure on main, first, because it blocks every pull request;
    - each pull request's CI, which is part of its evidence;
    - a run queued for more than 15 minutes, or much slower than usual;
    - a test that passes and fails by turns.
 
    This is the job of the hidden `ci-health` and of our Actions check. It moves to the
-   board and writes nothing to GitHub. A failure goes to the other two commands, so no
+   kanban and writes nothing to GitHub. A failure goes to the other two commands, so no
    fourth command is needed:
    - **main fails, or a test is flaky:** yokoten opens an issue, and `desk` gives it to
      an AI;
    - **a pull request's CI fails:** `merge` does not merge it, and sends it back to the AI
      that made it;
    - **a run is stuck:** the bot reruns it once (the owner allowed reruns on
-     2026-10-22) and the board notes it. A second failure opens an issue.
+     2026-10-22) and the kanban notes it. A second failure opens an issue.
 
    The release workflow is the one exception. Only the owner approves it, on GitHub, and
    no command touches it.
@@ -118,7 +122,7 @@ The pains that came up most often:
    is enough:
    - yokoten makes the clone, writes the brief from the issue and picks an agent;
    - it opens the sandbox, runs the commit check when the agent is done, and shows the
-     result on the board;
+     result on the kanban;
    - with no issue number, `desk` lists which AI works on what, and changes nothing.
 
    It folds in `worker` and `msg`. Our own dispatch scripts (`deepseek-worker.sh`,
@@ -132,7 +136,7 @@ The pains that came up most often:
    - A merge needs three things: a review by another vendor's AI, the evidence, and the
      owner's approval for tier A.
    - A conflicted pull request is rebuilt on the latest main, never forced.
-   - The queue shows on the board.
+   - The queue shows on the kanban.
 
 8. **Every screen keeps one shape.**
    - A title line that says what is true now, at most 10 rows, then the `Next` line and
@@ -163,7 +167,7 @@ The pains that came up most often:
 9. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
    2. Hide and fold the commands.
-   3. `merge`, `board` and `desk`.
+   3. `merge`, `kanban` and `desk`.
    4. The first-screen issues (#1037 to #1040, #1043, #1044).
    5. The README (issue #1035) in all four languages.
 
@@ -190,7 +194,7 @@ The pains that came up most often:
 - **Delete the commands nobody new uses.** The owner chose to hide them. Agents, CI and
   our own pipeline still use them, and deleting code is hard to take back.
 - **Keep `check` and `explain` visible.** Proof that a person has to ask for is proof a
-  new coder never sees. The board and the refusal already bring it to them.
+  new coder never sees. The kanban and the refusal already bring it to them.
 - **Polish all 32 screens one by one.** It costs the most and leaves the structure as it
   is.
 - **Build the model gateway into yokoten.** It would be a large project in another
@@ -211,5 +215,5 @@ The pains that came up most often:
   - `help` lists exactly the four commands;
   - each folded command names its new home;
   - no bare command writes, merges or posts (a test per command);
-  - the board prints no token;
+  - the kanban prints no token;
   - the release walk-through finds zero problems before the tag.
