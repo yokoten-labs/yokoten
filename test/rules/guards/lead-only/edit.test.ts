@@ -143,8 +143,9 @@ test('lead-only files: on macOS and Windows a name matches in any case (#402)', 
 test('lead-only files: shell writes follow the edit guard\'s scope (#402, #816)', async () => {
   const sandbox = makeSandbox();
   const worker = { YOKOTEN_ROLE: 'worker' };
-  // No yokoten.json and no repo from the hook: the guard itself has no file list here.
-  assert.equal(checkCommand('sed -i s/a/b/ AGENTS.md', { env: worker, cwd: sandbox.repo }), null);
+  // No yokoten.json and no repo from the hook: the walk up finds the repo, and its defaults
+  // apply, as for an edit (#1095).
+  assert.equal(checkCommand('sed -i s/a/b/ AGENTS.md', { env: worker, cwd: sandbox.repo })?.id, 'lead-only');
   assert.equal(checkEdit('AGENTS.md', { config: DEFAULTS, env: worker }) === null, false, 'the edit guard has the same list');
   const hook = (flags: string[], command: string) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { command } }) });
   const edit = (flags: string[]) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { file_path: join(sandbox.repo, 'AGENTS.md') } }) });

@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { isPathInside, isSamePath } from '../../../platform/paths.ts';
 import { homeIn } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { realPath } from '../bash/read/words.ts';
@@ -56,7 +57,7 @@ export function listedWorker(folder: string, env: Env): string | null {
   for (const entry of loadWorkerPaths(env)) {
     const base = realPath(resolve(entry));
     if (!isFolderThere(base)) continue;
-    if (full === base || full.startsWith(base + sep)) return entry;
+    if (isPathInside(full, base)) return entry;
   }
   return null;
 }
@@ -64,7 +65,7 @@ export function listedWorker(folder: string, env: Env): string | null {
 /** Keep `path` on the worker list, dropping entries whose folders are gone. */
 export function addWorkerPath(env: Env, path: string): void {
   const here = realPath(path);
-  const kept = loadWorkerPaths(env).filter((entry) => realPath(entry) !== here && isFolderThere(realPath(entry)));
+  const kept = loadWorkerPaths(env).filter((entry) => !isSamePath(realPath(entry), here) && isFolderThere(realPath(entry)));
   mkdirSync(dirname(workersFile(env)), { recursive: true });
   writeFileSync(workersFile(env), `${WORKERS_HEADER}${[...kept, here].join('\n')}\n`);
 }
@@ -74,7 +75,7 @@ export function removeWorkerPath(env: Env, path: string): void {
   const base = realPath(path);
   const kept = loadWorkerPaths(env).filter((entry) => {
     const other = realPath(entry);
-    return other !== base && !base.startsWith(other + sep) && !other.startsWith(base + sep);
+    return !isPathInside(base, other) && !isPathInside(other, base);
   });
   mkdirSync(dirname(workersFile(env)), { recursive: true });
   writeFileSync(workersFile(env), `${WORKERS_HEADER}${kept.length ? `${kept.join('\n')}\n` : ''}`);

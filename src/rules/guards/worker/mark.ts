@@ -1,5 +1,6 @@
 import { accessSync, closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, statSync, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { isPathInside, isSamePath } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
@@ -334,8 +335,7 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
       const placed = placedPath(start, folder);
       if (placed === null) return markFinding(unplacedWhat(start));
       const full = realPath(resolve(folder, placed));
-      const inside = full.endsWith(sep) ? full : full + sep;
-      if (held.some((dir) => dir === full || dir.startsWith(inside))) return markFinding(`this command changes files under ${start}, which holds a git folder, where the worker mark is kept`);
+      if (held.some((dir) => isPathInside(dir, full))) return markFinding(`this command changes files under ${start}, which holds a git folder, where the worker mark is kept`);
     }
   }
   for (const written of targets) {
@@ -355,13 +355,12 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
     dirs ??= folder === null ? [] : protectedGitDirs(folder);
     if (!dirs.length) continue;
     const full = realPath(resolve(folder ?? '/', placed));
-    if (dirs.some((dir) => full === dir || full.startsWith(dir + sep))) return markFinding(`this command changes ${written}, which is inside a git folder, where the worker mark is kept`);
+    if (dirs.some((dir) => isPathInside(full, dir))) return markFinding(`this command changes ${written}, which is inside a git folder, where the worker mark is kept`);
     // A folder that holds the git folder: removing or replacing it drops the mark (#672).
     if (findStarts.has(written)) continue;
     const top = gitLinkAbove(folder ?? '/');
     const held = [...dirs, ...(top ? [realPath(join(top.top, '.git'))] : [])];
-    const inside = full.endsWith(sep) ? full : full + sep;
-    if (held.some((dir) => dir.startsWith(inside))) return markFinding(`this command changes ${written}, which holds a git folder, where the worker mark is kept`);
+    if (held.some((dir) => !isSamePath(dir, full) && isPathInside(dir, full))) return markFinding(`this command changes ${written}, which holds a git folder, where the worker mark is kept`);
   }
   return null;
 }

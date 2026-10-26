@@ -48,12 +48,13 @@ export type FileRules = {
  * The file rules for one guard call. A file takes the deepest of `repos` that holds it, as
  * in `judge`; with the folder unknown, a relative path is taken as written, in the first
  * (the session's repo). A file outside them all takes the repo above it, found by one walk
- * up to its `.git`, when that repo has a yokoten.json. Walks and configs are kept for the
- * call, so a second file in the same folders reads nothing again.
+ * up to its `.git`: its yokoten.json, or the defaults when it has none, as an edit does (#816,
+ * #1095). Walks and configs are kept for the call, so a second file in the same folders reads
+ * nothing again.
  */
 export function fileRules(repos: RuledRepo[]): FileRules {
   const rootAbove = new Map<string, string | null>(); // folder → the git root above it
-  const leadOnlyAt = new Map<string, string[] | null>(); // git root → its list, null without yokoten.json
+  const leadOnlyAt = new Map<string, string[]>(); // git root → its list
   const rootOf = (folder: string) => gitRootAbove(folder, rootAbove);
   // Roots and files are compared by real path, as for an edit: a symlink to AGENTS.md is
   // AGENTS.md, and on macOS /var is /private/var. The roots are read once, on first use.
@@ -84,9 +85,8 @@ export function fileRules(repos: RuledRepo[]): FileRules {
     if (!isHost) return null;
     const root = rootOf(dirname(full));
     if (root === null) return null;
-    if (!leadOnlyAt.has(root)) leadOnlyAt.set(root, existsSync(join(root, 'yokoten.json')) ? loadConfig(root, { onProblem: () => {} }).leadOnly : null);
-    const leadOnly = leadOnlyAt.get(root);
-    return leadOnly ? { path: relative(root, full).split(sep).join('/'), leadOnly } : null;
+    if (!leadOnlyAt.has(root)) leadOnlyAt.set(root, loadConfig(root, { onProblem: () => {} }).leadOnly);
+    return { path: relative(root, full).split(sep).join('/'), leadOnly: leadOnlyAt.get(root) ?? [] };
   };
   // A folder is ruled when a file in it would be: `.git` stands for any file there.
   const isRuled = (folder: string) => ruled({ path: join(folder, '.git'), from: null }, {}) !== null;

@@ -1,4 +1,5 @@
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { isPathInside } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
@@ -215,7 +216,6 @@ function namesGitSetup(path: string): boolean {
   });
 }
 
-const isInside = (path: string, folder: string) => path === folder || path.startsWith(folder.endsWith(sep) ? folder : folder + sep);
 
 export function checkGitSetupWrites(words: string[], { folder, from, env }: { folder: string | null; from: string | null; env: Env }): Finding | null {
   const known = new Map<string, string | null>();
@@ -263,7 +263,7 @@ export function checkGitSetupWrites(words: string[], { folder, from, env }: { fo
     const isPlaced = expanded !== null && !/[$`]/.test(path) && (folder !== null || isAbsolute(expanded));
     if (!isPlaced || held.length === 0) return namesGitSetup(path);
     const full = realPath(resolve(folder ?? '/', expanded));
-    const holders = held.filter((dir) => isInside(full, dir));
+    const holders = held.filter((dir) => isPathInside(full, dir));
     if (holders.length === 0) return false;
     // Inside the work tree, the path from its root; inside a git folder, the path in `.git`.
     const inside = (dir: string) => relative(dir, full).split(sep).join('/');

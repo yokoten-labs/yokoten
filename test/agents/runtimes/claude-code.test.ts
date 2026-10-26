@@ -20,8 +20,9 @@ import {
   PLUGIN_ROOT,
   ROOT,
 } from '../../repo/helpers.ts';
-import { addProjectSandbox, addProjectStopHook, addUserHooks, agentFile, DESK, formatRewrite, hasSessionDoctor, hasSessionInput, hasUserGuard, readSessionStart, readStop, removeUserHooks, sandboxProblem, setProjectEnv, skillFile, userDir, userSettingsFile } from '../../../src/agents/runtimes/claude-code.ts';
+import { addProjectHook, addProjectSandbox, addProjectStopHook, addUserHooks, GUARDED_TOOLS, agentFile, DESK, formatRewrite, hasSessionDoctor, hasSessionInput, hasUserGuard, readSessionStart, readStop, removeUserHooks, sandboxProblem, setProjectEnv, skillFile, userDir, userSettingsFile } from '../../../src/agents/runtimes/claude-code.ts';
 import { pluginHookCommand } from '../../../src/run/cli.ts';
+import { USER_CLI, USER_MISSING } from '../../../src/setup/install.ts';
 
 test('claude-code readStop: a Stop or SubagentStop event is checked; a worker subagent is a worker (#614)', () => {
   assert.deepEqual(readStop({ cwd: '/w', stop_hook_active: false }), { cwd: '/w', active: false, worker: false, subagent: false, sessionId: undefined });
@@ -139,6 +140,138 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
   assert.match(session.stdout, /^yokoten: stage 1 of 5/);
   assert.match(session.stdout, /runs as \/yokoten:init, \/yokoten:doctor and \/yokoten:update/);
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /yokoten:init/, 'only from the plugin');
+});
+
+// #1095: a worker's Write or Edit into a lead-only path is refused like its shell write,
+// by the project hook and by the user-level hook (the plugin's), where no project hook runs.
+const FILE_TOOLS = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash'];
+type GuardCase = { tool: string; path: string; worker: boolean; refused: boolean };
+
+/**
+ * Each guard case through the user hook and the project hook, as Claude Code calls them (#1095).
+ * The user hook runs the arguments install wrote. A session opened outside the repo (`cwd`) loads
+ * no project hook, so only the user hook runs there: the incident in #1095.
+ */
+async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: GuardCase[], cwd = sandbox.repo): Promise<void> {
+  addUserHooks({ HOME: sandbox.home }, '/x/yokoten.mjs', 'gone');
+  addProjectHook(sandbox.repo, '.yokoten/bin/yokoten.mjs');
+  const groupOf = (file: string) => JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse[0] as { matcher: string; hooks: { command: string }[] };
+  const user = groupOf(join(sandbox.home, '.claude', 'settings.json'));
+  const userArgs = /\/x\/yokoten\.mjs (hook [^;]*?) 2>&1/.exec(user.hooks[0].command)?.[1].split(' ');
+  assert.ok(userArgs, user.hooks[0].command);
+  const hooks = [
+    { name: 'user', matcher: user.matcher, args: userArgs },
+    ...(cwd === sandbox.repo ? [{ name: 'project', matcher: groupOf(join(sandbox.repo, '.claude', 'settings.json')).matcher, args: ['hook'] }] : []),
+  ];
+  for (const hook of hooks) assert.equal(hook.matcher, GUARDED_TOOLS, `${hook.name} hook runs on every guarded tool`);
+  const inputOf = (tool: string, path: string): Record<string, unknown> => {
+    const file = join(sandbox.repo, path);
+    // A path in a bash command is written with forward slashes: bash eats a Windows backslash.
+    if (tool === 'Bash') return { command: `echo x > ${cwd === sandbox.repo ? path : file.replaceAll('\\', '/')}` };
+    if (tool === 'Write') return { file_path: file, content: 'x' };
+    if (tool === 'Edit') return { file_path: file, old_string: 'a', new_string: 'b' };
+    if (tool === 'MultiEdit') return { file_path: file, edits: [{ old_string: 'a', new_string: 'b' }] };
+    return { notebook_path: file, new_source: 'x' };
+  };
+  for (const hook of hooks) {
+    for (const { tool, path, worker, refused } of cases) {
+      const call = { cwd, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: inputOf(tool, path), ...(worker ? { agent_type: 'yokoten:worker' } : {}) };
+      const result = await sandbox.call(hook.args, { input: JSON.stringify(call), cwd });
+      const label = `${hook.name} hook${cwd === sandbox.repo ? '' : ' outside the repo'}, ${worker ? 'worker' : 'lead'} ${tool} ${path}`;
+      assert.ok(new RegExp(`^(?:${hook.matcher})$`).test(tool), `${label}: the hook runs on it`);
+      const isRefused = result.status === 2 || /"permissionDecision":"deny"/.test(result.stdout);
+      assert.equal(isRefused, refused, `${label}: ${result.stdout}${result.stderr}`);
+      if (refused) assert.match(result.stderr, /is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]|which is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]/, label);
+    }
+  }
+}
+
+test('claude-code guard: a worker writes no lead-only file with any tool; the lead does (#1095)', async () => {
+  const cases: GuardCase[] = [];
+  for (const tool of FILE_TOOLS) {
+    for (const path of ['.github/workflows/x.yml', '.github/CODEOWNERS']) {
+      cases.push({ tool, path, worker: true, refused: true });
+      cases.push({ tool, path, worker: false, refused: false });
+    }
+  }
+  cases.push({ tool: 'Write', path: 'src/x.ts', worker: true, refused: false });
+  await runGuardCases(makeSandbox(), cases);
+});
+
+// #1095 as it happened: the session was opened outside the repo, so the repo's project hook
+// never loaded. The user guard alone finds the repo from the file's own path. The session is in
+// a folder beside the repo: the sandbox's parent also holds its home, and a worker's shell
+// above yokoten's config folder is refused for that first [worker-mark].
+test('claude-code guard: in a session opened outside the repo, the user guard alone keeps lead-only files (#1095)', async () => {
+  const sandbox = makeSandbox();
+  const outside = join(sandbox.repo, '..', 'elsewhere');
+  mkdirSync(outside);
+  const cases: GuardCase[] = FILE_TOOLS.flatMap((tool) => [
+    { tool, path: '.github/workflows/x.yml', worker: true, refused: true },
+    { tool, path: '.github/workflows/x.yml', worker: false, refused: false },
+  ]);
+  cases.push({ tool: 'Write', path: 'src/x.ts', worker: true, refused: false });
+  await runGuardCases(sandbox, cases, outside);
+});
+
+// On Windows a folder may also have a short (8.3) name: `GITHUB~1` is `.github`, and the
+// runner's temp folder is under `RUNNER~1`. The guard reads the long name, as git does.
+test('claude-code guard: a lead-only folder named by its Windows short name is still lead-only (#1095)', async (t) => {
+  const sandbox = makeSandbox();
+  mkdirSync(join(sandbox.repo, '.github', 'workflows'), { recursive: true });
+  if (!existsSync(join(sandbox.repo, 'GITHUB~1'))) {
+    t.skip('this volume gives folders no short (8.3) names, so there is no second name to test');
+    return;
+  }
+  const path = 'GITHUB~1/workflows/x.yml';
+  await runGuardCases(sandbox, FILE_TOOLS.flatMap((tool) => [{ tool, path, worker: true, refused: true }, { tool, path, worker: false, refused: false }]));
+});
+
+// #1095: install moves an older user guard that ran on Bash only to the file tools too: one
+// entry, never a second one beside it, and uninstall still finds the old one.
+test('claude-code install: an older Bash-only user guard becomes one guard on every tool (#1095)', () => {
+  const sandbox = makeSandbox();
+  const env = { HOME: sandbox.home };
+  const file = join(sandbox.home, '.claude', 'settings.json');
+  const seedGuard = (matcher: string) => {
+    addUserHooks(env, '/x/yokoten.mjs', 'gone');
+    const settings = JSON.parse(readFileSync(file, 'utf8'));
+    settings.hooks.PreToolUse[0].matcher = matcher;
+    writeFileSync(file, JSON.stringify(settings));
+  };
+  seedGuard('Bash');
+  const guards = () => (JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse as { matcher: string; hooks: { command: string }[] }[]).filter((group) => group.hooks.some((hook) => / hook --commands-only/.test(hook.command)));
+  assert.deepEqual(guards().map((group) => group.matcher), ['Bash'], 'the old guard');
+  assert.equal(addUserHooks(env, '/x/yokoten.mjs', 'gone').guard, 'updated');
+  assert.deepEqual(guards().map((group) => group.matcher), [GUARDED_TOOLS], 'one guard, on every tool');
+  // The way back: uninstall removes the old Bash-only guard as well.
+  seedGuard('Bash');
+  assert.equal(removeUserHooks(env)?.guard, 'removed');
+  assert.deepEqual(existsSync(file) ? guards() : [], [], 'no yokoten guard is left');
+});
+
+// #1095: the user guard now runs on every Write and Edit, so a broken copy of yokoten meets
+// them all. A missing copy says how to get it back and lets the call run (exit 1, as before);
+// a guard that crashes refuses the call and says to run `yokoten doctor`.
+test('claude-code guard: a missing or broken user guard on a Write says how to fix it (#1095)', () => {
+  const sandbox = makeSandbox();
+  const env = { HOME: sandbox.home };
+  // The real install's path, written with $HOME: a Windows path pasted into the bash command
+  // would lose its backslashes, and the copy would never be found.
+  const cli = join(sandbox.home, '.local', 'share', 'yokoten', 'bin', 'yokoten.mjs');
+  addUserHooks(env, USER_CLI, USER_MISSING);
+  const hook = JSON.parse(readFileSync(join(sandbox.home, '.claude', 'settings.json'), 'utf8')).hooks.PreToolUse[0].hooks[0].command as string;
+  const input = JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: join(sandbox.repo, 'src', 'x.ts'), content: 'x' } });
+  const run = () => spawnSync(hook, { shell: 'bash', cwd: sandbox.repo, env: sandbox.env, input, encoding: 'utf8' });
+  let result = run();
+  assert.equal(result.status, 1, 'a missing copy is reported, and the call runs');
+  assert.equal(result.stderr, `${USER_MISSING}\n`);
+  assert.match(USER_MISSING, /run the install again/);
+  mkdirSync(join(cli, '..'), { recursive: true });
+  writeFileSync(cli, 'process.exit(3);\n');
+  result = run();
+  assert.equal(result.status, 2, 'a guard that fails refuses the call');
+  assert.equal(result.stderr, "yokoten's guard failed (exit 3), so the command is refused; run `yokoten doctor`\n");
 });
 
 // /yokoten:update (#142). The skill runs the plugin's own yokoten, which may be newer

@@ -1,8 +1,10 @@
 import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
+import { mkdirSync, realpathSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkCommand, commandWords, findHeavyJob } from '../../../../../src/rules/guards/index.ts';
-import { blocked, allowed, pythonBlocked, force, isBlockedByList, py, shouldBlock, shouldPass } from '../../../../../test/repo/helpers.ts';
+import { checkCommand, commandWords, findHeavyJob, realPath } from '../../../../../src/rules/guards/index.ts';
+import { blocked, allowed, makeTempDir, pythonBlocked, force, isBlockedByList, py, shouldBlock, shouldPass } from '../../../../../test/repo/helpers.ts';
 import { assertLinear, assertWallSmoke } from '../../../../../scripts/linear.ts';
 
 test('blocked commands: the program is stopped by its name, with any folder or .exe (#192)', () => {
@@ -171,4 +173,19 @@ test('guard: a build, a test suite, a package install or a container build is a 
   for (const command of ['git status', 'echo npm test', 'cat build.log', 'npm --version', 'docker ps', 'go version', 'cargo --version', 'npm run dev', 'npm run format', 'node app.js']) {
     assert.equal(findHeavyJob(command), null, `should be light: ${command}`);
   }
+});
+
+// #1095: realPath asks the system (realpathSync.native), so Windows reads a short (8.3)
+// folder name as its long name. Below a folder already read that way, it gives the same
+// string realpathSync gives, as on Linux and macOS before: a plain path, a link, a new file.
+test('realPath: the same path as realpathSync for a plain path, a symlink and a file not made yet (#1095)', () => {
+  const base = realpathSync.native(makeTempDir('yokoten-real-'));
+  mkdirSync(join(base, 'repo', 'src'), { recursive: true });
+  // A junction on Windows needs no admin rights; other systems ignore the type.
+  symlinkSync(join(base, 'repo'), join(base, 'link'), 'junction');
+  for (const path of [join(base, 'repo'), join(base, 'repo', 'src'), join(base, 'link'), join(base, 'link', 'src')]) {
+    assert.equal(realPath(path), realpathSync(path), path);
+  }
+  // A file that does not exist yet takes its nearest folder's real path.
+  assert.equal(realPath(join(base, 'link', 'src', 'new.ts')), join(realpathSync(join(base, 'repo', 'src')), 'new.ts'));
 });

@@ -1,7 +1,8 @@
 // `yokoten hook`: the tool-call guard, and with --stop the end-of-turn check.
 
 import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { isPathInside, isSamePath } from '../platform/paths.ts';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
@@ -775,21 +776,19 @@ export function markWorktree(cwd: string, dir: string, callerEnv: Env): { top: s
     return { fail: formatFinding(notRepoFinding(folder)) };
   }
   const [top, gitDir, common, superproject] = answer;
-  const kind = realPath(gitDir) === realPath(resolve(folder, common ?? '')) ? 'clone' : 'worktree';
+  const kind = isSamePath(realPath(gitDir), realPath(resolve(folder, common ?? ''))) ? 'clone' : 'worktree';
   if (kind === 'clone') {
     if (superproject) return { fail: `${top} is a submodule's checkout, not a worktree. Mark a worktree: \`git worktree add <dir> -b <branch>\`, then \`yokoten worker mark <dir>\`.` };
     // A plain clone is a worker's desk (#672), unless the lead works in it: the session runs
     // there, or worktrees hang off it. Those are the main checkout, never marked.
-    const here = realPath(cwd);
-    const base = realPath(top);
-    const isLeadHere = here === base || here.startsWith(base + sep);
+    const isLeadHere = isPathInside(realPath(cwd), realPath(top));
     if (isLeadHere || hasLinkedWorktrees(folder, env)) return { fail: `${top} is the main checkout, the lead's. Mark a worktree (\`git worktree add <dir> -b <branch>\`) or a clone of its own (\`git clone <repo> <dir>\`), then \`yokoten worker mark <dir>\`.` };
     // The lead marks a clone from its own checkout, so that checkout is never the one marked.
     if (leadCheckout(cwd, env) === null) return { fail: `run \`yokoten worker mark ${dir}\` from your own checkout, the lead's: yokoten then knows that ${top} is not it.` };
   }
   // Git and the guard must name the same git folder, or the mark lands where the guard never looks.
   const link = gitLinkAbove(folder);
-  if (link === null || link.kind === 'broken' || realPath(link.gitDir) !== realPath(gitDir)) return { fail: `git names ${gitDir} as the git folder of ${top}, but its .git does not. Nothing is marked.` };
+  if (link === null || link.kind === 'broken' || !isSamePath(realPath(link.gitDir), realPath(gitDir))) return { fail: `git names ${gitDir} as the git folder of ${top}, but its .git does not. Nothing is marked.` };
   try {
     const note = kind === 'clone' ? "A worker's clone: yokoten's guard treats every agent here as a worker. Removing the clone removes this mark.\n" : "A worker's worktree: yokoten's guard treats every agent here as a worker. `git worktree remove` removes this mark.\n";
     writeFileSync(join(gitDir, WORKER_MARK), note);
