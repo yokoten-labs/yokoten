@@ -23,7 +23,6 @@ import { test } from 'node:test';
 import { shareGuardMeasure } from '../repo/helpers.ts';
 import {
   at,
-  CLI,
   makeSandbox,
   makeTempDir,
   makeTranslatedRepo,
@@ -48,11 +47,13 @@ import {
   gitConfig,
   GitReadError,
   isBorrowedFile,
+  mergeImportLists,
   parseBorrowedHeader,
   parseConfigList,
   readBlobs,
   readGit,
   remembered,
+  resolveConflictText,
   type UpstreamCommit,
   watchBorrowed,
   syncPull,
@@ -1642,45 +1643,20 @@ test('pr sync: two added blocks at one spot are kept, tested and pushed (#432)',
   assert.match(merged, /export const main = \(\) => 3;/);
 });
 
-test('pr sync: two changed import lists become one list, then pass and push (#432)', async () => {
-  const { sandbox } = remoteSandbox();
-  const base = "import { a } from './x.ts';\nimport { b } from './y.ts';\n\nexport const value = a + b;\n";
-  sandbox.write('src/b.ts', base);
-  sandbox.git('add', '.');
-  sandbox.git('commit', '-qm', 'code');
-  sandbox.git('push', '-q', 'origin', 'main');
-  diverge(sandbox, (side) =>
-    sandbox.write('src/b.ts', base.replace("import { a } from './x.ts';", `import { a, ${side === 'branch' ? 'c' : 'd'} } from './x.ts';`)),
-  );
-  const sync = runSync(sandbox);
-  const outcome = await sync.go();
-  assert.equal(outcome.state, 'resolved');
-  assert.equal(outcome.hunks, 1);
-  assert.deepEqual(sync.pushes, ['work']);
-  sandbox.git('fetch', '-q', 'origin');
-  const merged = sandbox.git('show', 'origin/work:src/b.ts').stdout;
-  assert.match(merged, /^import \{ a, c, d \} from '\.\/x\.ts';$/m, 'both additions are kept, each name once');
-});
-
-test('pr sync: an import list keeps a name the base had unless one side deleted it (#809)', async () => {
-  const { sandbox } = remoteSandbox();
-  const base = "import { a, secret } from './x.ts';\n\nexport const value = a;\n";
-  sandbox.write('src/d.ts', base);
-  sandbox.git('add', '.');
-  sandbox.git('commit', '-qm', 'code');
-  sandbox.git('push', '-q', 'origin', 'main');
-  diverge(sandbox, (side) => {
-    const names = side === 'branch' ? 'a, secret, b' : 'a';
-    sandbox.write('src/d.ts', base.replace('{ a, secret }', `{ ${names} }`));
-  });
-  const sync = runSync(sandbox);
-  const outcome = await sync.go();
-  assert.equal(outcome.state, 'resolved');
-  assert.equal(outcome.hunks, 1);
-  assert.deepEqual(sync.pushes, ['work']);
-  sandbox.git('fetch', '-q', 'origin');
-  const merged = sandbox.git('show', 'origin/work:src/d.ts').stdout;
-  assert.match(merged, /^import \{ a, b \} from '\.\/x\.ts';$/m, 'the branch keeps its add and main\'s delete applies');
+// The import-list cases once ran through a bare remote, a worktree and a push each; the merge itself needs only the conflict text.
+test('resolveConflictText: two changed import lists become one list; a name the base had stays unless one side deleted it (#432, #809)', () => {
+  const conflict = (base: string[], ours: string[], theirs: string[]) => ['before();', '<<<<<<< ours', ...ours, '||||||| base', ...base, '=======', ...theirs, '>>>>>>> theirs', 'after();', ''].join('\n');
+  // Both sides add a name to one list: both additions are kept, each name once.
+  const added = resolveConflictText(conflict(["import { a } from './x.ts';"], ["import { a, c } from './x.ts';"], ["import { a, d } from './x.ts';"]));
+  assert.deepEqual(added, { ok: true, text: "before();\nimport { a, c, d } from './x.ts';\nafter();\n", hunks: 1 });
+  // One side adds a name and the other deletes one: the add stays and the delete applies.
+  const dropped = resolveConflictText(conflict(["import { a, secret } from './x.ts';"], ["import { a, secret, b } from './x.ts';"], ["import { a } from './x.ts';"]));
+  assert.deepEqual(dropped, { ok: true, text: "before();\nimport { a, b } from './x.ts';\nafter();\n", hunks: 1 });
+  assert.deepEqual(mergeImportLists(["import { a, secret } from './x.ts';"], ["import { a, secret, b } from './x.ts';"], ["import { a } from './x.ts';"]), ["import { a, b } from './x.ts';"]);
+  // One side changed a line the other deleted, and a line that is no import: not mechanical.
+  assert.equal(mergeImportLists(["import { a } from './x.ts';"], ["import { a, b } from './x.ts';"], []), null);
+  assert.equal(mergeImportLists(['const a = 1;'], ['const a = 2;'], ['const a = 3;']), null);
+  assert.equal(resolveConflictText(conflict(['const a = 1;'], ['const a = 2;'], ['const a = 3;'])).ok, false);
 });
 
 test('pr sync: a semantic conflict stops, prints its hunks, and pushes nothing (#432)', async () => {
