@@ -1214,7 +1214,7 @@ test('ci-health refuses --write with --dry-run before it reads anything', async 
   const extra = healthGh(sandbox, {});
   const result = await sandbox.call(['ci-health', '--repo', 'octo/demo', '--write', '--dry-run'], { extra });
   assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /pass one of them/);
+  assert.match(result.stderr, /pass\s+one of them/);
   assert.deepEqual(healthCalls(sandbox), []);
 });
 

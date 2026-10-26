@@ -158,7 +158,7 @@ test('exit codes: 0 ok, 1 problems or a usage error, 2 the hook blocked (#42)', 
     assert.equal(out.command, args[0]);
     assert.equal(out.ok, false);
     assert.match(out.error, /^[^\n]+$/, `${args.join(' ')}: one line`);
-    assert.match(r.stderr, new RegExp(`^yokoten ${args[0]}: .+ Run \`yokoten ${args[0]} --help\`\\.\\n$`), args.join(' '));
+    assert.match(r.stderr, new RegExp(`^yokoten ${args[0]}: [\\s\\S]+ Run\\s+\`yokoten ${args[0]} --help\`\\.\\n$`), args.join(' '));
   }
   // An error past the parser, caught at the top, is JSON too. A broken yokoten.json is
   // such an error: the config is read before any check runs.
@@ -300,10 +300,10 @@ test('help: a typo in a command or an option names the closest one; a far one li
   const sandbox = makeSandbox();
   const run = (words: string[]) => invoke(words, { env: sandbox.env, cwd: sandbox.repo });
   const cases: [string[], string][] = [
-    [['docter'], 'yokoten: unknown command "docter". Did you mean "doctor"? Run `yokoten help`.\n'],
-    [['help', 'chek'], 'yokoten: unknown command "chek". Did you mean "check"? Run `yokoten help`.\n'],
-    [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run `yokoten check --help`.\n'],
-    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\nyokoten doctor: unknown option --hepl. Did you mean --help? Run `yokoten doctor --help`.\n'],
+    [['docter'], 'yokoten: unknown command "docter"\nDid you mean `yokoten doctor`?\n'],
+    [['help', 'chek'], 'yokoten: unknown command "chek"\nDid you mean `yokoten check`?\n'],
+    [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run\n               `yokoten check --help`.\n'],
+    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\nyokoten doctor: unknown option --hepl. Did you mean --help? Run\n                `yokoten doctor --help`.\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -311,7 +311,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
   }
   const far = await run(['zzzzzz']);
   assert.deepEqual([far.code, far.stdout], [1, '']);
-  assert.match(far.stderr, /^yokoten: unknown command "zzzzzz"\. Commands: install, init, .*version\. Run `yokoten help`\.\n$/);
+  assert.equal(far.stderr, 'yokoten: unknown command "zzzzzz"\nNext: `yokoten help`\n', 'a far word does not list every command');
   assert.equal(editDistance('docter', 'doctor'), 1);
   assert.equal(closestWord('xyz', ['doctor', 'check']), undefined, 'more than two edits: no guess');
 });

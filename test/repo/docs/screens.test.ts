@@ -164,11 +164,6 @@ function screensOf(repo: string): ScreenRun[] {
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
 const WAIVED_MOST = 38;
 const WAIVED: Record<string, string> = {
-  'marks, an unknown option': 'its usage error is one line of 157 columns: wrap it, the next step last (#1099)',
-  'an unknown command': 'S051: one line names every command, 322 columns: a title, then the closest command or `yokoten help` (#1099)',
-  'start, outside a repo': 'S057, the owner: too much text, no structure. The not-a-repo finding is one long line (#1099)',
-  'desk, outside a repo': 'S055: the not-a-repo finding is one long line (formatFinding in src/rules/message.ts) (#1099)',
-  'kanban --text, outside a repo': 'S056: the not-a-repo finding is one long line (formatFinding in src/rules/message.ts) (#1099)',
   'guard, force push': 'S061, the owner: too much text, no structure. Refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
   'guard, tag push': 'S062: refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
   'guard, wipe home': 'S063: refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',

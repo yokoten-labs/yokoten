@@ -14,7 +14,7 @@ import { DEFAULTS, loadConfig } from '../../../rules/config.ts';
 import { gitConfig } from '../../../run/check.ts';
 import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
-import { docsLink, formatFinding } from '../../../rules/message.ts';
+import { docsLink } from '../../../rules/message.ts';
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Draft, draft, facts, table } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
@@ -23,7 +23,7 @@ import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS,
 import { ROAD, STAGES } from '../../../setup/road.ts';
 import type { Finding } from '../../../rules/message.ts';
 import { READERS } from '../../hook.ts';
-import { count, field, type Invocation, moreLine, nextLine, noRootFinding, parse, print, printJson, requireRoot, rootOf, row, say, title, usage, wrap } from '../../shared.ts';
+import { count, field, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, parse, print, printJson, requireRoot, rootOf, row, say, title, usage, wrap } from '../../shared.ts';
 import { writeLeadSession } from '../../kanban/feed/read/logs.ts';
 
 /** What full doctor says while the slow reads run: the server read and (in WSL) the drive read. */
@@ -53,7 +53,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   if (!root && !session) {
     const missing = noRootFinding(cwd, invocation.env);
     if (options.flags.has('--json')) printJson(invocation, { ...report, ok: false, findings: [...report.findings, missing] });
-    else print(invocation, [...allLines, `yokoten doctor: ${formatFinding(missing)}`], invocation.stderr);
+    else print(invocation, [...allLines, ...noRootScreen('doctor', missing)], invocation.stderr);
     return 1;
   }
   const start = root && session && agent === 'claude-code' ? readSessionStart(invocation) : null;

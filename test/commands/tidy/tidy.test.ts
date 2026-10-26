@@ -288,7 +288,7 @@ test('tidy: the words it does not take are refused, and outside a repo it says s
   writeFileSync(join(outside, '.git'), 'not a checkout\n');
   const lost = await sandbox.call(['tidy'], { cwd: outside });
   assert.equal(lost.status, 1);
-  assert.match(lost.stderr, /^yokoten tidy: /);
+  assert.match(lost.stderr, /^yokoten tidy · /);
 });
 
 test('tidy: sizes read as a person reads them (#1055)', () => {

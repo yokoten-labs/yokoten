@@ -108,9 +108,12 @@ export function printJsonError(invocation: Invocation, error: string): void {
 export function usage(invocation: Invocation, error: string): number {
   const { command } = invocation;
   printJsonError(invocation, error);
-  print(invocation, [`yokoten ${command}: ${error}${/[.?]$/.test(error) ? '' : '.'} Run \`yokoten ${command} --help\`.`], invocation.stderr);
+  // One sentence wrapped at the screen width; the command to run comes last (record 0049).
+  print(invocation, wrap(`yokoten ${command}: `, `${error}${/[.?]$/.test(error) ? '' : '.'} Run \`yokoten ${command} --help\`.`), invocation.stderr);
   return 1;
 }
+
+const GIT_MISSING = 'git is not installed';
 
 // A git call that fails because git itself was not found, not because of the folder.
 const isGitMissingError = (err: unknown, dir: string): boolean => (err as NodeJS.ErrnoException).code === 'ENOENT' && existsSync(dir);
@@ -134,7 +137,7 @@ export function noRootFinding(dir: string, env: Env): Finding {
   } catch (err) {
     isGitMissing = isGitMissingError(err, dir);
   }
-  return isGitMissing ? finding('not-a-repo', 'git is not installed (or not on PATH); yokoten needs git', 'install git, or add it to PATH') : notRepoFinding(dir);
+  return isGitMissing ? finding('not-a-repo', `${GIT_MISSING} (or not on PATH); yokoten needs git`, 'install git, or add it to PATH') : notRepoFinding(dir);
 }
 
 /**
@@ -146,8 +149,19 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
   if (root) return root;
   const missing = noRootFinding(dir, invocation.env);
   if (json) printJson(invocation, json(missing));
-  else print(invocation, [`yokoten ${invocation.command}: ${formatFinding(missing)}`], invocation.stderr);
+  else print(invocation, noRootScreen(invocation.command, missing), invocation.stderr);
   return null;
+}
+
+/**
+ * The screen for "no repo here": what is wrong on the first line, the one step last. The
+ * finding keeps its full text for JSON and the guard; a person at a terminal reads this.
+ * `command` is the word after `yokoten`, or undefined for the bare `yokoten`.
+ */
+export function noRootScreen(command: string | undefined, missing: Finding): string[] {
+  const words = command === undefined ? 'yokoten' : `yokoten ${command}`;
+  const next = missing.what.startsWith(GIT_MISSING) ? `install git, or add it to PATH, then run \`${words}\` again.` : `run \`git init\` here to start a project, or go to your project's folder.`;
+  return [...wrap(`${words} · `, missing.what), ...wrap('Next: ', next)];
 }
 
 // A person's terminal output (#707): colour and a shape that reads at a glance, like
