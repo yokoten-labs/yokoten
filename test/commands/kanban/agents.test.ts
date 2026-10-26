@@ -7,6 +7,7 @@ import { basename, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 import { ageText, readBoardAgents, readBoardWorktrees } from '../../../src/commands/kanban/agents.ts';
+import { readProgram } from '../../../src/platform/process.ts';
 
 const BLANK = { vendor: '', model: '', effort: '', task: '', worktree: '', doing: '', updated: '', started: '', log: '', role: '', state: '', checks: '' };
 
@@ -73,4 +74,11 @@ test('board worktrees: the repo lists its own; outside a repo git cannot list th
     { path: realpathSync(second), branch: 'feature' },
   ]);
   assert.equal(readBoardWorktrees(sandbox.home, sandbox.env), 'git could not list the worktrees: run it again');
+});
+
+test('readProgram: a program\'s output comes back with no shell between, and a failure throws (#1091)', () => {
+  const sandbox = makeSandbox();
+  assert.equal(readProgram('node', ['-e', 'process.stdout.write(process.argv[1])', 'a; echo shell ran'], { cwd: sandbox.home, env: sandbox.env }), 'a; echo shell ran');
+  assert.throws(() => readProgram('node', ['-e', 'process.exit(3)'], { cwd: sandbox.home, env: sandbox.env }));
+  assert.throws(() => readProgram('node', ['-e', 'setTimeout(() => {}, 60_000)'], { cwd: sandbox.home, env: sandbox.env, timeout: 100 }), 'a program past its time is stopped');
 });

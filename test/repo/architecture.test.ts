@@ -69,7 +69,7 @@ const NO_TEST_FILE = [
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
-  'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users
+  'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users, and test/commands/kanban/ (readProgram, startAndLetGo)
 ];
 
 const filesUnder = (folder: string) =>
@@ -1554,6 +1554,189 @@ test('platform: no new process.platform read outside the list, and the list only
   for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && !file.startsWith('platform/'))) found.set(path, platformReads(readFileSync(join(SRC, path), 'utf8')));
   assert.ok([...found.values()].some((count) => count > 0), 'the scan found no read; it is broken');
   assert.deepEqual(ratchetProblems(found, PLATFORM_READS, 'src/', 'PLATFORM_READS', PLATFORM_FIX), [], PLATFORM_RULE);
+});
+
+// ---- Kanban reaches outside code through one port (issue #1091) ----
+//
+// The kanban area (src/commands/kanban/) uses no old code directly. Its files import only
+// each other, src/platform/ and node: modules. Everything else goes through ports.ts, which
+// names its own functions and shapes and re-exports nothing. These are the outside modules
+// ports.ts imports today. Replacing one removes its line, so the list only gets shorter: it
+// is the to-do list of old code still behind the port.
+const KANBAN_PORTS = [
+  'commands/more/advice/schedule.ts',
+  'commands/more/check.ts',
+  'commands/shared.ts',
+  'host/github/index.ts',
+  'rules/message.ts',
+  'rules/privacy.ts',
+  'run/hook.ts',
+  'run/learn.ts',
+  'setup/files.ts',
+  'setup/install.ts',
+  'setup/plan.ts',
+];
+
+const KANBAN_AREA = 'commands/kanban/';
+const KANBAN_PORT_FILE = 'commands/kanban/ports.ts';
+const KANBAN_RULE = 'Rule: the kanban area reaches outside code only through src/commands/kanban/ports.ts (issue #1091).';
+const KANBAN_FIX = 'Add a port in src/commands/kanban/ports.ts, with its own name and shape, and import that.';
+
+/** One module a file names in an `import` or `export ... from`, or a form the scan refuses. */
+type ModuleUse = { line: number; spec: string; isReExport: boolean } | { line: number; refused: string };
+
+/** The tokens of an import's or export's names, before `from`: `type`, `{ a as b, c }`, `* as d`. */
+const isNameListToken = (token: Token): boolean => token.kind === 'name' || ['{', '}', ',', '*'].includes(token.text);
+
+/**
+ * Each module `text` names, on tokens, so a comment or a string is never read as code.
+ * Fail closed: `import(`, `require`, `node:child_process`, `import.meta` and any import
+ * shape not read here (`import x = ...`) come back refused.
+ */
+function findModuleUses(text: string): ModuleUse[] {
+  const tokens = tokenize(text);
+  const uses: ModuleUse[] = [];
+  // From `at`, the names up to `from '<module>'` (or the module at once, for `import './x'`): the module's token index, or -1.
+  const moduleAfter = (at: number, isBare: boolean): number => {
+    let index = at;
+    if (isBare && tokens[index]?.kind === 'string') return index;
+    while (tokens[index] && isNameListToken(tokens[index]) && !(tokens[index].text === 'from' && tokens[index + 1]?.kind === 'string')) index += 1;
+    return tokens[index]?.text === 'from' && tokens[index + 1]?.kind === 'string' ? index + 1 : -1;
+  };
+  tokens.forEach((token, index) => {
+    const { line } = token;
+    const member = ['.', '?.'].includes(tokens[index - 1]?.text);
+    if (token.kind === 'string' && /^(?:node:)?child_process$/.test(token.text.slice(1, -1))) uses.push({ line, refused: 'node:child_process' });
+    if (token.kind !== 'name' || member) return;
+    if (token.text === 'require' || token.text === 'createRequire') uses.push({ line, refused: token.text });
+    if (token.text === 'import') {
+      if (tokens[index + 1]?.text === '(') return void uses.push({ line, refused: 'import(' });
+      const at = moduleAfter(index + 1, true);
+      if (at < 0) return void uses.push({ line, refused: 'an import the scan cannot read' });
+      uses.push({ line, spec: tokens[at].text.slice(1, -1), isReExport: false });
+    }
+    if (token.text === 'export') {
+      let next = index + 1;
+      if (tokens[next]?.text === 'type') next += 1;
+      if (tokens[next]?.text === '*') {
+        const at = moduleAfter(next, false);
+        if (at < 0) return void uses.push({ line, refused: 'an export the scan cannot read' });
+        return void uses.push({ line, spec: tokens[at].text.slice(1, -1), isReExport: true });
+      }
+      if (tokens[next]?.text !== '{') return;
+      let close = next;
+      while (tokens[close] && tokens[close].text !== '}') close += 1;
+      // `export { a, b }` lists names of this file; with `from '<module>'` after it, it passes another module's on.
+      if (tokens[close + 1]?.text === 'from' && tokens[close + 2]?.kind === 'string') uses.push({ line, spec: tokens[close + 2].text.slice(1, -1), isReExport: true });
+    }
+  });
+  return uses;
+}
+
+/**
+ * What breaks the kanban rule in `files` (path under src/ → text): an import out of the
+ * area from any file but ports.ts, a refused form, a re-export in ports.ts, and a module
+ * ports.ts imports that is not on `ports`, or one on `ports` it no longer imports.
+ */
+function findKanbanProblems(files: Map<string, string>, ports: string[]): string[] {
+  const problems: string[] = [];
+  const reached = new Set<string>();
+  for (const [path, text] of files) {
+    if (!path.startsWith(KANBAN_AREA)) continue;
+    const isPort = path === KANBAN_PORT_FILE;
+    for (const use of findModuleUses(text)) {
+      const place = `src/${path}:${use.line}`;
+      if ('refused' in use) {
+        problems.push(`${place}: ${use.refused} is refused in the kanban area. A child process goes through src/platform/; anything else, ${KANBAN_FIX}`);
+        continue;
+      }
+      if (isPort && use.isReExport) problems.push(`${place}: ports.ts re-exports '${use.spec}'. Write the port as a function or a type of its own.`);
+      if (use.spec.startsWith('node:')) continue;
+      if (!use.spec.startsWith('./') && !use.spec.startsWith('../')) {
+        problems.push(`${place}: imports '${use.spec}', which the scan cannot place. Name a node: module or a relative .ts file.`);
+        continue;
+      }
+      const target = posix.normalize(posix.join(posix.dirname(path), use.spec));
+      if (target.startsWith(KANBAN_AREA) || target.startsWith('platform/')) continue;
+      if (isPort) reached.add(target);
+      else problems.push(`${place}: imports '${use.spec}', outside the kanban area. ${KANBAN_FIX}`);
+    }
+  }
+  for (const target of [...reached].sort()) if (!ports.includes(target)) problems.push(`src/${KANBAN_PORT_FILE} imports src/${target}, which is not on KANBAN_PORTS. Reach it through a module already on the list, or ask the owner to add it (test/repo/architecture.test.ts).`);
+  for (const target of ports) if (!reached.has(target)) problems.push(`src/${target}: ports.ts no longer imports it. Remove it from KANBAN_PORTS (test/repo/architecture.test.ts).`);
+  return problems;
+}
+
+test('kanban port: the scan reads imports on tokens, and refuses what it cannot read (issue #1091)', () => {
+  const text = [
+    "// import { a } from '../../rules/a.ts'",
+    "const said = \"import { b } from '../../rules/b.ts'\";",
+    "import { c } from './c.ts';",
+    'import {',
+    '  type D,',
+    '  e as f,',
+    "} from '../../rules/d.ts';",
+    "import * as g from 'node:path';",
+    "import './side.ts';",
+    "const h = await import('./h.ts');",
+    "const i = require('./i.ts');",
+    "import j = require('./j.ts');",
+    "import { spawn } from 'node:child_process';",
+    'const k = import.meta.url;',
+    "export { l };",
+    "export { m } from './m.ts';",
+    "export type * from './n.ts';",
+    'const fromHere = options.import;',
+  ].join('\n');
+  assert.deepEqual(findModuleUses(text), [
+    { line: 3, spec: './c.ts', isReExport: false },
+    { line: 4, spec: '../../rules/d.ts', isReExport: false },
+    { line: 8, spec: 'node:path', isReExport: false },
+    { line: 9, spec: './side.ts', isReExport: false },
+    { line: 10, refused: 'import(' },
+    { line: 11, refused: 'require' },
+    { line: 12, refused: 'an import the scan cannot read' },
+    { line: 12, refused: 'require' },
+    { line: 13, spec: 'node:child_process', isReExport: false },
+    { line: 13, refused: 'node:child_process' },
+    { line: 14, refused: 'an import the scan cannot read' },
+    { line: 16, spec: './m.ts', isReExport: true },
+    { line: 17, spec: './n.ts', isReExport: true },
+  ]);
+});
+
+test('kanban port: an import out of the area, a refused form, a re-export, and a list out of step are each caught (issue #1091)', () => {
+  const files = new Map([
+    ['commands/kanban/view.ts', ["import { a } from './ports.ts';", "import { b } from '../../platform/process.ts';", "import { join } from 'node:path';", "import { c } from '../../rules/config.ts';"].join('\n')],
+    ['commands/kanban/feed/read.ts', ["import type { D } from '../../shared.ts';", "const e = await import('../ports.ts');", "import f from 'fs';"].join('\n')],
+    ['commands/kanban/server.ts', "import { spawn } from 'node:child_process';"],
+    ['commands/kanban/ports.ts', ["import { g } from '../../rules/listed.ts';", "import { h } from '../../setup/new.ts';", "export * from '../../rules/listed.ts';", "export { i } from './inside.ts';"].join('\n')],
+    ['commands/more/check.ts', "import { j } from '../../rules/anything.ts';"],
+  ]);
+  const ports = ['rules/listed.ts', 'run/gone.ts'];
+  assert.deepEqual(findKanbanProblems(files, ports), [
+    `src/commands/kanban/view.ts:4: imports '../../rules/config.ts', outside the kanban area. ${KANBAN_FIX}`,
+    `src/commands/kanban/feed/read.ts:1: imports '../../shared.ts', outside the kanban area. ${KANBAN_FIX}`,
+    `src/commands/kanban/feed/read.ts:2: import( is refused in the kanban area. A child process goes through src/platform/; anything else, ${KANBAN_FIX}`,
+    "src/commands/kanban/feed/read.ts:3: imports 'fs', which the scan cannot place. Name a node: module or a relative .ts file.",
+    `src/commands/kanban/server.ts:1: node:child_process is refused in the kanban area. A child process goes through src/platform/; anything else, ${KANBAN_FIX}`,
+    "src/commands/kanban/ports.ts:3: ports.ts re-exports '../../rules/listed.ts'. Write the port as a function or a type of its own.",
+    "src/commands/kanban/ports.ts:4: ports.ts re-exports './inside.ts'. Write the port as a function or a type of its own.",
+    'src/commands/kanban/ports.ts imports src/setup/new.ts, which is not on KANBAN_PORTS. Reach it through a module already on the list, or ask the owner to add it (test/repo/architecture.test.ts).',
+    'src/run/gone.ts: ports.ts no longer imports it. Remove it from KANBAN_PORTS (test/repo/architecture.test.ts).',
+  ]);
+  const clean = new Map([
+    ['commands/kanban/view.ts', "import { a } from './ports.ts';"],
+    ['commands/kanban/ports.ts', "import { g } from '../../rules/listed.ts';"],
+  ]);
+  assert.deepEqual(findKanbanProblems(clean, ['rules/listed.ts']), [], 'a kanban file that imports the port, and a port on the list, pass');
+});
+
+test('kanban port: only ports.ts reaches outside the area, and KANBAN_PORTS matches what it imports (issue #1091)', () => {
+  const files = new Map(filesUnder(join(SRC, 'commands', 'kanban')).map((path) => [`${KANBAN_AREA}${path}`, readFileSync(join(SRC, 'commands', 'kanban', path), 'utf8')]));
+  assert.ok(files.has(KANBAN_PORT_FILE), 'src/commands/kanban/ports.ts is missing');
+  assert.ok(findModuleUses(files.get(KANBAN_PORT_FILE) ?? '').length >= KANBAN_PORTS.length, 'the scan found no import in ports.ts; it is broken');
+  assert.deepEqual(findKanbanProblems(files, KANBAN_PORTS), [], KANBAN_RULE);
 });
 
 // ---- A test does not skip itself on Windows (#1078) ----
