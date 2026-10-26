@@ -405,6 +405,13 @@ test('private marks: an added forge login is fine only where a file names accoun
   assert.deepEqual(scan('src/x.ts', '// @octo-jdoe\n'), [1]);
   assert.deepEqual(scan('docs/a.md', 'Copyright octo-jdoe\n'), [1]);
   assert.deepEqual(scan('CODEOWNERS', '* @octo-jdoe\n', []), [1]);
+  // The git name install added is no login (logins: []): a LICENSE copyright line and an author field find it too (#434).
+  assert.deepEqual(scan('LICENSE', 'MIT License\n\nCopyright (c) 2026 octo-jdoe\n', []), [3]);
+  assert.deepEqual(scan('package.json', '{\n  "name": "x",\n  "author": "octo-jdoe"\n}\n', []), [3]);
+  assert.deepEqual(scan('docs/a.md', 'Written by octo-jdoe.\n', []), [1]);
+  // Anywhere else the login is still found: another line of a LICENSE, another key of a manifest.
+  assert.deepEqual(scan('LICENSE', 'MIT License\n\nCopyright (c) 2026 octo-jdoe\nWritten by octo-jdoe.\n'), [4]);
+  assert.deepEqual(scan('package.json', '{\n  "name": "x",\n  "description": "by octo-jdoe",\n  "author": "octo-jdoe"\n}\n'), [3]);
 });
 
 test('commit times: an ident with a non-UTC offset is caught (#40)', () => {

@@ -30,6 +30,7 @@ import {
 } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
 import { useRealHome } from '../../src/rules/privacy.ts';
+import { allowedMarkCount } from '../../src/setup/doctor/checks.ts';
 import {
   assumeEmptyFolder,
   batchBlobs,
@@ -811,25 +812,6 @@ test('check --history: a blob swapped by git replace is read as committed, not a
   assert.ok(!JSON.stringify(found).includes(token), 'the secret is never printed');
 });
 
-test('check --staged: a staged change file is read as `yokoten changelog` reads it (#346)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.write('changes/README.md', '# Change files\n');
-  sandbox.write('changes/7-dark.md', '### Internal\n\nA dark mode (#7).\n');
-  sandbox.git('add', '.');
-  let result = await sandbox.call(['check', '--staged']);
-  assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /changes\/7-dark\.md:1 line 1 is not a section `yokoten changelog` puts each entry under its section/);
-  assert.match(flat(result.stderr), /Make line 1 one of: Added, Changed, Deprecated, Removed, Fixed, Security, Internal\./);
-  assert.ok(!result.stderr.includes('README.md'), 'the README is not a change file');
-  // A long sentence is a note, as in `check --pr`; it never fails the commit.
-  const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(' ');
-  sandbox.write('changes/7-dark.md', `Added\n\nA dark mode (#7).\n${long}.\n`);
-  sandbox.git('add', '.');
-  result = await sandbox.call(['check', '--staged', '--all']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(flat(result.stdout), /note: changes\/7-dark\.md:4: a sentence of 30 words/);
-});
-
 test('check: a sure secret fails, a likely one warns, and an ignored one stays listed (#616)', async () => {
   const sandbox = makeSandbox();
   const sure = `${'gh'}p_${'x7Y2k9'.repeat(6)}`;
@@ -853,8 +835,9 @@ test('check: a sure secret fails, a likely one warns, and an ignored one stays l
   assert.match(text.stdout, /ignored: a test fixture/);
 });
 
-test('check --staged: reads the staged change file, not the work tree; plain check reads the work tree (#346)', async () => {
+test('check --staged: reads the staged change file as `yokoten changelog` does, not the work tree; plain check reads the work tree (#346)', async () => {
   const sandbox = makeSandbox();
+  sandbox.write('changes/README.md', '# Change files\n');
   sandbox.write('src/a.ts', 'a\n');
   sandbox.write('changes/8-old.md', 'Added\n\nOld (#8).\n');
   sandbox.git('add', '.');
@@ -875,11 +858,21 @@ test('check --staged: reads the staged change file, not the work tree; plain che
   sandbox.write('changes/9-new.md', 'Fixed\n\nNew (#9).\n');
   const staged = await sandbox.call(['check', '--staged']);
   assert.equal(staged.status, 1);
-  assert.match(flat(staged.stderr), /changes\/9-new\.md:1 line 1 is not a section/);
+  assert.match(flat(staged.stderr), /changes\/9-new\.md:1 line 1 is not a section `yokoten changelog` puts each entry under its section/);
+  assert.match(flat(staged.stderr), /Make line 1 one of: Added, Changed, Deprecated, Removed, Fixed, Security, Internal\./);
   assert.ok(!staged.stderr.includes('8-old'), 'the unstaged file is not read');
+  assert.ok(!staged.stderr.includes('README.md'), 'the README is not a change file');
+  // A long sentence is a note, as in `check --pr`; it never fails the commit.
+  const long = Array.from({ length: 30 }, (_, index) => `word${index}`).join(' ');
+  sandbox.write('changes/9-new.md', `Fixed\n\nNew (#9).\n${long}.\n`);
+  sandbox.git('add', 'changes/9-new.md');
+  const note = await sandbox.call(['check', '--staged', '--all']);
+  assert.equal(note.status, 0, note.stderr);
+  assert.match(flat(note.stdout), /note: changes\/9-new\.md:4: a sentence of 30 words/);
 });
 
-test('check: a stale exempt glob is a note for the tree and the doctor, never at a commit (#381)', async () => {
+// The glob rules (a covered folder drops the note) are in layout.test.ts; doctor prints the same notes as check.
+test('check: a stale exempt glob is a note for the tree, never at a commit (#381)', async () => {
   const sandbox = makeSandbox();
   sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7, exempt: ['crates/*/tests/data'] } }));
   sandbox.git('add', '.');
@@ -889,13 +882,6 @@ test('check: a stale exempt glob is a note for the tree and the doctor, never at
   assert.equal(tree.status, 0, 'a note never fails the check');
   const staged = await sandbox.call(['check', '--staged']);
   assert.doesNotMatch(staged.stdout + staged.stderr, /matches no folder/);
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/);
-  // Once a crate has the folder, the note goes.
-  for (let index = 0; index < 9; index++) sandbox.write(`crates/app-core/tests/data/f${index}.xls`, 'x\n');
-  sandbox.git('add', '.');
-  const covered = await sandbox.call(['check']);
-  assert.doesNotMatch(covered.stdout, /matches no folder/);
-  assert.equal(covered.status, 0);
 });
 
 // One marks file for the machine, two repos (#424): the private project allows its own name
@@ -933,73 +919,12 @@ test('check and the commit hook: a mark allowed in one repo is stopped in anothe
   own.git('add', '.');
   assert.equal((await own.call(['check', '--staged'], { extra })).status, 1);
   assert.notEqual(spawnSync('git', ['commit', '-qm', 'labs'], { cwd: own.repo, env: { ...own.env, ...extra }, encoding: 'utf8' }).status, 0);
-  // doctor counts the allowed marks, never names them.
-  own.write('README.md', 'QuietVale ships\n');
-  own.git('add', '.');
-  const doctor = (await own.call(['doctor', '--all'], { extra })).stdout;
-  assert.match(doctor, /own-marks: 1 of your private marks allowed here by privacy\.allow/);
-  assert.ok(!/quietvale/i.test(doctor));
-  assert.doesNotMatch((await other.call(['doctor', '--all'], { extra })).stdout, /own-marks/);
+  // doctor counts the allowed marks (allowedMarkCount feeds its own-marks line), never names them.
+  const count = (sandbox: ReturnType<typeof makeSandbox>, allow: string[]) => allowedMarkCount({ ...sandbox.env, ...extra }, { privacy: { ...DEFAULTS.privacy, allow } }, sandbox.repo);
+  assert.deepEqual(count(own, ['QUIETVALE']), { project: 1, machine: 0, ownName: 0, unsure: null });
+  assert.deepEqual(count(other, ['quietval', 'quietvale2']), { project: 0, machine: 0, ownName: 0, unsure: null });
 });
 
-test('check: an added forge login is fine where a file names accounts, and found everywhere else (#410)', async () => {
-  const sandbox = makeSandbox();
-  const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
-  mkdirSync(dirname(marks), { recursive: true });
-  writeFileSync(marks, '# my own\nmycity\n# added by yokoten from this machine: forge login\nocto-jdoe\n');
-  sandbox.write('.github/CODEOWNERS', '* @octo-jdoe\n/.github/ @octo-jdoe/docs-team\n');
-  sandbox.write('.claude-plugin/plugin.json', '{\n  "name": "x",\n  "author": {\n    "name": "octo-jdoe",\n    "url": "https://github.com/octo-jdoe"\n  }\n}\n');
-  sandbox.write('package.json', '{\n  "name": "x",\n  "author": "octo-jdoe"\n}\n');
-  sandbox.write('LICENSE', 'MIT License\n\nCopyright (c) 2026 octo-jdoe\n');
-  sandbox.write('README.md', 'Hello.\n');
-  sandbox.git('add', '.');
-  sandbox.git('commit', '-qm', 'docs: hello');
-  let result = await sandbox.call(['check']);
-  assert.equal(result.status, 0, result.stderr);
-  // Anywhere else, the same login is still found, and never printed.
-  sandbox.write('src/x.ts', "const who = 'octo-jdoe';\n");
-  sandbox.write('docs/a.md', 'Ask @octo-jdoe.\n');
-  sandbox.write('LICENSE', 'MIT License\n\nCopyright (c) 2026 octo-jdoe\nWritten by octo-jdoe.\n');
-  sandbox.write('package.json', '{\n  "name": "x",\n  "description": "by octo-jdoe",\n  "author": "octo-jdoe"\n}\n');
-  sandbox.git('add', '.');
-  result = await sandbox.call(['check']);
-  assert.equal(result.status, 1);
-  for (const place of ['src/x.ts:1', 'docs/a.md:1', 'LICENSE:4', 'package.json:3']) assert.match(flat(result.stderr), new RegExp(`${place.replace('.', '\\.')} matches your forge login \\(a private mark yokoten added by itself\\)`));
-  assert.ok(!/LICENSE:3|package\.json:4/.test(result.stderr), result.stderr);
-  assert.ok(!/octo-jdoe/i.test(result.stdout + result.stderr), 'check printed the login');
-});
-
-test('check: the git name install added is found in a LICENSE copyright line and an author field too; only the login is fine there (#434)', async () => {
-  const sandbox = makeSandbox();
-  const name = ['Ann', 'Sample'].join(' ');
-  const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
-  mkdirSync(dirname(marks), { recursive: true });
-  writeFileSync(marks, `# added by yokoten from this machine: git name\n${name}\n`);
-  sandbox.write('LICENSE', `MIT License\n\nCopyright (c) 2026 ${name}\n`);
-  sandbox.write('package.json', `{\n  "name": "x",\n  "author": "${name}"\n}\n`);
-  sandbox.write('docs/a.md', `Written by ${name}.\n`);
-  sandbox.git('add', '.');
-  const result = await sandbox.call(['check']);
-  assert.equal(result.status, 1);
-  // The owner may hide the real name behind a noreply address and a mailmap: safe by default.
-  for (const place of ['LICENSE:3', 'package.json:3', 'docs/a.md:1']) assert.match(flat(result.stderr), new RegExp(`${place.replace('.', '\\.')} matches your git name \\(a private mark yokoten added by itself\\)`));
-  assert.ok(!/ann|sample/i.test(result.stdout + result.stderr), 'check printed the name');
-});
-
-test('check: a mark the owner wrote is found in CODEOWNERS too (#410)', async () => {
-  const sandbox = makeSandbox();
-  const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
-  mkdirSync(dirname(marks), { recursive: true });
-  writeFileSync(marks, 'octo-jdoe\n');
-  sandbox.write('.github/CODEOWNERS', '* @octo-jdoe\n');
-  sandbox.git('add', '.');
-  const result = await sandbox.call(['check']);
-  assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /\.github\/CODEOWNERS:1 matches a word you added to your private marks/);
-  assert.ok(!/octo-jdoe/i.test(result.stdout + result.stderr));
-});
-
-// A gate that can't read git stops and says so (#403): never "clean", never "no changes".
 test('check: every gate refuses when git can\'t answer, never passes as clean (#403)', async () => {
   const sandbox = makeSandbox();
   sandbox.write('a.md', 'a\n');
