@@ -1592,7 +1592,7 @@ test('bot: the heading names the bot and the command (#1027)', () => {
 
 // #1077: the bot is the gate for what it posts. It reads each body file as it sends, after
 // the shell wrote it, runs the privacy check on it, and sends nothing it can't read.
-test('bot: reads and checks the body file it sends, and sends none it cannot read (#1077)', async () => {
+test('bot: reads and checks the body file it sends, and sends none it cannot read (#1077, #1104)', async () => {
   const sandbox = makeSandbox();
   sandbox.write('yokoten.json', JSON.stringify({ areas: ['host'] }));
   sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
@@ -1637,6 +1637,15 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
     { name: 'a -dF cluster is refused', command: ['gh', 'pr', 'create', '-t', 'fix(host): a', '-dF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
     { name: 'a -aF cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-aF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
     { name: 'a -cb cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-cb', `Key ${secret}`], sent: false, says: /joins short options with one that takes the body/ },
+    // #1104: the other text letters in a cluster, and the forms the bot can't read, each with its fix.
+    { name: 'a -dt cluster is refused', command: ['gh', 'pr', 'create', '-dt', 'fix(host): a', '-b', `Key ${secret}${madeWith}`], sent: false, says: /write each short option as its own word/i },
+    { name: 'a -dc cluster on close is refused', command: ['gh', 'pr', 'close', '5', '-dc', `Key ${secret}`], sent: false, says: /write each short option as its own word/i },
+    { name: 'a -dn cluster on a release is refused', command: ['gh', 'release', 'create', 'v1', '-dn', `Key ${secret}`], sent: false, says: /write each short option as its own word/i },
+    { name: 'gist create is refused', command: ['gh', 'gist', 'create', join(sandbox.home, 'secret.md')], sent: false, says: /as an issue or pull request comment/i },
+    { name: 'a release with files is refused', command: ['gh', 'release', 'create', 'v1', '--notes-file', join(sandbox.home, 'notes.md'), join(sandbox.home, 'secret.md')], sent: false, says: /upload files by hand/i },
+    { name: '--recover is refused', command: ['gh', 'issue', 'create', '--recover', join(sandbox.home, 'secret.md')], sent: false, says: /leave out `--recover`/i },
+    // Positive control: the same release with its notes file alone is sent.
+    { name: 'a release with a clean notes file is sent', command: ['gh', 'release', 'create', 'v1', '--notes-file', file('clean-notes.md', 'All clean.\n')], sent: true },
     // More than one place to read the text from: the bot can't tell which gh sends, so it refuses.
     { name: 'two body files are refused', command: ['gh', 'issue', 'comment', '5', '--body-file', join(sandbox.home, 'clean.md'), '-F', join(sandbox.home, 'clean.md')], sent: false, says: /reads its text from 2 places/ },
     { name: 'a body file and standard input are refused', command: ['gh', 'issue', 'comment', '5', '-F', '-', '--body-file', join(sandbox.home, 'clean.md')], input: `x${madeWith}`, sent: false, says: /reads its text from 2 places/ },

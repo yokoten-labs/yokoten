@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { botConfig, botEnv, botProgram, type Gh, installationToken, readApprovalState, readBranchFiles, readCodeOwners, readIssueMilestone, readRepoLabelNames, repoOf } from '../../../host/github/index.ts';
 import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
 import { finding, type Finding } from '../../../rules/text/message.ts';
-import { checkPost, readSentBody } from '../../../rules/privacy.ts';
+import { checkPost, readsStdinBody, readSentBody } from '../../../rules/privacy.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../../rules/pr.ts';
 import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
 
@@ -177,16 +177,14 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
 /** The process's own stream by its fd, so gh writes to it straight; else a pipe, copied after (#475). */
 const childStream = (stream: Output): number | 'pipe' => (typeof stream.fd === 'number' ? stream.fd : 'pipe');
 
-/** Whether gh reads a body from standard input: a `-` file, as a word or after `=`, `@` or a short flag. */
-const readsStdin = (args: string[]): boolean => args.some((word) => word === '-' || /(?:=|@|^-[A-Za-z])-$/.test(word));
-
 /**
  * Runs the privacy check of `rules/privacy.ts` on what gh is about to send, as the sender
  * (#1077), and prints the problem. True when it refuses.
  */
 function refuseLeak(invocation: Invocation, config: Config, args: string[], readStdin: () => string): boolean {
   const { env, cwd } = invocation;
-  const leak = checkPost({ args, stdinText: readsStdin(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
+  // Standard input only for an option value the bot rewrites, never a title such as `x=-` (#1104).
+  const leak = checkPost({ args, stdinText: readsStdinBody(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
   if (!leak) return false;
   print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([leak])], invocation.stderr);
   return true;

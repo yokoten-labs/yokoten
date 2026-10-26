@@ -40,7 +40,9 @@ import {
   notUtc,
   ownMarks,
   POSITIVE_CONTROL,
+  POST_WITH_BOT,
   privateRemoteHosts,
+  readsStdinBody,
   readMachineAllow,
   repoKey,
   repoMarkKinds,
@@ -1568,6 +1570,63 @@ test('a short-option cluster with a body letter is refused, through gh or the bo
     assert.equal(post(command), null, command);
   }
   rmSync(join(postDir, 'n.md'));
+});
+
+test('guard: a gh post outside the known shapes goes to the bot; through the bot, it gets the bot fix (#1104)', () => {
+  writeFileSync(join(postDir, 'n.md'), 'All clean.\n');
+  // [the post, after `gh`; the bot's fix]. Bare, the fix is "post it with yokoten bot".
+  const cluster = /write each short option as its own word/;
+  const cases: [string, RegExp][] = [
+    ['pr create -dt "fix(host): a" -b ok', cluster],
+    ['pr close 3 -dc "a note"', cluster],
+    ['pr review 3 -cb "a note"', cluster],
+    ['pr create -t t -dF n.md', cluster],
+    ['issue edit 3 -wt "a title"', cluster],
+    ['gist create n.md', /as an issue or pull request comment/],
+    ['gist edit 3 --add n.md', /as an issue or pull request comment/],
+    ['issue create --recover n.md', /leave out `--recover`/],
+    ['pr create --recover=n.md', /leave out `--recover`/],
+  ];
+  for (const [args, botFix] of cases) {
+    const bare = post(`gh ${args}`);
+    assert.equal(bare?.id, 'unreadable-command', args);
+    assert.equal(bare?.fix, POST_WITH_BOT, args);
+    const viaBot = post(`yokoten bot -- gh ${args}`);
+    assert.equal(viaBot?.id, 'unreadable-command', `bot: ${args}`);
+    assert.match(viaBot?.fix ?? '', botFix, `bot: ${args}`);
+  }
+  // A program the guard can't name, with the words of a post: refused, sent to the bot.
+  for (const command of ['G=gh; $G issue comment 3 -F n.md', '$G issue comment 3 -F n.md', '${G} pr create -t t -F n.md', '"$G" gist create n.md']) {
+    const f = post(command);
+    assert.equal(f?.id, 'unreadable-command', command);
+    assert.equal(f?.fix, POST_WITH_BOT, command);
+  }
+  // A release with files, bare: the owner releases, so that rule answers first.
+  assert.equal(post('gh release create v1 --notes-file n.md n.md')?.id, 'release');
+  // Positive controls: a clean post in a known shape goes through, bare and through the bot.
+  for (const command of ['gh issue comment 3 --body-file n.md', 'yokoten bot -- gh issue comment 3 --body-file n.md', 'gh pr close 3 -d -c "a note"', 'gh pr close 3 -c"a note"', 'gh issue comment 3 -Rme/repo -F n.md', '$G pr list']) {
+    assert.equal(post(command), null, command);
+  }
+  rmSync(join(postDir, 'n.md'));
+});
+
+test('readsStdinBody: only an option value the bot rewrites reads standard input, never a free word (#1104)', () => {
+  const cases: [string[], boolean][] = [
+    [['issue', 'comment', '3', '--body-file', '-'], true],
+    [['issue', 'comment', '3', '--body-file=-'], true],
+    [['issue', 'comment', '3', '-F', '-'], true],
+    [['issue', 'comment', '3', '-F-'], true],
+    [['release', 'edit', 'v1', '--notes-file', '-'], true],
+    [['api', 'repos/me/repo/issues', '--input', '-'], true],
+    [['api', 'graphql', '-F', 'query=@-'], true],
+    // Text, not a read: a title or body that ends in `=-`, `@-` or `-X-`.
+    [['issue', 'create', '--title', 'x=-', '--body', 'y'], false],
+    [['issue', 'comment', '3', '--body', 'a@-'], false],
+    [['issue', 'comment', '3', '--body', '-'], false],
+    [['issue', 'comment', '3', '--body-file', 'n.md'], false],
+    [['pr', 'list', '-'], false],
+  ];
+  for (const [args, reads] of cases) assert.equal(readsStdinBody(args), reads, args.join(' '));
 });
 
 // ---- A read-only pipe after a post (#498) ----
