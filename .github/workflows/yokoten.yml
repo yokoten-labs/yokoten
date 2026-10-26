@@ -283,6 +283,8 @@ jobs:
   # A job that never started is named in the summary, so a queued timeout reads as
   # "no runner was free", not as a test failure (#568).
   ci:
+    # always(), never !cancelled(): a skipped required check counts as passed, so a
+    # cancelled run (in the merge queue too) must still end red here.
     if: always()
     needs: [changes, test, windows, typecheck, check, lint, action]
     runs-on: ubuntu-latest
@@ -304,6 +306,11 @@ jobs:
             echo "::warning::These jobs never started: no runner was free, or they were cancelled while queued. Not test failures: $starved"
             echo "These jobs never started, so this is not a test failure (no runner was free, or they were cancelled while queued): $starved" >> "$GITHUB_STEP_SUMMARY"
           fi
+      # A newer push cancels a pull request's run: still red, but it says why.
+      - if: cancelled()
+        run: |
+          echo "::warning::This run was cancelled (a newer push, or by hand). Its red ci is not a test failure; see the newest run."
+          echo "This run was cancelled (a newer push, or by hand). Its red ci is not a test failure; see the newest run." >> "$GITHUB_STEP_SUMMARY"
       - if: >-
           contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') ||
           (contains(needs.*.result, 'skipped') && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group') ||

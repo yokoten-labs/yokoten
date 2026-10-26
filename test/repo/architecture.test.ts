@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET, verdictOf } from '../../scripts/time/suite.ts';
-import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -2280,6 +2280,26 @@ test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads 
     ['test/a.test.ts', ['test/a.test.ts :: old'], 'FIXED   test/a.test.ts (3 s, 1 on the list passes now, 1 waived)'],
     ['test\\c.test.ts', ['test/c.test.ts :: old', 'test/c.test.ts :: brand new'], 'NEW     test/c.test.ts (3 s, 1 new: brand new, 1 waived)'],
   ] as const) assert.equal(fileLine(file, [...found], known, 3), line, line);
+});
+
+test('windows known: the log shows progress, then the verdict first, with passed files folded in Actions (#1119)', () => {
+  assert.equal(progressLine('test\\setup\\init.test.ts', 54, 62, 480), '[54/62] test/setup/init.test.ts (cap 480 s)');
+  assert.equal(slowLine('test/setup/init.test.ts', 120, 480), 'still running test/setup/init.test.ts: 120 s / 480 s');
+  const times = [{ name: 'a', seconds: 3 }, { name: 'c', seconds: 90 }, { name: 'b', seconds: 90 }, { name: 'd', seconds: 1 }];
+  assert.deepEqual(slowestFiles(times, 3), [{ name: 'b', seconds: 90 }, { name: 'c', seconds: 90 }, { name: 'a', seconds: 3 }]);
+  const verdict = ['windows-known: win32, shard 1/1, 3 files, 1 failing (0 waived), 1 new, 0 fixed, 0 flaky, 0 skipped.'];
+  const fileLines = ['ok      test/a.test.ts (3 s)', 'NEW     test/b.test.ts (4 s, 1 new: x)', 'ok      test/c.test.ts (1 s)'];
+  const details = ['Nothing is skipped on win32.'];
+  for (const [isActions, expected] of [
+    [false, [...verdict, fileLines[1], ...details, fileLines[0], fileLines[2]]],
+    [true, [...verdict, fileLines[1], ...details, '::group::passed files (2)', fileLines[0], fileLines[2], '::endgroup::']],
+  ] as const) {
+    const lines = reportLines(verdict, details, fileLines, isActions);
+    assert.deepEqual(lines, expected);
+    assert.ok(lines[0].startsWith('windows-known:'), 'the verdict is the first line');
+  }
+  assert.equal(summaryTable({ added: 1, fixed: 0, waived: 5 }, [{ name: 'test/a.test.ts', seconds: 90 }]), '### Windows known failures\n\n| | Count |\n|---|---|\n| New failures | 1 |\n| Fixed (remove from the list) | 0 |\n| Waived | 5 |\n\n| Slowest files | Seconds |\n|---|---|\n| test/a.test.ts | 90 |\n');
+  assert.ok(!summaryTable({ added: 0, fixed: 0, waived: 0 }, []).includes('Slowest'));
 });
 
 test('windows scope: native Windows skips the desk, its fence and the kanban server, each with its reason (#1068)', () => {
