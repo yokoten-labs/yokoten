@@ -3,7 +3,7 @@
 import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { BoardIssue } from '../../../../../src/commands/kanban/controls.ts';
+import type { BoardIssue } from '../../../../../src/commands/kanban/feed/read/waiting.ts';
 import { barPlace, renderDesk, renderQueue, renderTimeline } from '../../../../../src/commands/kanban/page/browser/desk.ts';
 import { loadUi, type PageData, type PageState } from '../../../../../src/commands/kanban/page/browser/script.ts';
 import { LANG_NAMES, WORDS } from '../../../../../src/commands/kanban/page/words.ts';

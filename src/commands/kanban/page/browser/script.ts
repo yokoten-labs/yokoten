@@ -3,7 +3,7 @@
 // into the page, so it uses only other functions here, its arguments and the browser.
 // Tests call the plain ones. Every word from a status file goes in as text.
 
-import type { BoardIssue, BoardLimits, BoardRun, BoardWaiting } from '../../controls.ts';
+import type { BoardIssue, BoardLimits, BoardRun, BoardWaiting } from '../../feed/read/waiting.ts';
 import type { FeedEvent } from '../../feed/steps.ts';
 import type { ScheduleRoom, ScheduleSummary } from '../../../more/advice/schedule.ts';
 import type { AgentView, BoardData } from '../../view.ts';

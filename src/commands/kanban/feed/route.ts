@@ -1,19 +1,19 @@
-// /feed (#694): one agent's session as it happens. The page names the agent by its key (its
-// worktree, `~` for home) and sends the cursor of its last answer. Every item passes the
+// A session's live output (#694): `GET /api/sessions/<id>/stream`. The id is a hash of the
+// desk's path, and the stream sends a cursor with each part. Every item passes the
 // same masks as `yokoten redact`: secrets, private email addresses, the home folder, the
-// private marks and this machine's own names. When the masks can't be built, /feed fails
+// private marks and this machine's own names. When the masks can't be built, the stream fails
 // closed: it sends nothing.
 
 import { type Env } from '../../../rules/config.ts';
 import { hideHome, loadMarks, makeRedactor } from '../../../rules/privacy.ts';
 import { machineMarks, machineUserNames } from '../../../setup/install.ts';
-import { readBoardAgents, readBoardWorktrees } from '../agents.ts';
+import { readBoardAgents, readBoardWorktrees, sessionId } from '../agents.ts';
 import { makeStreamStore, readStream, type StreamAnswer, type StreamStore } from './tail.ts';
 
 /** How long the masks stand before the marks are read again, so a new mark counts soon. */
 const MASK_AGAIN_MS = 60000;
 
-/** The masks for every line /feed sends. Throws when the marks can't be read: the caller sends nothing then. */
+/** The masks for every line the stream sends. Throws when the marks can't be read: the caller sends nothing then. */
 export function makeFeedMask(env: Env, root: string): (text: string) => string {
   const found = machineMarks(env, { cwd: root });
   return makeRedactor(
@@ -27,7 +27,7 @@ export function makeFeedMask(env: Env, root: string): (text: string) => string {
 }
 
 /**
- * The mask for agent text on /data. When the marks cannot be read, every field is
+ * The mask for agent text in /api/state. When the marks cannot be read, every field is
  * empty, so a home path or a private word never leaves.
  */
 export function makeBoardMask(env: Env, root: string): (text: string) => string {
@@ -51,15 +51,16 @@ export function makeFeedStreams(env: Env, root: string, mask?: (text: string) =>
 }
 
 /**
- * The answer to /feed for the agent `key`, or null when no agent has that key. The status
- * file's vendor says which runtime's log to read.
+ * The next part of session `id`'s output (`GET /api/sessions/<id>/stream`), from `cursor`
+ * on, or null when no session has that id. The status file's vendor says which runtime's
+ * log to read.
  */
-export function feedAnswer(streams: StreamStore, root: string, env: Env, key: string, cursor: string): StreamAnswer | null {
+export function sessionAnswer(streams: StreamStore, root: string, env: Env, id: string, cursor: string): StreamAnswer | null {
   const trees = readBoardWorktrees(root, env);
   if (typeof trees === 'string') return null;
-  const found = readBoardAgents(trees).find(({ tree }) => hideHome(tree.path, env) === key);
+  const found = readBoardAgents(trees).find(({ tree }) => sessionId(hideHome(tree.path, env)) === id);
   if (!found) return null;
   // The masks are built before any line is read, so a failure sends nothing.
   streams.mask('');
-  return readStream(streams, key, found.tree.path, found.agent.vendor, cursor, Date.now(), found.agent.log);
+  return readStream(streams, hideHome(found.tree.path, env), found.tree.path, found.agent.vendor, cursor, Date.now(), found.agent.log);
 }

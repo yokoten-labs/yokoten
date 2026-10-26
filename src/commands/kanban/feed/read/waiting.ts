@@ -1,21 +1,89 @@
-// The board's waiting list (#603, #693): open issues, hold-ups in the status
-// files, and the rows `yokoten board --text` and /data still show. The page
-// lists Needs you under the header bell (#737). This list is read only.
+// The board's waiting list (#603, #693): open issues and hold-ups in the status files.
+// It is read only: no request an agent can make clears a row. The old page's types live
+// here too, until that page goes (#1057).
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Gh, type GhLater } from '../../../../host/github/index.ts';
-import { type Env } from '../../../../rules/config.ts';
-import { hideHome } from '../../../../rules/privacy.ts';
-import { ageText, BOARD_AGENT_FILE, parseBoardAgent, type BoardWorktree } from '../../agents.ts';
-import { type BoardAttention, type BoardControls, type BoardIssue, type BoardRun, type BoardSnapshot, type BoardWaiting } from '../../controls.ts';
-import { EMPTY_SCHEDULE, freeMemoryMb as freeMemory, planSchedule, roomStateOf, scheduleIssueOf, type SchedulePlan, type ScheduleRoom, type ScheduleSummary, summarizeSchedule } from '../../../more/advice/schedule.ts';
+import { ageText, BOARD_AGENT_FILE, parseBoardAgent, type BoardRole, type BoardWorktree } from '../../agents.ts';
+import { EMPTY_SCHEDULE, planSchedule, scheduleIssueOf, type SchedulePlan, type ScheduleSummary, summarizeSchedule } from '../../../more/advice/schedule.ts';
 import { dependsOf } from './desk.ts';
-import { makeBoardMask } from '../route.ts';
 import { type AgentView, type BoardData, BOARD_ISSUE_LIMIT, type PullView } from '../../view.ts';
 
-/** How many of a run's output lines /data serves. */
-const BOARD_OUTPUT_SHOWN = 30;
+/** The board's limits: how many agents run at once, how many of one model, and the memory a start keeps free. */
+export interface BoardLimits {
+  maxAgents: number;
+  byModel: Record<string, number>;
+  /** Free memory the machine keeps for itself before another agent starts, in MB (#709). */
+  memoryFloorMb: number;
+}
+
+/** One agent the board started. Its output stays while it runs and after it stops. */
+export interface BoardRun {
+  name: string;
+  issue: string;
+  vendor: string;
+  model: string;
+  worktree: string;
+  pid: number | null;
+  /** Running, or stopped by the owner or its time limit. A start that fails never joins the list. */
+  status: 'running' | 'stopped';
+  /** Who ended a stopped run: the owner, or the time limit (#711). */
+  stoppedBy?: 'owner' | 'time limit';
+  startedAt: string;
+  stoppedAt: string;
+  exitCode: number | null;
+  /** The latest output lines, oldest first, at most BOARD_OUTPUT_LINES. */
+  output: string[];
+}
+
+/** One open issue to start an agent on: its number, title, link, and what it waits for. */
+export interface BoardIssue {
+  number: number;
+  title: string;
+  url: string;
+  /** When it was opened, or ''. */
+  createdAt: string;
+  /** When it last changed, or ''. */
+  updatedAt: string;
+  /** Issue numbers on a "Depends on" line. The timeline shows them on the row. */
+  dependsOn: number[];
+  /** The issue's labels, for the schedule's priority (#709). Missing when a reader has none. */
+  labels?: string[];
+  /** The issue's milestone title, or '' (#709). P1 when it has one. */
+  milestone?: string;
+}
+
+/** One hold-up an agent reports in its status file: a guard stop or a question. */
+export interface BoardAttention {
+  name: string;
+  vendor: string;
+  role: BoardRole;
+  worktree: string;
+  updated: string;
+  /** A guard stop that needs a decision, or a question for the owner. */
+  kind: 'guard' | 'question';
+  why: string;
+  /** Where the owner acts, http(s) only. */
+  link: string;
+}
+
+/** One row of the waiting list: what waits, who waits, how long, why, and where to act. */
+export interface BoardWaiting {
+  /** An Approve on the host, a guard stop, or an agent's question. */
+  kind: 'approve' | 'guard' | 'question';
+  agent: string;
+  role: BoardRole;
+  /** How long the row has shown, counted from `latchedAt`, never from a rewrite. */
+  wait: string;
+  why: string;
+  link: string;
+  /**
+   * When the row first showed, as ISO time. Kept on latched agent rows only, so the
+   * wait counts from the first sight; never served over /data or shown as text.
+   */
+  latchedAt?: string;
+}
 
 /** The gh query for the open issues. It reads one past the board's limit, so a cut-off list is known. */
 function boardIssueQuery(repo: string): string[] {
@@ -190,26 +258,6 @@ export function collectBoardWaiting(board: BoardData, attention: BoardAttention[
   return [...live, ...seen.map((row) => ({ ...row }))];
 }
 
-/** The runs as /data serves them: worktrees hide the home folder, and only the tail of the output. */
-function snapshotRuns(runs: BoardRun[], env: Env): BoardRun[] {
-  return runs.map((run) => ({ ...run, worktree: hideHome(run.worktree, env), output: run.output.slice(-BOARD_OUTPUT_SHOWN) }));
-}
-
-/**
- * The waiting list as /data serves it: the latch time stays on the server, so the
- * rows hold what waits, who waits, how long, why, and where to act, and nothing else.
- */
-function snapshotWaiting(board: BoardData, attention: BoardAttention[], controls: BoardControls, env: Env, root: string, now: number = Date.now()): BoardWaiting[] {
-  const mask = makeBoardMask(env, root);
-  return collectBoardWaiting(board, attention, controls.runs, controls.seen, now).map(({ latchedAt: _, ...row }) => ({
-    ...row,
-    agent: mask(row.agent),
-    role: mask(row.role),
-    why: mask(row.why),
-    link: mask(row.link),
-  }));
-}
-
 /**
  * The dependency plan of the open issues, or null when they cannot be read or were
  * actually cut off. The read asks for one issue past the limit, so a list longer than
@@ -225,24 +273,3 @@ export function scheduleOf(issues: BoardIssue[] | string): ScheduleSummary {
   const plan = planOf(issues);
   return plan ? summarizeSchedule(plan) : { ...EMPTY_SCHEDULE };
 }
-
-/** The room the machine has now: the board's running agents and free memory by its limits (#709). */
-export function roomOf(controls: BoardControls): ScheduleRoom {
-  const running = controls.runs.filter((run) => run.status === 'running').length;
-  const freeMemoryMb = freeMemory();
-  return roomStateOf({ running, freeMemoryMb }, { maxAgents: controls.limits.maxAgents, memoryFloorMb: controls.limits.memoryFloorMb });
-}
-
-/** The snapshot for /data: the waiting list, the open issues as last read, the runs, and the limits. */
-export function readBoardSnapshot(env: Env, controls: BoardControls, board: BoardData, trees: BoardWorktree[] | string, issues: BoardIssue[] | string, root = ''): BoardSnapshot {
-  const folder = root || (typeof trees === 'string' ? '' : trees[0]?.path ?? '');
-  return {
-    waiting: snapshotWaiting(board, typeof trees === 'string' ? [] : readBoardAttention(trees), controls, env, folder),
-    issues,
-    runs: snapshotRuns(controls.runs, env),
-    limits: { ...controls.limits, byModel: { ...controls.limits.byModel } },
-    schedule: scheduleOf(issues),
-    room: roomOf(controls),
-  };
-}
-

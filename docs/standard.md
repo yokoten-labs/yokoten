@@ -173,7 +173,7 @@ An agent that leaves drops its feed.
 | `done` | `Finished` | the dot became `done` after the agent was already shown |
 
 Who writes. The board process, while `yokoten board` runs.
-Who reads. The board page, and `/data` through `feedsJson`.
+Who reads. The board's old page, through `feedsJson`, until the new page replaces it.
 How yokoten checks it. `recordFeed` compares the last view with the new one.
 Version 1. The event has no version field.
 
@@ -341,7 +341,7 @@ Version 1. The file has no version field.
 - [src/run/hook.ts](../src/run/hook.ts) and [test/run/hook.test.ts](../test/run/hook.test.ts).
 - [src/commands/hook.ts](../src/commands/hook.ts) and [test/commands/hook.test.ts](../test/commands/hook.test.ts).
 - [src/commands/kanban/agents.ts](../src/commands/kanban/agents.ts) and [test/commands/kanban/agents.test.ts](../test/commands/kanban/agents.test.ts).
-- [src/commands/kanban/controls.ts](../src/commands/kanban/controls.ts) and [test/commands/kanban/controls.test.ts](../test/commands/kanban/controls.test.ts).
+- [src/commands/kanban/feed/read/waiting.ts](../src/commands/kanban/feed/read/waiting.ts) and [test/commands/kanban/feed/read/waiting.test.ts](../test/commands/kanban/feed/read/waiting.test.ts).
 - [src/commands/kanban/view.ts](../src/commands/kanban/view.ts) and [test/commands/kanban/view.test.ts](../test/commands/kanban/view.test.ts).
 
 ## The Made-with line

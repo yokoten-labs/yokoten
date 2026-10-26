@@ -2,7 +2,7 @@
 
 import { terminalText } from '../../../run/learn.ts';
 import { count, field, moreLine, row, title, type RowMark } from '../../shared.ts';
-import type { BoardRun, BoardWaiting } from '../controls.ts';
+import type { BoardRun, BoardWaiting } from '../feed/read/waiting.ts';
 import { type BoardUsage, costWords, tokenText, totalOf } from '../feed/read/usage.ts';
 import type { AgentView, BoardData, PullView } from '../view.ts';
 
