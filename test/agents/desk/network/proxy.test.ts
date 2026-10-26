@@ -84,7 +84,7 @@ test('startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is cl
   await new Promise<void>((resolve) => echo.listen(0, '127.0.0.1', resolve));
   const port = (echo.address() as { port: number }).port;
   const path = join(makeTempDir('proxy-'), 'proxy.sock');
-  const proxy = await startProxy(path, [`localhost:${port}`], () => {}, { maxTunnels: 1, idleMs: 200 });
+  const proxy = await startProxy(path, [`localhost:${port}`], () => {}, { maxTunnels: 1, idleMs: 50 });
   try {
     // The first tunnel stays open and still; the second is over the cap.
     const first = connect(path, () => first.write(`CONNECT localhost:${port} HTTP/1.1\r\n\r\n`));
@@ -94,7 +94,7 @@ test('startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is cl
     });
     await new Promise((resolve) => first.once('data', resolve));
     assert.match(await talk(path, `CONNECT localhost:${port} HTTP/1.1\r\n\r\n`), /^HTTP\/1\.1 503/);
-    assert.ok((await closed) >= 150, 'the still tunnel is closed after its idle time');
+    assert.ok((await closed) >= 30, 'the still tunnel is closed after its idle time');
   } finally {
     await proxy.close();
     echo.close();

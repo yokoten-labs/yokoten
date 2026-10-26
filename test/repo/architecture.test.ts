@@ -1766,7 +1766,7 @@ const WINDOWS_BRANCHES: [string, number][] = [
   ['rules/guards/worker/config.test.ts', 1],
   ['rules/guards/worker/mark.test.ts', 4],
   ['rules/privacy.test.ts', 3],
-  ['run/check.test.ts', 2],
+  ['run/check.test.ts', 1],
   ['run/hook.test.ts', 14],
   ['run/notes/translations.test.ts', 1],
   ['setup/doctor/checks.test.ts', 3],
