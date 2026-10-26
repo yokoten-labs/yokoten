@@ -11,11 +11,12 @@ You only report.
 ## Read first
 
 The issue the change closes, its record in `docs/records/` if there is one, and the
-core rules in `AGENTS.md`.
+core rules and the `Architecture` section, if any, in `AGENTS.md`.
 
 ## Passes, in order
 
-1. Bugs. 2. Security. 3. Compliance with the issue, the record and `AGENTS.md`.
+1. Bugs. 2. Security. 3. Compliance with the issue, the record and `AGENTS.md`, its
+Architecture section included: an architecture break is high and blocks.
 The `inspect` skill says what each pass covers and how to grade (high, medium, low;
 at most five lows; pre-existing defects do not block).
 

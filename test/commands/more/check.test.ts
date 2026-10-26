@@ -1079,10 +1079,11 @@ test('writeNodeProgram: the fake program answers with its arguments, as a script
   const base = makeSandbox().home;
   const posixDir = join(base, 'posix');
   assert.equal(writeNodeProgram(posixDir, 'gh', body, 'linux', { PATH: '/usr/bin' }).PATH, `${posixDir}:/usr/bin`);
-  if (process.platform !== 'win32') {
-    const ran = spawnSync(join(posixDir, 'gh'), ['api', 'repos/octo/demo'], { encoding: 'utf8' });
-    assert.equal(ran.stdout, '["api","repos/octo/demo"]', ran.stderr);
-  }
+  // The form for this system runs, found on PATH as gh, whichever system it is.
+  const hereDir = join(base, 'here');
+  const here = writeNodeProgram(hereDir, 'gh', body, process.platform, { PATH: process.env.PATH ?? '' });
+  const found = spawnSync('gh', ['api', 'repos/octo/demo'], { env: { ...process.env, ...here }, encoding: 'utf8' });
+  assert.equal(found.stdout, '["api","repos/octo/demo"]', found.stderr);
   const windowsDir = join(base, 'windows');
   const extra = writeNodeProgram(windowsDir, 'gh', body, 'win32', { PATH: 'C:\\Windows', NODE_OPTIONS: '--no-warnings' });
   assert.equal(extra.PATH, `${windowsDir};C:\\Windows`, 'Windows joins PATH with ;');

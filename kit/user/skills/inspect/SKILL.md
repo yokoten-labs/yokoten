@@ -27,7 +27,9 @@ Give the diff to the `reviewer` agent (it reads only) for:
 2. **Security**: tokens and secrets, auth, every new outbound request and where it
    goes, install scripts, the source of every new or bumped dependency.
 3. **Compliance**: does the diff do what its issue and record say, no more and no less?
-   Does it break a core rule in `AGENTS.md`?
+   Does it break a core rule in `AGENTS.md`? Does it break the project's architecture rules
+   (an `Architecture` section in `AGENTS.md`, if there is one)? An architecture break is
+   high: it blocks, so no person has to ask whether the change fits.
 
 Each reviewer that read the diff goes on the pull request's last line, after the worker
 and before the lead, in one part with at most two reviewers:
