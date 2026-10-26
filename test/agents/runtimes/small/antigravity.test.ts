@@ -105,7 +105,7 @@ test('antigravity user hook: install writes the guard in ~/.gemini/config/hooks.
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.ok(written.lint, "another entry stays");
   assert.deepEqual(Object.keys(written), ['lint', 'yokoten']);
-  assert.equal(written.yokoten.PreToolUse[0].matcher, 'run_command', 'the user guard is commands only');
+  assert.equal(written.yokoten.PreToolUse[0].matcher, 'run_command|write_to_file|replace_file_content|multi_replace_file_content', 'the user guard runs on the project hook tools (#1100)');
   const command = written.yokoten.PreToolUse[0].hooks[0].command as string;
   assert.ok(command.startsWith(`[ -f ${cli} ] 2>/dev/null || { echo '${missing}' >&2; exit 1; };`), 'a missing runtime refuses the call');
   assert.match(command, / hook --agent antigravity --commands-only /);

@@ -31,6 +31,8 @@ const SHELL = 'run_shell_command';
 // command can finish (#614).
 const STOP_TIMEOUT = 600_000;
 const EDITS = new Set(['write_file', 'replace']);
+/** The tools both guard hooks run on, the project one and the user one: one list (#1100). */
+export const GUARDED_TOOLS = [SHELL, ...EDITS].join('|');
 
 /** A BeforeTool call, as an Action. Any other tool (read_file, MCP) is neither. */
 export function readToolCall(input: unknown): Action {
@@ -64,7 +66,7 @@ const projectSettings = (root: string) => join(root, '.gemini', 'settings.json')
  *   stderr makes the agent try again. The timeout covers the done-when command.
  */
 const projectHookArgs = (root: string, cli: string): Record<'guard' | 'stop', HookArgs> => ({
-  guard: [projectSettings(root), 'BeforeTool', 'run_shell_command|write_file|replace', guardCommand(`$GEMINI_PROJECT_DIR/${cli}`, 'hook --agent gemini', missingProjectRuntime(cli), { isToolCall: true }), { name: 'yokoten' }, READ],
+  guard: [projectSettings(root), 'BeforeTool', GUARDED_TOOLS, guardCommand(`$GEMINI_PROJECT_DIR/${cli}`, 'hook --agent gemini', missingProjectRuntime(cli), { isToolCall: true }), { name: 'yokoten' }, READ],
   stop: [projectSettings(root), 'AfterAgent', undefined, guardCommand(`$GEMINI_PROJECT_DIR/${cli}`, 'hook --stop --agent gemini', missingProjectRuntime(cli)), { name: 'yokoten-stop', timeout: STOP_TIMEOUT }, READ],
 });
 
@@ -102,10 +104,10 @@ const userSettings = (env: Env) => join(homeIn(env), '.gemini', 'settings.json')
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
   doctor: [userSettings(env), 'SessionStart', undefined, guardCommand(cli, 'doctor --session --agent gemini', missing, { isSessionStart: true, sessionOutput: 'json' }), { name: 'yokoten-session' }, READ],
-  guard: [userSettings(env), 'BeforeTool', SHELL, guardCommand(cli, 'hook --agent gemini --commands-only', missing, { isToolCall: true }), { name: 'yokoten-guard' }, READ],
+  guard: [userSettings(env), 'BeforeTool', GUARDED_TOOLS, guardCommand(cli, 'hook --agent gemini --commands-only', missing, { isToolCall: true }), { name: 'yokoten-guard' }, READ],
 });
 
-/** The user's hooks, in every repo: doctor at session start, and the command guard on shell calls. `missing` is what they say when `cli` is gone. */
+/** The user's hooks, in every repo: doctor at session start, and the tool-call guard on the shell and the edit tools, as in the project hook (#1100). `missing` is what they say when `cli` is gone. */
 export function addUserHooks(env: Env, cli: string, missing: string): { doctor: Added; guard: Added } {
   const args = userHookArgs(env, cli, missing);
   checkHooks([args.doctor, args.guard]);
