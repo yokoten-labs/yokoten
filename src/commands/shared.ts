@@ -2,6 +2,7 @@
 // Everything yokoten prints goes through `print`, `say` or `printJson` (core rule 11).
 
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/message.ts';
@@ -23,6 +24,9 @@ export interface Input {
   text: string | null;
   readonly stream: NodeJS.ReadableStream & { isTTY?: boolean };
 }
+
+/** True when stdin is a terminal: someone typed the command by hand. The process's stream is made only when no fd is known (#1053). */
+export const isTerminal = (input: Input): boolean => (input.text === null && input.fd !== null ? isatty(input.fd) : input.text === '' && input.stream.isTTY === true);
 
 /** All of stdin as text: the test's, or the process's read to its end. */
 export const readInput = ({ fd, text }: Input): string => text ?? (fd === null ? '' : readFileSync(fd, 'utf8'));

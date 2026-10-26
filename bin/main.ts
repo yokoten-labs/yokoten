@@ -7,7 +7,7 @@
 // invocation from the process; a test calls `main` with its own, in-process (#475).
 
 import { withHome } from '../src/rules/privacy.ts';
-import { type Invocation, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
+import { type Invocation, isTerminal, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
 import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList } from '../src/run/cli.ts';
 import { VERSION } from '../src/setup/files.ts';
 
@@ -42,12 +42,23 @@ function isHelpAsked(words: string[]): boolean {
   return (end === -1 ? words : words.slice(0, end)).some((word) => HELP_OPTIONS.includes(word));
 }
 
+/** What `hook` and `redact` print when started by hand: they wait for input from a pipe, so a terminal gets one line (#1053). */
+const TERMINAL_LINE: Record<string, string> = {
+  hook: 'yokoten hook is the tool-call guard: your agent runs it and sends it each call on stdin. Run `yokoten hook --help` for more.',
+  redact: 'yokoten redact hides private text in a pipeline: try `cat file | yokoten redact`. Run `yokoten redact --help` for more.',
+};
+
 function dispatch(invocation: Invocation): number | Promise<number> {
   const { command: cmd, args } = invocation;
   // `<command> --help` prints that command's help and does nothing else (#207).
   const command = cmd === undefined ? undefined : findCommand(cmd);
   if (command && isHelpAsked(args)) {
     print(invocation, commandHelp(command));
+    return 0;
+  }
+  const line = cmd === undefined ? undefined : TERMINAL_LINE[cmd];
+  if (line && isTerminal(invocation.stdin)) {
+    print(invocation, [line]);
     return 0;
   }
   switch (cmd) {
