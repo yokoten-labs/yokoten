@@ -88,6 +88,31 @@ The pains that came up most often:
 
    It never prints its access token on the terminal.
 
+   **The board also owns GitHub Actions.** The work splits by what GitHub holds:
+   - `desk` takes issues;
+   - `merge` takes pull requests;
+   - `board` watches Actions.
+
+   CI runs by itself, so the person only needs to know its state and that someone acts
+   on a failure. The board shows, read-only:
+   - a failure on main, first, because it blocks every pull request;
+   - each pull request's CI, which is part of its evidence;
+   - a run queued for more than 15 minutes, or much slower than usual;
+   - a test that passes and fails by turns.
+
+   This is the job of the hidden `ci-health` and of our Actions check. It moves to the
+   board and writes nothing to GitHub. A failure goes to the other two commands, so no
+   fourth command is needed:
+   - **main fails, or a test is flaky:** yokoten opens an issue, and `desk` gives it to
+     an AI;
+   - **a pull request's CI fails:** `merge` does not merge it, and sends it back to the AI
+     that made it;
+   - **a run is stuck:** the bot reruns it once (the owner allowed reruns on
+     2026-10-22) and the board notes it. A second failure opens an issue.
+
+   The release workflow is the one exception. Only the owner approves it, on GitHub, and
+   no command touches it.
+
 6. **`desk` gives one task to one AI, with no setup by hand.** Today a person makes a
    clone, writes a brief and types the agent's own start command. `yokoten desk 1029`
    is enough:
