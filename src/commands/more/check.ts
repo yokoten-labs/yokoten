@@ -311,7 +311,7 @@ async function runMode(invocation: Invocation, mode: string, root: string, confi
       }
       problems = checkPullRequest(pr, config);
       // Provenance (#756): the line names each desk that worked on the branch, and a
-      // reviewer comes from another vendor. Only status files here can say what ran.
+      // reviewer is another model (record 0045). Only status files here can say what ran.
       problems.push(...provenanceFindings(parseMadeWith(pr.body)?.roles ?? null, readBranchDesks(root, env, pr.branch)));
       // Each change file the pull request leaves (#132) must be one `yokoten changelog` can read.
       for (const file of pr.files.filter(isChangeFile)) {
@@ -1370,10 +1370,15 @@ export function postHealthIssue(gh: Gh, repo: string, body: string): PostedHealt
   }
 }
 
-/** `yokoten ci-health`: read Actions health, and post it to one pinned issue or print it. */
+/**
+ * `yokoten ci-health`: read Actions health and print it. Only `--write` posts it to the one
+ * pinned issue: a bare command reads and shows, and never writes (issue #1046).
+ */
 export function runCiHealth(invocation: Invocation): number {
   const options = parse('ci-health', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
+  const isWrite = options.flags.has('--write');
+  if (isWrite && options.flags.has('--dry-run')) return usage(invocation, '--write posts the report and --dry-run only prints it; pass one of them');
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;
   const { env } = invocation;
@@ -1395,8 +1400,10 @@ export function runCiHealth(invocation: Invocation): number {
   let body = renderActionsHealth(health, { repo, now: new Date() });
   if (typeof pulls === 'string') body += `\n> The open pull request checks were not read: ${pulls}\n`;
   const problems = health.mainFailures.length + health.mainCancelled.length + health.pullProblems.length;
-  if (options.flags.has('--dry-run')) {
+  if (!isWrite) {
     print(invocation, body.split('\n'));
+    // A bare run says what --write would change, and changes nothing (issue #1046).
+    if (!options.flags.has('--dry-run')) print(invocation, ['', 'nothing written; `--write` puts this report in the pinned issue "CI health"']);
     return 0;
   }
   const posted = postHealthIssue(gh, repo, body);

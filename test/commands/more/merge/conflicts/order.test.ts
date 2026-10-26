@@ -2,6 +2,8 @@
 
 import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { test } from 'node:test';
 import { listPullRequests, mergeOrder, nextPick } from '../../../../../src/commands/more/merge/conflicts/order.ts';
 import type { Change, Collision, ConflictMap } from '../../../../../src/commands/more/merge/conflicts/types.ts';
@@ -106,4 +108,52 @@ test('train refuses a map more than an hour old: it names changes that merged si
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /more than an hour old; run `yokoten conflicts` again/);
+});
+
+/** A gh on PATH that logs each call and answers none, so any read or merge shows in the log. */
+function loggingGh(sandbox: ReturnType<typeof makeSandbox>): { extra: Record<string, string>; calls: () => string[] } {
+  const bin = join(sandbox.home, 'bin');
+  const log = join(sandbox.home, 'gh.log');
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nimport('node:fs').then(({ appendFileSync }) => { appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(' ') + '\\n'); process.exit(1); });\n`, { mode: 0o755 });
+  const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : []);
+  return { extra: { PATH: `${bin}${delimiter}${process.env.PATH}` }, calls };
+}
+
+// #1042: a bare command only reads. Bare train prints the plan and merges nothing.
+test('bare train prints the plan with its order, says nothing merged, and calls no gh', async () => {
+  const sandbox = makeSandbox();
+  const map = mapOf([change('pr:12'), change('pr:9', { moves: ['src/old.ts'] }), change('branch:local'), change('pr:5')], [pair('pr:12', 'pr:5')]);
+  sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...map, builtAt: new Date().toISOString() }));
+  const gh = loggingGh(sandbox);
+  const result = await sandbox.call(['train'], { extra: gh.extra });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^yokoten train · the plan for 3 pull requests; nothing merged\n/);
+  assert.match(result.stdout, /next {8}PR #9: it moves or deletes 1 file/);
+  assert.match(result.stdout, /Order: #9 → #12 → #5/);
+  assert.match(result.stdout, /Merge: name them in this order, as in `yokoten train 9 12`/);
+  assert.doesNotMatch(result.stdout, /branch local|merged \d/);
+  assert.deepEqual(gh.calls(), [], 'a bare train makes no gh call, so no merge call');
+});
+
+test('bare train folds a long queue so the plan fits one screen', async () => {
+  const sandbox = makeSandbox();
+  const changes = Array.from({ length: 30 }, (_, index) => change(`pr:${index + 1}`));
+  sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...mapOf(changes), builtAt: new Date().toISOString() }));
+  const result = await sandbox.call(['train']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /22 more pull requests, in the order below/);
+  assert.ok(result.stdout.split('\n').length <= 24, result.stdout);
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, `over 80: ${line}`);
+});
+
+test('train with no numbers merges nothing even with a bot set up: the bare command never merges', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...mapOf([change('pr:7')]), builtAt: new Date().toISOString() }));
+  const gh = loggingGh(sandbox);
+  const result = await sandbox.call(['train', '--wait', '60'], { extra: { ...gh.extra, YOKOTEN_BOT_APP_ID: '1' } });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /nothing merged/);
+  assert.doesNotMatch(result.stdout, /merged \d+ of/);
+  assert.deepEqual(gh.calls(), []);
 });

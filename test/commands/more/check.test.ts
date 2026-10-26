@@ -20,6 +20,7 @@ import {
   at,
   CLI,
   makeSandbox,
+  ROOT,
 } from '../../repo/helpers.ts';
 import { invoke } from '../../repo/invoke.ts';
 import { type ActionsHealth, cutPoint, failureWord, readActionsRuns, redactStream, runRedact, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
@@ -1166,6 +1167,44 @@ test('ci-health --dry-run: prints the report and touches no issue', async () => 
   ], 'a dry run reads, and writes no issue');
 });
 
+// #1046: a bare command reads and shows. Only --write touches the issue.
+test('ci-health with no flag prints the report, writes no issue and names --write', async () => {
+  const sandbox = makeSandbox();
+  const extra = healthGh(sandbox, {
+    'api repos/octo/demo/actions/runs?per_page=100&page=1': JSON.stringify({ workflow_runs: [healthRun({ id: 1, conclusion: 'failure' })] }),
+    'pr list --repo octo/demo --state open --limit 100 --json number,title,url,isDraft,statusCheckRollup': JSON.stringify([]),
+    // An answer for every write, so only the code, not a failing stub, keeps them from running.
+    'issue list --repo octo/demo --state open --limit 100 --search "CI health" in:title --json number,title': JSON.stringify([{ number: 12, title: 'CI health' }]),
+    'issue edit 12 --repo octo/demo --body-file': '',
+    'issue create --repo octo/demo --title CI health --body-file': 'https://github.com/octo/demo/issues/12',
+    'issue pin 12 --repo octo/demo': '',
+  });
+  const result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /\*\*failure\*\*/);
+  assert.match(result.stdout, /nothing written; `--write` puts this report in the pinned issue "CI health"/);
+  assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
+});
+
+test('ci-health refuses --write with --dry-run before it reads anything', async () => {
+  const sandbox = makeSandbox();
+  const extra = healthGh(sandbox, {});
+  const result = await sandbox.call(['ci-health', '--repo', 'octo/demo', '--write', '--dry-run'], { extra });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /pass one of them/);
+  assert.deepEqual(healthCalls(sandbox), []);
+});
+
+// #1046: every workflow that runs ci-health asks for the write by name.
+test('ci-health: each workflow that runs it passes --write', () => {
+  const files = [join(ROOT, 'kit/project/.github/workflows/actions-health.yml'), join(ROOT, '.github/workflows/actions-health.yml')];
+  for (const file of files) {
+    const runs = readFileSync(file, 'utf8').split('\n').filter((line) => /\bci-health\b/.test(line) && /\brun:/.test(line));
+    assert.ok(runs.length > 0, `${file} runs ci-health`);
+    for (const line of runs) assert.match(line, /ci-health --write\b/, `${file}: ${line.trim()}`);
+  }
+});
+
 test('ci-health: opens and pins the one report issue, then edits it in place', async () => {
   const sandbox = makeSandbox();
   const runs = JSON.stringify({ workflow_runs: [healthRun({ id: 1 })] });
@@ -1177,7 +1216,7 @@ test('ci-health: opens and pins the one report issue, then edits it in place', a
     'issue create --repo octo/demo --title CI health --body-file': 'https://github.com/octo/demo/issues/12',
     'issue pin 12 --repo octo/demo': '',
   });
-  let result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
+  let result = await sandbox.call(['ci-health', '--repo', 'octo/demo', '--write'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /opened issue #12 in octo\/demo/);
   assert.match(result.stdout, /0 problems/);
@@ -1195,7 +1234,7 @@ test('ci-health: opens and pins the one report issue, then edits it in place', a
     'issue edit 12 --repo octo/demo --body-file': '',
     'issue pin 12 --repo octo/demo': '',
   });
-  result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra: edit });
+  result = await sandbox.call(['ci-health', '--repo', 'octo/demo', '--write'], { extra: edit });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /updated issue #12 in octo\/demo/);
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue create')), 'the second run edits, never makes a second issue');
