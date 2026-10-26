@@ -76,7 +76,7 @@ const DESK_IN_WSL = 'the desk runs in WSL on Windows (record 0043)';
 
 /** First match wins, so a narrower area comes before the folder that holds it. */
 export const TEST_AREAS: readonly TestArea[] = [
-  { area: 'desk fence', paths: ['test/agents/desk/bwrap.test.ts', 'test/agents/desk/seatbelt.test.ts', 'test/agents/desk/network/'], skip: { win32: DESK_IN_WSL } },
+  { area: 'desk fence', paths: ['test/agents/desk/fence/', 'test/agents/desk/network/'], skip: { win32: DESK_IN_WSL } },
   { area: 'desk', paths: ['test/agents/desk/'], skip: { win32: DESK_IN_WSL } },
   { area: 'kanban server', paths: ['test/commands/kanban/server.test.ts'], skip: { win32: DESK_IN_WSL } },
 ];
