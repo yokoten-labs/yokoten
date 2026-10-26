@@ -9,7 +9,6 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
-  readlinkSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -132,17 +131,21 @@ test('hook: a worker writes no lead-only file in another repo or a CODEOWNERS an
     { file: join(sandbox.repo, 'docs', 'guide.md'), tool: 'Write', refused: false },
     { file: join(own.repo, 'CODEOWNERS'), tool: 'Write', refused: false },
   ];
-  for (const { file, tool, refused } of cases) {
-    for (const hook of [['hook'], ['hook', '--commands-only']]) {
-      for (const worker of [true, false]) {
-        const toolInput = tool === 'Bash' ? { command: `echo x > ${file.replaceAll('\\', '/')}` } : { file_path: file, content: 'x' };
-        const input = JSON.stringify({ cwd: sandbox.repo, tool_name: tool, tool_input: toolInput, ...(worker ? { agent_type: 'worker' } : {}) });
-        const result = await sandbox.call(hook, { input });
-        const label = `${hook.join(' ')}, ${worker ? 'worker' : 'lead'} ${tool} ${file}`;
-        assert.equal(result.status, worker && refused ? 2 : 0, `${label}: ${result.stderr}`);
-        if (worker && refused) assert.match(result.stderr, /lead-only/, label);
-      }
+  const call = async (hook: string[], { file, tool }: { file: string; tool: 'Write' | 'Bash' }, worker: boolean) => {
+    const toolInput = tool === 'Bash' ? { command: `echo x > ${file.replaceAll('\\', '/')}` } : { file_path: file, content: 'x' };
+    const input = JSON.stringify({ cwd: sandbox.repo, tool_name: tool, tool_input: toolInput, ...(worker ? { agent_type: 'worker' } : {}) });
+    return sandbox.call(hook, { input });
+  };
+  for (const hook of [['hook'], ['hook', '--commands-only']]) {
+    for (const row of cases) {
+      const result = await call(hook, row, true);
+      const label = `${hook.join(' ')}, worker ${row.tool} ${row.file}`;
+      assert.equal(result.status, row.refused ? 2 : 0, `${label}: ${result.stderr}`);
+      if (row.refused) assert.match(result.stderr, /lead-only/, label);
     }
+    // The lead writes them: one control per mode. checkEdit's unit test has every path for the lead.
+    const lead = await call(hook, cases[0], false);
+    assert.equal(lead.status, 0, `${hook.join(' ')}, lead: ${lead.stderr}`);
   }
 });
 
@@ -231,6 +234,8 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   for (const k of ['what', 'why', 'fix']) assert.ok(out.findings[0][k]);
   // Not a Stop event, or not a repo: the turn ends.
   for (const input of ['not json', '', 'null', '[1]']) assert.equal((await sandbox.call(['hook', '--stop'], { input })).status, 0, input);
+  // Not a tool call either: the tool-call guard reads the given stdin and says so in --json (#475).
+  assert.deepEqual(pick(await sandbox.call(['hook', '--json'], { input: 'not json' })), [0, `${JSON.stringify({ blocked: false, toolCall: false }, null, 2)}\n`, '']);
   const away = makeTempDir('yokoten-away-');
   assert.equal((await sandbox.call(['hook', '--stop'], { input: JSON.stringify({ cwd: away }) })).status, 0);
   // Outside a repo the guard still stops a tag push, and git's own error stays hidden:
@@ -300,12 +305,8 @@ test('hook --stop --agent codex|gemini: the end-of-turn event sends the agent ba
   assert.equal(shell(command('.codex/hooks.json', 'Stop'), events.codex(false)).status, 2, 'the Codex Stop hook');
   assert.equal(shell(command('.gemini/settings.json', 'AfterAgent'), events.gemini(false)).status, 2, 'the Gemini AfterAgent hook');
   assert.equal(shell(command('.codex/hooks.json', 'Stop'), events.codex(true)).status, 0);
-  // doctor's codex-hook step wants the stop check too.
-  const codexFile = join(sandbox.repo, '.codex', 'hooks.json');
-  const hooks = JSON.parse(readFileSync(codexFile, 'utf8'));
-  delete hooks.hooks.Stop;
-  writeFileSync(codexFile, JSON.stringify(hooks));
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +codex-hook: no stop check in \.codex\/hooks\.json/);
+  // doctor's codex-hook step wants the stop check too: an agentHooks row in
+  // test/agents/runtimes/codex.test.ts (#1109).
 });
 
 // The release refusal is the same plain sentence for every runtime (#931): the approval way
@@ -329,14 +330,16 @@ test('hook --agent: the release refusal is the same plain sentence (#931)', asyn
     const result = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input) });
     assert.match(result.stderr, /^yokoten stopped this: git push --tags pushes tags \[release\]\n\n  Why       Only the owner decides when to release\.\n  Instead   Stop and tell the owner: only the owner releases, with the steps in\n {12}How to release; do not look for another way\.\n  More      https:\/\/\S+#how-to-release\n$/, agent);
     assert.doesNotMatch(result.stderr, /YOKOTEN_RELEASE_APPROVAL|new session/, agent);
-    // --json carries the same fix.
-    const json = JSON.parse((await sandbox.call(['hook', '--agent', agent, '--json'], { input: JSON.stringify(input) })).stdout);
-    assert.equal(json.finding.fix, plain, agent);
-    // Another refusal keeps its own fix.
-    const force = await sandbox.call(['hook', '--agent', agent], { input: JSON.stringify(input).replace('--tags', '--force') });
-    assert.match(force.stderr, /git push --force/, `${agent}: a force push`);
-    assert.doesNotMatch(force.stderr, /How to release/, `${agent}: a force push`);
   }
+  // The fix is one sentence whatever the agent: --json and another refusal, for one agent (#1109).
+  const input = JSON.stringify(agents['claude-code']);
+  // --json carries the same fix.
+  const json = JSON.parse((await sandbox.call(['hook', '--agent', 'claude-code', '--json'], { input })).stdout);
+  assert.equal(json.finding.fix, plain);
+  // Another refusal keeps its own fix.
+  const force = await sandbox.call(['hook', '--agent', 'claude-code'], { input: input.replace('--tags', '--force') });
+  assert.match(force.stderr, /git push --force/, 'a force push');
+  assert.doesNotMatch(force.stderr, /How to release/, 'a force push');
 });
 
 // #707: Claude Code gets a deny in JSON on exit 0, so its "hook error" line and the shell
@@ -401,14 +404,8 @@ test('hook: a Claude Code refusal is one JSON deny on exit 0, for every kind of 
   const late = JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `find . ${'-exec env '.repeat(30000)}` } });
   const deadline = runChild('node', ['--max-old-space-size=256', CLI, 'hook', '--commands-only', '--agent', 'claude-code'], { cwd: sandbox.repo, env: { ...sandbox.env, CLAUDECODE: '1', YOKOTEN_GUARD_DEADLINE_MS: '1' }, input: late });
   denied(deadline, 'the deadline');
-  // The project hook names no agent: Copilot CLI reads it, so it refuses on exit 2 even in
-  // a process that carries Claude Code's marker. A refusal never becomes an allow.
-  const shared = await sandbox.call(['hook', '--commands-only'], {
-    input: JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git push --force origin main' } }),
-    extra: { CLAUDECODE: '1' },
-  });
-  assert.equal(shared.status, 2);
-  assert.equal(JSON.parse(shared.stdout).permissionDecision, 'deny');
+  // The project hook, which names no agent, refuses on exit 2 even with Claude Code's
+  // marker: the #707 test holds it.
 });
 
 // #800: a deny in JSON on exit 0 is the whole answer, or it is no answer at all. A hook that
@@ -477,10 +474,13 @@ test('hook: a custom format, shortlog -sne and blame -e come back rewritten, and
     assert.equal(result.status, 0, result.stderr);
     const output = JSON.parse(result.stdout).hookSpecificOutput;
     assert.equal(output.permissionDecision, 'allow', command);
+    assert.match(output.updatedInput.command, /^set -o pipefail # yokoten-redact\n[\s\S]* redact \|\| /, command);
     // Positive control: the same command, not rewritten, prints the name and email.
     const plain = spawnSync('bash', ['-c', command], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
     assert.ok(plain.stdout.includes('Jane') || plain.stdout.includes(email), `${command}: ${plain.stdout}`);
-    const ran = spawnSync('bash', ['-c', output.updatedInput.command], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
+    // The rewrite pipes that output through `yokoten redact`: here in-process (#1109). The
+    // #390 test above runs one rewrite as a real pipeline.
+    const ran = await sandbox.call(['redact'], { input: plain.stdout });
     assert.equal(ran.status, 0, ran.stderr);
     assert.match(ran.stdout, /<owner>|<email>/, command);
     assert.ok(!ran.stdout.includes('Jane') && !ran.stdout.includes(email), `${command}: ${ran.stdout}`);
@@ -559,25 +559,6 @@ test('redactCommand: this node and this copy of yokoten, with the home folder as
 
 // #475: in this process, the hook reads the tool call from the invocation's stdin, never the
 // test runner's. The child-process tests above keep the real entry covered.
-test('hook: in-process, the tool call and the end-of-turn event come from the given stdin (#475)', async () => {
-  const sandbox = makeSandbox();
-  const run = (args: string[], stdin: string) => invoke(['hook', ...args], { env: sandbox.env, cwd: sandbox.repo, stdin });
-  const call = (command: string) => JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } });
-  const force = await run([], call('git push --force'));
-  assert.equal(force.code, 2);
-  assert.match(force.stderr, /^yokoten stopped this: git push --force forces the push \[force-push\]/);
-  assert.deepEqual(await run([], call('git status')), { code: 0, stdout: '', stderr: '' });
-  assert.deepEqual(await run(['--json'], 'not json'), { code: 0, stdout: `${JSON.stringify({ blocked: false, toolCall: false }, null, 2)}\n`, stderr: '' });
-  // The stop check: a secret in a changed file sends the agent back, once.
-  const key = `${'AK'}IA${'Q7W3R9T2Y5Q7W3R9'}`;
-  sandbox.write('out.txt', `${key}\n`);
-  const stop = (active: boolean) => run(['--stop'], JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'Stop', stop_hook_active: active }));
-  const sentBack = await stop(false);
-  assert.equal(sentBack.code, 2);
-  assert.match(sentBack.stderr, /out\.txt:1: a secret/);
-  assert.deepEqual(await stop(true), { code: 0, stdout: '', stderr: '' });
-});
-
 test('hook --stop: a worker is done only when the done-when check passes (#614)', { skip: process.platform === 'win32' && 'the done-when commands use sh syntax' }, async () => {
   const sandbox = makeSandbox();
   sandbox.write('a.md', 'fine\n');
@@ -768,12 +749,7 @@ test('hook --stop: a read-only home lets the same worker through for 5 minutes (
     const other = await stop('mark-b');
     assert.equal(other.status, 2, other.stderr);
     assert.match(other.stderr, /This was try 1 of 3/);
-    const stale = new Date(Date.now() - 6 * 60 * 1000).toISOString();
-    writeFileSync(marker('mark-a'), `${stale}\n`);
-    const again = await stop('mark-a');
-    assert.equal(again.status, 2, again.stderr);
-    const later = await stop('mark-a');
-    assert.equal(later.status, 0, later.stderr);
+    // Past five minutes the marker is a new refusal: the 'refused marker' unit test in test/run/hook.test.ts.
     assert.equal(existsSync(join(sandbox.home, '.config', 'yokoten', 'done-tries')), false, 'no try count was saved');
     assert.equal(existsSync(join(sandbox.repo, '.yokoten-agent.json')), false, 'the main checkout is not written');
   } finally {
@@ -781,7 +757,9 @@ test('hook --stop: a read-only home lets the same worker through for 5 minutes (
   }
 });
 
-test('hook --stop: a linked worktree records failing, then passing, and a link is left unchanged (#614)', { skip: process.platform === 'win32' && 'the done-when commands use sh syntax' }, async () => {
+// A link in place of the status file is left unchanged: the writeAgentChecks unit test in
+// test/run/hook.test.ts.
+test('hook --stop: a linked worktree records failing, then passing (#614)', { skip: process.platform === 'win32' && 'the done-when commands use sh syntax' }, async () => {
   const sandbox = makeSandbox();
   sandbox.write('a.md', 'fine\n');
   sandbox.git('add', '.');
@@ -817,24 +795,6 @@ test('hook --stop: a linked worktree records failing, then passing, and a link i
   assert.equal(status.name, 'worker-1');
   assert.equal(status.role, 'engineer');
   assert.match(status.updated, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
-  rmSync(statusPath);
-  const outside = join(sandbox.home, 'outside.json');
-  const outsideText = `${JSON.stringify({ keep: true })}\n`;
-  writeFileSync(outside, outsideText);
-  symlinkSync(outside, statusPath);
-  result = await stop('checks-link', 'true');
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /is not a regular file, so it was left unchanged/);
-  assert.equal(readFileSync(outside, 'utf8'), outsideText);
-  assert.equal(readlinkSync(statusPath), outside);
-  rmSync(statusPath);
-  const notes = join(sandbox.home, 'notes.txt');
-  writeFileSync(notes, 'keep notes\n');
-  symlinkSync(notes, statusPath);
-  result = await stop('checks-notes', 'true');
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(notes, 'utf8'), 'keep notes\n');
-  assert.equal(lstatSync(statusPath).isSymbolicLink(), true);
 });
 
 // cwd `sub` is a link to another worktree. The status file there must stay as it was.
@@ -987,40 +947,19 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   // Claude Code, in a subfolder of the worktree, is a worker too.
   result = await sandbox.call(['hook'], { cwd: tree, input: JSON.stringify({ cwd: join(tree, 'src'), tool_name: 'Edit', tool_input: { file_path: join(tree, 'AGENTS.md') } }) });
   assert.equal(result.status, 2);
-  // What a worker sends: the lead pushes and posts after review (M2).
-  for (const command of [
-    'yokoten bot -- gh pr create --fill',
-    'yokoten bot -- git push',
-    'git -c alias.p=push p',
-    'git config alias.p push',
-    'git send-pack origin HEAD:main',
-    'git subtree push --prefix=docs origin pages',
-    'gh pr create --fill',
-    'gh pr merge 1 --squash',
-    'gh api -X PUT repos/a/b/pulls/1/merge',
-    'gh api repos/a/b/issues -f title=x',
-  ]) {
-    result = await refused(command, /worker-push|worker does not push|pushes|host|alias|bot/);
-    assert.match(result.stderr.replace(/\n {12}/g, ' '), /  Instead   .*carries the worker mark/, command);
-  }
+  // What a worker sends: the lead pushes and posts after review (M2). The Instead line names
+  // the mark. Every way to send, and every way to drop the mark, is a checkCommand row in
+  // test/rules/guards/worker/sends.test.ts (#1109); here one of each goes through the hook.
+  result = await refused('gh pr create --fill', /\[worker-push\]/);
+  assert.match(result.stderr.replace(/\n {12}/g, ' '), /  Instead   .*carries the worker mark/);
   // The reviewer's ways to drop the mark (H1, L2).
   const gitDir = runChild('git', ['rev-parse', '--absolute-git-dir'], { cwd: tree }).stdout.trim();
   const mark = join(gitDir, 'yokoten-worker');
   assert.ok(existsSync(mark));
-  for (const command of [
-    'rm "$(sed "s/gitdir: //" .gi?)"/yokoten-w*',
-    `rm ${mark}`,
-    'rm -rf "$(git rev-parse --absolute-git-dir)"',
-    `rm -rf ${join(sandbox.repo, '.git', 'worktrees')}`,
-    'chmod 000 .gi?',
-    'mv .gi? x',
-    'mkfifo .git',
-    'echo "gitdir: ../repo/.git" > .git',
-    'GIT_DIR=../repo/.git git status',
-    `git worktree remove --force ${tree}`,
-    'git worktree prune',
-    'git -C ../repo worktree move wt wt2',
-  ]) await refused(command, /worker mark/);
+  await refused(`rm ${mark}`, /worker mark/);
+  // Nor can it unmark, even after cd-ing away (#566); list.test.ts has the other spellings.
+  result = await refused(`cd /tmp && yokoten worker unmark ${top}`, /\[worker-mark\]/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /only the lead unmarks a worktree/);
   for (const path of [mark, join(tree, '.git'), join(sandbox.repo, '.git', 'config')]) {
     result = await muse({ path });
     assert.equal(result.status, 2, path);
@@ -1029,16 +968,8 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   assert.ok(existsSync(mark), 'the mark is still there');
   // Work goes on: code edits, commits, and reads that name .git or GIT_DIR pass (L2).
   assert.equal((await muse({ path: join(tree, 'src', 'a.ts') })).status, 0);
-  for (const command of [
-    'git commit -qm "fix: a"',
-    'git status && cat .gitignore',
-    'git worktree list',
-    'grep -rn foo --exclude-dir=.git .',
-    'find . -path ./.git -prune -o -print',
-    'grep -rn GIT_DIR src',
-    'tree -I .git',
-    'gh pr view 1',
-  ]) assert.equal((await muse({ command })).status, 0, command);
+  // More reads are allowed rows in sends.test.ts.
+  for (const command of ['git commit -qm "fix: a"', 'git status && cat .gitignore']) assert.equal((await muse({ command })).status, 0, command);
   // Fails closed (H1): a .git the guard can't read makes the session a worker, and is never
   // read when it is a FIFO. Modes need a user they stop: not root.
   const dotGit = join(tree, '.git');
@@ -1240,33 +1171,6 @@ test('worker list: mark keeps the role with .git moved away; unmark clears it (#
 // #566: `worker unmark` is the lead's: from a marked tree with no YOKOTEN_ROLE (a Muse
 // session), even `cd /tmp && yokoten worker unmark <tree>` is refused, since the role
 // comes from the session's folders, never from the command text.
-test('worker list: a marked worker cannot unmark its own worktree, even after cd-ing away (#566)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.write('yokoten.json', '{}\n');
-  sandbox.write('AGENTS.md', '# rules\n');
-  sandbox.git('add', '.');
-  sandbox.git('commit', '-qm', 'start');
-  const tree = join(makeTempDir('yokoten-tree-'), 'wt');
-  sandbox.git('worktree', 'add', '-q', '-b', 'task', tree);
-  const top = realpathSync(tree);
-  assert.equal((await sandbox.call(['worker', 'mark', tree])).status, 0);
-  // A Muse call: no YOKOTEN_ROLE, the hook's cwd in the marked tree.
-  const muse = (command: string, folder = tree) =>
-    sandbox.call(['hook', '--agent', 'muse'], { cwd: folder, input: JSON.stringify({ cwd: folder, hook_event_name: 'PreToolUse', tool_name: 'bash', tool_input: { command } }) });
-  // Positive controls: the plain unmark, and one that cds away first.
-  for (const command of [`yokoten worker unmark ${top}`, `cd /tmp && yokoten worker unmark ${top}`]) {
-    const result = await muse(command);
-    assert.equal(result.status, 2, command);
-    assert.match(result.stderr.replace(/\s+/g, ' '), /only the lead unmarks a worktree/, command);
-  }
-  // Negative control: the lead, in an unmarked checkout with no worker role, passes.
-  assert.equal((await muse(`yokoten worker unmark ${top}`, sandbox.repo)).status, 0);
-  // The mark is still there: nothing was cleared.
-  const gitDir = runChild('git', ['rev-parse', '--absolute-git-dir'], { cwd: tree }).stdout.trim();
-  assert.ok(existsSync(join(gitDir, 'yokoten-worker')));
-  sandbox.git('worktree', 'remove', '--force', tree);
-});
-
 // `worker env` lists the names an agent would get, and counts the rest; it never prints a
 // value (#613). The values are fake; each token is joined from parts.
 test('worker env: it names what an agent gets and counts what is dropped, and prints no value (#613)', async () => {
@@ -1430,55 +1334,17 @@ test('session start: a lead registers its log path; a worker does not (#700)', a
 // reached the hook in a repo with no yokoten.json, as a new user has. Git reads a
 // shortened long option (`--har` is `--hard`, `--del` is `--delete`), so the guard reads
 // one the same way, and refuses a form it cannot tell apart.
+// Every red-team call, refused and allowed, is a checkCommand row in
+// test/rules/guards/commands/lose-work.test.ts (#828). Through the hook: one of each (#1109).
 test('hook: protection 1 refuses the red-team calls that lose work (#828)', async () => {
   const sandbox = makeSandbox();
   const bash = (command: string) =>
     sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_name: 'Bash', tool_input: { command } }) });
-  const refused = [
-    'rm -rf .',
-    'rm -rf ..',
-    'git reset --har HEAD',
-    'git reset --h HEAD',
-    'git push --del origin main',
-    'git clean -fdx',
-    'git checkout .',
-    'git restore .',
-    'git stash clear',
-    'git stash drop',
-    'git gc --prune=now',
-    'git prune --expire=now',
-    'git reflog expire --expire=now --all',
-    'git filter-branch --force --all',
-    'git update-ref refs/heads/main HEAD~1',
-    'git branch -f main HEAD~1',
-    'git checkout -B main HEAD~1',
-  ];
-  for (const command of refused) {
-    const result = await bash(command);
-    assert.equal(result.status, 2, `should refuse: ${command}\n${result.stdout}${result.stderr}`);
-    assert.match(result.stderr, /^yokoten stopped this: (?:[^\n]|\n(?= {22}))+ \[[a-z-]+\]\n\n  Why       [\s\S]+?\n  Instead   [^\n]+(?:\n {12}[^\n]+)*\n  More      \S+/, command);
-  }
+  const result = await bash('git reset --har HEAD');
+  assert.equal(result.status, 2, `${result.stdout}${result.stderr}`);
+  assert.match(result.stderr, /^yokoten stopped this: (?:[^\n]|\n(?= {22}))+ \[hard-reset\]\n\n  Why       [\s\S]+?\n  Instead   [^\n]+(?:\n {12}[^\n]+)*\n  More      \S+/);
   // Everyday work still passes, including the spellings that only read or save work.
-  for (const command of [
-    'git status',
-    'git stash list',
-    'git stash',
-    'git clean -n',
-    'git clean -nd',
-    'git checkout main',
-    'git checkout -b feature',
-    'git checkout -- src/cart/import.ts',
-    'git restore src/cart/import.ts',
-    'git restore --staged .',
-    'git gc',
-    'git reflog',
-    'git update-ref --verify refs/heads/main',
-    'git branch -f feature HEAD~1',
-    'git checkout -B feature HEAD~1',
-    'rm -rf dist',
-  ]) {
-    assert.equal((await bash(command)).status, 0, `should allow: ${command}`);
-  }
+  assert.equal((await bash('git checkout -- src/cart/import.ts')).status, 0);
 });
 
 // #621: a stop writes one line to the stop log on this computer, with the command masked.

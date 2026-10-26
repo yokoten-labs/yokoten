@@ -36,10 +36,15 @@ test('fix task: test files are off limits', () => {
 
 test('lead-only files: a worker is stopped, the lead is not', () => {
   const worker = { YOKOTEN_ROLE: 'worker' };
-  for (const p of ['AGENTS.md', 'CLAUDE.md', 'yokoten.json', '.claude/settings.json', '.claude-plugin/plugin.json', '.codex/hooks.json', '.gemini/settings.json', '.github/workflows/ci.yml', '.githooks/pre-commit', '.yokoten/src/run/check.ts', '.yokotenignore']) {
+  for (const p of ['AGENTS.md', 'CLAUDE.md', 'yokoten.json', '.claude/settings.json', '.claude-plugin/plugin.json', '.codex/hooks.json', '.gemini/settings.json', '.github/workflows/ci.yml', '.githooks/pre-commit', '.yokoten/src/run/check.ts', '.yokotenignore', 'CODEOWNERS', 'docs/CODEOWNERS', '.github/CODEOWNERS']) {
     assert.ok(checkEdit(p, { config: DEFAULTS, env: worker }), p);
     assert.equal(checkEdit(p, { config: DEFAULTS, env: {} }), null, p);
   }
+  // A project's own "leadOnly" list stays its own: the defaults never add CODEOWNERS to it (#1105).
+  const own = { ...DEFAULTS, leadOnly: ['AGENTS.md'] };
+  assert.ok(checkEdit('AGENTS.md', { config: own, env: worker }));
+  assert.equal(checkEdit('CODEOWNERS', { config: own, env: worker }), null);
+  assert.equal(checkEdit('docs/CODEOWNERS', { config: own, env: worker }), null);
   // A glob with a slash is the root's folder only; one without matches in any folder.
   assert.ok(checkEdit('kit/project/AGENTS.md', { config: DEFAULTS, env: worker }));
   assert.equal(checkEdit('kit/project/.github/workflows/x.yml', { config: DEFAULTS, env: worker }), null);
