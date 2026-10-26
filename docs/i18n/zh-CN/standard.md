@@ -175,7 +175,7 @@ agent 离开以后，它的列表也丢掉。
 | `done` | `Finished` | 点变成 `done`，而且这个 agent 本来就在看板上 |
 
 谁来写。看板进程，在 `yokoten board` 运行的时候写。
-谁来读。看板页面，还有 `/data` 里的 `feedsJson`。
+谁来读。看板的旧页面，通过 `feedsJson`，直到新页面换掉它。
 怎么检查。`recordFeed` 拿上一份视图和这一份比。
 版本 1。这条记录没有版本字段。
 
@@ -341,7 +341,7 @@ hook 先写临时文件再改名，所以中途出现的符号链接会被换掉
 - [src/run/hook.ts](../../../src/run/hook.ts) 和 [test/run/hook.test.ts](../../../test/run/hook.test.ts)。
 - [src/commands/hook.ts](../../../src/commands/hook.ts) 和 [test/commands/hook.test.ts](../../../test/commands/hook.test.ts)。
 - [src/commands/kanban/agents.ts](../../../src/commands/kanban/agents.ts) 和 [test/commands/kanban/agents.test.ts](../../../test/commands/kanban/agents.test.ts)。
-- [src/commands/kanban/controls.ts](../../../src/commands/kanban/controls.ts) 和 [test/commands/kanban/controls.test.ts](../../../test/commands/kanban/controls.test.ts)。
+- [src/commands/kanban/feed/read/waiting.ts](../../../src/commands/kanban/feed/read/waiting.ts) 和 [test/commands/kanban/feed/read/waiting.test.ts](../../../test/commands/kanban/feed/read/waiting.test.ts)。
 - [src/commands/kanban/view.ts](../../../src/commands/kanban/view.ts) 和 [test/commands/kanban/view.test.ts](../../../test/commands/kanban/view.test.ts)。
 
 ## Made-with 行

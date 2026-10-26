@@ -3,6 +3,7 @@
 // worktree's root, and leaves by removing it. The hooks write it for every vendor (#685).
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { type Env } from '../../rules/config.ts';
@@ -86,6 +87,14 @@ export function parseBoardAgent(text: string, worktree: string): BoardAgent | nu
     state: pickWord(fields, 'state', ['working', 'waiting', 'done'] as const),
     checks: pickWord(fields, 'checks', ['passing', 'failing'] as const),
   };
+}
+
+/**
+ * A session's id for the kanban (record 0044): a hash of its desk's shown path (`~` for
+ * home), so the id never carries the path, and stays the same while the desk does.
+ */
+export function sessionId(shownPath: string): string {
+  return createHash('sha256').update(`yokoten-session\0${shownPath}`).digest('hex').slice(0, 16);
 }
 
 /** One agent with the worktree it was read from, so the board can tell two agents apart. */

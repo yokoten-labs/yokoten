@@ -2,7 +2,7 @@
 // The board page's right side (#603, #693): open pull requests, what merged today,
 // and the board's own controls. The page does not mount this column (#737).
 
-import type { BoardIssue, BoardLimits, BoardRun } from '../controls.ts';
+import type { BoardIssue, BoardLimits, BoardRun } from '../feed/read/waiting.ts';
 import { vendorOf, type PullView } from '../view.ts';
 import { el, foldHead, icon, localDay, say, type PageData, type PageState } from './browser/script.ts';
 

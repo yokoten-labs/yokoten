@@ -1,4 +1,4 @@
-// Tests for src/commands/kanban/feed/route.ts: /feed on the board server.
+// Tests for src/commands/kanban/feed/route.ts: a session's stream on the kanban server.
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
@@ -7,6 +7,7 @@ import { request } from 'node:http';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox } from '../../../repo/helpers.ts';
+import { sessionId } from '../../../../src/commands/kanban/agents.ts';
 import { claudeFolder } from '../../../../src/commands/kanban/feed/read/logs.ts';
 import { startBoardServer } from '../../../../src/commands/kanban/server.ts';
 import type { Gh } from '../../../../src/host/github/index.ts';
@@ -30,6 +31,29 @@ function get(target: string, headers: Record<string, string> = {}): Promise<{ st
   });
 }
 
+/** The stream of session `id`: the first event's answer as JSON, or the whole answer when it is not a stream. */
+function firstEvent(base: string, id: string, headers: Record<string, string>): Promise<{ status: number; kind: string; text: string }> {
+  const url = new URL(`${base}api/sessions/${id}/stream`);
+  return new Promise((done, failed) => {
+    const asked = request({ host: dialHost(url.hostname), port: url.port, path: url.pathname, headers: { ...headers, host: headers.host ?? url.host } }, (res) => {
+      const parts: Buffer[] = [];
+      const kind = String(res.headers['content-type'] ?? '');
+      res.on('data', (chunk: Buffer) => {
+        parts.push(chunk);
+        const text = Buffer.concat(parts).toString('utf8');
+        const event = /^id: [^\n]*\ndata: (.*)\n\n/.exec(text);
+        if (event) {
+          res.destroy();
+          done({ status: res.statusCode ?? 0, kind, text: event[1] });
+        }
+      });
+      res.on('end', () => done({ status: res.statusCode ?? 0, kind, text: Buffer.concat(parts).toString('utf8') }));
+    });
+    asked.on('error', failed);
+    asked.end();
+  });
+}
+
 /** The cookie from the first visit. The link's token sets it and redirects. */
 async function boardCookie(url: string): Promise<string> {
   const first = await get(url);
@@ -46,8 +70,8 @@ const EMAIL = ['someone', 'personal-mail.com'].join('@');
 const TOKEN = `${'gh'}p_${'a1B2c3D4e5'.repeat(4).slice(0, 36)}`;
 const MARK = 'zebracorn';
 
-// #694: the page asks /feed for one agent's session. Every line is masked before it leaves.
-test('board feed route: a home path, an email, a token and a private mark never reach /feed', async () => {
+// #694: the page streams one session. Every line is masked before it leaves.
+test('kanban stream: a home path, an email, a token and a private mark never reach the stream', async () => {
   const sandbox = makeSandbox();
   const home = dirname(sandbox.repo);
   const env = { ...sandbox.env, HOME: home };
@@ -72,11 +96,11 @@ test('board feed route: a home path, an email, a token and a private mark never 
     const base = url.split('?')[0];
     const token = new URL(url).searchParams.get('token') ?? '';
     const cookie = await boardCookie(url);
-    const feedUrl = (agent: string, after = '') => `${base}feed?agent=${encodeURIComponent(agent)}&after=${encodeURIComponent(after)}`;
-    const answer = await get(feedUrl('~/repo'), { cookie });
+    const id = sessionId('~/repo');
+    const answer = await firstEvent(base, id, { cookie });
     assert.equal(answer.text.includes(token), false, 'the feed does not echo the token');
     assert.equal(answer.status, 200, answer.text);
-    assert.equal(answer.kind, 'application/json; charset=utf-8', 'text in JSON, never HTML');
+    assert.equal(answer.kind, 'text/event-stream; charset=utf-8', 'text in JSON events, never HTML');
     for (const secret of [home, EMAIL, TOKEN, MARK, MARK.toUpperCase()]) assert.ok(!answer.text.includes(secret), `${secret === home ? 'the home folder' : 'a private value'} never leaves`);
     const body = JSON.parse(answer.text) as { source: string; next: string; items: { kind: string; text: string; full?: string }[] };
     assert.equal(body.source, 'claude');
@@ -85,20 +109,21 @@ test('board feed route: a home path, an email, a token and a private mark never 
     assert.equal(body.items[1].full, 'cat ~/repo/notes # <email> <secret>');
     assert.equal(body.items[2].text, '~/.ssh <mark> <script>alert(1)</script>', 'the page puts it in as text');
     // The cursor brings only what came after it.
-    const again = JSON.parse((await get(feedUrl('~/repo', body.next), { cookie })).text) as { items: unknown[]; reset: boolean };
+    const again = JSON.parse((await firstEvent(base, id, { cookie, 'last-event-id': body.next })).text) as { items: unknown[]; reset: boolean };
     assert.deepEqual([again.items, again.reset], [[], false]);
-    // The same cookie and Host as /data.
-    assert.equal((await get(`${base}feed?token=wrong&agent=~/repo`)).status, 403);
-    assert.equal((await get(feedUrl('~/repo'), { cookie, host: `evil.example:${new URL(url).port}` })).status, 403);
-    assert.equal((await get(feedUrl('~/nobody'), { cookie })).status, 404);
+    // The same cookie and Host as /api/state.
+    assert.equal((await firstEvent(base, id, {})).status, 403);
+    assert.equal((await firstEvent(base, id, { cookie, host: `evil.example:${new URL(url).port}` })).status, 403);
+    assert.equal((await firstEvent(base, sessionId('~/nobody'), { cookie })).status, 404);
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
 // #694: an agent whose log can't be found shows its `doing` steps, as before. A `log`
 // field that names no file is no log.
-test('board feed route: no log falls back to the doing steps', async () => {
+test('kanban stream: no log falls back to the doing steps', async () => {
   const sandbox = makeSandbox();
   const env = { ...sandbox.env, HOME: dirname(sandbox.repo) };
   writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'w', vendor: 'codex', worktree: sandbox.repo, doing: 'reading the issue', log: join(sandbox.repo, 'not-written.log') }));
@@ -106,18 +131,17 @@ test('board feed route: no log falls back to the doing steps', async () => {
   try {
     const base = url.split('?')[0];
     const cookie = await boardCookie(url);
-    const answer = JSON.parse((await get(`${base}feed?agent=~/repo`, { cookie })).text) as { source: string; items: unknown[] };
+    const answer = JSON.parse((await firstEvent(base, sessionId('~/repo'), { cookie })).text) as { source: string; items: unknown[] };
     assert.deepEqual([answer.source, answer.items], ['doing', []]);
-    const data = JSON.parse((await get(`${base}data`, { cookie })).text) as { feeds: Record<string, { text: string }[]> };
-    assert.deepEqual(data.feeds['~/repo'].map((event) => event.text), ['reading the issue'], '/data still has the doing steps');
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
 // #694: a runner's plain text log, named by the status file's `log` field, streams as
 // messages. Only the new lines on each read, and every mask still applies.
-test('board feed route: a plain log streams its new lines, with a home path, an email and a token masked', async () => {
+test('kanban stream: a plain log streams its new lines, with a home path, an email and a token masked', async () => {
   const sandbox = makeSandbox();
   const home = dirname(sandbox.repo);
   const log = join(sandbox.repo, 'runner.log');
@@ -128,8 +152,8 @@ test('board feed route: a plain log streams its new lines, with a home path, an 
   try {
     const base = url.split('?')[0];
     const cookie = await boardCookie(url);
-    const feedUrl = (after = '') => `${base}feed?agent=${encodeURIComponent('~/repo')}&after=${encodeURIComponent(after)}`;
-    const answer = await get(feedUrl(), { cookie });
+    const id = sessionId('~/repo');
+    const answer = await firstEvent(base, id, { cookie });
     assert.equal(answer.status, 200, answer.text);
     const body = JSON.parse(answer.text) as { source: string; next: string; reset: boolean; items: { kind: string; text: string }[] };
     assert.equal(body.source, 'plain');
@@ -137,15 +161,16 @@ test('board feed route: a plain log streams its new lines, with a home path, an 
     for (const secret of [home, EMAIL, TOKEN]) assert.ok(!answer.text.includes(secret), `${secret === home ? 'the home folder' : 'a private value'} never leaves`);
     // The cursor brings only the new line, and the old one is not read again.
     appendFileSync(log, 'second line\n');
-    const again = JSON.parse((await get(feedUrl(body.next), { cookie })).text) as { items: { text: string }[]; reset: boolean };
+    const again = JSON.parse((await firstEvent(base, id, { cookie, 'last-event-id': body.next })).text) as { items: { text: string }[]; reset: boolean };
     assert.deepEqual([again.items.map((item) => item.text), again.reset], [['second line'], false]);
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });
 
-// A positive control: when the masks can't be built, /feed sends nothing.
-test('board feed route: a mask that fails sends no line', async () => {
+// A positive control: when the masks can't be built, the stream sends nothing.
+test('kanban stream: a mask that fails sends no line', async () => {
   const sandbox = makeSandbox();
   const home = dirname(sandbox.repo);
   writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'w', vendor: 'claude-code' }));
@@ -158,10 +183,11 @@ test('board feed route: a mask that fails sends no line', async () => {
   const { server, url } = await startBoardServer(sandbox.repo, { ...sandbox.env, HOME: home }, () => '[]', { feedMask });
   try {
     const cookie = await boardCookie(url);
-    const answer = await get(`${url.split('?')[0]}feed?agent=~/repo`, { cookie });
+    const answer = await firstEvent(url.split('?')[0], sessionId('~/repo'), { cookie });
     assert.equal(answer.status, 500);
     assert.ok(!answer.text.includes('raw words'));
   } finally {
     server.close();
+    server.closeAllConnections();
   }
 });

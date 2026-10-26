@@ -1,41 +1,39 @@
-// `yokoten board` (#601, #603): serves the team board on this machine only.
+// `yokoten kanban` (#601, #603, record 0044): serves the team's kanban on this machine only.
 //
-// The page is at /, its data as JSON at /data. The data comes from three places: one status
-// file per worktree, `gh pr list` and `gh issue list`, and `git worktree list`. /data reads
-// the local parts each time and never waits for gh: gh reads in the background, one read at
-// a time, and /data serves its last lists (#688). /feed sends one agent's session log, masked,
-// from the page's cursor on (#694). `board --text` prints the same data. A request needs
-// the right Host and the board's cookie. The first visit, with ?token=, sets that cookie
-// and redirects. Agents write the status files,
-// so the page treats every word in them as text: a strict content policy lets only the
-// page's own script run.
+// Read only. Two routes carry data: `GET /api/state` answers one KanbanState (state.ts), and
+// `GET /api/sessions/<id>/stream` sends one session's output as server-sent events, masked.
+// `/` and `/assets/*` serve the built page from web/kanban/dist; without it, `/` says in one
+// line that the page is not built. Any method but GET and HEAD gets a 405: nothing here
+// starts, stops or changes work. gh reads in the background, one read at a time, and
+// /api/state serves its last lists (#688). `kanban --text` prints the same state. A request
+// needs the right Host and the kanban's cookie. The first visit, with ?token=, sets that
+// cookie and redirects. The token goes only to the browser: it is never printed (#1045).
 
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { realpathSync } from 'node:fs';
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { basename, join } from 'node:path';
-import { ghIn, ghLaterIn, type GhLater, readBoardPullsLater, repoOf } from '../../host/github/index.ts';
-import { type Env, loadConfig } from '../../rules/config.ts';
-import { hideHome } from '../../rules/privacy.ts';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { createServer, type Server, type ServerResponse } from 'node:http';
+import { basename, extname, join } from 'node:path';
+import { ghIn, ghLaterIn, type GhLater, readBoardPulls, readBoardPullsLater, repoOf } from '../../host/github/index.ts';
+import { type Env } from '../../rules/config.ts';
+import { HOME_DIR } from '../../setup/files.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
+import { actionsRunPage, actionsRunsQuery, type HealthRun, healthReadFailed, readActionsRuns, readDefaultBranch } from '../more/check.ts';
 import { type Invocation, parse, print, requireRoot, usage } from '../shared.ts';
-import { BOARD_READ_TIMEOUT_MS, readBoardWorktrees } from './agents.ts';
-import { type BoardControls, collectBoardWaiting, createBoardControls, readBoardAttention, readBoardIssues, readBoardIssuesLater, readBoardSnapshot, readBoardStartAsk, readBoardStartNext, setBoardLimits, startBoardAgent, startBoardNext, stopBoardAgent } from './controls.ts';
-import { feedAnswer, makeBoardMask, makeFeedStreams } from './feed/route.ts';
-import { filterUsage, isKnownRole } from './feed/read/usage.ts';
-import { feedsJson, makeFeedStore, recordFeed } from './feed/steps.ts';
-import { boardManifest, boardPage, BOARD_REFRESH_SECONDS } from './page/page.ts';
-import { renderBoardScreen, renderBoardText } from './page/text.ts';
-import { BOARD_NO_REMOTE_ISSUES, BOARD_NO_REMOTE_PULLS, type BoardGitHub, collectBoard, collectBoardWith, createBoardGitHub, issueNumbersOf, refreshBoardGitHub } from './view.ts';
+import { BOARD_READ_TIMEOUT_MS } from './agents.ts';
+import { makeBoardMask, makeFeedStreams, sessionAnswer } from './feed/route.ts';
+import { type StreamAnswer } from './feed/tail.ts';
+import { collectState, renderStateText } from './state.ts';
+import type { KanbanState } from './types.ts';
+import { BOARD_NO_REMOTE_PULLS, BOARD_READING_GITHUB, type BoardGitHub, createBoardGitHub, refreshBoardGitHub } from './view.ts';
 
-/** How many random bytes the board link's token holds, and each page's script nonce. */
+/** How many random bytes the link's token holds. */
 const BOARD_TOKEN_BYTES = 16;
 
 /** The cookie that carries the token after the first visit (#693). */
 const BOARD_COOKIE = 'yokoten-board';
 
-/** Ports the board tries first: a high range, stable for one repo path. */
+/** Ports the kanban tries first: a high range, stable for one repo path. */
 const BOARD_PORT_BASE = 28416;
 
 /** How many ports share that range. A taken port tries the next few, then any free port. */
@@ -44,35 +42,66 @@ const BOARD_PORT_SPAN = 4000;
 /** How many ports past the stable one to try before asking the system for any port. */
 const BOARD_PORT_TRIES = 32;
 
+/** How often GitHub is read again, at most: the page reads /api/state every 15 seconds. */
+const GITHUB_EVERY_MS = 15_000;
+
+/** How often an open stream looks for new output. */
+const STREAM_EVERY_MS = 2_000;
+
 /** Paths a first visit may return to. Anything else returns to `/`. */
-const BOARD_PATHS = new Set(['/', '/data', '/feed', '/manifest.webmanifest', '/agents/start', '/agents/stop', '/agents/limits']);
+const BOARD_PATHS = new Set(['/', '/api/state']);
 
-/** The content policy: nothing loads from outside, and only the script with this page's nonce runs. */
-function contentPolicy(nonce: string): string {
-  return [
-    "default-src 'none'",
-    `script-src 'nonce-${nonce}'`,
-    "style-src 'unsafe-inline'",
-    "connect-src 'self'",
-    "img-src 'self' data:",
-    "manifest-src 'self'",
-    "base-uri 'none'",
-    "form-action 'none'",
-    "frame-ancestors 'none'",
-  ].join('; ');
-}
+/** The built page, in the package (record 0044). */
+export const KANBAN_PAGE_DIR = join(HOME_DIR, 'web', 'kanban', 'dist');
 
-/** One answer of the board server: the status, the kind, and the text. Nothing is stored, and the page sends no referrer. */
-function serveText(res: ServerResponse, status: number, kind: string, text: string, headers: Record<string, string> = {}): void {
+/** What `/` says when the page is not built. */
+export const PAGE_NOT_BUILT = 'The kanban page is not built: run `npm --prefix web/kanban run build`. /api/state works now.';
+
+/** The kinds of file the page folder serves. Any other file is not found. */
+const PAGE_KINDS: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.json': 'application/json; charset=utf-8',
+};
+
+/** A file name in /assets: letters, digits, dot, dash and underscore, and no leading dot. */
+const ASSET_NAME = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
+
+/** The content policy: nothing loads from outside, and only the page's own scripts run. */
+const CONTENT_POLICY = [
+  "default-src 'none'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+  "img-src 'self' data:",
+  "font-src 'self'",
+  "manifest-src 'self'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+].join('; ');
+
+/** One answer of the server: the status, the kind, and the body. Nothing is stored, and the page sends no referrer. */
+function serveText(res: ServerResponse, status: number, kind: string, body: string | Buffer, headers: Record<string, string> = {}): void {
   res.writeHead(status, {
     'content-type': kind,
-    'content-length': Buffer.byteLength(text),
+    'content-length': Buffer.byteLength(body),
     'cache-control': 'no-store',
     'referrer-policy': 'no-referrer',
     'x-content-type-options': 'nosniff',
     ...headers,
   });
-  res.end(text);
+  res.end(body);
+}
+
+/** A JSON error answer: one plain sentence. */
+function serveError(res: ServerResponse, status: number, error: string): void {
+  serveText(res, status, 'application/json; charset=utf-8', JSON.stringify({ error }));
 }
 
 /**
@@ -114,15 +143,6 @@ function isBoardToken(given: string | null, token: string): boolean {
 }
 
 /**
- * True when the Origin names this page. A change without it gets a 403, so a page
- * elsewhere cannot start or stop agents through this board.
- */
-function isBoardOrigin(origin: string | undefined, port: number, name: string): boolean {
-  const clean = (origin ?? '').trim().toLowerCase();
-  return clean === `http://${name}.localhost:${port}` || clean === `http://127.0.0.1:${port}` || clean === `http://localhost:${port}`;
-}
-
-/**
  * The cookie the first visit sets. The token is hex, so it needs no extra encoding.
  * No Domain, so it stays on this host. Secure is stored on *.localhost, a secure context.
  */
@@ -142,7 +162,7 @@ function boardCookieToken(header: string | undefined): string | null {
 }
 
 /**
- * Where a first visit returns, with the token removed. Only the board's own paths
+ * Where a first visit returns, with the token removed. Only the kanban's own paths
  * are kept, so a token cannot turn into an open redirect.
  */
 function boardReturnPath(path: string, query: URLSearchParams): string {
@@ -152,88 +172,17 @@ function boardReturnPath(path: string, query: URLSearchParams): string {
   return rest ? `${safe}?${rest}` : safe;
 }
 
-/** The most of a change request the board reads. */
-const BOARD_BODY_LIMIT = 64 * 1024;
-
-/** One request body, or null when it is too large to read. */
-function readBoardBody(req: IncomingMessage): Promise<string | null> {
-  return new Promise((done) => {
-    const parts: Buffer[] = [];
-    let size = 0;
-    let settled = false;
-    const stop = (body: string | null) => {
-      if (settled) return;
-      settled = true;
-      done(body);
-    };
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > BOARD_BODY_LIMIT) {
-        req.destroy();
-        stop(null);
-        return;
-      }
-      parts.push(chunk);
-    });
-    req.on('end', () => stop(Buffer.concat(parts).toString('utf8')));
-    req.on('error', () => stop(null));
-  });
-}
-
-/**
- * One change request as fields: JSON, or a form. Null when the kind is JSON but the
- * text is not. The page sends a form, so it never builds raw JSON.
- */
-function boardFields(text: string, kind: string | undefined): Record<string, string> | null {
-  if ((kind ?? '').split(';')[0].trim().toLowerCase() === 'application/json') {
-    try {
-      const parsed: unknown = JSON.parse(text || '{}');
-      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
-      const fields: Record<string, string> = {};
-      for (const [key, value] of Object.entries(parsed)) fields[key] = typeof value === 'string' ? value : '';
-      return fields;
-    } catch {
-      return null;
-    }
-  }
-  const fields: Record<string, string> = {};
-  for (const [key, value] of new URLSearchParams(text)) fields[key] = value;
-  return fields;
-}
-
-/** The status for a refused start: over the limit is a conflict, a failed spawn is the server, the rest is the request. */
-function startRefuseStatus(reason: string): number {
-  if (reason.startsWith('the board already runs')) return 409;
-  if (reason.startsWith('the board could not')) return 500;
-  return 400;
-}
-
-/**
- * The status for "start next" that started nothing: a failed read is the server, and
- * anything else is a conflict with the machine or the queue, not a bad request.
- */
-function startNextStatus(reason: string): number {
-  if (reason.startsWith('the board could not')) return 500;
-  return 409;
-}
-
-/** The status for a refused stop: unknown is missing, done is a conflict, the rest is the request. */
-function stopRefuseStatus(reason: string): number {
-  if (reason.startsWith('no agent called') || reason === 'name the agent to stop') return 404;
-  if (reason.endsWith('already stopped')) return 409;
-  return 400;
-}
-
-/** What the options carry: the board's controls, and what it last read from GitHub. Tests pass their own. */
+/** What the options carry. Tests pass their own. */
 export interface BoardServerOptions {
-  controls?: BoardControls;
   github?: BoardGitHub;
-  /** The mask for /feed. Tests pass their own; the board builds it from the private marks. */
+  /** The mask for the stream. Tests pass their own; the kanban builds it from the private marks. */
   feedMask?: (text: string) => string;
+  /** The built page's folder. Tests pass their own. */
+  pageDir?: string;
 }
 
 /**
- * Every string value in a /data payload, masked once. Keys stay, so the page can
+ * Every string value in a payload, masked once. Keys stay, so the page can
  * still read them. A new field cannot skip this walk.
  */
 export function maskBoardPayload(value: unknown, mask: (text: string) => string): unknown {
@@ -247,145 +196,157 @@ export function maskBoardPayload(value: unknown, mask: (text: string) => string)
   return value;
 }
 
-/** The /data body. Every string is masked at this boundary, then sent as JSON. */
+/** The /api/state body. Every string is masked at this boundary, then sent as JSON. */
 export function boardDataBody(env: Env, root: string, payload: unknown): string {
   return JSON.stringify(maskBoardPayload(payload, makeBoardMask(env, root)));
 }
 
-/** The /data fields that say how fresh the GitHub lists are: reading now, when last read, and why the last read failed. */
-function githubState(github: BoardGitHub | null): { isReading: boolean; readAt: string; failed: string } {
-  return github ? { isReading: github.reading !== null, readAt: github.readAt, failed: github.failed } : { isReading: false, readAt: '', failed: '' };
+/** One file of the built page, or null when the name is not one it serves. */
+function pageFile(dir: string, name: string): { kind: string; body: Buffer } | null {
+  const kind = PAGE_KINDS[extname(name).toLowerCase()];
+  if (!kind) return null;
+  try {
+    return { kind, body: readFileSync(join(dir, name)) };
+  } catch {
+    return null;
+  }
+}
+
+/** The Actions runs and the branch merges land on, without blocking. A failed read says why. */
+async function readActionsLater(gh: GhLater, repo: string, signal: AbortSignal): Promise<{ runs: HealthRun[] | string; defaultBranch: string }> {
+  const [runs, branch] = await Promise.all([
+    (async () => {
+      try {
+        const page = actionsRunPage(await gh(actionsRunsQuery(repo), signal));
+        return typeof page === 'string' ? page : page.runs;
+      } catch (err) {
+        return healthReadFailed(err, 'Actions runs');
+      }
+    })(),
+    (async () => {
+      try {
+        return (await gh(['repo', 'view', repo, '--json', 'defaultBranchRef', '--jq', '.defaultBranchRef.name'], signal)).trim() || 'main';
+      } catch {
+        return 'main';
+      }
+    })(),
+  ]);
+  return { runs, defaultBranch: branch };
 }
 
 /**
- * Start the board on 127.0.0.1: the page at /, the data as JSON at /data, and the
- * owner's changes at /agents/start, /agents/stop and /agents/limits. The link is
- * `http://<repo>.localhost:<port>/?token=...`. The port stays with the repo path.
- * The first visit sets a cookie and redirects to the address without the token.
- * Later requests must send that cookie. A wrong Host, a missing cookie or a wrong
- * cookie gets a 403. A change whose Origin is not the page gets a 403 too.
- * gh reads the pull requests and issues in the background: the first read starts
- * now, and /data never waits for it.
+ * Start the kanban on 127.0.0.1. The link is `http://<repo>.localhost:<port>/?token=...`,
+ * and the port stays with the repo path. The first visit sets a cookie and redirects to
+ * the address without the token. Later requests must send that cookie. A wrong Host, a
+ * missing cookie or a wrong cookie gets a 403; any method but GET and HEAD gets a 405.
+ * gh reads in the background: the first read starts now, and /api/state never waits for it.
  */
 export function startBoardServer(root: string, env: Env, gh: GhLater, options: BoardServerOptions = {}): Promise<{ server: Server; url: string }> {
   const token = randomBytes(BOARD_TOKEN_BYTES).toString('hex');
   const hostName = boardHostName(root);
-  const controls = options.controls ?? createBoardControls(join(root, '.yokoten-board.log'));
+  const pageDir = options.pageDir ?? KANBAN_PAGE_DIR;
   const github = options.github ?? createBoardGitHub();
+  let actions: { runs: HealthRun[] | string; defaultBranch: string } = { runs: BOARD_READING_GITHUB, defaultBranch: 'main' };
   const stopReads = new AbortController();
+  const streamTimers = new Set<NodeJS.Timeout>();
   // The GitHub repo, or null without a GitHub remote. Starts a background read when the lists are old.
   const refreshGitHub = (): string | null => {
     const remote = repoOf(readOriginUrl(root, env));
     if (!remote) return null;
     const read = async () => {
-      const [pulls, issues] = await Promise.all([readBoardPullsLater(gh, remote, stopReads.signal), readBoardIssuesLater(gh, remote, stopReads.signal)]);
-      return { pulls, issues };
+      const [pulls, health] = await Promise.all([readBoardPullsLater(gh, remote, stopReads.signal), readActionsLater(gh, remote, stopReads.signal)]);
+      if (typeof health.runs !== 'string' || typeof actions.runs === 'string') actions = health;
+      return { pulls, issues: [] };
     };
-    refreshBoardGitHub(github, remote, read, BOARD_REFRESH_SECONDS * 1000);
+    refreshBoardGitHub(github, remote, read, GITHUB_EVERY_MS);
     return remote;
   };
-  const feeds = makeFeedStore();
   const streams = makeFeedStreams(env, root, options.feedMask);
   const server = createServer((req, res) => {
     const address = server.address();
     const port = typeof address === 'object' && address !== null ? address.port : 0;
     if (!isBoardHost(req.headers.host, port, hostName)) return serveText(res, 403, 'text/plain; charset=utf-8', 'forbidden');
+    // Read only (record 0044): no route changes anything, so every other method is refused.
+    if (req.method !== 'GET' && req.method !== 'HEAD') return serveText(res, 405, 'text/plain; charset=utf-8', 'the kanban is read only', { allow: 'GET, HEAD' });
     const [path, queryText] = (req.url ?? '').split('?');
     const query = new URLSearchParams(queryText ?? '');
-    // The query token only starts a visit. It never authorizes a page or a change.
+    // The query token only starts a visit. It never authorizes a request.
     const fromLink = query.get('token');
     if (fromLink !== null) {
-      if (req.method !== 'GET' || !isBoardToken(fromLink, token)) return serveText(res, 403, 'text/plain; charset=utf-8', 'forbidden');
+      if (!isBoardToken(fromLink, token)) return serveText(res, 403, 'text/plain; charset=utf-8', 'forbidden');
       return serveText(res, 303, 'text/plain; charset=utf-8', '', { location: boardReturnPath(path || '/', query), 'set-cookie': boardSetCookie(token) });
     }
     if (!isBoardToken(boardCookieToken(req.headers.cookie), token)) return serveText(res, 403, 'text/plain; charset=utf-8', 'forbidden');
-    if (req.method === 'GET') {
-      if (path === '/') {
-        const nonce = randomBytes(BOARD_TOKEN_BYTES).toString('base64');
-        return serveText(res, 200, 'text/html; charset=utf-8', boardPage(nonce), { 'content-security-policy': contentPolicy(nonce) });
-      }
-      if (path === '/data') {
-        try {
-          const remote = refreshGitHub();
-          const issues = remote ? github.issues : BOARD_NO_REMOTE_ISSUES;
-          const board = collectBoardWith(root, env, remote, remote ? github.pulls : BOARD_NO_REMOTE_PULLS, Date.now(), issueNumbersOf(issues));
-          const trees = readBoardWorktrees(root, env);
-          const snapshot = readBoardSnapshot(env, controls, board, trees, issues, root);
-          recordFeed(feeds, board.agents, board.updated);
-          const fresh = githubState(remote ? github : null);
-          const payload = { ...board, feeds: feedsJson(feeds), ...snapshot, github: fresh };
-          return serveText(res, 200, 'application/json; charset=utf-8', boardDataBody(env, root, payload));
-        } catch {
-          return serveText(res, 500, 'application/json; charset=utf-8', JSON.stringify({ error: 'the board could not be read: run it again' }));
-        }
-      }
-      if (path === '/manifest.webmanifest') {
-        return serveText(res, 200, 'application/manifest+json; charset=utf-8', boardManifest());
-      }
-      if (path === '/feed') {
-        // One agent's session, from its cursor on (#694). Masked, as text; a failed mask sends nothing.
-        const ask = query;
-        try {
-          const answer = feedAnswer(streams, root, env, ask.get('agent') ?? '', ask.get('after') ?? '');
-          if (!answer) return serveText(res, 404, 'application/json; charset=utf-8', JSON.stringify({ error: 'no agent by that name on the board' }));
-          return serveText(res, 200, 'application/json; charset=utf-8', JSON.stringify(answer));
-        } catch {
-          return serveText(res, 500, 'application/json; charset=utf-8', JSON.stringify({ error: 'the board could not read that log safely: run it again' }));
-        }
-      }
-      return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');
+    if (path === '/') {
+      const page = existsSync(join(pageDir, 'index.html')) ? pageFile(pageDir, 'index.html') : null;
+      if (!page) return serveText(res, 200, 'text/plain; charset=utf-8', `${PAGE_NOT_BUILT}\n`);
+      return serveText(res, 200, page.kind, page.body, { 'content-security-policy': CONTENT_POLICY });
     }
-    if (req.method !== 'POST') return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');
-    if (path !== '/agents/start' && path !== '/agents/stop' && path !== '/agents/limits') {
-      return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');
+    if (path.startsWith('/assets/')) {
+      const name = path.slice('/assets/'.length);
+      const file = ASSET_NAME.test(name) ? pageFile(join(pageDir, 'assets'), name) : null;
+      if (!file) return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');
+      return serveText(res, 200, file.kind, file.body);
     }
-    if (!isBoardOrigin(req.headers.origin, port, hostName)) return serveText(res, 403, 'text/plain; charset=utf-8', 'forbidden');
-    readBoardBody(req).then((body) => {
-      if (res.writableEnded) return;
-      if (body === null) return serveText(res, 400, 'text/plain; charset=utf-8', 'the board could not read that: send it again');
+    if (path === '/api/state') {
       try {
-        if (path === '/agents/start') {
-          const fields = boardFields(body, req.headers['content-type']);
-          if (!fields) return serveText(res, 400, 'text/plain; charset=utf-8', 'send JSON or form fields');
-          // "Start next" needs no issue: the dependency queue picks it (#709).
-          if ((fields.next ?? '').trim() !== '') {
-            const next = readBoardStartNext(fields);
-            if (typeof next === 'string') return serveText(res, 400, 'text/plain; charset=utf-8', next);
-            const remote = refreshGitHub();
-            const issues = remote ? github.issues : BOARD_NO_REMOTE_ISSUES;
-            const started = startBoardNext(root, env, controls, next, issues);
-            if (typeof started === 'string') return serveText(res, startNextStatus(started), 'text/plain; charset=utf-8', started);
-            return serveText(res, 200, 'application/json; charset=utf-8', JSON.stringify({
-              started: started.runs.map((run) => ({ name: run.name, issue: run.issue, worktree: hideHome(run.worktree, env), pid: run.pid })),
-              waiting: started.waiting,
-              heldBy: started.heldBy,
-              refused: started.refused,
-            }));
-          }
-          const ask = readBoardStartAsk(fields);
-          if (typeof ask === 'string') return serveText(res, 400, 'text/plain; charset=utf-8', ask);
-          const started = startBoardAgent(root, env, controls, ask);
-          if (typeof started === 'string') return serveText(res, startRefuseStatus(started), 'text/plain; charset=utf-8', started);
-          return serveText(res, 200, 'application/json; charset=utf-8', JSON.stringify({ name: started.name, worktree: hideHome(started.worktree, env), pid: started.pid }));
-        }
-        if (path === '/agents/stop') {
-          const fields = boardFields(body, req.headers['content-type']);
-          if (!fields) return serveText(res, 400, 'text/plain; charset=utf-8', 'send JSON or form fields');
-          const stopped = stopBoardAgent(controls, fields.name ?? '');
-          if (typeof stopped === 'string') return serveText(res, stopRefuseStatus(stopped), 'text/plain; charset=utf-8', stopped);
-          return serveText(res, 200, 'application/json; charset=utf-8', JSON.stringify({ name: stopped.name, status: stopped.status }));
-        }
-        const fields = boardFields(body, req.headers['content-type']);
-        if (!fields) return serveText(res, 400, 'text/plain; charset=utf-8', 'send JSON or form fields');
-        const limits = setBoardLimits(controls, fields);
-        if (typeof limits === 'string') return serveText(res, 400, 'text/plain; charset=utf-8', limits);
-        return serveText(res, 200, 'application/json; charset=utf-8', JSON.stringify({ limits }));
+        const remote = refreshGitHub();
+        const sources = remote
+          ? { remote, pulls: github.pulls, runs: actions.runs, defaultBranch: actions.defaultBranch }
+          : { remote: null, pulls: BOARD_NO_REMOTE_PULLS, runs: [], defaultBranch: 'main' };
+        return serveText(res, 200, 'application/json; charset=utf-8', boardDataBody(env, root, collectState(root, env, sources)));
       } catch {
-        return serveText(res, 500, 'text/plain; charset=utf-8', 'the board could not do that: run it again');
+        return serveError(res, 500, 'the kanban could not be read: run it again');
       }
-    });
+    }
+    const stream = /^\/api\/sessions\/([0-9a-f]{16})\/stream$/.exec(path);
+    if (stream) {
+      const id = stream[1];
+      let cursor = String(req.headers['last-event-id'] ?? '');
+      const next = () => sessionAnswer(streams, root, env, id, cursor);
+      let first: StreamAnswer | null = null;
+      try {
+        first = next();
+      } catch {
+        return serveError(res, 500, 'the kanban could not read that log safely: run it again');
+      }
+      if (!first) return serveError(res, 404, 'no session with that id');
+      res.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer' });
+      if (req.method === 'HEAD') return res.end();
+      const send = (answer: StreamAnswer) => {
+        cursor = answer.next;
+        res.write(`id: ${answer.next}\ndata: ${JSON.stringify(answer)}\n\n`);
+      };
+      send(first);
+      const timer = setInterval(() => {
+        try {
+          const answer = next();
+          if (!answer) {
+            res.end('event: gone\ndata: {}\n\n');
+            return stop();
+          }
+          if (answer.items.length || answer.reset) send(answer);
+          else res.write(': still here\n\n');
+        } catch {
+          // A mask that cannot be built sends nothing more.
+          res.end('event: failed\ndata: {}\n\n');
+          stop();
+        }
+      }, STREAM_EVERY_MS);
+      const stop = () => {
+        clearInterval(timer);
+        streamTimers.delete(timer);
+      };
+      streamTimers.add(timer);
+      req.on('close', stop);
+      return;
+    }
+    return serveText(res, 404, 'text/plain; charset=utf-8', 'not found');
   });
-  server.on('close', () => stopReads.abort());
+  server.on('close', () => {
+    stopReads.abort();
+    for (const timer of streamTimers) clearInterval(timer);
+  });
   return new Promise((done, failed) => {
     const first = boardPort(root);
     let attempt = 0;
@@ -416,7 +377,7 @@ export function startBoardServer(root: string, env: Env, gh: GhLater, options: B
         try {
           refreshGitHub();
         } catch {
-          // The first /data starts the read instead.
+          // The first /api/state starts the read instead.
         }
         const address = server.address();
         const bound = typeof address === 'object' && address !== null ? address.port : 0;
@@ -425,6 +386,13 @@ export function startBoardServer(root: string, env: Env, gh: GhLater, options: B
     };
     listenAt(first);
   });
+}
+
+/** The link without its token: the only form of it the kanban prints (#1045). */
+export function printableLink(url: string): string {
+  const link = new URL(url);
+  link.search = '';
+  return link.toString();
 }
 
 /**
@@ -439,7 +407,7 @@ export function browserCommand(url: string, platform: NodeJS.Platform, env: Env)
   return null;
 }
 
-/** Open the link in the browser, and never wait or fail: the printed link is the way back. */
+/** Open the link in the browser, and never wait or fail. */
 function openInBrowser(url: string, env: Env): void {
   const command = browserCommand(url, process.platform, env);
   if (!command) return;
@@ -448,7 +416,7 @@ function openInBrowser(url: string, env: Env): void {
     child.on('error', () => {});
     child.unref();
   } catch {
-    // No browser to open: the link is printed.
+    // No browser to open: the printed line says how to try again.
   }
 }
 
@@ -457,42 +425,30 @@ export function runBoard(invocation: Invocation, options: BoardServerOptions = {
   if (typeof parsed === 'string') return usage(invocation, parsed);
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;
-  const gh = ghIn(root, invocation.env, BOARD_READ_TIMEOUT_MS);
-  const controls = options.controls ?? createBoardControls(join(root, '.yokoten-board.log'));
-  if (!options.controls) {
-    // The project's time limit for a worker (#711); a bad yokoten.json keeps the default.
-    try {
-      controls.timeLimitMs = loadConfig(root).worker.timeLimitMinutes * 60_000;
-    } catch {}
-  }
-  if (!parsed.flags.has('--text') && (parsed.values['--role'] || parsed.values['--vendor'])) return usage(invocation, '--role and --vendor go with --text');
   if (parsed.flags.has('--text')) {
-    const role = parsed.values['--role'] ?? '';
-    const vendor = parsed.values['--vendor'] ?? '';
-    if (!isKnownRole(role)) return usage(invocation, `unknown --role ${role}; use engineer, reviewer or checker`);
+    const gh = ghIn(root, invocation.env, BOARD_READ_TIMEOUT_MS);
     const remote = repoOf(readOriginUrl(root, invocation.env));
-    const openIssues = issueNumbersOf(remote ? readBoardIssues(gh, remote) : BOARD_NO_REMOTE_ISSUES);
-    const board = collectBoard(root, invocation.env, gh, Date.now(), openIssues);
-    if ((role || vendor) && board.usage) board.usage = filterUsage(board.usage, { role, vendor });
-    const trees = readBoardWorktrees(root, invocation.env);
-    const waiting = collectBoardWaiting(board, typeof trees === 'string' ? [] : readBoardAttention(trees), controls.runs, controls.seen);
-    // A run's worktree hides the home folder here, exactly as /data serves it.
-    const runs = controls.runs.map((run) => ({ ...run, worktree: hideHome(run.worktree, invocation.env) }));
-    const extra = waiting.length || runs.length ? { waiting, runs } : undefined;
-    // One screen by default; `--all` keeps every field of every agent, pull request and worktree (R3).
-    const livePage = `http://${boardHostName(root)}.localhost:${boardPort(root)}/`;
-    print(invocation, parsed.flags.has('--all') ? renderBoardText(board, extra) : renderBoardScreen(board, extra, livePage));
+    const sources = remote
+      ? { remote, pulls: readBoardPulls(gh, remote), runs: readActionsRuns(gh, remote, 100), defaultBranch: readDefaultBranch(gh, remote) }
+      : { remote: null, pulls: BOARD_NO_REMOTE_PULLS, runs: [], defaultBranch: 'main' };
+    const state = maskBoardPayload(collectState(root, invocation.env, sources), makeBoardMask(invocation.env, root));
+    print(invocation, renderStateText(state as KanbanState));
     return 0;
   }
-  return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), { controls }).then(
+  return startBoardServer(root, invocation.env, ghLaterIn(root, invocation.env, BOARD_READ_TIMEOUT_MS), options).then(
     ({ url }) => {
       const isOpening = !parsed.flags.has('--no-open');
-      print(invocation, [`yokoten board: preview. It may change, and team commands come in v0.1.2 (#823).`, `The team is live at ${url}`, `${isOpening ? 'It opens in your browser now. ' : ''}The page refreshes every ${BOARD_REFRESH_SECONDS} seconds. Stop it with Ctrl-C.`]);
+      // The link with its token goes only to the browser; the screen shows it without (#1045).
+      print(invocation, [
+        'yokoten kanban: preview, read only. It may change.',
+        `The team is live at ${printableLink(url)}`,
+        isOpening ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.' : 'The sign-in link goes only to your browser: run `yokoten kanban` without --no-open to open it. Stop it with Ctrl-C.',
+      ]);
       if (isOpening) openInBrowser(url, invocation.env);
       return new Promise<number>(() => {});
     },
     () => {
-      print(invocation, ['yokoten board: the page could not start: run it again.'], invocation.stderr);
+      print(invocation, ['yokoten kanban: the page could not start: run it again.'], invocation.stderr);
       return 1;
     },
   );

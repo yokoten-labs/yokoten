@@ -198,13 +198,15 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
   assert.equal((await run(['-v'])).stdout, (await run(['--version'])).stdout);
 });
 
-// #933: the kanban is a preview, and `yokoten help` and `yokoten kanban --help` say so.
+// #933: the kanban is a preview, and `yokoten help` and `yokoten kanban --help` say so,
+// and that it is read only (record 0044).
 test('help: the kanban row and `kanban --help` say preview (#933)', () => {
   const board = findCommand('kanban');
   assert.ok(board !== undefined, 'kanban is a command');
   const row = commandList().find((line) => line.trimStart().startsWith('kanban '));
   assert.match(row ?? '', /\(preview\)/);
-  assert.match(commandHelp(board).join('\n'), /preview: it may change, and team commands come in v0\.1\.2 \(#823\)/i);
+  assert.match(commandHelp(board).join('\n'), /preview: it may change\. Read only: nothing on the page starts, stops or\nchanges work\./i);
+  assert.ok(commandHelp(board).every((line) => line.length <= 80), 'each line fits 80 columns');
 });
 
 test('compile cache: a cache folder that cannot be made does not stop the command (#286)', () => {

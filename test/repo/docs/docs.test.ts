@@ -287,8 +287,8 @@ function collectWords(): string[] {
   const hook = read('src/run/hook.ts');
   const feed = read('src/commands/kanban/feed/steps.ts');
   const agents = read('src/commands/kanban/agents.ts');
-  // The attention box and its link live in two files since the board split (#693).
-  const controls = read('src/commands/kanban/controls.ts') + read('src/commands/kanban/feed/read/waiting.ts');
+  // The attention box and its link live in the waiting list (#693).
+  const controls = read('src/commands/kanban/feed/read/waiting.ts');
   const view = read('src/commands/kanban/view.ts');
   const script = read('src/commands/kanban/page/browser/script.ts');
   const pr = read('src/rules/pr.ts');
@@ -412,8 +412,8 @@ function holderPaths(): string[] {
     'test/commands/hook.test.ts',
     'src/commands/kanban/agents.ts',
     'test/commands/kanban/agents.test.ts',
-    'src/commands/kanban/controls.ts',
-    'test/commands/kanban/controls.test.ts',
+    'src/commands/kanban/feed/read/waiting.ts',
+    'test/commands/kanban/feed/read/waiting.test.ts',
     'src/commands/kanban/view.ts',
     'test/commands/kanban/view.test.ts',
     'src/rules/pr.ts',

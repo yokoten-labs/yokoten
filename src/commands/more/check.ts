@@ -1021,12 +1021,27 @@ function parseHealthRun(value: unknown): HealthRun | null {
 }
 
 /** Why a gh read failed, in words a beginner can act on. */
-function healthReadFailed(err: unknown, what: string): string {
+export function healthReadFailed(err: unknown, what: string): string {
   if ((err as NodeJS.ErrnoException).code === 'ENOENT') return 'gh is not installed: get it from https://cli.github.com, then run `gh auth login`';
   const said = String((err as { stderr?: string }).stderr || '')
     .split('\n')[0]
     .trim();
   return `gh can't read the ${what}${said ? ` (${said})` : ''}: run \`gh auth login\`, and check the repo`;
+}
+
+/** The gh words for one page of 100 Actions runs. The kanban reads the first page too. */
+export const actionsRunsQuery = (repo: string, page = 1): string[] => ['api', `repos/${repo}/actions/runs?per_page=100&page=${page}`];
+
+/** One page of gh's Actions run list: its runs and how many rows it held, or why it is no list. JSON that does not parse throws. */
+export function actionsRunPage(text: string): { runs: HealthRun[]; rows: number } | string {
+  const raw: unknown = JSON.parse(text);
+  if (!isObject(raw) || !Array.isArray(raw.workflow_runs)) return 'gh gave no Actions run list: run it again';
+  const runs: HealthRun[] = [];
+  for (const row of raw.workflow_runs) {
+    const run = parseHealthRun(row);
+    if (run) runs.push(run);
+  }
+  return { runs, rows: raw.workflow_runs.length };
 }
 
 /** The last `max` Actions runs of `repo`, newest first, or why gh can't read them. */
@@ -1035,13 +1050,10 @@ export function readActionsRuns(gh: Gh, repo: string, max: number = CI_HEALTH_RU
   const runs: HealthRun[] = [];
   try {
     for (let page = 1; page <= pages; page++) {
-      const raw: unknown = JSON.parse(gh(['api', `repos/${repo}/actions/runs?per_page=100&page=${page}`]));
-      if (!isObject(raw) || !Array.isArray(raw.workflow_runs)) return 'gh gave no Actions run list: run it again';
-      for (const row of raw.workflow_runs) {
-        const run = parseHealthRun(row);
-        if (run) runs.push(run);
-      }
-      if (raw.workflow_runs.length < 100) break;
+      const found = actionsRunPage(gh(actionsRunsQuery(repo, page)));
+      if (typeof found === 'string') return found;
+      runs.push(...found.runs);
+      if (found.rows < 100) break;
     }
   } catch (err) {
     return healthReadFailed(err, 'Actions runs');
