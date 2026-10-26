@@ -74,12 +74,13 @@ export function srtSettings(plan: SrtPlan): SrtSettings {
  * folder that holds such a readable folder is hidden one level down, each child that is not
  * on the way to a shown path. The cost: an entry made there after the desk starts is
  * visible, read-only. A folder `list` can't read (null) stays hidden whole: fail closed.
+ * On macOS srt denies by path rule, not by mount, so the plan stays as it is.
  */
 export function splitHidden(plan: SrtPlan, list: (folder: string) => string[] | null, platform: NodeJS.Platform): SrtPlan {
   const writable = [plan.desk, ...plan.state];
   const shown = [...writable, ...plan.readable];
   const nests = plan.readable.filter((read) => writable.some((write) => write !== read && isInside(write, read, platform)));
-  if (!nests.length) return plan;
+  if (platform !== 'linux' || !nests.length) return plan;
   const hidden: string[] = [];
   const hide = (folder: string) => {
     const names = nests.some((read) => isInside(read, folder, platform)) ? list(folder) : null;

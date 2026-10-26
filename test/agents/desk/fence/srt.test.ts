@@ -53,6 +53,7 @@ test('splitHidden: a hidden folder that holds a readable folder with a writable 
     ['two levels down, through the home folder', { ...team, desk: '/home/someone/work/desk', hidden: ['/home', '/home/someone'], readable: ['/home/someone/work/team'], state: ['/home/someone/work/team/outbox/x'] }, ['/home/someone/.ssh', '/home/someone/work/notes']],
   ];
   for (const [name, plan, hidden] of cases) assert.deepEqual(splitHidden(plan, list, 'linux').hidden, hidden, name);
+  assert.deepEqual(splitHidden(team, list, 'darwin').hidden, PLAN.hidden, 'macOS: the plan as it is');
 });
 
 /** A folder with a program `name` that prints `version` for --version and exits with `code` otherwise. */
