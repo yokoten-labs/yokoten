@@ -3,21 +3,6 @@
 # `? ` before a line: the test may pass or fail, as when a laptop and the GitHub runner differ
 # (node under C:\Program Files, a signed-in gh, another temp path; issue #1030 for one).
 ? test/agents/copilot.test.ts :: copilot trust (#341): doctor says when Copilot CLI skips the hooks; a trusted parent folder counts
-? test/agents/desk/desk.test.ts :: findProgram: a name on PATH, a path as it is, null when missing
-? test/agents/desk/desk.test.ts :: isInside: the folder itself and what is under it, not a name that only starts the same
-? test/agents/desk/desk.test.ts :: planDesk: a command model wins over the config, for the roster and the env (#748)
-? test/agents/desk/desk.test.ts :: planDesk: a desk that cannot be marked does not start, with the plain reason (#672)
-? test/agents/desk/desk.test.ts :: planDesk: on a team, the team folder read-only, only the own outbox writable, the desk file locked (#674)
-? test/agents/desk/desk.test.ts :: planDesk: the desk and its own state writable, a token dropped, role and time zone fixed
-? test/agents/desk/network/proxy.test.ts :: (timed out)
-? test/agents/desk/network/proxy.test.ts :: startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is closed
-? test/agents/desk/network/proxy.test.ts :: startProxy: tunnels to an allowed host, refuses others and anything not CONNECT
-test/agents/desk/seatbelt.test.ts :: seatbeltProfile: git may look for its config in a hidden home, and finds nothing
-test/agents/desk/start.test.ts :: signalEnd: the real signal number, the signal named, and the sandbox hint when quiet
-test/agents/desk/team/outbox.test.ts :: unread: a FIFO as an outbox or as the read state does not hang
-test/agents/desk/team/who.test.ts :: isLockedMount: a file this process can write is not locked; one with only a file mode is not either
-test/agents/desk/team/who.test.ts :: keepReadState: a read state that is a link is never followed
-test/agents/desk/team/who.test.ts :: whoAmI in a desk: the roster names the agent, the read state is the desk's, and only inside the fence
 ? test/agents/runtimes/claude-code.test.ts :: hook: a Copilot CLI call, in the Claude-format shape it sends from .claude/settings.json, is refused with the reason on stdout too (#30)
 test/agents/runtimes/claude-code.test.ts :: plugin: install keeps a direct path, and the guard the plugin registers blocks (#706)
 test/agents/runtimes/codex.test.ts :: codex trust (#341): doctor says when Codex skips the hooks, and ok only when the folder and both hooks are trusted
@@ -44,9 +29,6 @@ test/commands/advice/board/feed/route.test.ts :: board feed route: a home path, 
 ? test/commands/advice/board/feed/route.test.ts :: board feed route: a mask that fails sends no line
 test/commands/advice/board/feed/route.test.ts :: board feed route: a plain log streams its new lines, with a home path, an email and a token masked
 ? test/commands/advice/board/feed/route.test.ts :: board feed route: no log falls back to the doing steps
-test/commands/advice/board/server.test.ts :: board --text: pull requests with each stage, read-only
-test/commands/advice/board/server.test.ts :: board --text: the entry, an agent that joins and leaves, and the usage errors
-test/commands/advice/board/server.test.ts :: board server: the right Host and cookie see the page and the data
 test/commands/advice/board/view.test.ts :: board data: agents from each vendor's hook, and a desk clone, with their own colours
 test/commands/advice/board/view.test.ts :: board data: agents, needs, pulls and worktrees; gh runs only with a GitHub remote
 ? test/commands/advice/board/view.test.ts :: board view: a stale working agent holds no seat, and seats come from the git folder
@@ -54,9 +36,6 @@ test/commands/advice/board/view.test.ts :: board view: nicknames stay with the w
 test/commands/advice/doctor.test.ts :: doctor --session: a stdin pipe left open never holds the session start (#405)
 test/commands/check.test.ts :: check --issue: an issue needs the type and tier labels its repo has (#544)
 test/commands/check.test.ts :: check --pr <number>: reads the pull request through gh and checks it with the commits here (#377)
-test/commands/check.test.ts :: ci-health --dry-run: prints the report and touches no issue
-test/commands/check.test.ts :: ci-health with no flag prints the report, writes no issue and names --write
-test/commands/check.test.ts :: ci-health: opens and pins the one report issue, then edits it in place
 ? test/commands/check.test.ts :: marks add, marks and marks remove: one value from stdin, never in stdout or stderr (#434)
 test/commands/check.test.ts :: marks: the count names both files when the setting adds one (#656)
 test/commands/check.test.ts :: pr sync: a list that stops at the limit says so (#809)
