@@ -43,7 +43,7 @@ a release.
 
    | Limit | Value | Why |
    |---|---|---|
-   | Line width | 80 columns | The terminal width most people have, and Heroku's CLI guide |
+   | Line width | 80 columns | A common terminal width. Our choice: clig.dev sets no number |
    | Lines over 80 | at most 1 per screen | A long link cannot break |
    | Widest line | 100 columns | Even a link line stays readable |
    | Prose in a row | at most 4 lines at the left edge | More is a wall; use a heading or rows |
