@@ -1092,17 +1092,10 @@ test('marks allow --here: the machine allows a mark in one repo with no yokoten.
     said.push(r.stdout, r.stderr);
     return r;
   };
-  const commit = (sandbox: ReturnType<typeof makeSandbox>, message: string) => {
-    const r = spawnSync('git', ['commit', '-qm', message], { cwd: sandbox.repo, env: { ...sandbox.env, ...extra }, encoding: 'utf8' });
-    said.push(r.stdout, r.stderr);
-    return r;
-  };
+  // The commit hook runs `check --staged`, tested in privacy.test.ts and the init tests; the renamed remote and two matching entries are machineAllowed cases there.
   for (const [sandbox, remote] of [[own, 'https://someone@Example.COM/octo/app.git'], [other, 'git@example.com:octo/other.git']] as const) {
     sandbox.git('remote', 'add', 'origin', remote);
     sandbox.write('README.md', 'QuietVale ships\n');
-    // The commit hook, as a project with no yokoten.json may run it by hand.
-    sandbox.write('.git/hooks/pre-commit', `#!/bin/sh\nexec node "${CLI}" check --staged\n`);
-    chmodSync(join(sandbox.repo, '.git/hooks/pre-commit'), 0o755);
     sandbox.git('add', 'README.md');
   }
 
@@ -1128,13 +1121,6 @@ test('marks allow --here: the machine allows a mark in one repo with no yokoten.
     assert.equal(stopped.status, 1, `${args.join(' ')} in the other repo`);
     assert.match(flat(stopped.stderr), /README\.md:1 matches a word you added to your private marks/);
   }
-  const doctor = (await run(own, ['doctor', '--all'])).stdout;
-  assert.match(doctor, /own-marks: 1 of your private marks allowed here by this machine/);
-  assert.doesNotMatch(doctor, /by privacy\.allow/);
-  assert.doesNotMatch((await run(other, ['doctor', '--all'])).stdout, /own-marks/);
-  assert.equal(commit(own, 'start').status, 0, 'the commit hook lets the allowed repo commit');
-  assert.notEqual(commit(other, 'start').status, 0, 'the commit hook stops the other repo');
-
   // The longer mark is not allowed by the shorter one.
   own.write('README.md', 'QuietVale Labs ships\n');
   own.git('add', 'README.md');
@@ -1142,64 +1128,48 @@ test('marks allow --here: the machine allows a mark in one repo with no yokoten.
   own.write('README.md', 'QuietVale ships, again\n');
   own.git('add', 'README.md');
 
-  // A renamed remote is another repo: no longer allowed.
-  own.git('remote', 'set-url', 'origin', 'https://example.com/octo/renamed.git');
-  assert.equal((await run(own, ['check', '--staged'])).status, 1, 'a renamed remote is stopped');
-  own.git('remote', 'set-url', 'origin', 'https://example.com/octo/app');
-
-  // Two entries for the same repo: unsure, so nothing is allowed, and doctor says why.
+  // Two entries for the same repo: unsure, so the command will not guess which to change.
   const kept = readFileSync(allowFile, 'utf8');
   writeFileSync(allowFile, JSON.stringify({ repos: [{ remote: 'example.com/octo/app', allow: ['quietvale'] }, { remote: 'EXAMPLE.com/octo/app', allow: ['quietvale'] }] }));
-  assert.equal((await run(own, ['check', '--staged'])).status, 1, 'two matching entries allow nothing');
-  assert.match((await run(own, ['doctor', '--all'])).stdout, /own-marks: this machine allows no private mark here, because two entries in this machine's allow file match this repo/);
-  assert.equal((await run(own, ['marks', 'allow', 'quietvale', '--here'])).status, 1, 'and the command will not guess which to change');
+  assert.equal((await run(own, ['marks', 'allow', 'quietvale', '--here'])).status, 1, 'the command will not guess which to change');
   writeFileSync(allowFile, kept);
-  assert.equal((await run(own, ['check', '--staged'])).status, 0);
+
+  // doctor counts the marks the machine and the project allow, each by its own line, and the other repo has none.
+  own.write('yokoten.json', JSON.stringify({ privacy: { allow: ['quietvale'] } }));
+  const doctor = (await run(own, ['doctor', '--all'])).stdout;
+  assert.match(doctor, /own-marks: 1 of your private marks allowed here by this machine/);
+  assert.match(doctor, /own-marks: 1 of your private marks allowed here by privacy\.allow/);
+  rmSync(join(own.repo, 'yokoten.json'));
 
   // The way back: the mark is stopped here again, and the entry is gone.
   const removed = await run(own, ['marks', 'allow', '--remove', 'quietvale', '--here']);
   assert.equal(removed.status, 0, removed.stderr);
   assert.deepEqual(JSON.parse(readFileSync(allowFile, 'utf8')), { repos: [] });
   assert.equal((await run(own, ['check', '--staged'])).status, 1);
-  assert.notEqual(commit(own, 'again').status, 0, 'the commit hook stops it again');
   assert.match((await run(own, ['marks', 'allow', '--remove', 'quietvale', '--here'])).stdout, /not allowed here, so nothing changed/);
 
   assert.ok(!said.some((text) => /quietval/i.test(text)), 'no output holds a mark');
 });
 
-test('check and doctor: a mark that names the repo is skipped there, counted by doctor, and privacy.skipOwnName turns it off (#447)', async () => {
+// The skip itself (CI's repo name is not read, the way back in yokoten.json) is in privacy.test.ts; the count is allowedMarkCount.
+test('marks allow keeps the skipOwnName switch; doctor counts the marks that name the repo (#447)', async () => {
   const own = makeSandbox();
-  const stranger = makeSandbox();
   const marks = join(own.home, 'shared-marks');
   writeFileSync(marks, 'quiet vale\nsecondmark\n');
   const extra = { YOKOTEN_PRIVATE_MARKS: marks };
   const said: string[] = [];
-  const run = async (sandbox: ReturnType<typeof makeSandbox>, args: string[], more: Record<string, string> = {}) => {
-    const r = await sandbox.call(args, { extra: { ...extra, ...more } });
+  const run = async (args: string[]) => {
+    const r = await own.call(args, { extra });
     said.push(r.stdout, r.stderr);
     return r;
   };
-  for (const [sandbox, remote] of [[own, 'https://example.com/octo/quiet-vale.git'], [stranger, 'https://github.com/stranger/other']] as const) {
-    sandbox.git('remote', 'add', 'origin', remote);
-    sandbox.write('README.md', 'Quiet Vale ships\n');
-    sandbox.git('add', 'README.md');
-  }
-  for (const args of [['check'], ['check', '--staged']]) assert.equal((await run(own, args)).status, 0, `${args.join(' ')} in the repo the mark names`);
-  const doctor = (await run(own, ['doctor', '--all'])).stdout;
-  assert.match(doctor, /own-marks: 1 of your private marks skipped here because they name this repo/);
-
-  // CI's repo name is not read: a checkout whose origin is stranger/other is stopped, faked or not.
-  const ci = { GITHUB_ACTIONS: 'true', GITHUB_REPOSITORY: 'octo/quiet-vale' };
-  for (const args of [['check'], ['check', '--staged']]) assert.equal((await run(stranger, args, ci)).status, 1, `${args.join(' ')} with a faked CI repo`);
-  assert.doesNotMatch((await run(stranger, ['doctor', '--all'])).stdout, /own-marks/);
-
-  // The way back: off in yokoten.json looks for the mark again, and doctor no longer counts it.
-  own.write('yokoten.json', JSON.stringify({ privacy: { skipOwnName: false } }));
-  assert.equal((await run(own, ['check', '--staged'])).status, 1, 'off: stopped');
-  assert.doesNotMatch((await run(own, ['doctor', '--all'])).stdout, /name this repo/);
-  own.write('yokoten.json', JSON.stringify({ privacy: { skipOwnName: true } }));
-  assert.equal((await run(own, ['check', '--staged'])).status, 0, 'on again');
-  assert.match((await run(own, ['doctor', '--all'])).stdout, /own-marks: 1 of your private marks skipped here because they name this repo/);
+  own.git('remote', 'add', 'origin', 'https://example.com/octo/quiet-vale.git');
+  own.write('README.md', 'Quiet Vale ships\n');
+  own.git('add', 'README.md');
+  assert.equal((await run(['check', '--staged'])).status, 0, 'the mark names this repo');
+  assert.match((await run(['doctor', '--all'])).stdout, /own-marks: 1 of your private marks skipped here because they name this repo/);
+  const count = (skipOwnName: boolean) => allowedMarkCount({ ...own.env, ...extra }, { privacy: { ...DEFAULTS.privacy, skipOwnName } }, own.repo).ownName;
+  assert.deepEqual([count(true), count(false)], [1, 0], 'doctor stops counting it when the skip is off');
 
   // The machine's switch, kept when `marks allow` writes the file.
   // The allow file is beside the default marks file, never the setting's (#656).
@@ -1207,14 +1177,14 @@ test('check and doctor: a mark that names the repo is skipped there, counted by 
   mkdirSync(dirname(allowFile), { recursive: true });
   // The switch alone, with no repos key, as the guide shows it: read as no repos.
   writeFileSync(allowFile, JSON.stringify({ skipOwnName: false }));
-  assert.equal((await run(own, ['check', '--staged'])).status, 1, 'off on this machine');
-  const switchedOff = (await run(own, ['doctor', '--all'])).stdout;
+  assert.equal((await run(['check', '--staged'])).status, 1, 'off on this machine');
+  const switchedOff = (await run(['doctor', '--all'])).stdout;
   assert.doesNotMatch(switchedOff, /name this repo/);
   assert.doesNotMatch(switchedOff, /allow file/, 'doctor reads the switch alone as a good file');
-  assert.equal((await run(own, ['marks', 'allow', 'secondmark', '--here'])).status, 0);
+  assert.equal((await run(['marks', 'allow', 'secondmark', '--here'])).status, 0);
   assert.deepEqual(JSON.parse(readFileSync(allowFile, 'utf8')), { skipOwnName: false, repos: [{ remote: 'example.com/octo/quiet-vale', allow: ['secondmark'] }] }, 'marks allow keeps the switch and writes both keys');
   rmSync(allowFile);
-  assert.equal((await run(own, ['check', '--staged'])).status, 0, 'on again with no allow file');
+  assert.equal((await run(['check', '--staged'])).status, 0, 'on again with no allow file');
 
   assert.ok(!said.some((text) => /quiet vale|secondmark/i.test(text)), 'no output holds a mark');
 });
@@ -1299,7 +1269,7 @@ test('marks allow: no mark is echoed, -- takes a mark that starts with -, a link
 });
 
 // #503: a stopped commit says how to take the named files out of it, and that they stay on disk.
-test('check --staged: a stopped commit says how to unstage the files it names (#503)', async () => {
+test('check --staged: a stopped commit says how to unstage the files it names; a staged node_modules is one line (#503, #521)', async () => {
   const sandbox = makeSandbox();
   // No commit yet: there is no HEAD to restore from, so the command is git rm --cached.
   sandbox.write('dist/app.js', 'console.log(1);\n');
@@ -1322,18 +1292,14 @@ test('check --staged: a stopped commit says how to unstage the files it names (#
   sandbox.git('restore', '--staged', 'tool');
   result = await sandbox.call(['check', '--staged']);
   assert.doesNotMatch(result.stderr, /out of the commit/);
-});
-
-// #521: a staged dependency folder is one finding, and the hint names the folder, not its files.
-test('check --staged: a staged node_modules is one line with the untrack command (#521)', async () => {
-  const sandbox = makeSandbox();
+  // #521: a staged dependency folder is one finding, and the hint names the folder, not its files.
   for (let i = 0; i < 30; i += 1) sandbox.write(`node_modules/pkg/dist/f${i}.js`, `module.exports = ${i};\n`);
-  sandbox.git('add', '.');
-  let result = await sandbox.call(['check', '--staged']);
+  sandbox.git('add', 'node_modules');
+  result = await sandbox.call(['check', '--staged']);
   assert.match(flat(result.stderr), / · 1 problem/);
   assert.match(flat(result.stderr), /node_modules\/ a dependency folder, with 30 of its files in the commit/);
   assert.match(flat(result.stderr), /git rm -r --cached node_modules.*add `node_modules\/` to \.gitignore/);
-  assert.match(flat(result.stderr), /To take this folder out of the commit, run `git rm -r --cached node_modules\/`\. It stays on disk/);
+  assert.match(flat(result.stderr), /To take this folder out of the commit, run `git restore --staged node_modules\/`\. It stays on disk/);
   assert.doesNotMatch(result.stderr, /f29\.js/);
 });
 
@@ -1356,17 +1322,11 @@ test('check --pr: the Made-with line is checked against the branch desks (#756)'
     return file;
   };
   const status = (model: string) => writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'worker', vendor: 'deepseek-harness', model, role: 'engineer' }));
-  status('deepseek-v4.1-flash');
-  let result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: event(body('Made with worker DeepSeek (deepseek-v4.1-flash)')) } });
-  assert.equal(result.status, 0, result.stderr);
+  // One failing call proves the status file is read; the rules (a matching line passes, another vendor fails) are in pr.test.ts.
   status('deepseek-v4.2-flash');
-  result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: event(body('Made with worker DeepSeek (deepseek-v4.1-flash)')) } });
+  const result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: event(body('Made with worker DeepSeek (deepseek-v4.1-flash)')) } });
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /a desk on this branch ran deepseek-harness \(deepseek-v4\.2-flash\), but the Made-with line does not name it/);
-  // The same line under another vendor is a finding too.
-  result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: event(body('Made with worker Claude Code (deepseek-v4.2-flash)')) } });
-  assert.equal(result.status, 1);
-  assert.ok(JSON.parse(result.stdout).findings.some((finding: { id: string }) => finding.id === 'pr-provenance'));
 });
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const OLDER = 'fedcba9876543210fedcba9876543210fedcba98';
