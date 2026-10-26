@@ -1447,7 +1447,7 @@ test('marks allow: no mark is echoed, -- takes a mark that starts with -, a link
   };
   const unknown = await run(['marks', 'allow', '--quietvale', '--here']);
   assert.equal(unknown.status, 1);
-  assert.match(unknown.stderr, /an unknown option; to give a mark that starts with -, put it after --/);
+  assert.match(unknown.stderr, /an unknown option; to give a mark that starts with -, put it\s+after --/);
   // The allow file is a link to a file elsewhere: the link is kept, and the file it names changes.
   const real = join(sandbox.home, 'kept', 'allow.json');
   mkdirSync(dirname(real));

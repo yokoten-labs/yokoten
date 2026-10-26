@@ -284,7 +284,7 @@ test('learn --upstream: errors never repeat the words typed', async () => {
   const upstream = (args: string[]) => sandbox.call(['learn', '--upstream', ...args]);
   let result = await upstream(['--done', '../acme-secret']);
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'yokoten learn: that is not a note id; see the ids with `yokoten learn --upstream --list`. Run `yokoten learn --help`.\n');
+  assert.equal(result.stderr, 'yokoten learn: that is not a note id; see the ids with\n               `yokoten learn --upstream --list`. Run `yokoten learn --help`.\n');
   result = await upstream(['--done', '20261020-120000-abcd']);
   assert.equal(result.status, 1);
   assert.doesNotMatch(result.stderr, /20261020/);

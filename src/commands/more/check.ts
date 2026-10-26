@@ -579,7 +579,7 @@ export function runMarks(invocation: Invocation): number | Promise<number> {
   const options = parse('marks', end === -1 ? args : args.slice(0, end));
   // The parser repeats the word it can't read; here it may be a mark, so it is never shown.
   if (typeof options === 'string') {
-    return usage(invocation, options.startsWith('unknown option') ? `an unknown option; to give a mark that starts with -, put it after --, as in yokoten marks allow --here -- <mark>` : `too many words; give one mark, as in ${SHAPE}`);
+    return usage(invocation, options.startsWith('unknown option') ? `an unknown option; to give a mark that starts with -, put it after --, as in \`yokoten marks allow --here -- <mark>\`` : `too many words; give one mark, as in ${SHAPE}`);
   }
   const words = [...options.positional, ...(end === -1 ? [] : args.slice(end + 1))];
   if (words.length > 2) return usage(invocation, `too many words; give one mark, as in ${SHAPE}`);
