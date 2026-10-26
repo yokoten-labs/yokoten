@@ -27,9 +27,9 @@ import type { Env } from '../../rules/config.ts';
 import { workerRole } from '../../rules/guards/index.ts';
 import { runGit } from '../../run/check.ts';
 import { runBot } from './bot.ts';
-import { listPullRequests, nextPick } from './conflicts/order.ts';
+import { mergeOrder, nextPick } from './conflicts/order.ts';
 import { MAP_FILE, MAP_MAX_AGE_MS, type ConflictMap } from './conflicts/types.ts';
-import { type Invocation, type Output, parse, print, requireRoot, title, usage } from '../shared.ts';
+import { count, type Invocation, type Output, parse, print, requireRoot, row, title, usage, wrap } from '../shared.ts';
 
 /** How long one test or check run may take, in ms. */
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -626,6 +626,26 @@ function isConflictMap(value: unknown): value is ConflictMap {
   return map.version === 1 && Array.isArray(map.changes) && Array.isArray(map.collisions);
 }
 
+/** The most rows the bare plan shows, so it fits one screen; the rest fold into a count. */
+const PLAN_ROWS = 8;
+
+/**
+ * What a bare `yokoten train` prints (issue #1042): the order the conflict map gives, why
+ * each one is there, and the commands that merge them. It reads only the map.
+ */
+function planLines(map: ConflictMap): string[] {
+  const picks = mergeOrder(map).filter((pick) => /^pr:\d+$/.test(pick.id));
+  if (!picks.length) return title('train', 'no open pull request to merge in the conflict map; nothing merged');
+  const labelOf = (id: string) => map.changes.find((change) => change.id === id)?.label ?? id;
+  const numbers = picks.map((pick) => pick.id.slice(3));
+  const lines = [...title('train', `the plan for ${count(picks.length, 'pull request')}; nothing merged`), ''];
+  picks.slice(0, PLAN_ROWS).forEach((pick, index) => lines.push(...row(index === 0 ? 'next' : 'to do', `${labelOf(pick.id)}: ${pick.why}`)));
+  if (picks.length > PLAN_ROWS) lines.push(`  ${count(picks.length - PLAN_ROWS, 'more pull request')}, in the order below`);
+  lines.push('', ...wrap('Order: ', numbers.map((number) => `#${number}`).join(' → ')));
+  lines.push(`Merge: name them in this order, as in \`yokoten train ${numbers.slice(0, 2).join(' ')}\``);
+  return lines;
+}
+
 /** `yokoten train <pr>...`: the command's entry, which refuses a worker and reads the queue. */
 export async function runTrain(invocation: Invocation): Promise<number> {
   const options = parse('train', invocation.args);
@@ -657,11 +677,12 @@ export async function runTrain(invocation: Invocation): Promise<number> {
     print(invocation, [`yokoten train · next is ${label}: ${pick.why}`]);
     return 0;
   }
-  const prs = given.length ? given : map ? listPullRequests(map) : [];
-  if (!prs.length) {
-    print(invocation, ['yokoten train: the conflict map names no pull request to merge; name one, as in `yokoten train 1207`'], invocation.stderr);
-    return 1;
+  // A bare train only reads (issue #1042): it shows the plan and merges nothing.
+  if (map) {
+    print(invocation, planLines(map));
+    return 0;
   }
+  const prs = given;
   const wait = options.values['--wait'] === undefined ? WAIT_SECONDS : Number(options.values['--wait']);
   if (!Number.isInteger(wait) || wait <= 0) return usage(invocation, '--wait takes a whole number of seconds');
   const config = botConfig(invocation.env);

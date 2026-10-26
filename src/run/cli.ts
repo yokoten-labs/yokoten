@@ -293,15 +293,16 @@ export const COMMANDS: Command[] = [
   {
     name: 'ci-health',
     summary: 'the last 200 Actions runs, in one issue that is updated in place',
-    usage: '[--repo owner/name] [--dry-run]',
+    usage: '[--repo owner/name] [--write] [--dry-run]',
     text: [
-      'Reads the Actions runs and the checks of open pull requests through gh. Writes one',
-      'Markdown report to the pinned issue "CI health", creating it on the first run.',
-      '--dry-run prints the report and changes nothing.',
+      'Reads the Actions runs and the checks of open pull requests through gh, and prints',
+      'one Markdown report. It writes nothing. With --write it puts the report in the',
+      'pinned issue "CI health", creating it on the first run.',
     ],
     options: [
       { name: '--repo', value: 'owner/name', text: 'the repo to read; the default is GITHUB_REPOSITORY, or the origin remote' },
-      { name: '--dry-run', text: 'print the report; do not create or edit the issue' },
+      { name: '--write', text: 'create or edit the pinned issue "CI health" with the report' },
+      { name: '--dry-run', text: 'print the report only; do not create or edit the issue' },
     ],
     example: 'yokoten ci-health --dry-run',
   },
@@ -591,8 +592,8 @@ export const COMMANDS: Command[] = [
     usage: '[<pr>...] [--wait <seconds>] [--next]',
     text: [
       'Merges each pull request in the given order, as the bot, and stops at the first one',
-      'that needs a person. Only the lead runs it. With no numbers it takes the queue from',
-      'the conflict map, in the order that map gives.',
+      'that needs a person. Only the lead runs it. With no numbers it only prints the plan',
+      'from the conflict map, and merges nothing.',
       'Before the first merge it records every base branch, because GitHub forgets a base',
       'when it deletes the branch. A pull request stacked on a squash-merged branch then',
       'merges from the base it really shares with its old branch, not an older one.',

@@ -1265,6 +1265,20 @@ export function isSameVendor(left: string, right: string): boolean {
   return one === two || one.includes(two) || two.includes(one) || vendorGroup(left) === vendorGroup(right);
 }
 
+/** A model name trimmed and in lower case, so `Claude-Opus-5-5 ` and `claude-opus-5-5` meet. */
+const modelKey = (model: string): string => model.trim().toLowerCase();
+
+/**
+ * Whether a reviewer is the writer's own model (record 0045): the same vendor and the same
+ * model. A reviewer whose model is not named, from the writer's vendor, counts as the same,
+ * since nothing shows it is another model.
+ */
+export function isSameModel(writer: MadeWithAgent, reviewer: MadeWithAgent): boolean {
+  if (!isSameVendor(writer.vendor, reviewer.vendor)) return false;
+  const [one, two] = [modelKey(writer.model), modelKey(reviewer.model)];
+  return !one || !two || one === two;
+}
+
 /** Whether a Made-with pair names the vendor and model a desk ran. An empty desk field says nothing. */
 function isSameDeskAgent(pair: MadeWithAgent, desk: DeskAgent): boolean {
   const model = (one: string): string => one.trim().toLowerCase();
@@ -1281,9 +1295,9 @@ function pairsForRole(roles: MadeWithRoles, role: string): MadeWithAgent[] {
 }
 
 /**
- * The provenance findings of a Made-with line (#756): a reviewer from the writer's own
- * vendor (record 0021), and a desk that worked on the branch but is not named with its
- * vendor and model. A desk the line does not name at all is skipped, so an older line
+ * The provenance findings of a Made-with line (#756): reviewers who are all the writer's
+ * own model (record 0045, which replaced the vendor point of 0021), and a desk that
+ * worked on the branch but is not named with its vendor and model. A desk the line does not name at all is skipped, so an older line
  * that names no lead is not a finding. No desks (a run without status files) means no
  * desk finding.
  */
@@ -1292,10 +1306,12 @@ export function provenanceFindings(roles: MadeWithRoles | null, desks: DeskAgent
   const problems: Finding[] = [];
   // A solo lead writes the change; with a worker named, the worker is the writer.
   const writers = roles.writers.length ? roles.writers : roles.others.length ? roles.others : roles.leads;
-  for (const reviewer of roles.reviewers) {
-    const writer = writers.find((pair) => isSameVendor(pair.vendor, reviewer.vendor));
-    if (!writer) continue;
-    problems.push(finding('pr-provenance', `body: the reviewer ${reviewer.vendor} (${reviewer.model}) has the writer's vendor, ${writer.vendor} (${writer.model})`, 'ask a reviewer from another vendor to review it (record 0021)'));
+  // Record 0045: one reviewer of another model is enough; more of the writer's own model may be listed.
+  const sameAs = (reviewer: MadeWithAgent): MadeWithAgent | undefined => writers.find((writer) => isSameModel(writer, reviewer));
+  if (roles.reviewers.length && roles.reviewers.every((reviewer) => sameAs(reviewer))) {
+    const reviewer = roles.reviewers[0]!;
+    const writer = sameAs(reviewer)!;
+    problems.push(finding('pr-provenance', `body: every reviewer is the writer's own model; ${reviewer.vendor} (${reviewer.model}) is the writer's model, ${writer.vendor} (${writer.model})`, 'ask a reviewer of another model to review it (record 0045)'));
   }
   for (const desk of desks) {
     const named = pairsForRole(roles, desk.role);
