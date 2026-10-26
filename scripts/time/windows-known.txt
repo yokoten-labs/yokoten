@@ -42,7 +42,6 @@ test/commands/more/check.test.ts :: pr sync: a list that stops at the limit says
 test/commands/more/check.test.ts :: pr sync: no open pull requests is one line, and no bot is needed (#432)
 test/commands/more/check.test.ts :: provenance: a commit names its writer, reviewers, approver, tier and issue (#756)
 test/commands/more/check.test.ts :: redact: fails closed; a marks file it cannot read prints none of the input, one line, exit 1 (#1006)
-test/commands/hook.test.ts :: desk: names what is missing, refuses a worker, and refuses a folder that is no clone (#637)
 ? test/commands/hook.test.ts :: hook --commands-only: an edit in a yokoten repo gets its file rules wherever the session started (#307)
 test/commands/hook.test.ts :: hook --stop --agent codex|gemini: the end-of-turn event sends the agent back once (#211)
 test/commands/hook.test.ts :: hook --stop: a partial desk runs its own done-when in the desk (#746)
