@@ -153,7 +153,26 @@ test/setup/doctor/report.test.ts :: doctor: a desk that can see ~/.claude/CLAUDE
 test/setup/doctor/report.test.ts :: doctor: full doctor in an empty repo starts each git read once, ten child processes in all (#453)
 ? test/setup/doctor/report.test.ts :: doctor: lists the work only on this machine; a session hears at most three items (#365)
 test/setup/doctor/report.test.ts :: doctor: on another host, each forge step says once what it asks, with no GitHub instruction, and never holds the stage (#504)
-test/setup/init.test.ts :: (timed out)
+# init on native Windows: 18 tests fail on main too, hidden until 2026-10-27 behind one time-out line.
+# Issue #1109 fixes them after the P4 design review; each line goes when its test passes. Remove all by v0.1.3.
+test/setup/init.test.ts :: init: a CODEOWNERS owner gh says is a user is written as is (#313)
+test/setup/init.test.ts :: init: a Codex home shows the one trust command, and the other agents stay one line (#654, #661)
+test/setup/init.test.ts :: init: a merge commit runs the commit check too (#239)
+test/setup/init.test.ts :: init: a private repo can keep CI off with --no-ci, finish the road, and take CI up again (#377)
+test/setup/init.test.ts :: init: a second run with nothing to do is one line, and --list keeps every file (#1027)
+test/setup/init.test.ts :: init: adds the practices, keeps what is there, and doctor asks for the remote next
+test/setup/init.test.ts :: init: an organization is no CODEOWNERS owner, so init writes the placeholder and says why; full doctor flags an org-only file (#313)
+test/setup/init.test.ts :: init: another core.hooksPath is kept, and its pre-commit is made with the check (#206)
+test/setup/init.test.ts :: init: husky keeps its hooks folder; .husky/pre-commit gets the check and keeps its own lines (#206)
+test/setup/init.test.ts :: init: reads GitHub and says what it would do; --github --yes does it, and a second run changes nothing (#10)
+test/setup/init.test.ts :: init: with no agent installed, the git hook line leads and trust steps fold into the guide (#654)
+test/setup/init.test.ts :: trust (#661): Grok CLI gets one folder entry; undo leaves another folder alone
+test/setup/init.test.ts :: trust (#661): Muse Code gets its project decision; undo leaves another project alone
+test/setup/init.test.ts :: trust (#661): a foreign hook is never trusted, even when it ends with yokoten's flags
+test/setup/init.test.ts :: trust (#661): a hook edited after trust stays off until init puts it back
+test/setup/init.test.ts :: trust (#661): init without a terminal writes nothing and names the command; trust writes only yokoten entries
+test/setup/init.test.ts :: trust (#984): a yokoten hook the user turned off in Codex stays off
+test/setup/init.test.ts :: trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code
 test/setup/install.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)
 test/setup/install.test.ts :: install lists git's global mailmap.file in its plan, and a no leaves it unset (#985)
 test/setup/install.test.ts :: install prints its plan, and uninstall restores the home folder (#904)
