@@ -74,6 +74,19 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 - **Leaves your settings alone.** It keeps your choices, and saves a copy before it changes a file of yours.
 - **Many AI sessions in one repo.** `yokoten conflicts` says which open change to merge first, and the guard stops an edit to a file another open change is moving.
 
+## The commands
+
+You need one command to start. Three more help when you run several AIs.
+
+| Command | What it does |
+|---|---|
+| `npx yokoten` | sets up what is missing, then shows where you are and the next step |
+| `yokoten desk` | gives one task to one AI, in its own fenced desk |
+| `yokoten kanban` | shows the team at a glance, live and read only (preview) |
+| `yokoten tidy` | lists old branches, worktrees and desks; `--local` saves them, then moves them to the trash |
+
+`yokoten help --all` lists the rest. The older commands still run, and each says where it went.
+
 ## Works with
 
 Any AI model works. The guard checks the commands the agent runs, not the model.
@@ -97,6 +110,8 @@ Any AI model works. The guard checks the commands the agent runs, not the model.
 
 ## More ways to install
 
+`npx yokoten` runs all three for you. Each one still runs alone:
+
 ```sh
 npx yokoten install     # once per computer
 npx yokoten init        # once per project
@@ -111,8 +126,8 @@ npx yokoten doctor      # where you are, and the one next step
 
 ## Roadmap
 
-- **Now, v0.1.1**: the five protections on for everyone; many AI sessions in one repo; every command in one screen.
-- **Next, v0.1.2**: run a team of agents from the command line ([issue #823](https://github.com/yokoten-labs/yokoten/issues/823)).
+- **Done, v0.1.1**: the five protections on for everyone; many AI sessions in one repo.
+- **Now, v0.1.2**: three commands, `desk`, `kanban` and `tidy`; another model than the writer reviews each change.
 - **Later**: a lesson one project learns becomes a check for every project.
 
 *Yokoten* (横展) is a word from Toyota's factories: a fix that one line finds goes to every line.
