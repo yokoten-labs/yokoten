@@ -76,13 +76,13 @@ import {
 
 // Full doctor runs the guard once in a child process to measure what a call costs (#461).
 // This file runs doctor in this process over a hundred times, and those children were about
-// half its time on Linux, and more on Windows, where a process starts slowly (#1109). No test
-// here reads the measured cost, so the in-process doctor gets a fixed one: its report keeps
-// the same lines. test/host/light.test.ts tests the measure, and the `run` tests
-// here start doctor in a child process, which still measures for real.
+// half its time on Linux, and more on Windows, where a process starts slowly (#1109). A shared
+// cache: the first doctor measures for real, and the rest reuse that cost, so the report keeps
+// its real lines. The `run` tests start doctor in a child process, which measures on its own.
 const realMeasureGuard = REAL_MACHINE.measureGuard;
 before(() => {
-  REAL_MACHINE.measureGuard = () => ({ wallMs: 100, cpuMs: 80 });
+  let cached: { cost: ReturnType<NonNullable<typeof realMeasureGuard>> } | undefined;
+  REAL_MACHINE.measureGuard = (cli, root, env) => (cached ??= { cost: realMeasureGuard?.(cli, root, env) ?? null }).cost;
 });
 after(() => {
   REAL_MACHINE.measureGuard = realMeasureGuard;
