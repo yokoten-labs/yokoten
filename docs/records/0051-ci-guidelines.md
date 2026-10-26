@@ -32,8 +32,9 @@ The sources we take from, each for one part:
 
 1. **Fast.** A pull request's CI has a time goal; a slow test file is an issue, not a
    longer cap. (Fowler.)
-2. **Red means broken.** CI is red only when a check failed. A run nobody needs (cancelled
-   by a newer push) is not red; a job that never got a runner says so. (Fowler; issue #1114.)
+2. **Red means broken, or says why not.** CI is red when a check failed. A cancelled run
+   (a newer push) stays red, because GitHub counts a skipped required check as passed, but
+   it says it was cancelled; a job that never got a runner says so too. (Fowler; issue #1114.)
 3. **The log is readable.** The verdict comes first; a slow step shows progress; passing
    items are folded; the run page has a summary table. (clig.dev; issue #1119.)
 4. **Safe.** Actions are pinned to a full commit; each job has the least permissions it
