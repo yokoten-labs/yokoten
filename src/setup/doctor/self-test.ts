@@ -10,6 +10,7 @@ import { checkBuildOutput, checkCodeOwners, checkLayout } from '../../rules/layo
 import { notUtc, POSITIVE_CONTROL, scanText } from '../../rules/privacy.ts';
 import { SECRET_CONTROL } from '../../rules/privacy/secrets.ts';
 import { judge } from '../../run/hook.ts';
+import { isPathInside } from '../../platform/paths.ts';
 import { readToolCall, sandboxProblem as claudeSandboxProblem, addUserHooks } from '../../agents/runtimes/claude-code.ts';
 import { projectPluginPath, projectPluginSource } from '../../agents/runtimes/small/opencode.ts';
 import { machineChecks, openCodePluginNote, type Practice } from './checks.ts';
@@ -24,9 +25,41 @@ import { compareCoreRules } from '../init.ts';
 import { coreRulesControl, roadControl } from './lessons.ts';
 import { leftoverControl, machineControl } from './machine.ts';
 
+/** Makes a temp folder for a control from a name prefix: a parameter, so a test can hand in one that throws (#1108). */
+export type MakeTemp = (prefix: string) => string;
+export const makeTempDir: MakeTemp = (prefix) => mkdtempSync(join(tmpdir(), prefix));
+
+/**
+ * What a control returns when it could not make its temp folder. Its check did not run,
+ * which is not a check that let bad input through, so doctor says so in one line (#1108).
+ */
+export const NO_TEMP = 'no temp folder';
+
+/**
+ * The one line doctor prints for controls that found no temp folder (#1108): their checks
+ * did not run, which is not a broken yokoten. The home folder in the path shows as `~`.
+ */
+export function noTempLine(unset: string[], temp: string, home: string | null, platform: NodeJS.Platform): string {
+  const shown = home && isPathInside(temp, home, platform) ? `~${temp.slice(home.length)}` : temp;
+  return `yokoten: the self-test could not set up a temp folder, so the ${unset.join(' and ')} did not run; free space in the temp folder (${shown}), then run \`yokoten doctor\` again.`;
+}
+
 /** The checks that must catch a known-bad input. Returns the names of any that did not. */
 export function selfTest(): string[] {
+  return selfTestRun().failed;
+}
+
+/**
+ * The self-test, with the controls that could not set up kept apart from the checks that
+ * failed (#1108): `unset` names each control that found no temp folder to test in.
+ */
+export function selfTestRun(makeTemp: MakeTemp = makeTempDir): { failed: string[]; unset: string[] } {
   const failed: string[] = [];
+  const unset: string[] = [];
+  const control = (name: string, found: string[]): void => {
+    if (found.includes(NO_TEMP)) unset.push(name);
+    else failed.push(...found);
+  };
   if (!checkCommand('git push origin --tags', { env: {}, cwd: null })) failed.push('release guard');
   failed.push(...hostGuardMisses((command) => checkCommand(command, { env: {}, cwd: null })));
   if (!checkCommand('git commit --no-verify -m x', { env: {}, cwd: null })) failed.push('skip-check guard');
@@ -49,30 +82,35 @@ export function selfTest(): string[] {
   if (!isNewerKitCopy(olderCopy, `${kitMark}new body\n`) || isNewerKitCopy(olderCopy, `${kitMark}old body\n`)) failed.push('edited kit note');
   failed.push(...coreRulesControl());
   failed.push(...machineControl());
-  failed.push(...guardControl());
+  control('user guard check', guardControl(makeTemp));
   failed.push(...leftoverControl());
   failed.push(...sandboxControl());
-  failed.push(...openCodeControl());
-  return failed;
+  control('OpenCode plugin note', openCodeControl(makeTemp));
+  return { failed, unset };
 }
 
 /**
  * A project with `opencode.json` and no plugin must be noted, and a project with the
  * plugin `init` writes must be quiet. A folder with no OpenCode file must be quiet too.
  */
-function openCodeControl(): string[] {
+export function openCodeControl(makeTemp: MakeTemp = makeTempDir, note: typeof openCodePluginNote = openCodePluginNote): string[] {
   let quiet = '';
   let marked = '';
   try {
-    quiet = mkdtempSync(join(tmpdir(), 'yokoten-opencode-quiet-'));
-    marked = mkdtempSync(join(tmpdir(), 'yokoten-opencode-marked-'));
+    quiet = makeTemp('yokoten-opencode-quiet-');
+    marked = makeTemp('yokoten-opencode-marked-');
+  } catch {
+    if (quiet) rmSync(quiet, { recursive: true, force: true });
+    return [NO_TEMP];
+  }
+  try {
     const cli = '.yokoten/bin/yokoten.mjs';
-    if (openCodePluginNote(quiet, cli) !== null) return ['OpenCode plugin note'];
+    if (note(quiet, cli) !== null) return ['OpenCode plugin note'];
     writeFileSync(join(marked, 'opencode.json'), '{}\n');
-    const note = openCodePluginNote(marked, cli);
-    if (!note || note.ok || note.finding.id !== 'opencode-hook') return ['OpenCode plugin note'];
+    const found = note(marked, cli);
+    if (!found || found.ok || found.finding.id !== 'opencode-hook') return ['OpenCode plugin note'];
     writeManaged(projectPluginPath(marked), projectPluginSource(cli));
-    if (openCodePluginNote(marked, cli) !== null) return ['OpenCode plugin note'];
+    if (note(marked, cli) !== null) return ['OpenCode plugin note'];
     return [];
   } catch {
     return ['OpenCode plugin note'];
@@ -87,15 +125,19 @@ function openCodeControl(): string[] {
  * the guard check. Install's own hook must pass it, and so must the plugin, which brings
  * the same guard (#904).
  */
-export function guardControl(): string[] {
+export function guardControl(makeTemp: MakeTemp = makeTempDir, checks: typeof machineChecks = machineChecks): string[] {
   let dir = '';
   try {
-    dir = mkdtempSync(join(tmpdir(), 'yokoten-guard-'));
+    dir = makeTemp('yokoten-guard-');
+  } catch {
+    return [NO_TEMP];
+  }
+  try {
     const env = { HOME: dir };
     const file = join(dir, '.claude', 'settings.json');
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, '{}\n');
-    const guard = (): Practice | undefined => machineChecks(env).find((check) => check.name === 'user-guard');
+    const guard = (): Practice | undefined => checks(env).find((check) => check.name === 'user-guard');
     if (guard()?.ok !== false || guard()?.finding.id !== 'user-guard') return ['user guard check'];
     addUserHooks(env, USER_CLI, USER_MISSING);
     if (guard()?.ok !== true) return ['user guard check (install\'s own hook passes)'];

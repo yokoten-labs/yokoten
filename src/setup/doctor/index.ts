@@ -99,4 +99,4 @@ export {
   UNSAVED_OFFER,
   upstreamNote,
 } from './report.ts';
-export { isShellControlCaught, isUnsavedControlCaught, sandboxControl, selfTest } from './self-test.ts';
+export { guardControl, isShellControlCaught, isUnsavedControlCaught, NO_TEMP, noTempLine, openCodeControl, sandboxControl, selfTest, selfTestRun } from './self-test.ts';

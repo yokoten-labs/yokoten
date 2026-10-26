@@ -36,6 +36,17 @@ const ACTIONS = `repos/${REPO}/actions/permissions/workflow`;
 
 const ADMIN = { ...GOOD, [`repos/${REPO}`]: { ...(GOOD[`repos/${REPO}`] as object), permissions: { admin: true } }, [ACTIONS]: { can_approve_pull_request_reviews: false } };
 
+test('doctor: no temp folder is one line with the fix, not BROKEN (#1108)', () => {
+  const full = () => { throw new Error('ENOSPC: no space left on device'); };
+  const result = doctor(null, { env: { HOME: '/home/a' }, config: DEFAULTS, makeTemp: full });
+  assert.equal(result.report.selfTest.ok, true);
+  assert.ok(!result.lines.some((line) => line.includes('BROKEN')), result.lines.join('\n'));
+  const noTemp = result.lines.filter((line) => line.includes('could not set up a temp folder'));
+  assert.equal(noTemp.length, 1, result.lines.join('\n'));
+  assert.match(noTemp[0]!, /user guard check and OpenCode plugin note did not run; free space in the temp folder/);
+  assert.ok(!doctor(null, { env: { HOME: '/home/a' }, config: DEFAULTS }).lines.some((line) => line.includes('temp folder')), 'a working temp folder says nothing');
+});
+
 test('server: a repo with every setting on is ok, and doctor only reads (#7)', () => {
   const fake = serverGh(GOOD);
   const s = readServer(fake.gh, REPO);

@@ -21,7 +21,8 @@ import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCh
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { pluginSourceNote } from '../advice/marketplace.ts';
-import { selfTest } from './self-test.ts';
+import { makeTempDir, type MakeTemp, noTempLine, selfTestRun } from './self-test.ts';
+import { hostPathPlace } from '../../platform/paths.ts';
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
 const OWNER_STEPS = ['the bot: a GitHub App (or collaborator) with write access; CODEOWNERS sends CI changes to you'];
@@ -312,14 +313,19 @@ const roadLines = (stage: number, next: Finding, offer: string): string[] => [
 
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe },
+  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp },
 ): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
   const lines: string[] = [];
-  const failed = selfTest();
+  const { failed, unset } = selfTestRun(makeTemp);
   const findings: Finding[] = [];
   if (failed.length) {
     lines.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);
     findings.push(finding('self-test', `${failed.join(', ')} let a known-bad input through`, 'do not trust any check until this is fixed; run `yokoten install` again, or report it in an issue'));
+  }
+  // No temp folder is a machine to fix, not a broken yokoten (#1108): one line, never a failure.
+  if (unset.length) {
+    const place = hostPathPlace();
+    lines.push(noTempLine(unset, place.tmp, homeOf(env), place.platform));
   }
   const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed }, stages: STAGES };
   if (!root) return { ok: !failed.length, lines, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings } };
