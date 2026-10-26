@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 import { isPathInside } from '../../../platform/paths.ts';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';

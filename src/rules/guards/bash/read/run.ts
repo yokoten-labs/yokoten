@@ -1,5 +1,5 @@
 import { base, LAUNCHERS, skipPrefix, programName, splitString, findPrograms } from './words.ts';
-import { noteWork } from '../../../message.ts';
+import { noteWork } from '../../../text/message.ts';
 
 // ---- The work budget ----
 //

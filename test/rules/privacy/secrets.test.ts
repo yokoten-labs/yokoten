@@ -10,7 +10,7 @@ import {
   formatFinding,
   isFailingFinding,
   isWarningFinding,
-} from '../../../src/rules/message.ts';
+} from '../../../src/rules/text/message.ts';
 import { addedIgnores, loadIgnores, scanText } from '../../../src/rules/privacy.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretCandidates, findSecretHits, makeSecretHider, SECRET, SECRET_CONTROL } from '../../../src/rules/privacy/secrets.ts';
 import { assertLinear } from '../../../scripts/linear.ts';

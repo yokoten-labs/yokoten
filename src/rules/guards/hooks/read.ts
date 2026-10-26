@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 import { type Env } from '../../config.ts';
-import { type Finding } from '../../message.ts';
+import { type Finding } from '../../text/message.ts';
 import { aliasFinding } from '../commands/lose-work.ts';
 import { HOOKS_DIR, isHooksPath, hooksPath, isInclude, includes } from './settings.ts';
 import { leaves, KEYWORDS } from '../bash/read/words.ts';

@@ -1,6 +1,6 @@
-// Tests for src/rules/message.ts.
+// Tests for src/rules/text/message.ts.
 
-import '../repo/home.ts';
+import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import {
@@ -16,26 +16,27 @@ import {
   makeTranslatedRepo,
   NAMED,
   makeTempDir,
-} from '../repo/helpers.ts';
+} from '../../repo/helpers.ts';
 import {
   DEFAULTS,
   findUnknownKeys,
-} from '../../src/rules/config.ts';
+} from '../../../src/rules/config.ts';
 import {
   checkCommand,
   checkEdit,
   privateOutput,
-} from '../../src/rules/guards/index.ts';
+} from '../../../src/rules/guards/index.ts';
 import {
   checkBuildOutput,
   checkCodeOwners,
   checkLayout,
-} from '../../src/rules/layout.ts';
+} from '../../../src/rules/layout.ts';
 import {
   DOCS_URL,
   finding,
   type Finding,
   formatFinding,
+  formatNote,
   formatRefusal,
   measureWork,
   noteWork,
@@ -43,7 +44,7 @@ import {
   parseRefusal,
   type Rule,
   RULES,
-} from '../../src/rules/message.ts';
+} from '../../../src/rules/text/message.ts';
 import {
   checkApprovalFreshness,
   provenanceFindings,
@@ -53,14 +54,14 @@ import {
   checkPullRequest,
   largeDiff,
   longSentenceNote,
-} from '../../src/rules/pr.ts';
+} from '../../../src/rules/pr.ts';
 import {
   addedIgnores,
   POSITIVE_CONTROL,
   scanText,
-} from '../../src/rules/privacy.ts';
-import { SECRET_CONTROL } from '../../src/rules/privacy/secrets.ts';
-import { parseChange } from '../../src/run/changelog.ts';
+} from '../../../src/rules/privacy.ts';
+import { SECRET_CONTROL } from '../../../src/rules/privacy/secrets.ts';
+import { parseChange } from '../../../src/run/changelog.ts';
 import {
   BORROWED_DIR,
   borrowedProblems,
@@ -70,31 +71,31 @@ import {
   gitReadFinding,
   readGit,
   timeZoneNote,
-} from '../../src/run/check.ts';
-import { lateFinding, repeatStopFinding } from '../../src/run/hook.ts';
+} from '../../../src/run/check.ts';
+import { lateFinding, repeatStopFinding } from '../../../src/run/hook.ts';
 import {
   lintCallResult,
   lintServerEntry,
   lintStdout,
   lintTools,
-} from '../../src/commands/more/advice/mcp.ts';
-import { nameNotes } from '../../src/run/notes/names.ts';
-import { translationNotes } from '../../src/run/notes/translations.ts';
-import { readCurrentPullRequest } from '../../src/host/current-pr.ts';
+} from '../../../src/commands/more/advice/mcp.ts';
+import { nameNotes } from '../../../src/run/notes/names.ts';
+import { translationNotes } from '../../../src/run/notes/translations.ts';
+import { readCurrentPullRequest } from '../../../src/host/current-pr.ts';
 import {
   readIssue,
   readNumberedPullRequest,
   readPullRequest,
-} from '../../src/host/github/index.ts';
+} from '../../../src/host/github/index.ts';
 import {
   explain,
   explainLines,
   ids,
-} from '../../src/setup/advice/explain.ts';
+} from '../../../src/setup/advice/explain.ts';
 import {
   UNSAVED_CONTROL,
   unsavedNotes,
-} from '../../src/setup/advice/unsaved.ts';
+} from '../../../src/setup/advice/unsaved.ts';
 import {
   agentHooks,
   agentTempDirCheck,
@@ -109,15 +110,15 @@ import {
   privacyNotes,
   upstreamNote,
   userAgentHooks,
-} from '../../src/setup/doctor/index.ts';
-import { editedKitCheck, openCodePluginNote } from '../../src/setup/doctor/checks.ts';
-import { KIT, sealManaged } from '../../src/setup/files.ts';
-import { workflowNotes } from '../../src/setup/init.ts';
+} from '../../../src/setup/doctor/index.ts';
+import { editedKitCheck, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
+import { KIT, sealManaged } from '../../../src/setup/files.ts';
+import { workflowNotes } from '../../../src/setup/init.ts';
 import {
   ROAD,
   serverChecks,
   stepFinding,
-} from '../../src/setup/road.ts';
+} from '../../../src/setup/road.ts';
 
 // #94: a finding links to where its rule is explained. The anchors are made as GitHub
 // makes them: lower case, punctuation dropped, spaces to `-`, and `-1`, `-2` for a repeat.
@@ -359,7 +360,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
 });
 
 test('docs: every link goes to a heading of docs/guide.md, so a renamed heading fails (#94)', () => {
-  const anchors = guideAnchors(readFileSync(new URL('../../docs/guide.md', import.meta.url), 'utf8'));
+  const anchors = guideAnchors(readFileSync(new URL('../../../docs/guide.md', import.meta.url), 'utf8'));
   assert.ok(anchors.has('naming') && anchors.has('what-it-doesnt-do'), 'GitHub drops punctuation');
   assert.ok(!anchors.has('githubworkflowsyokotenyml'), 'a `#` line in a code block is not a heading');
   const linked = Object.entries(RULES as Record<string, Rule>).filter(([, rule]) => rule.docs !== undefined);
@@ -412,6 +413,25 @@ test('refusal: title, why, do instead and more, the same for every rule (#707)',
   assert.equal(parsed?.fix, 'Ask the owner to start a new session.');
   assert.equal(parsed?.docs, `${DOCS_URL}#how-to-release`);
   assert.equal(parseRefusal('yokoten: an older form'), null);
+});
+
+// #1099: a refusal and a session note keep the screen limits of record 0049. Each row wraps
+// under its own text at 80 columns; the board still reads every part whole.
+test('refusal and note: long rows wrap under their text, and the parts read back whole (#1099)', () => {
+  const what = 'a long command that names a very long path in the project folder is refused here';
+  const fix = 'save the file first with `git add -A && git commit -m "chore: save work"`, then ask the lead what to do next';
+  const text = formatRefusal(finding('release', what, fix));
+  const lines = text.split('\n');
+  assert.ok(lines.slice(0, -1).every((line) => line.length <= 80), text);
+  assert.ok(lines.some((line) => line.startsWith(' '.repeat(22))), 'the title goes on under its text');
+  assert.ok(lines.some((line) => line.includes('`git add -A && git commit -m "chore: save work"`')), 'a command in backticks is never broken');
+  const parsed = parseRefusal(text);
+  assert.equal(parsed?.title, `yokoten stopped this: ${what} [release]`);
+  assert.equal(parsed?.fix, `${fix.charAt(0).toUpperCase()}${fix.slice(1)}.`);
+  const note = formatNote(finding('release', what, fix));
+  assert.equal(note[0]?.startsWith('yokoten: a long command'), true);
+  assert.ok(note.slice(0, -1).every((line) => line.length <= 80), note.join('\n'));
+  assert.deepEqual(note.filter((line) => /^ {2}\S/.test(line)).map((line) => line.slice(0, 12)), ['  Why       ', '  Next      ', '  More      ']);
 });
 
 test('docs: no message names a docs/<file>.md path without a link (#524)', () => {

@@ -1,4 +1,4 @@
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { hostTokenReveal } from '../worker/config-command.ts';
 import { isGit, GIT_VALUE_OPTIONS, withoutShellRedirects, programName } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';

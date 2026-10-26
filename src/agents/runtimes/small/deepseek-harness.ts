@@ -21,7 +21,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { docsLink } from '../../../rules/message.ts';
+import { docsLink } from '../../../rules/text/message.ts';
 import { homeIn, homeOf } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import { type Added, addHook, checkHooksFile, type HookState, hookState } from '../../hooks-file.ts';

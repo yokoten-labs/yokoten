@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { checkCommandTitle } from '../../pr.ts';
 import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
 import { type Config, type Env } from '../../config.ts';

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { makeSandbox } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type LeaseMap, leaseFor } from '../../../src/rules/guards/lease.ts';
-import { formatRefusal } from '../../../src/rules/message.ts';
+import { formatRefusal } from '../../../src/rules/text/message.ts';
 import { judge } from '../../../src/run/hook.ts';
 
 /** A map with one open change moving src/app.ts, and a draft that leases nothing. */
@@ -51,10 +51,12 @@ test('lease: the guard refuses an edit to a moved file, and the refusal names th
   assert.equal(found?.id, 'file-lease');
   assert.equal(found?.what, 'PR #12 is moving src/app.ts. An edit here now will conflict when it merges');
   assert.equal(formatRefusal(found!), [
-    'yokoten stopped this: PR #12 is moving src/app.ts. An edit here now will conflict when it merges [file-lease]',
+    'yokoten stopped this: PR #12 is moving src/app.ts. An edit here now will',
+    '                      conflict when it merges [file-lease]',
     '',
     '  Why       Two changes to a file that is being moved cannot both go in cleanly.',
-    '  Instead   Work on something else until PR #12 merges, or ask the lead to put this task after it.',
+    '  Instead   Work on something else until PR #12 merges, or ask the lead to put',
+    '            this task after it.',
     '  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#blocked-commands',
   ].join('\n'));
   assert.equal(judge({ paths: ['src/other.ts'], worker: false }, options(sandbox)), null, 'another path passes');

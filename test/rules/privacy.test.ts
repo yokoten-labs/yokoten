@@ -17,7 +17,7 @@ import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
 import { at, makeRepoTemplate, makeTempDir } from '../repo/helpers.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
-import { formatFinding } from '../../src/rules/message.ts';
+import { formatFinding } from '../../src/rules/text/message.ts';
 import {
   describeMark,
   foldLine,

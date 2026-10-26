@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { CODEOWNERS_PLACES } from '../../rules/layout.ts';
-import { type Finding, finding, formatFinding, formatFindingMarks, place } from '../../rules/message.ts';
+import { type Finding, finding, formatFinding, formatFindingMarks, place } from '../../rules/text/message.ts';
 import type { CodeOwners, PullRequest } from '../../rules/pr.ts';
 import { readGit } from '../../run/check.ts';
 import { asText, type Gh, isObject, labelNames, repoOf, unread } from './planning.ts';

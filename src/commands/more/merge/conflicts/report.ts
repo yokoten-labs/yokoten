@@ -5,7 +5,7 @@
 // first look, not the merge order (#912): it names a pair, then says which of the two goes
 // first, which is all a beginner needs before one merge.
 
-import { formatFinding } from '../../../../rules/message.ts';
+import { formatFinding } from '../../../../rules/text/message.ts';
 import { count, type Invocation, nextLine, parse, print, printJson, requireRoot, row, title, usage, wrap } from '../../../shared.ts';
 import { beforeChange, buildMap, openChanges, writeMap } from './map.ts';
 import { mergeOrder } from './order.ts';

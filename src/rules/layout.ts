@@ -5,7 +5,7 @@
 import { posix } from 'node:path';
 import type { Config } from './config.ts';
 import { matcher } from './config.ts';
-import { type Finding, finding } from './message.ts';
+import { type Finding, finding } from './text/message.ts';
 import { CHANGES_DIR, codeOwnersWords, compileCodeOwnersPattern, isCodeOwnersHeader } from './pr.ts';
 
 export { codeOwnersPatternMatches } from './pr.ts';

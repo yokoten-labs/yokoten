@@ -1,5 +1,5 @@
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
 import { mayBeDotGit, PATH_BREAKS, MARK_WRITERS, RUNS_CODE, FIND_LEAD_OPTIONS, FIND_NAME_TESTS, WORKER_MARK, gitLinkAbove } from '../worker/mark.ts';

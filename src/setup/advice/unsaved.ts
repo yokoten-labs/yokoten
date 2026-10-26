@@ -14,7 +14,7 @@ import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync, stat
 import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { type Finding, finding } from '../../rules/message.ts';
+import { type Finding, finding } from '../../rules/text/message.ts';
 
 /** One worktree of the clone, as git lists it, with what is only in its folder. */
 export interface WorktreeFacts {

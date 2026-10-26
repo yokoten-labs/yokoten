@@ -13,7 +13,7 @@ import { isMainThread, parentPort, Worker, workerData } from 'node:worker_thread
 import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '../rules/config.ts';
 import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, realPath as real, stopsFile, stopsOffFile } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
-import { type Finding, finding } from '../rules/message.ts';
+import { type Finding, finding } from '../rules/text/message.ts';
 import type { DeskAgent } from '../rules/pr.ts';
 import { loadMarks, makeRedactor } from '../rules/privacy.ts';
 import { realHomeRead, useRealHome } from '../rules/privacy/home.ts';

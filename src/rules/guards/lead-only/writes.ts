@@ -1,5 +1,5 @@
 import nodePath from 'node:path';
-import { finding, type Finding } from '../../message.ts';
+import { finding, type Finding } from '../../text/message.ts';
 import { type Env } from '../../config.ts';
 import { stripWorktreeRoot, LEAD_ONLY_FIX, isLeadOnly, isGranted } from './edit.ts';
 import { base, commandPlace, placedPath } from '../bash/read/words.ts';

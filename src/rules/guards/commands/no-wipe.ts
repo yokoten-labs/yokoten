@@ -1,5 +1,5 @@
 import { posix, win32 } from 'node:path';
-import { docsLink, type Finding } from '../../message.ts';
+import { docsLink, type Finding } from '../../text/message.ts';
 import { type Env } from '../../config.ts';
 import { homeOf } from '../../privacy.ts';
 import { plainArgs, WRITE_REDIRECT } from '../lead-only/targets.ts';

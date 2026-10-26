@@ -1,7 +1,7 @@
 // The linear-work check the tests share (#754). It is not a test file, so importing it
 // registers no tests twice. It lives here, not in test/ (full) or src/ (the package ships src/).
 import assert, { AssertionError } from 'node:assert/strict';
-import { measureWork } from '../src/rules/message.ts';
+import { measureWork } from '../src/rules/text/message.ts';
 
 /** How far the step count may grow for 8x the input. Linear is about 8x. A fully counted quadratic is about 64x. */
 const MAX_GROWTH = 12;

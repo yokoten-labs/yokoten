@@ -9,7 +9,7 @@
 
 import { existsSync, lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Finding, finding } from '../rules/message.ts';
+import { type Finding, finding } from '../rules/text/message.ts';
 import { CHANGES_DIR, isChangeFile } from '../rules/pr.ts';
 
 /** The sections, in Keep a Changelog's order, and Internal for work users do not see. */

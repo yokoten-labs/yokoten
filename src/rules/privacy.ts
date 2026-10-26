@@ -16,7 +16,7 @@ import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
 import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
-import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './message.ts';
+import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
 import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';

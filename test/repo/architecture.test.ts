@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { COMMANDS } from '../../src/run/cli.ts';
 import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } from '../../src/run/notes/names.ts';
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
-import { noteWork } from '../../src/rules/message.ts';
+import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
 import { CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
@@ -56,8 +56,9 @@ test('layers: no module imports from a layer above its own', () => {
 // invoke.ts, which runs a command in-process (#475), and merge-utc.test.ts, which reads
 // the merge skill and record. docs.test.ts checks that prose agrees with the code: the
 // manifesto count against the guide (#487), and the open standard against the shapes (#755).
-// The real-home preload is a temp script home.ts writes, not a file here, so this folder stays at 7 (#739).
-const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/helpers.ts', 'repo/home.ts', 'repo/invoke.ts', 'repo/merge-utc.test.ts', 'repo/docs/docs.test.ts', 'repo/docs/readme-tables.test.ts'];
+// screens.test.ts checks the text every screen prints against record 0049, calibrated on the
+// owner's verdicts in captured-screens.ts (#1099). The real-home preload is a temp script home.ts writes, not a file here, so this folder stays at 7 (#739).
+const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/helpers.ts', 'repo/home.ts', 'repo/invoke.ts', 'repo/merge-utc.test.ts', 'repo/docs/docs.test.ts', 'repo/docs/readme-tables.test.ts', 'repo/docs/screens.test.ts', 'repo/docs/captured-screens.ts'];
 // Kit prose has no src module. This test reads the skill files (#531).
 const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 // Modules with no test file of their own. Keep it short: a new module gets its test file.
@@ -70,6 +71,7 @@ const NO_TEST_FILE = [
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
   'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users, and test/commands/kanban/ (readProgram, startAndLetGo)
+  'rules/text/screen.ts', // its tests are in test/repo/docs/screens.test.ts, with the screen test of record 0049 (#1099)
 ];
 
 const filesUnder = (folder: string) =>
@@ -1568,7 +1570,7 @@ const KANBAN_PORTS = [
   'commands/more/check.ts',
   'commands/shared.ts',
   'host/github/index.ts',
-  'rules/message.ts',
+  'rules/text/message.ts',
   'rules/privacy.ts',
   'run/hook.ts',
   'run/learn.ts',

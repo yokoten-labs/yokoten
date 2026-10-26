@@ -24,7 +24,7 @@ import { cores, freeMemory, isLight, NICE_LEVEL, OFF_SWITCH, onPath, testCommand
 import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/current-pr.ts';
 import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
-import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/message.ts';
+import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/text/message.ts';
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
 import { parseChange } from '../../run/changelog.ts';
@@ -579,7 +579,7 @@ export function runMarks(invocation: Invocation): number | Promise<number> {
   const options = parse('marks', end === -1 ? args : args.slice(0, end));
   // The parser repeats the word it can't read; here it may be a mark, so it is never shown.
   if (typeof options === 'string') {
-    return usage(invocation, options.startsWith('unknown option') ? `an unknown option; to give a mark that starts with -, put it after --, as in yokoten marks allow --here -- <mark>` : `too many words; give one mark, as in ${SHAPE}`);
+    return usage(invocation, options.startsWith('unknown option') ? `an unknown option; to give a mark that starts with -, put it after --, as in \`yokoten marks allow --here -- <mark>\`` : `too many words; give one mark, as in ${SHAPE}`);
   }
   const words = [...options.positional, ...(end === -1 ? [] : args.slice(end + 1))];
   if (words.length > 2) return usage(invocation, `too many words; give one mark, as in ${SHAPE}`);

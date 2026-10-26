@@ -6,7 +6,7 @@
 
 import { type Dirent, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { noteWork } from '../../rules/message.ts';
+import { noteWork } from '../../rules/text/message.ts';
 
 // ---- Command patterns. road.ts builds its npm and workspaces patterns from these too. ----
 

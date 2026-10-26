@@ -9,6 +9,7 @@
 import { withHome } from '../src/rules/privacy.ts';
 import { type Invocation, isTerminal, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
 import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
+import { wrap } from '../src/rules/text/screen.ts';
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).
@@ -29,8 +30,9 @@ const help = (all: boolean): string => [
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
 function unknownCommand(invocation: Invocation, name: string): number {
   const near = closestWord(name, COMMANDS.map((command) => command.name));
-  const hint = near ? `Did you mean "${near}"?` : `Commands: ${COMMANDS.map((command) => command.name).join(', ')}.`;
-  print(invocation, [`yokoten: unknown command "${name}". ${hint} Run \`yokoten help\`.`], invocation.stderr);
+  // A title, then the one step last: the near command, or the help that lists them all.
+  const next = near ? `Did you mean \`yokoten ${near}\`?` : 'Next: `yokoten help`';
+  print(invocation, [...wrap('yokoten: ', `unknown command "${name}"`), ...wrap('', next)], invocation.stderr);
   return 1;
 }
 

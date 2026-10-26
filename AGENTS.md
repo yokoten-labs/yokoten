@@ -103,7 +103,7 @@ yokoten is its own first user: this file came from `kit/project/AGENTS.md` by
 - **Layers.** `src/` has seven, lowest first; a module imports only from its own
   layer or a lower one (`test/repo/architecture.test.ts` holds this):
   - `platform/`: the place a command runs in (record 0040): the system, and how its paths read.
-  - `rules/`: what is allowed, as plain functions (guards, privacy, layout, config).
+  - `rules/`: what is allowed, as plain functions (guards, privacy, layout, config), and how yokoten's text reads on a screen (`rules/text/`, record 0049).
   - `run/`: the checks at work: the tool-call hook, the commit and CI check.
   - `agents/`: one adapter per AI runtime: its tool-call shape, its settings and
     hooks, and for `claude-code.ts` where its skills and agents go. `codex.ts` and

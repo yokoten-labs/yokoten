@@ -239,7 +239,7 @@ test("Muse's hook entry point in a marked clone sees a worker and refuses a lead
   assert.match(result.stdout.replace(/\s+/g, ' '), /marked the clone at .*Removing the clone removes the mark\./);
   assert.ok(existsSync(join(desk, '.git', 'yokoten-worker')));
   // The session start says worker, and the guard refuses a lead-only edit and a push.
-  assert.match(hook('SessionStart', '{}').stdout, /this session is a worker, because its worktree or clone carries the worker mark/);
+  assert.match(hook('SessionStart', '{}').stdout.replace(/\s+/g, ' '), /this session is a worker, because its worktree or clone carries the worker mark/);
   const refused = edit(join(desk, 'AGENTS.md'));
   assert.equal(refused.status, 2, refused.stderr);
   assert.match(refused.stderr, /AGENTS\.md is lead-only/);

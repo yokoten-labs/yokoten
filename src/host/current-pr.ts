@@ -14,7 +14,7 @@
 // this machine, for tests). No message names the token or the API's address.
 
 import type { Env } from '../rules/config.ts';
-import { finding } from '../rules/message.ts';
+import { finding } from '../rules/text/message.ts';
 import { asText, EVENT_FIX, isObject, isUnreadable, labelNames, milestoneTitle, readEvent, SHA_FIX, type Unreadable } from './github/index.ts';
 
 /** The fields of a pull request that change without a new commit, as they are now. */

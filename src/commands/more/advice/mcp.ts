@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { type Finding, finding, isFailingFinding } from '../../../rules/message.ts';
+import { type Finding, finding, isFailingFinding } from '../../../rules/text/message.ts';
 import { bullets, count, type Invocation, parse, print, printJson, requireRoot, row, title, usage } from '../../shared.ts';
 
 /** The words of a `--command` value; a part in double quotes is one word, so `"C:\Program Files\nodejs\node.exe"` stays whole. A backslash is kept as it is. */
