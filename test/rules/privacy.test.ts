@@ -1609,11 +1609,13 @@ test('guard: a gh post outside the known shapes goes to the bot; through the bot
     '${G} 3 --body-file=n.md',
     '`echo gh` issue comment 3 -b "a note"',
     '`echo gh issue comment` 3 -F n.md',
+    // Not a post, but the guard can't tell: refused, and the fix says to name the program.
+    "$PYTHON -c 'print(1)'",
   ];
   for (const command of hidden) {
     const f = post(command);
     assert.equal(f?.id, 'unreadable-command', command);
-    assert.equal(f?.fix, POST_WITH_BOT, command);
+    assert.match(f?.fix ?? '', /by its name.*yokoten bot/, command);
   }
   // A release with files, bare: the owner releases, so that rule answers first.
   assert.equal(post('gh release create v1 --notes-file n.md n.md')?.id, 'release');
