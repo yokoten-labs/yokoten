@@ -1,14 +1,13 @@
 # yokoten · 横展
 
+[![npm](https://img.shields.io/npm/v/yokoten?logo=npm)](https://www.npmjs.com/package/yokoten)
+[![ci](https://github.com/yokoten-labs/yokoten/actions/workflows/yokoten.yml/badge.svg)](https://github.com/yokoten-labs/yokoten/actions/workflows/yokoten.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
+[![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+
 A safety guard for AI coding tools.
 
 AI agents can make a big mistake in a second. yokoten stops it before it happens.
-
-- **Stops dangerous actions**: a force push, deleting your work, leaking a secret, releasing without you.
-- **Works inside the tools you already use**: Claude Code, Codex, Copilot CLI, Muse Code and more.
-- **On by default.** One command to start, nothing new to learn.
-- **Leaves your settings alone**: it keeps the choices you made, and saves a copy before it changes a file of yours.
-- **Works on Linux, Windows and macOS.** On Windows, WSL is fully supported. Native Windows is in beta, in Git Bash and PowerShell 7.
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -21,9 +20,9 @@ cd your-project
 npx yokoten
 ```
 
-That's it. Run it again any time: it does only what is still missing.
+That's it: one command, nothing to set. Run it again any time; it does only what is still missing.
 
-The first run shows one screen: what it set up, where you are, and the one command to type next.
+The first run shows one screen: what it set up, where you are, and the next command.
 
 <!-- The first run in a new repo, from `yokoten` 0.1.1; regenerate it when the screen changes. -->
 ```text
@@ -48,9 +47,17 @@ Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `yokoten doctor --all` shows every check and 5 notes
 ```
 
-## What you see
+## What it stops
 
-An agent tries something risky. yokoten stops it and says what to do instead:
+| It protects | It stops |
+|---|---|
+| Your work | a force push, a hard reset, deleting `.git` |
+| Your secrets | a commit that adds a key, a private email or an IP address |
+| Your releases | a new tag, a package publish, making a repo public |
+| The code you run | a download that runs before anyone reads it |
+| The guard itself | skipping the commit check, or switching it off |
+
+When it stops something, it says why and what to do instead:
 
 ```
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
@@ -60,25 +67,12 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
   More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-## What it stops
-
-yokoten protects five things. All five are on in every project after `npx yokoten`, with nothing to set.
-
-- **Your work**: a force push, a hard reset, deleting `.git`, and other ways to lose work.
-- **Your secrets**: a commit that adds a key, a private email or an IP address.
-- **Your releases**: a new tag, a package publish, or making a repo public. Only you decide when to release.
-- **The code you run**: a download that a program would run before anyone reads it.
-- **The guard itself**: skipping the commit check, or switching it off.
-
 ## How it works
 
-yokoten is a program, not an AI. The same command always gets the same answer, in under
-a fifth of a second, at no cost. Before each command or edit, your AI tool asks yokoten. yokoten also
-checks each commit and runs in CI, so a bad change is stopped even when no agent is involved.
-
-New in v0.1.1: when several AI sessions work in one repo, `yokoten conflicts` shows which
-open pull requests touch the same files and which to merge first. The guard stops an edit
-to a file that another open change is moving.
+- **A program, not an AI.** The same command always gets the same answer, in under a fifth of a second, at no cost.
+- **Three places.** Your AI tool asks yokoten before each command or edit; yokoten also checks each commit and runs in CI.
+- **Leaves your settings alone.** It keeps your choices, and saves a copy before it changes a file of yours.
+- **Many AI sessions in one repo.** `yokoten conflicts` says which open change to merge first, and the guard stops an edit to a file another open change is moving.
 
 ## Works with
 
@@ -99,6 +93,7 @@ Any AI model works. The guard checks the commands the agent runs, not the model.
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **Programming languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
+- **Platforms**: Linux, macOS and WSL. Native Windows is in beta, in Git Bash and PowerShell 7.
 
 ## More ways to install
 
@@ -108,25 +103,22 @@ npx yokoten init        # once per project
 npx yokoten doctor      # where you are, and the one next step
 ```
 
-- **Claude Code plugin**: `/plugin marketplace add https://github.com/yokoten-labs/yokoten.git` (HTTPS, so no SSH key is needed), then `/plugin install yokoten@yokoten`. Use the plugin or `npx`, not both.
-- **Versions**: Stable (the default), Beta or Dev. See [which version to install](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install).
+- **Claude Code plugin**: `/plugin marketplace add https://github.com/yokoten-labs/yokoten.git`, then `/plugin install yokoten@yokoten`. Use the plugin or `npx`, not both.
+- **Versions**: Stable (the default), Beta or Dev; see [which version to install](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#which-version-to-install).
 - **CI only**: [use it as a GitHub Action](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#use-it-as-a-github-action).
-- **Node**: 22.23.4 or later, 24.22.1 or later on Node 24, 26.12.1 or later on Node 26.
-- **UTC**: the commit check asks for UTC commit times. Set it once: `export TZ=UTC` in your shell profile, or `$env:TZ = "UTC"` in `$PROFILE` in PowerShell. `npx yokoten doctor` names the line for your shell.
-- `npx skills add yokoten-labs/yokoten` copies the skills only. Run `npx yokoten install` too, or nothing is guarded.
+- **Node**: 22.23.4+, 24.22.1+ or 26.12.1+.
+- **UTC**: the commit check asks for UTC commit times. `npx yokoten doctor` names the line for your shell.
 
-## On the road
+## Roadmap
 
 - **Now, v0.1.1**: the five protections on for everyone; many AI sessions in one repo; every command in one screen.
 - **Next, v0.1.2**: run a team of agents from the command line ([issue #823](https://github.com/yokoten-labs/yokoten/issues/823)).
 - **Later**: a lesson one project learns becomes a check for every project.
 
-*Yokoten* (横展) is a word from Toyota's factories: a fix that one line finds goes to every
-line. See the [milestones](https://github.com/yokoten-labs/yokoten/milestones).
+*Yokoten* (横展) is a word from Toyota's factories: a fix that one line finds goes to every line.
 
 ## Learn more
 
-- [The guide](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md): every rule and command, and what yokoten can't do.
-- [The standard](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md), [Decisions](https://github.com/yokoten-labs/yokoten/tree/main/docs/records), [Changelog](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md), [Contributing](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md), [Security](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md).
+[The guide](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md) · [The standard](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md) · [Decisions](https://github.com/yokoten-labs/yokoten/tree/main/docs/records) · [Changelog](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [Milestones](https://github.com/yokoten-labs/yokoten/milestones) · [Contributing](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [Security](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)
 
 MIT license. Built by [coolwhite](https://coolwhite.us/) and a team of AI agents.
