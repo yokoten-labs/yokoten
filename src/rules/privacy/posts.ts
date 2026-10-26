@@ -62,6 +62,23 @@ export function isPosting(args: string[]): boolean {
   return postKind(args) !== null || (group !== undefined && sub !== undefined && !!UNREAD_POSTS[group]?.includes(sub));
 }
 
+/** The long options that carry a post's text, or a file or field holding it. */
+const TEXT_OPTIONS = new Set(['--body', '--body-file', '--title', '--notes', '--notes-file', '--comment', '--subject', '--recover', '--input', '--field', '--raw-field', '-f']);
+
+/**
+ * Whether words after a program the guard can't name may be part of a post (#1104): any post
+ * group or subcommand word, or any option that carries text. A word list, not gh's grammar,
+ * so `G="gh issue"; $G comment 3 -b …` counts too.
+ */
+export function mayPost(words: string[]): boolean {
+  const postWords = new Set(['api', ...Object.keys(POSTS), ...Object.values(POSTS).flat(), ...Object.keys(UNREAD_POSTS), ...Object.values(UNREAD_POSTS).flat()]);
+  return words.some((word) => {
+    if (postWords.has(word)) return true;
+    if (TEXT_OPTIONS.has(word.startsWith('--') && word.includes('=') ? word.slice(0, word.indexOf('=')) : word)) return true;
+    return /^-[A-Za-z]/.test(word) && TEXT_LETTERS.test(/^-[A-Za-z]+/.exec(word)?.[0].slice(1) ?? '');
+  });
+}
+
 /** Why the checks can't read what a posting gh command sends, with the bot's fix; null when its form is known (#1104). */
 export type UnreadPost = { what: string; fix: string };
 

@@ -3,7 +3,7 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { isPosting, postKind, unreadPost } from '../../../src/rules/privacy/posts.ts';
+import { isPosting, mayPost, postKind, unreadPost } from '../../../src/rules/privacy/posts.ts';
 
 test('unreadPost: each form outside the allowlist is named, and a known form is not (#1104)', () => {
   // [the words after gh, what the reason says, or null for a known form]
@@ -56,4 +56,9 @@ test('postKind and isPosting: the forms the checks read, and the posts they refu
   assert.equal(isPosting(['issue', 'comment', '3']), true);
   assert.equal(isPosting(['pr', 'list']), false);
   assert.equal(isPosting([]), false);
+});
+
+test('mayPost: any post word or text option after a hidden program counts (#1104)', () => {
+  for (const words of [['comment', '3'], ['3', '-b', 'x'], ['3', '--body-file=n.md'], ['-dt', 'x'], ['create'], ['--title', 'x']]) assert.equal(mayPost(words), true, words.join(' '));
+  for (const words of [[], ['n.md'], ['bin/yokoten.ts', 'check'], ['-rv', 'a', 'b']]) assert.equal(mayPost(words), false, words.join(' '));
 });

@@ -1596,7 +1596,19 @@ test('guard: a gh post outside the known shapes goes to the bot; through the bot
     assert.match(viaBot?.fix ?? '', botFix, `bot: ${args}`);
   }
   // A program the guard can't name, with the words of a post: refused, sent to the bot.
-  for (const command of ['G=gh; $G issue comment 3 -F n.md', '$G issue comment 3 -F n.md', '${G} pr create -t t -F n.md', '"$G" gist create n.md']) {
+  // The variable may hold the group too, and a backtick names no program either.
+  const hidden = [
+    'G=gh; $G issue comment 3 -F n.md',
+    '$G issue comment 3 -F n.md',
+    '${G} pr create -t t -F n.md',
+    '"$G" gist create n.md',
+    'G="gh issue"; $G comment 3 -b "a note"',
+    'G="gh issue comment"; $G 3 -b "a note"',
+    '${G} 3 --body-file=n.md',
+    '`echo gh` issue comment 3 -b "a note"',
+    '`echo gh issue comment` 3 -F n.md',
+  ];
+  for (const command of hidden) {
     const f = post(command);
     assert.equal(f?.id, 'unreadable-command', command);
     assert.equal(f?.fix, POST_WITH_BOT, command);
@@ -1604,7 +1616,7 @@ test('guard: a gh post outside the known shapes goes to the bot; through the bot
   // A release with files, bare: the owner releases, so that rule answers first.
   assert.equal(post('gh release create v1 --notes-file n.md n.md')?.id, 'release');
   // Positive controls: a clean post in a known shape goes through, bare and through the bot.
-  for (const command of ['gh issue comment 3 --body-file n.md', 'yokoten bot -- gh issue comment 3 --body-file n.md', 'gh pr close 3 -d -c "a note"', 'gh pr close 3 -c"a note"', 'gh issue comment 3 -Rme/repo -F n.md', '$G pr list']) {
+  for (const command of ['gh issue comment 3 --body-file n.md', 'yokoten bot -- gh issue comment 3 --body-file n.md', 'gh pr close 3 -d -c "a note"', 'gh pr close 3 -c"a note"', 'gh issue comment 3 -Rme/repo -F n.md', '$EDITOR n.md', '$NODE bin/yokoten.ts check']) {
     assert.equal(post(command), null, command);
   }
   rmSync(join(postDir, 'n.md'));
