@@ -77,7 +77,7 @@ import {
   lintServerEntry,
   lintStdout,
   lintTools,
-} from '../../src/commands/advice/mcp.ts';
+} from '../../src/commands/more/advice/mcp.ts';
 import { nameNotes } from '../../src/run/notes/names.ts';
 import { translationNotes } from '../../src/run/notes/translations.ts';
 import { readCurrentPullRequest } from '../../src/host/current-pr.ts';

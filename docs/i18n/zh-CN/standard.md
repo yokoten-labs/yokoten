@@ -179,8 +179,8 @@ agent 离开以后，它的列表也丢掉。
 怎么检查。`recordFeed` 拿上一份视图和这一份比。
 版本 1。这条记录没有版本字段。
 
-代码：[src/commands/advice/board/feed/steps.ts](../../../src/commands/advice/board/feed/steps.ts) 和 [src/commands/advice/board/page/browser/script.ts](../../../src/commands/advice/board/page/browser/script.ts)。
-测试：[test/commands/advice/board/feed/steps.test.ts](../../../test/commands/advice/board/feed/steps.test.ts) 和 [test/commands/advice/board/page/browser/script.test.ts](../../../test/commands/advice/board/page/browser/script.test.ts)。
+代码：[src/commands/kanban/feed/steps.ts](../../../src/commands/kanban/feed/steps.ts) 和 [src/commands/kanban/page/browser/script.ts](../../../src/commands/kanban/page/browser/script.ts)。
+测试：[test/commands/kanban/feed/steps.test.ts](../../../test/commands/kanban/feed/steps.test.ts) 和 [test/commands/kanban/page/browser/script.test.ts](../../../test/commands/kanban/page/browser/script.test.ts)。
 
 ## 一次工具调用
 
@@ -340,9 +340,9 @@ hook 先写临时文件再改名，所以中途出现的符号链接会被换掉
 
 - [src/run/hook.ts](../../../src/run/hook.ts) 和 [test/run/hook.test.ts](../../../test/run/hook.test.ts)。
 - [src/commands/hook.ts](../../../src/commands/hook.ts) 和 [test/commands/hook.test.ts](../../../test/commands/hook.test.ts)。
-- [src/commands/advice/board/agents.ts](../../../src/commands/advice/board/agents.ts) 和 [test/commands/advice/board/agents.test.ts](../../../test/commands/advice/board/agents.test.ts)。
-- [src/commands/advice/board/controls.ts](../../../src/commands/advice/board/controls.ts) 和 [test/commands/advice/board/controls.test.ts](../../../test/commands/advice/board/controls.test.ts)。
-- [src/commands/advice/board/view.ts](../../../src/commands/advice/board/view.ts) 和 [test/commands/advice/board/view.test.ts](../../../test/commands/advice/board/view.test.ts)。
+- [src/commands/kanban/agents.ts](../../../src/commands/kanban/agents.ts) 和 [test/commands/kanban/agents.test.ts](../../../test/commands/kanban/agents.test.ts)。
+- [src/commands/kanban/controls.ts](../../../src/commands/kanban/controls.ts) 和 [test/commands/kanban/controls.test.ts](../../../test/commands/kanban/controls.test.ts)。
+- [src/commands/kanban/view.ts](../../../src/commands/kanban/view.ts) 和 [test/commands/kanban/view.test.ts](../../../test/commands/kanban/view.test.ts)。
 
 ## Made-with 行
 
@@ -385,7 +385,7 @@ Dependabot 开的 PR，这一行有问题只是提醒，不算失败。
 版本 1。这一行没有版本字段。
 
 - [src/rules/pr.ts](../../../src/rules/pr.ts) 和 [test/rules/pr.test.ts](../../../test/rules/pr.test.ts)。
-- [src/commands/merge/bot.ts](../../../src/commands/merge/bot.ts) 和 [test/commands/merge/bot.test.ts](../../../test/commands/merge/bot.test.ts)。
+- [src/commands/more/merge/bot.ts](../../../src/commands/more/merge/bot.ts) 和 [test/commands/more/merge/bot.test.ts](../../../test/commands/more/merge/bot.test.ts)。
 
 ## 来源
 
@@ -429,7 +429,7 @@ gh 读不到时，批准的人写成 unknown，命令仍然以 0 退出。
 
 - [src/rules/pr.ts](../../../src/rules/pr.ts) 和 [test/rules/pr.test.ts](../../../test/rules/pr.test.ts)。
 - [src/run/hook.ts](../../../src/run/hook.ts) 和 [test/run/check.test.ts](../../../test/run/check.test.ts)。
-- [src/commands/check.ts](../../../src/commands/check.ts) 和 [test/commands/check.test.ts](../../../test/commands/check.test.ts)。
+- [src/commands/more/check.ts](../../../src/commands/more/check.ts) 和 [test/commands/more/check.test.ts](../../../test/commands/more/check.test.ts)。
 
 ## 教训文件
 

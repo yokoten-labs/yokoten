@@ -2293,7 +2293,7 @@ Each agent's tokens show under the agents, in **Use and cost**.
 The board reads the last 7 days of session logs the agents already write: Claude Code and Muse Code.
 It sends nothing anywhere, and it keeps no message text.
 Each row is one agent, model and day: input, cached and output tokens.
-The price is the vendor's list price in `src/commands/advice/board/feed/read/prices.ts`.
+The price is the vendor's list price in `src/commands/kanban/feed/read/prices.ts`.
 That table names the day it was checked and each vendor's price page.
 A model with no price, or a log without token counts, says "partial" instead of a guess.
 The dollars are only an estimate: "about $1.20 if paid by API".

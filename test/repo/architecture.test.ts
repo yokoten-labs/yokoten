@@ -64,7 +64,7 @@ const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
   'host/github/index.ts', // re-exports the GitHub adapter's public names
-  'commands/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
+  'commands/more/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
@@ -1411,11 +1411,11 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/desk/desk.ts', 2],
   ['agents/desk/start.ts', 1],
   ['agents/runtimes/small/deepseek-harness.ts', 1],
-  ['commands/advice/board/server.ts', 1],
-  ['commands/check.ts', 1],
+  ['commands/kanban/server.ts', 1],
+  ['commands/more/check.ts', 1],
   ['commands/hook.ts', 1],
-  ['commands/merge/train.ts', 1],
-  ['commands/setup.ts', 2],
+  ['commands/more/merge/train.ts', 1],
+  ['commands/more/setup.ts', 2],
   ['host/light.ts', 1],
   ['rules/guards/commands/no-wipe.ts', 2],
   ['rules/guards/hooks/read.ts', 1],
@@ -1639,8 +1639,8 @@ const CHILD_CAP = 4;
 // Files that need more, each at its count: the count may only go down. Keep it short; a
 // file leaves the table once it is at CHILD_CAP or under.
 const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
-  'test/commands/check.test.ts': { cap: 8, reason: 'the entries of two commands, check --pr and redact; redact also runs in a shell pipe and on an 8 MB stream, as its hook runs it' },
-  'test/commands/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
+  'test/commands/more/check.test.ts': { cap: 8, reason: 'the entries of two commands, check --pr and redact; redact also runs in a shell pipe and on an 8 MB stream, as its hook runs it' },
+  'test/commands/more/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
   'test/run/cli.test.ts': { cap: 8, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache and the demo loop' },
   'test/setup/init.test.ts': { cap: 12, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },

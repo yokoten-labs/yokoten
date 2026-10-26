@@ -65,55 +65,55 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'desk':
       return import('../src/commands/hook.ts').then((m) => m.runDesk(invocation));
     case 'msg':
-      return import('../src/commands/advice/messages.ts').then((m) => m.runMsg(invocation));
+      return import('../src/commands/more/advice/messages.ts').then((m) => m.runMsg(invocation));
     case 'check':
-      return import('../src/commands/check.ts').then((m) => m.runCheck(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runCheck(invocation));
     case 'ci-health':
-      return import('../src/commands/check.ts').then((m) => m.runCiHealth(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runCiHealth(invocation));
     case 'provenance':
-      return import('../src/commands/check.ts').then((m) => m.runProvenance(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runProvenance(invocation));
     case 'mcp':
-      return import('../src/commands/advice/mcp.ts').then((m) => m.runMcp(invocation));
+      return import('../src/commands/more/advice/mcp.ts').then((m) => m.runMcp(invocation));
     case 'borrowed':
-      return import('../src/commands/check.ts').then((m) => m.runBorrowed(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runBorrowed(invocation));
     case 'redact':
-      return import('../src/commands/check.ts').then((m) => m.runRedact(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runRedact(invocation));
     case 'test':
-      return import('../src/commands/check.ts').then((m) => m.runTest(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runTest(invocation));
     case 'marks':
-      return import('../src/commands/check.ts').then((m) => m.runMarks(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runMarks(invocation));
     case 'changelog':
-      return import('../src/commands/learn.ts').then((m) => m.runChangelog(invocation));
+      return import('../src/commands/more/learn.ts').then((m) => m.runChangelog(invocation));
     case 'learn':
-      return import('../src/commands/learn.ts').then((m) => m.runLearn(invocation));
+      return import('../src/commands/more/learn.ts').then((m) => m.runLearn(invocation));
     case 'doctor':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runDoctor(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runDoctor(invocation));
     case 'explain':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runExplain(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runExplain(invocation));
     case 'adopt':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runAdopt(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runAdopt(invocation));
     case 'init':
-      return import('../src/commands/setup.ts').then((m) => m.runInit(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runInit(invocation));
     case 'trust':
-      return import('../src/commands/setup.ts').then((m) => m.runTrust(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runTrust(invocation));
     case 'update':
-      return import('../src/commands/setup.ts').then((m) => m.runUpdate(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUpdate(invocation));
     case 'upgrade':
-      return import('../src/commands/setup.ts').then((m) => m.runUpgrade(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUpgrade(invocation));
     case 'bot':
-      return import('../src/commands/merge/bot.ts').then((m) => m.runBot(invocation));
+      return import('../src/commands/more/merge/bot.ts').then((m) => m.runBot(invocation));
     case 'pr':
-      return import('../src/commands/check.ts').then((m) => m.runPr(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runPr(invocation));
     case 'train':
-      return import('../src/commands/merge/train.ts').then((m) => m.runTrain(invocation));
+      return import('../src/commands/more/merge/train.ts').then((m) => m.runTrain(invocation));
     case 'conflicts':
-      return import('../src/commands/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
+      return import('../src/commands/more/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
     case 'board':
-      return import('../src/commands/advice/board/server.ts').then((m) => m.runBoard(invocation));
+      return import('../src/commands/kanban/server.ts').then((m) => m.runBoard(invocation));
     case 'install':
-      return import('../src/commands/setup.ts').then((m) => m.runInstall(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runInstall(invocation));
     case 'uninstall':
-      return import('../src/commands/setup.ts').then((m) => m.runUninstall(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUninstall(invocation));
     case 'version': {
       const options = parse('version', args);
       if (typeof options === 'string') return usage(invocation, options);
@@ -136,7 +136,7 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     }
     case undefined:
       // No command in a project is not an error: it is the start (#548).
-      return import('../src/commands/setup.ts').then((m) => m.runStart(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runStart(invocation));
     case '--help':
     case '-h':
       break;
