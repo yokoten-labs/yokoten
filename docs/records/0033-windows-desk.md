@@ -1,6 +1,9 @@
 # 0033 The Windows desk uses a local sandbox account
 
-Status: proposed
+Status: deferred on 2026-10-26. The setup needs admin rights, a new local account and a
+firewall rule: system security settings that a new coder cannot judge. In v0.1.2 the
+desk on native Windows says to use WSL (record 0043). Before this is taken up again,
+options that need no admin rights, such as an AppContainer, are compared first.
 Date: 2026-10-23 (UTC)
 
 ## Context

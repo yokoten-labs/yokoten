@@ -1,6 +1,8 @@
 # 0038 What each plan allows for shared work: a survey of vendor terms
 
-Status: proposed; facts to check before layer 3 is offered
+Status: reference, not a decision (2026-10-26). The facts are not checked against the
+live terms; check them before each release, because terms change. One rule is taken
+from it, below.
 Date: 2026-10-23 (UTC)
 
 ## Context
@@ -142,6 +144,12 @@ documents read here says "another person's task may run on your plan".
   contract. It is not a route for strangers.
 - Put the answer on the machine card: "your plan, your work" or "team API". A person
   should never have to read a license to know what a button does.
+
+## The rule taken from this (accepted on 2026-10-26)
+
+**yokoten never lets several people share one person's plan.** Each new coder signs in
+to their own AI tool with their own account. A team that shares one bill uses that
+vendor's API, under the API's terms.
 
 ## How to check, in one pass
 

@@ -1,6 +1,6 @@
 # 0037 The owner reviews only what can loosen the safeguard
 
-Status: proposed
+Status: accepted on 2026-10-26
 Date: 2026-10-23 (UTC)
 
 ## Context
@@ -34,7 +34,8 @@ secret, and to hand the rest to the lead.
 3. **Until issue #697 ships**, the lead finds a loosening by reading the diff, and the
    reviewer brief asks for it too. A loosening change gets `tier: A` by hand, even when
    it touches no owned path. `check --pr` already accepts tier A on any path.
-4. Issue #697 moves to the front of v0.1.1. The work is issue #839.
+4. Issue #697 is in v0.1.2, after the three safety issues of record 0043. (It was
+   first put at the front of v0.1.1, which shipped without it.)
 
 ## Options not taken
 
