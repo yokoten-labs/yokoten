@@ -30,8 +30,8 @@ export const MAX_BODY_CHARS = 20_000;
 export const MODEL_TIMEOUT_MS = 480_000;
 /**
  * The longest answer DeepSeek may write, in tokens: its reasoning and the JSON both count.
- * 64K is DeepSeek's own default in thinking mode; at 32K a large pull request was cut off
- * before the verdict, twice on PR #1106.
+ * At 32K a large pull request was cut off before the verdict, twice on PR #1106, after about
+ * 200 s; 64K takes about 400 s, inside MODEL_TIMEOUT_MS.
  */
 export const MAX_ANSWER_TOKENS = 65_536;
 /** How long one GitHub call may take (ms). */

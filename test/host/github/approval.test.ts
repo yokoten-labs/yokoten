@@ -819,13 +819,15 @@ test('review: an unfinished DeepSeek answer names why, and an API error says wha
   for (const data of [null, {}, { error: 'flat' }, { error: { message: 42 } }, { error: { message: '<>' } }]) assert.equal(apiErrorOf(data), '');
 });
 
-// #1111: the answer cap and the model's time both fit what holds them. DeepSeek's limits
-// (V4 Flash, thinking mode): 64K output by default, 384K at most, and a 1M-token context.
+// #1111: the answer cap and the model's time both fit what holds them. At 32K, a large pull
+// request was cut off before the verdict, twice; those runs took about 200 s, so 64K takes
+// about 400 s. DeepSeek's published limits differ by model and source, so the test holds
+// the cap at 64K and the input plus answer under a 1M-token context.
 test('review: the answer cap fits DeepSeek, and the model call fits the job (#1111)', () => {
-  assert.ok(MAX_ANSWER_TOKENS >= 65_536, 'at least DeepSeek\'s own default in thinking mode, or the reasoning cuts off the verdict');
-  assert.ok(MAX_ANSWER_TOKENS <= 393_216, 'no more than DeepSeek\'s output limit');
-  // A character is at least a token, so this counts the input high.
-  assert.ok(MAX_DIFF_CHARS + MAX_BODY_CHARS + 20_000 + MAX_ANSWER_TOKENS < 1_000_000, 'input and answer fit the context');
+  assert.equal(MAX_ANSWER_TOKENS, 65_536, '64K: room for the reasoning and the verdict; change it with this test');
+  // A token is at least one character, so counting characters as tokens counts the input high.
+  const instructions = 20_000; // the prompt around the body and the diff, generously
+  assert.ok(MAX_DIFF_CHARS + MAX_BODY_CHARS + instructions + MAX_ANSWER_TOKENS < 1_000_000, 'input and answer fit the context');
   const code = readFileSync(join(ROOT, '.github/workflows/review.yml'), 'utf8').replace(/^[ \t]*#.*\n/gm, '');
   const minutes = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(code)?.[1]);
   assert.ok(minutes > 0, 'the review job has a time limit');
