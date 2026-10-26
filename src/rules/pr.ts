@@ -672,10 +672,21 @@ export interface ApprovalCommit {
   sameDiff: boolean;
 }
 
+/**
+ * The one login whose area lead approval counts (issue #1088, record 0048): the reviewer
+ * GitHub App. Only the review workflow on main can mint its token, from a key in an
+ * environment limited to main. The same approval line from the yokoten bot,
+ * github-actions[bot] or any other login is text anyone can write, so it never counts.
+ */
+export const REVIEWER_LOGIN = 'yokoten-reviewer[bot]';
+
+/** Whether a review was posted by the reviewer identity. Case does not matter, as on GitHub. */
+export const isReviewerLogin = (login: string | undefined): boolean => (login ?? '').toLowerCase() === REVIEWER_LOGIN;
+
 /** What the merge check reads about a tier A pull request (#699). */
 export interface MergeApprovalRead extends ApprovalRead {
-  /** The lead whose approval may count, or null. */
-  lead?: (LeadApproval & ApprovalCommit) | null;
+  /** The lead whose approval may count, or null, with the login that posted it (issue #1088). */
+  lead?: (LeadApproval & ApprovalCommit & { login?: string }) | null;
   /** The agents that wrote the change, from the Made-with line (record 0047). */
   writers?: MadeWithAgent[];
   /** True when a hard-line file or a looser change keeps the owner's approval. */
@@ -748,7 +759,7 @@ function staleLeadApproval(lead: ApprovalCommit): Finding {
 }
 
 /** The next step when a lead approval does not count (record 0047). */
-const ASK_OTHER_MODEL = 'ask a reviewer of another model to approve the head commit, with the last line `Approved by area lead NAME (VENDOR, MODEL)`, or ask the owner';
+const ASK_OTHER_MODEL = `ask a reviewer of another model to approve the head commit through the review workflow, which posts as ${REVIEWER_LOGIN} with the last line \`Approved by area lead NAME (VENDOR, MODEL)\`, or ask the owner`;
 
 /**
  * The finding that stops a tier A pull request from merging (#699), or null when it may
@@ -763,6 +774,11 @@ export function checkMergeApproval(read: MergeApprovalRead): Finding | null {
   if (!read.lead || read.ownerOnly) return checkApprovalFreshness(read);
   const owner: ApprovalCommit | null = read.approved === null ? null : { commit: read.approved, after: read.after, sameDiff: read.sameDiff };
   if (owner && isFreshApproval(read.head, owner)) return null;
+  // Only the reviewer identity's approval counts (issue #1088): the line is text, and any
+  // other login, the yokoten bot too, can write it. A missing login fails closed.
+  if (!isReviewerLogin(read.lead.login)) {
+    return finding('pr-approve', `the area lead's approval was posted by ${read.lead.login || 'an unknown login'}, not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`, ASK_OTHER_MODEL);
+  }
   if (!read.writers?.length) {
     return finding('pr-approve', "the Made-with line names no writer, so the area lead's model can't be checked against the writer's", `end the body with a Made-with line that names each writer and model, such as \`🤖 Made with worker Claude Code (claude-opus-5-5)\`; then ${ASK_OTHER_MODEL}`);
   }

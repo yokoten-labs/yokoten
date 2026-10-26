@@ -1,0 +1,57 @@
+# The reviewer of another model (issue #1088, record 0048). On each same-repo pull request,
+# DeepSeek reads the diff and the body, and this job posts one review on the head commit as
+# the reviewer App, yokoten-reviewer[bot]: APPROVE or REQUEST_CHANGES. The merge check
+# counts an area lead approval only from that login. An error, a timeout or an unclear
+# answer posts a comment, never an approval.
+#
+# Trust root: the App's key sits in the `reviewer` environment, which only main may use.
+# pull_request_target runs this file and the reviewer as they are on main, so a pull
+# request can't change the reviewer that judges it. The job checks out the base commit
+# only and reads the pull request through the API, as data: its code never runs here.
+name: review
+on:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] the pull request is read as data through the API; its code is never checked out or run
+    types: [opened, synchronize, reopened, ready_for_review]
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  review:
+    # Same-repo pull requests only: a fork's pull request is never reviewed with the key.
+    # A draft waits for ready_for_review.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The owner limits this environment to the main branch; its secrets live only here.
+    environment: reviewer
+    # The job token only reads. The App token posts the review.
+    permissions:
+      contents: read
+    steps:
+      # The base commit, never the pull request's head: the reviewer that runs is main's.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '^22.23.4'
+      # A short-lived token of the reviewer App, for this repository only, that can write
+      # pull request reviews and read contents.
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ secrets.REVIEWER_APP_ID }}
+          private-key: ${{ secrets.REVIEWER_APP_KEY }}
+          permission-pull-requests: write
+          permission-contents: read
+      # The model id from DeepSeek's API docs (api-docs.deepseek.com, Chat Completions).
+      # The token and the key go in through env only; the script never prints them.
+      - run: node .github/review/review.ts
+        env:
+          REVIEWER_TOKEN: ${{ steps.app-token.outputs.token }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL: deepseek-flash
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

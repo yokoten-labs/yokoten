@@ -10,10 +10,18 @@
 # Who reviews what.
 /.github/CODEOWNERS @coo1white
 
-# CI that publishes, holds a secret, or has write permissions.
-/.github/workflows/release.yml @coo1white
-/.github/workflows/board.yml @coo1white
-/.github/workflows/outside-prs.yml @coo1white
+# CI: every workflow. The review workflow holds the reviewer App's key, whose approval the
+# merge check counts (record 0048); a workflow can also hold or leak a secret. All are hard lines.
+/.github/workflows/ @coo1white
+
+# The reviewer the review workflow runs (record 0048).
+/.github/review/ @coo1white
+
+# The checks that hold the code layout, the copy check, and the Windows waivers.
+/.jscpd.json @coo1white
+/test/repo/architecture.test.ts @coo1white
+/scripts/time/windows-known.ts @coo1white
+/scripts/time/windows-known.txt @coo1white
 
 # The bot's token, and the check that a tier A pull request has the owner's Approve.
 /src/host/github/bot.ts @coo1white

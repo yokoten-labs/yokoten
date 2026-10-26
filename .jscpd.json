@@ -1,0 +1,40 @@
+{
+  "path": [
+    "src/commands/kanban",
+    "src/agents",
+    "src/commands/desk",
+    "src/commands/more",
+    "src/commands/tidy",
+    "src/commands/hook.ts",
+    "src/commands/shared.ts",
+    "src/host",
+    "src/platform",
+    "src/rules",
+    "src/run",
+    "src/setup"
+  ],
+  "format": [
+    "typescript"
+  ],
+  "minTokens": 50,
+  "minLines": 5,
+  "skipLocal": true,
+  "skipIsolated": [
+    [
+      "src/agents",
+      "src/commands/desk",
+      "src/commands/more",
+      "src/commands/tidy",
+      "src/commands/hook.ts",
+      "src/commands/shared.ts",
+      "src/host",
+      "src/platform",
+      "src/rules",
+      "src/run",
+      "src/setup"
+    ]
+  ],
+  "reporters": [
+    "console"
+  ]
+}

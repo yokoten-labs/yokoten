@@ -1,6 +1,6 @@
 # 0047 Tier A merges after another model approves; hard lines keep the owner
 
-Status: accepted
+Status: accepted; replaced in part by [0048](0048-reviewer-identity.md) (only the reviewer identity's approval counts; the "Trust root" consequence).
 Date: 2026-10-26 (UTC)
 
 ## Context
