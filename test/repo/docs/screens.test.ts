@@ -38,6 +38,7 @@ test('layout: wrap breaks once at 80 columns, under the first text, and never in
   assert.ok(lines.slice(1).every((line) => line.startsWith('      ') && line[6] !== ' '), 'later lines start under the first text');
   assert.deepEqual(wrap('', `${'x'.repeat(70)} \`yokoten desk --help\``), ['x'.repeat(70), '`yokoten desk --help`'], 'a command in backticks stays whole');
   assert.deepEqual(wrap('', ''), [''], 'no text is one empty line');
+  assert.deepEqual(wrap('', `${'x'.repeat(60)} push (\`git push -u origin --all\`).`), ['x'.repeat(60) + ' push', '(`git push -u origin --all`).'], 'a command after a bracket stays whole');
 });
 
 test('layout: a title, rows, fields, a section and the Next line, one blank line between blocks (#1099)', () => {
@@ -107,6 +108,8 @@ test('screen limits: each limit catches its known-bad screen (#1099)', () => {
   assert.match(caught('yokoten x: it broke.', { isFailure: true }), /does not say what to do next/);
   assert.equal(caught('yokoten x: it broke. Run `yokoten x --help`.', { isFailure: true }), '', 'a command to run is a next step');
   assert.equal(caught('yokoten x · 1 problem\n\nNext: fix it\nMore: https://example.com', { isFailure: true }), '', 'the Next line may come before a More line');
+  assert.equal(caught('yokoten x\n\n  Instead   fix it, then\n            try again\n  More      https://example.com', { isFailure: true }), '', 'an Instead row wrapped onto two lines is still the next step');
+  assert.match(caught('yokoten x\n\n  Instead   fix it\n  Why       a reason that wraps\n            onto a second line\n  More      https://example.com', { isFailure: true }), /does not say what to do next/, 'a wrapped row is one row: the row before More is Why');
   assert.match(caught('\u001b[1mbold\u001b[0m'), /colour code/);
 });
 
@@ -162,15 +165,8 @@ function screensOf(repo: string): ScreenRun[] {
  * screen that passes fails the test until its line is removed, and a new screen is never waived.
  */
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
-const WAIVED_MOST = 38;
+const WAIVED_MOST = 0;
 const WAIVED: Record<string, string> = {
-  'guard, force push': 'S061, the owner: too much text, no structure. Refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
-  'guard, tag push': 'S062: refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
-  'guard, wipe home': 'S063: refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
-  'guard, skip check': 'S064: refusal rows are not wrapped (formatRefusal in src/rules/message.ts) (#1099)',
-  'session start': 'S067: each note is one long line, up to 244 columns (src/setup/doctor/report.ts) (#1099)',
-  'session start, unsaved work': 'S069, the owner: too much text, no structure. Each note is one long line (#1099)',
-  'session start, codex': 'S068: each note is one long line, up to 244 columns (src/setup/doctor/report.ts) (#1099)',
 };
 
 test('screens: every screen the command list reaches keeps the limits of record 0049; WAIVED only shrinks (#1099)', async () => {

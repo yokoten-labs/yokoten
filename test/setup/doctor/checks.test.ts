@@ -199,7 +199,8 @@ test('doctor --session: with the plugin on, takes back what an older install lef
   const profileText = `export EDITOR=vi\n${PROFILE_LINE}\n`;
   writeFileSync(profile, profileText);
 
-  const session = (await sandbox.call(['doctor', '--session'])).stdout;
+  // A note wraps under its own text (#1099): read each note as one line.
+  const session = (await sandbox.call(['doctor', '--session'])).stdout.replace(/\n {9}/g, ' ');
   assert.match(session, /^yokoten: cleaned \d+ files an older install left; the plugin brings them now$/m);
   assert.equal(readFileSync(profile, 'utf8'), profileText, 'a session never edits a shell profile');
   assert.match(session, /^yokoten: ~\/\.bashrc still has the PATH line an older install added; delete the line that ends with "# added by yokoten"$/m);
@@ -480,7 +481,7 @@ test('doctor: in a yokoten checkout, a plugin commit behind the default branch i
   sandbox.git('checkout', '-q', 'feature');
   const match = (await sandbox.call(['doctor', '--all'])).stdout.match(olderNote);
   assert.deepEqual(match?.slice(1), [first.slice(0, 12), tip.slice(0, 12)]);
-  assert.match((await sandbox.call(['doctor', '--session'])).stdout, olderNote);
+  assert.match((await sandbox.call(['doctor', '--session'])).stdout.replace(/\n {9}/g, ' '), olderNote);
   // A commit this repo doesn't know: can't tell, so nothing.
   install('0'.repeat(40));
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, olderNote);
