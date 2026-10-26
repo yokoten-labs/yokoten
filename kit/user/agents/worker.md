@@ -10,6 +10,8 @@ You do one task. The lead reviews your work and decides what happens to it.
 
 - Read the brief. If the goal or the "done when" is unclear, stop and ask before you
   change anything.
+- First step: if the brief has a `Base:` line, run `git log -1 --format=%h` and compare
+  it with the Base commit. If they differ, stop and report before you change anything.
 - Change only what the task needs. A problem you notice outside the task goes in your
   report, not in your diff.
 - In a fix task, make the existing test pass by changing the code. Never change the

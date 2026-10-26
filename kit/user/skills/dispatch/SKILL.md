@@ -26,9 +26,11 @@ instead (record 0019).
 3. Give the worker its own worktree on its own branch, so two workers never share files.
    The worktree lives in the project, where a restart can't wipe it. Then mark it,
    so the guard treats every agent there as a worker:
-   `git worktree add .worktrees/<issue> -b <issue>-<slug>`, then
+   `git worktree add .worktrees/<issue> -b <issue>-<slug> <commit>`, then
    `yokoten worker mark .worktrees/<issue>`
    Never under `/tmp`: the system may wipe it on restart, with every unpushed change.
+   `<commit>` is the Base of the brief: the commit the work builds on. If it builds on
+   an unmerged branch, use that branch's head, not main.
 4. Start the worker in the worktree, so its sandbox covers it. The project
    holds the sandbox settings. `yokoten init` writes them. `yokoten doctor`
    checks them in the `sandbox` step.
@@ -40,12 +42,14 @@ Write it so a stranger could do the task with nothing else:
 ```
 Issue: #<n> <title>
 Worktree: .worktrees/<n>   (never /tmp: the system may wipe it on restart)
+Base: <branch> at <commit>   (what the work builds on; the first step checks it)
 Goal: <what is true when done, and why it matters>
 Done when: <the command to run and what it must print>
 Files: <where to look first>
 Out of scope: <what not to change>
 Fix task: yes|no   (yes = make the existing test pass; never change the test)
 Your way: if you see a better way to reach the goal, say so or take it, and say why.
+First step: run `git log -1 --format=%h`. If it is not the Base commit, stop and report.
 Anchor: after each test you touch passes, commit. That commit is your anchor.
 Resume: if the worktree already has commits, read them first and continue from the last one.
         To go back: `git switch -c try-2 <anchor>`. Nothing is reset or deleted.
