@@ -151,7 +151,7 @@ test/setup/doctor/report.test.ts :: doctor: a desk that can see ~/.claude/CLAUDE
 test/setup/doctor/report.test.ts :: doctor: full doctor in an empty repo starts each git read once, ten child processes in all (#453)
 ? test/setup/doctor/report.test.ts :: doctor: lists the work only on this machine; a session hears at most three items (#365)
 test/setup/doctor/report.test.ts :: doctor: on another host, each forge step says once what it asks, with no GitHub instruction, and never holds the stage (#504)
-# init on native Windows: 18 tests fail on main too, hidden until 2026-10-27 behind one time-out line.
+# init on native Windows: 18 tests fail on main too, hidden until 2026-10-26 behind one time-out line.
 # Issue #1109 fixes them after the P4 design review; each line goes when its test passes. Remove all by v0.1.3.
 # On a slow GitHub runner the whole file can still pass its cap; then none of the 18 ran, so it may time out instead.
 ? test/setup/init.test.ts :: (timed out)

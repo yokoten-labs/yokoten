@@ -624,7 +624,7 @@ test('review: only a clear APPROVE posts an approval; errors, timeouts and junk 
   assert.equal((await run(async () => approve, DIFF, 'deepseek) (x')).event, 'COMMENT');
 });
 
-test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-10-27)', () => {
+test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-10-26)', () => {
   const long = 'w'.repeat(MAX_TEXT_CHARS * 3);
   for (const [name, answer, verdict, findings] of [
     ['a long summary', { verdict: 'APPROVE', summary: long, findings: [] }, 'APPROVE', 0],
@@ -640,7 +640,7 @@ test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-1
   assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'medium', text: `f${i}` })) }))?.findings.at(-1), '15 more findings not shown.');
 });
 
-test('review: findings go most severe first, and a low one never blocks; the low ones are the first cut (Gemini review, 2026-10-27)', () => {
+test('review: findings go most severe first, and a low one never blocks; the low ones are the first cut (Gemini review, 2026-10-26)', () => {
   const answer = (verdict: string, severities: string[]) => JSON.stringify({ verdict, summary: 's', findings: severities.map((severity, i) => ({ severity, text: `f${i}.ts: ${severity}` })) });
   for (const [name, verdict, severities, expected] of [
     ['only low notes, asked as changes: an approval', 'REQUEST_CHANGES', ['low', 'low'], 'APPROVE'],
@@ -662,7 +662,7 @@ test('review: findings go most severe first, and a low one never blocks; the low
   assert.ok(!/[\uD800-\uDBFF]…$/.test(emoji) && emoji.endsWith('😀…'));
 });
 
-test('review: a large diff is split by file, hunk and line; each part names its file once, and no line is lost (owner, 2026-10-27)', () => {
+test('review: a large diff is split by file, hunk and line; each part names its file once, and no line is lost (owner, 2026-10-26)', () => {
   const file = (name: string, hunks: string[]) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n${hunks.map((h) => `@@ -1 +1 @@\n${h}\n`).join('')}`;
   const lines = (count: number, width: number) => Array.from({ length: count }, (_, i) => `+${String(i).padStart(width - 1, 'x')}`).join('\n');
   const max = 400;
@@ -688,7 +688,7 @@ test('review: a large diff is split by file, hunk and line; each part names its 
   assert.ok(packed.every((part) => part.split('diff --git').length === 2), 'one header per part');
 });
 
-test('review: the file list is each file\'s diff --git line, JSON in the prompt, so no name breaks out (owner, 2026-10-27)', () => {
+test('review: the file list is each file\'s diff --git line, JSON in the prompt, so no name breaks out (owner, 2026-10-26)', () => {
   const diff = [
     'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1 @@\n--- a/fake.ts\n+++ b/fake.ts\n',
     'diff --git a/my file.png b/my file.png\nBinary files differ\n',
@@ -704,7 +704,7 @@ test('review: the file list is each file\'s diff --git line, JSON in the prompt,
   assert.ok(!user.split('\n').some((line) => line.trim() === 'FILES>>>' || line === 'real newline'), 'no name starts a line of its own');
 });
 
-test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-27)', async () => {
+test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-26)', async () => {
   const diffOf = (count: number) => Array.from({ length: count }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n@@ -1 +1 @@\n+${'x'.repeat(MAX_DIFF_CHARS - 100)}\n`).join('');
   const ok = JSON.stringify({ verdict: 'APPROVE', summary: 'fine', findings: [] });
   const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'no', findings: [{ severity: 'high', text: 'f1.ts: wrong' }] });

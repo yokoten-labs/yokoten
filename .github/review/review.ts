@@ -326,7 +326,7 @@ export function mergeVerdicts(verdicts: Verdict[]): Verdict {
 
 /**
  * The request DeepSeek gets. `reasoning_effort` is set, not left to the API's default (high
- * as of 2026-10-27), so a change of default can't change how long the reasoning runs.
+ * as of 2026-10-26), so a change of default can't change how long the reasoning runs.
  */
 export const REASONING_EFFORT = 'high';
 export function requestBody(model: string, messages: ReturnType<typeof buildMessages>): string {

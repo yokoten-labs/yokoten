@@ -1,12 +1,12 @@
 # 0051 Our CI follows six rules, each with its source
 
 Status: proposed
-Date: 2026-10-27 (UTC)
+Date: 2026-10-26 (UTC)
 
 ## Context
 
 Record 0049 took the Command Line Interface Guidelines ([clig.dev](https://clig.dev)) for
-what a person reads on the screen. CI has no single guide like it. On 2026-10-27 the owner
+what a person reads on the screen. CI has no single guide like it. On 2026-10-26 the owner
 asked for one of our own, after PR #1118's CI:
 
 - The Windows job printed nothing for 480 s while `init.test.ts` ran, so it looked stuck,
