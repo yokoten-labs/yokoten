@@ -144,6 +144,8 @@ const NEXT_STEP = /^Next: |^ {2}Instead |`[^`]+`/;
 // A More line or row: a pointer, so the next step may come just before it.
 const MORE = /^(?:More: | {2}More {6}| {2}docs: )/;
 const ESCAPE = /\u001b\[/;
+// A line wrapped under a row's or a title's text: deeper than a row's two spaces.
+const CONTINUED = /^ {3,}\S/;
 
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {
@@ -178,9 +180,14 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     if (summary.length > SCREEN_LIMITS.helpSummary) problems.push(`the help's summary is ${summary.length} lines; the most is ${SCREEN_LIMITS.helpSummary}`);
   }
   if (isFailure) {
-    const last = lines.filter((line) => line.trim() !== '');
-    const tail = last.length > 1 && MORE.test(last.at(-1) ?? '') ? last.slice(-2) : last.slice(-1);
-    if (!tail.some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next');
+    // An item is a line and the lines wrapped under it, so a wrapped row is still one row.
+    const items: string[][] = [];
+    for (const line of lines.filter((each) => each.trim() !== '')) {
+      if (CONTINUED.test(line) && items.length) items.at(-1)?.push(line);
+      else items.push([line]);
+    }
+    const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
+    if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next');
   }
   return problems;
 }

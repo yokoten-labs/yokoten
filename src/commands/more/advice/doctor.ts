@@ -14,12 +14,13 @@ import { DEFAULTS, loadConfig } from '../../../rules/config.ts';
 import { gitConfig } from '../../../run/check.ts';
 import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
-import { docsLink, formatFinding } from '../../../rules/message.ts';
+import { docsLink, findingRow, formatFinding, sentence } from '../../../rules/message.ts';
+import { screen } from '../../../platform/screen.ts';
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Draft, draft, facts, table } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
 import { cleanOlderInstall, PROFILE_MARK } from '../../../setup/install.ts';
-import { blocksToSay, doctor, type DoctorReport, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../../setup/doctor/index.ts';
+import { blocksToSay, doctor, type DoctorReport, noteLines, OUTPUT_STOP, SERVER_TIMEOUT_MS, type SessionStart, UNFILTERED } from '../../../setup/doctor/index.ts';
 import { ROAD, STAGES } from '../../../setup/road.ts';
 import type { Finding } from '../../../rules/message.ts';
 import { READERS } from '../../hook.ts';
@@ -61,25 +62,29 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   // A compaction start repeats only what changed (#405); any other start says all.
   // Full doctor shows one screen unless --all asks for the whole map (#1027); a broken self-test still leads.
   const isShort = root && !session && !options.flags.has('--all') && !options.flags.has('--json');
-  const lines = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks).flat() : isShort ? shortLines(report, report.selfTest.ok ? undefined : allLines[0]) : allLines;
-  // One line, and only when an older install's copies were there (#935). The edit that
+  // A session's notes are blocks with one blank line between them (record 0049, #1099).
+  const said = root && session && blocks && !options.flags.has('--json') ? blocksToSay(env, start, blocks) : [isShort ? shortLines(report, report.selfTest.ok ? undefined : allLines[0]) : allLines];
+  const notes: string[][] = [];
+  // One block, and only when an older install's copies were there (#935). The edit that
   // stays is named on that first start; a later start finds nothing and says nothing.
   if (cleanup?.files && !options.flags.has('--json')) {
-    lines.push(`yokoten: cleaned ${cleanup.files} ${cleanup.files === 1 ? 'file' : 'files'} an older install left; the plugin brings them now`);
-    if (cleanup.edits.length) lines.push(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`);
-    for (const profile of cleanup.profiles) lines.push(`yokoten: ${profile} still has the PATH line an older install added; delete the line that ends with "${PROFILE_MARK}"`);
+    notes.push([
+      ...noteLines(`yokoten: cleaned ${cleanup.files} ${cleanup.files === 1 ? 'file' : 'files'} an older install left; the plugin brings them now`),
+      ...(cleanup.edits.length ? noteLines(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`) : []),
+      ...cleanup.profiles.flatMap((profile) => noteLines(`yokoten: ${profile} still has the PATH line an older install added; delete the line that ends with "${PROFILE_MARK}"`)),
+    ]);
   }
   // A desk that named a vendor other than the harness's (#748) speaks first: the agent
   // learns who it is before the harness's prompt tells it about its own maker.
   const identity = root && session && !options.flags.has('--json') ? identityLine(agent, env) : '';
-  if (identity) lines.unshift(identity);
   // A worker, by YOKOTEN_ROLE or by the mark on its worktree (#555), hears that the guard sees
   // it as one (#402), on every start, a compaction too: its role is safety, never news to
   // drop. The lead hears nothing.
   const role = root && session && blocks && !options.flags.has('--json') ? workerRole(env, [cwd]) : null;
-  if (role) lines.push(`yokoten: ${role === 'mark' ? WORKER_MARKED : WORKER_SESSION}.`);
+  if (role) notes.push(noteLines(`yokoten: ${role === 'mark' ? WORKER_MARKED : WORKER_SESSION}.`));
   // An agent that can't filter command output hears it at session start, with the opt-in (#390).
-  if (root && session && agent !== 'claude-code' && config.privacy.output !== 'stop') lines.push(`yokoten: ${UNFILTERED}. ${OUTPUT_STOP[0].toUpperCase()}${OUTPUT_STOP.slice(1)}.`);
+  if (root && session && agent !== 'claude-code' && config.privacy.output !== 'stop') notes.push([...noteLines(`yokoten: ${UNFILTERED}`), ...findingRow('Next', `${sentence(OUTPUT_STOP)}.`)]);
+  const lines = screen(identity ? noteLines(identity) : [], ...said, ...notes);
   if (options.flags.has('--json')) printJson(invocation, report);
   // Gemini CLI reads a SessionStart hook's context from JSON only (#211).
   else if (session && agent === 'gemini') {

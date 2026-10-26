@@ -2,7 +2,8 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
-import { type Finding, finding, formatFinding } from '../../rules/message.ts';
+import { type Finding, finding, findingRow, formatFinding, formatNote, sentence } from '../../rules/message.ts';
+import { wrap } from '../../platform/screen.ts';
 import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
@@ -192,7 +193,7 @@ function removeOldSessionFiles(dir: string, now: number): void {
 /** What a session hears when the road is done, as far as yokoten can check. */
 export const ROAD_DONE = 'yokoten: every step yokoten can check is done, or marked not now.';
 
-/** The last of a session's three lines: what the agent does with the step. */
+/** The last line of the road's block at a session start: what the agent does with the step. */
 export const OFFER = 'Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).';
 
 /**
@@ -292,6 +293,23 @@ export function guardCostCheck(root: string, probe: MachineProbe, env: Env): Pra
   return cost ? { name: 'guard', ok: true, finding: finding('guard-cost', '', ''), detail: guardLine(cost) } : null;
 }
 
+/**
+ * One line of a session note, wrapped once at 80 columns (#1099). A `yokoten: ` line goes
+ * on under its own text, so each note reads as one item; any other line wraps at the edge.
+ */
+export const noteLines = (line: string): string[] => (line.startsWith('yokoten: ') ? wrap('yokoten: ', line.slice('yokoten: '.length)) : wrap('', line));
+
+/**
+ * The road's block at a session start (#1099): the stage, then the next step and why as
+ * aligned rows, then what the agent does with it, last.
+ */
+const roadLines = (stage: number, next: Finding, offer: string): string[] => [
+  `yokoten: stage ${stage} of ${STAGES.length}, ${STAGES[stage - 1]}`,
+  ...findingRow('Next', `${sentence(stepText(next))}.`),
+  ...findingRow('Why', `${sentence(next.why)}.`),
+  ...wrap('', offer),
+];
+
 function doctorRun(
   root: string | null,
   { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe },
@@ -337,15 +355,16 @@ function doctorRun(
   // A session reads files only, never the network, so it starts fast and works offline.
   if (session) {
     // Each note is a block of lines: a compaction start repeats only the blocks that changed (#405).
-    const blocks: string[][] = lines.map((line) => [line]);
+    // Each block keeps the screen limits of record 0049: a title, then rows (#1099).
+    const blocks: string[][] = lines.map(noteLines);
     const { stage } = where;
-    if (stage && next) blocks.push([`yokoten: stage ${stage} of ${STAGES.length}, ${STAGES[stage - 1]}. Next: ${stepText(next)}.`, `Why: ${next.why}.`, env.CLAUDE_PLUGIN_ROOT ? `${OFFER} ${PLUGIN_COMMANDS}` : OFFER]);
-    else blocks.push([ROAD_DONE]);
+    if (stage && next) blocks.push(roadLines(stage, next, env.CLAUDE_PLUGIN_ROOT ? `${OFFER} ${PLUGIN_COMMANDS}` : OFFER));
+    else blocks.push(noteLines(ROAD_DONE));
     if (next) findings.push(next);
     // Not a step on the road, but the privacy check is weaker until it is fixed.
     const marks = machine.find((c) => c.name === 'private-marks' && !c.ok);
     if (marks) {
-      blocks.push([`yokoten: ${formatFinding(marks.finding)}`]);
+      blocks.push(formatNote(marks.finding));
       findings.push(marks.finding);
     }
     // No guard at all is unsafe at once, so a session hears it too (#904). Only where
@@ -353,42 +372,42 @@ function doctorRun(
     // guard, and full doctor names the missing guard for the user who wants one.
     const guard = hasUserSettings(env) ? machine.find((c) => c.name === 'user-guard' && !c.ok) : undefined;
     if (guard) {
-      blocks.push([`yokoten: ${formatFinding(guard.finding)}`]);
+      blocks.push(formatNote(guard.finding));
       findings.push(guard.finding);
     }
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
-    if (stale) blocks.push([`yokoten: ${formatFinding(stale)}`]);
+    if (stale) blocks.push(formatNote(stale));
     // A github marketplace updates over SSH, and fails without a key; the session says how to move it (#950).
     const source = pluginSourceNote(env);
-    if (source) blocks.push([`yokoten: ${formatFinding(source)}`]);
-    if (!hasHome) blocks.push([`yokoten: ${NO_HOME_NOTE}`]);
+    if (source) blocks.push(formatNote(source));
+    if (!hasHome) blocks.push(noteLines(`yokoten: ${NO_HOME_NOTE}`));
     // This note only. The other privacy notes stay out of a session (#681).
     const claudeRules = museClaudeRules(env, root);
-    if (claudeRules) blocks.push([`yokoten: ${formatFinding(claudeRules.finding)}`]);
+    if (claudeRules) blocks.push(formatNote(claudeRules.finding));
     const double = hasHome ? doubleInstallCheck(root, env) : null;
-    if (double) blocks.push([`yokoten: ${formatFinding(double)}`]);
+    if (double) blocks.push(formatNote(double));
     // An edit stays, and a kit fix that waits behind it is named here, not after a surprise (#477).
     const edited = hasHome ? editedKitCheck(env) : null;
-    if (edited) blocks.push([`yokoten: ${formatFinding(edited)}`]);
+    if (edited) blocks.push(formatNote(edited));
     // A full disk stops every session unseen (record 0012): statfs and one small file, no child process.
-    for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) blocks.push([`yokoten: ${formatFinding(c.finding)}`]);
+    for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) blocks.push(formatNote(c.finding));
     const unsaved = sessionUnsaved(root, env);
-    if (unsaved.lines.length) blocks.push(unsaved.lines);
+    if (unsaved.lines.length) blocks.push(unsaved.lines.flatMap(noteLines));
     // A lesson the kit learned reaches the project here: the session hears it (#120).
     if (core && isCoreBehind) {
-      blocks.push([`yokoten: ${formatFinding(core.finding)}`]);
+      blocks.push(formatNote(core.finding));
       findings.push(core.finding);
     }
     const waiting = upstreamNote(root, env);
     if (waiting) {
-      blocks.push([`yokoten: ${waiting.what}`]);
+      blocks.push(noteLines(`yokoten: ${waiting.what}`));
       findings.push(waiting);
     }
     // A lesson new to this clone that finds something here: one line, at one start only (#339).
     const stateFile = unsaved.commonDir ? join(unsaved.commonDir, STATE_FILE) : findStateFile(root, env);
     const lesson = sessionLessonNote(root, config.notNow, stateFile, env.CLAUDE_PLUGIN_ROOT ? '/yokoten:doctor' : '`yokoten doctor`');
-    if (lesson.line) blocks.push([lesson.line]);
+    if (lesson.line) blocks.push(noteLines(lesson.line));
     const notes = [...unsaved.notes, ...lesson.findings, ...(claudeRules ? [claudeRules.finding] : [])];
     // A machine with no guard fails the run as full doctor does; a session still starts.
     const ok = !failed.length && !isCoreBehind && !guard;

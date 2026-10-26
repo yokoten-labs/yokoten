@@ -85,6 +85,7 @@ export {
   NO_CI_GAPS,
   NO_HOME_NOTE,
   noCiNote,
+  noteLines,
   OFFER,
   PLUGIN_COMMANDS,
   ROAD_DONE,

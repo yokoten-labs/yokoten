@@ -6,6 +6,8 @@
 // field never holds a private value (core rule 11): a hit is named by its place and its
 // kind, never by what matched.
 
+import { wrap } from '../platform/screen.ts';
+
 /** How sure a secret or privacy finding is: only `sure` fails; the others warn. */
 export type FindingGrade = 'sure' | 'likely' | 'unknown';
 
@@ -864,7 +866,8 @@ export const isWarningFinding = (f: Finding): boolean => f.ignored !== undefined
 /** Outside a git repo (#205): the one finding every command that needs a repo gives. */
 export const notRepoFinding = (folder: string): Finding => finding('not-a-repo', `${folder} is not inside a git repo`, 'run it inside your project, or `git init` first');
 
-const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** A field as a sentence starts: its first letter in capitals. */
+export const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /** Where a finding is, as `file:line: `, or nothing. */
 export const place = (f: Finding): string => (f.file === undefined ? '' : `${f.file}${f.line === undefined ? '' : `:${f.line}`}: `);
@@ -914,19 +917,35 @@ export const refusalParts = (f: Finding): Refusal => ({
 });
 
 /**
- * One aligned refusal row (issue #1027): a label, then its text, on one line. It is not
- * wrapped: an Instead row can hold a command to copy, and a line break would change it.
+ * One aligned row of a refusal or a note (issues #1027, #1099): a label, then its text,
+ * wrapped once at 80 columns under itself. A command in backticks never breaks, so an
+ * Instead row's command still copies whole; a link is one word, so it stays on one line.
  */
-const refusalRow = (label: string, text: string): string[] => [`  ${label.padEnd(10)}${text}`];
+export const findingRow = (label: string, text: string): string[] => wrap(`  ${label.padEnd(10)}`, text);
+
+/** Where the title's text starts: later title lines start under it. */
+const REFUSAL_HEAD = 'yokoten stopped this: ';
 
 /**
- * The text form of a refusal (issue #1027): a title, then aligned `Why`, `Instead` and
- * `More` rows, so a person and an agent read the same four parts.
+ * The text form of a refusal (issues #1027, #1099): a title, then aligned `Why`, `Instead`
+ * and `More` rows, so a person and an agent read the same four parts. It keeps the screen
+ * limits of record 0049: every line but the link fits 80 columns.
  */
 export const formatRefusal = (f: Finding): string => {
   const parts = refusalParts(f);
-  return [parts.title, '', ...refusalRow('Why', parts.why), ...refusalRow('Instead', parts.fix), ...refusalRow('More', parts.docs)].join('\n');
+  return [...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...findingRow('Why', parts.why), ...findingRow('Instead', parts.fix), ...findingRow('More', parts.docs)].join('\n');
 };
+
+/**
+ * A finding as a note a person reads at a session start (issue #1099): what happened on
+ * the first line, then the aligned `Why`, `Next` and `More` rows a refusal has too.
+ */
+export const formatNote = (f: Finding): string[] => [
+  ...wrap('yokoten: ', `${place(f)}${f.what}${formatFindingMarks(f)}`),
+  ...findingRow('Why', `${sentence(f.why)}.`),
+  ...findingRow('Next', `${sentence(f.fix)}.`),
+  ...(f.docs === undefined ? [] : findingRow('More', f.docs)),
+];
 
 /**
  * The four parts back from text, or null when the text is not a refusal in this shape.
@@ -934,8 +953,12 @@ export const formatRefusal = (f: Finding): string => {
  */
 export function parseRefusal(text: string): Refusal | null {
   const lines = text.split('\n').map((line) => line.trimEnd());
-  const title = lines.find((line) => line.startsWith('yokoten stopped this: '));
-  if (title === undefined) return null;
+  const at = lines.findIndex((line) => line.startsWith(REFUSAL_HEAD));
+  if (at === -1) return null;
+  // A long title wraps (#1099): its later lines start under its text, up to the blank line.
+  const titleLines = [lines[at] ?? ''];
+  for (let next = at + 1; lines[next]?.startsWith(' '.repeat(REFUSAL_HEAD.length)); next++) titleLines.push(lines[next]?.trimStart() ?? '');
+  const title = titleLines.join(' ');
   const named = /^yokoten stopped this: (.+) \[([\w-]+)\]$/.exec(title);
   // The aligned rows of #1027, or the older `Why: ...` form a session log may still hold.
   const value = (label: string, old: string): string | undefined => {
