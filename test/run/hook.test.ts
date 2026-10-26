@@ -38,9 +38,11 @@ import {
   doneWhenShell,
   guardDeadline,
   isSameFile,
+  inThreadGuard,
   isWorkerType,
   judge,
   noteRefused,
+  planDoneWhenSpawn,
   pidsFromSessionTable,
   readDoneWhen,
   readStatusResult,
@@ -304,6 +306,22 @@ test('hook: a guard started before the call judges it as judge does; one never u
   writeFileSync(script, `(await import(${JSON.stringify(new URL('../../src/run/hook.ts', import.meta.url).href)})).startGuard();\n`);
   const result = runChild(process.execPath, [script]);
   assert.deepEqual([result.status, result.signal, result.stderr], [0, null, '']);
+});
+
+// #1109: test/commands/hook.test.ts judges in-process calls in this thread, to save the
+// worker's start on each call. It must answer as `judge` does, and refuse when `judge` throws,
+// as the worker's error event does. The tests above and below keep the real worker: they pin
+// what only the worker boundary does (the early start, the real home, the deadline).
+test('hook: the in-thread guard for tests judges as judge does, and refuses when judge throws (#1109)', async () => {
+  const action = { command: 'git push --tags', paths: [], worker: false };
+  const options = { root: null, config: DEFAULTS, env: {}, cwd: process.cwd() };
+  assert.deepEqual(await inThreadGuard().judge(action, options, 5000), judge(action, options));
+  assert.equal(await inThreadGuard().judge({ ...action, command: 'git status' }, options, 5000), null);
+  // A list that is not a list: `judge` throws reading it.
+  const broken = { ...action, commands: 5 as unknown as string[] };
+  const found = await inThreadGuard().judge(broken, options, 5000);
+  assert.equal(found?.id, 'unreadable-command');
+  assert.match(found?.what ?? '', /^the guard failed while reading this tool call: /);
 });
 
 // #824: a worker thread has its own globals. The guard passes the real home the main
@@ -1042,4 +1060,26 @@ test('windowsSystemRoot: the check\'s SystemRoot, then windir, then C:\\Windows 
   assert.equal(windowsSystemRoot({ SYSTEMROOT: 'D:\\Win' }), 'D:\\Win');
   assert.equal(windowsSystemRoot({ windir: 'F:\\Windows' }), 'F:\\Windows');
   assert.equal(windowsSystemRoot({}), 'C:\\Windows', 'a trimmed env still finds the usual folder');
+});
+
+// #1109: how the done-when command starts is plain data for each system, so one machine
+// checks every row. The platform is an argument; only runDoneWhen's caller reads the process.
+test('planDoneWhenSpawn: the program, words and options for each system (#1109)', () => {
+  const command = 'npm test && echo "done"';
+  const env = { PATH: '/bin' };
+  const pipes = ['ignore', 'pipe', 'pipe'];
+  const host = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+  const posix = { file: command, args: [], options: { shell: '/bin/sh', cwd: '/w', env, stdio: pipes, detached: true, windowsHide: true } };
+  const cases: { platform: string; powerShell: string | null; spawn: object }[] = [
+    { platform: 'linux', powerShell: null, spawn: posix },
+    { platform: 'darwin', powerShell: null, spawn: posix },
+    { platform: 'win32', powerShell: null, spawn: { file: 'cmd.exe', args: ['/d', '/s', '/c', windowsCommandTail(command)], options: { cwd: '/w', env, stdio: pipes, windowsVerbatimArguments: true, windowsHide: true } } },
+    { platform: 'win32', powerShell: host, spawn: { file: host, args: windowsJobArgs(), options: { cwd: '/w', env: { ...env, YOKOTEN_DONE_COMMAND: windowsCommandTail(command) }, stdio: pipes, windowsHide: true } } },
+  ];
+  for (const { platform, powerShell, spawn } of cases) {
+    assert.deepEqual(planDoneWhenSpawn(command, '/w', env, powerShell, platform), spawn, `${platform}, ${powerShell ? 'a job' : 'the shell'}`);
+  }
+  assert.deepEqual(env, { PATH: '/bin' }, 'the env is not changed');
+  assert.equal(doneWhenShell('win32'), 'cmd.exe');
+  assert.equal(doneWhenShell('linux'), '/bin/sh');
 });

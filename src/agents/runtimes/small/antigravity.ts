@@ -21,6 +21,8 @@ import type { AgentAdapter } from '../runtime.ts';
 // run_command takes `CommandLine` and `Cwd`; the three edit tools take `TargetFile`.
 const SHELL = 'run_command';
 const EDITS = new Set(['write_to_file', 'replace_file_content', 'multi_replace_file_content']);
+/** The tools both guard hooks run on, the project one and the user one: one list (#1100). */
+export const GUARDED_TOOLS = [SHELL, ...EDITS].join('|');
 
 /** A PreToolUse call, as an Action. Any other tool (view_file, browser, MCP) is neither. */
 export function readToolCall(input: unknown): Action {
@@ -57,7 +59,7 @@ const projectHooks = (root: string) => join(root, '.agents', 'hooks.json');
  * variable, so the path comes from the git root, as in Codex's hook.
  */
 const projectGroup = (cli: string) => ({
-  matcher: [SHELL, ...EDITS].join('|'),
+  matcher: GUARDED_TOOLS,
   hooks: [{ type: 'command', command: guardCommand(`"$(git rev-parse --show-toplevel)/${cli}"`, 'hook --agent antigravity', missingProjectRuntime(cli), { isToolCall: true }) }],
 });
 
@@ -150,9 +152,9 @@ const userHooks = (env: Env) => join(homeIn(env), '.gemini', 'config', 'hooks.js
 /** The user's file as the report shows it. */
 export const userHooksFile = (_: Env): string => '~/.gemini/config/hooks.json';
 
-/** The user-level guard: shell calls only, as Claude Code's and Codex's user guards are. */
+/** The user-level guard: on the shell and the edit tools, as the project hook is (#1100). */
 const userGroup = (cli: string, missing: string) => ({
-  matcher: SHELL,
+  matcher: GUARDED_TOOLS,
   hooks: [{ type: 'command', command: guardCommand(cli, 'hook --agent antigravity --commands-only', missing, { isToolCall: true }) }],
 });
 

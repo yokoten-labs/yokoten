@@ -21,7 +21,8 @@ import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCh
 import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { pluginSourceNote } from '../advice/marketplace.ts';
-import { selfTest } from './self-test.ts';
+import { makeTempDir, type MakeTemp, noTempLine, SELF_TEST } from './self-test.ts';
+import { hostPathPlace } from '../../platform/paths.ts';
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
 const OWNER_STEPS = ['the bot: a GitHub App (or collaborator) with write access; CODEOWNERS sends CI changes to you'];
@@ -224,7 +225,11 @@ export interface DoctorReport {
   /** The release channel this machine runs: stable, beta or dev (#632). */
   channel: string;
   ok: boolean;
-  selfTest: { ok: boolean; failed: string[] };
+  /**
+   * `ok` means no check failed. `ran` is false when a control found no temp folder and did
+   * not run (#1108): `skipped` names it, `reason` says why, and `ok` stays true.
+   */
+  selfTest: { ok: boolean; failed: string[]; ran: boolean; skipped: string[]; reason?: string };
   /** False outside a git repo: then there is no road to walk. */
   repo: boolean;
   stage: number | null;
@@ -312,16 +317,21 @@ const roadLines = (stage: number, next: Finding, offer: string): string[] => [
 
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe },
+  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp },
 ): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
   const lines: string[] = [];
-  const failed = selfTest();
+  const { failed, unset } = SELF_TEST.run(makeTemp);
   const findings: Finding[] = [];
   if (failed.length) {
     lines.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);
     findings.push(finding('self-test', `${failed.join(', ')} let a known-bad input through`, 'do not trust any check until this is fixed; run `yokoten install` again, or report it in an issue'));
   }
-  const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed }, stages: STAGES };
+  // No temp folder is a machine to fix, not a broken yokoten (#1108): one line, never a failure.
+  if (unset.length) {
+    const place = hostPathPlace();
+    lines.push(noTempLine(unset, place.tmp, homeOf(env), place.platform));
+  }
+  const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed, ran: !unset.length, skipped: unset, ...(unset.length ? { reason: 'no temp folder to test in' } : {}) }, stages: STAGES };
   if (!root) return { ok: !failed.length, lines, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings } };
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).

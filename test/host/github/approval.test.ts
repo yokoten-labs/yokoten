@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -624,7 +624,7 @@ test('review: only a clear APPROVE posts an approval; errors, timeouts and junk 
   assert.equal((await run(async () => approve, DIFF, 'deepseek) (x')).event, 'COMMENT');
 });
 
-test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-10-27)', () => {
+test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-10-26)', () => {
   const long = 'w'.repeat(MAX_TEXT_CHARS * 3);
   for (const [name, answer, verdict, findings] of [
     ['a long summary', { verdict: 'APPROVE', summary: long, findings: [] }, 'APPROVE', 0],
@@ -640,7 +640,7 @@ test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-1
   assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'medium', text: `f${i}` })) }))?.findings.at(-1), '15 more findings not shown.');
 });
 
-test('review: findings go most severe first, and a low one never blocks; the low ones are the first cut (Gemini review, 2026-10-27)', () => {
+test('review: findings go most severe first, and a low one never blocks; the low ones are the first cut (Gemini review, 2026-10-26)', () => {
   const answer = (verdict: string, severities: string[]) => JSON.stringify({ verdict, summary: 's', findings: severities.map((severity, i) => ({ severity, text: `f${i}.ts: ${severity}` })) });
   for (const [name, verdict, severities, expected] of [
     ['only low notes, asked as changes: an approval', 'REQUEST_CHANGES', ['low', 'low'], 'APPROVE'],
@@ -662,7 +662,7 @@ test('review: findings go most severe first, and a low one never blocks; the low
   assert.ok(!/[\uD800-\uDBFF]…$/.test(emoji) && emoji.endsWith('😀…'));
 });
 
-test('review: a large diff is split by file, hunk and line; each part names its file once, and no line is lost (owner, 2026-10-27)', () => {
+test('review: a large diff is split by file, hunk and line; each part names its file once, and no line is lost (owner, 2026-10-26)', () => {
   const file = (name: string, hunks: string[]) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n${hunks.map((h) => `@@ -1 +1 @@\n${h}\n`).join('')}`;
   const lines = (count: number, width: number) => Array.from({ length: count }, (_, i) => `+${String(i).padStart(width - 1, 'x')}`).join('\n');
   const max = 400;
@@ -688,7 +688,7 @@ test('review: a large diff is split by file, hunk and line; each part names its 
   assert.ok(packed.every((part) => part.split('diff --git').length === 2), 'one header per part');
 });
 
-test('review: the file list is each file\'s diff --git line, JSON in the prompt, so no name breaks out (owner, 2026-10-27)', () => {
+test('review: the file list is each file\'s diff --git line, JSON in the prompt, so no name breaks out (owner, 2026-10-26)', () => {
   const diff = [
     'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,2 +1 @@\n--- a/fake.ts\n+++ b/fake.ts\n',
     'diff --git a/my file.png b/my file.png\nBinary files differ\n',
@@ -704,7 +704,7 @@ test('review: the file list is each file\'s diff --git line, JSON in the prompt,
   assert.ok(!user.split('\n').some((line) => line.trim() === 'FILES>>>' || line === 'real newline'), 'no name starts a line of its own');
 });
 
-test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-27)', async () => {
+test('review: parts are reviewed one call each; any part asking for changes asks for all; any unclear part fails closed (owner, 2026-10-26)', async () => {
   const diffOf = (count: number) => Array.from({ length: count }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n@@ -1 +1 @@\n+${'x'.repeat(MAX_DIFF_CHARS - 100)}\n`).join('');
   const ok = JSON.stringify({ verdict: 'APPROVE', summary: 'fine', findings: [] });
   const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'no', findings: [{ severity: 'high', text: 'f1.ts: wrong' }] });
@@ -819,16 +819,53 @@ test('review: an unfinished DeepSeek answer names why, and an API error says wha
   for (const data of [null, {}, { error: 'flat' }, { error: { message: 42 } }, { error: { message: '<>' } }]) assert.equal(apiErrorOf(data), '');
 });
 
-// #1111: the answer cap and the model's time both fit what holds them. DeepSeek's limits
-// (V4 Flash, thinking mode): 64K output by default, 384K at most, and a 1M-token context.
+// #1111: the answer cap and the model's time both fit what holds them. At 32K, a large pull
+// request was cut off before the verdict, twice; those runs took about 200 s, so 64K takes
+// about 400 s. DeepSeek's published limits differ by model and source, so the test holds
+// the cap at 64K and the input plus answer under a 1M-token context.
 test('review: the answer cap fits DeepSeek, and the model call fits the job (#1111)', () => {
-  assert.ok(MAX_ANSWER_TOKENS >= 65_536, 'at least DeepSeek\'s own default in thinking mode, or the reasoning cuts off the verdict');
-  assert.ok(MAX_ANSWER_TOKENS <= 393_216, 'no more than DeepSeek\'s output limit');
-  // A character is at least a token, so this counts the input high.
-  assert.ok(MAX_DIFF_CHARS + MAX_BODY_CHARS + 20_000 + MAX_ANSWER_TOKENS < 1_000_000, 'input and answer fit the context');
+  assert.equal(MAX_ANSWER_TOKENS, 65_536, '64K: room for the reasoning and the verdict; change it with this test');
+  // A token is at least one character, so counting characters as tokens counts the input high.
+  const instructions = 20_000; // the prompt around the body and the diff, generously
+  assert.ok(MAX_DIFF_CHARS + MAX_BODY_CHARS + instructions + MAX_ANSWER_TOKENS < 1_000_000, 'input and answer fit the context');
   const code = readFileSync(join(ROOT, '.github/workflows/review.yml'), 'utf8').replace(/^[ \t]*#.*\n/gm, '');
   const minutes = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(code)?.[1]);
   assert.ok(minutes > 0, 'the review job has a time limit');
   // Two minutes stay for checkout, the diff, and the GitHub calls around the model.
   assert.ok(MODEL_TIMEOUT_MS + 120_000 <= minutes * 60_000, `the model call (${MODEL_TIMEOUT_MS} ms) leaves two minutes of the job's ${minutes}`);
+});
+
+test('requestBody: the effort and the answer cap are set, never left to the API default', () => {
+  const body = JSON.parse(requestBody('deepseek-flash', buildMessages('body', 'diff')));
+  assert.equal(body.reasoning_effort, 'high');
+  assert.equal(body.max_tokens, MAX_ANSWER_TOKENS);
+  assert.equal(body.model, 'deepseek-flash');
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.equal(body.stream, false);
+});
+
+test('review: an answer cut off at the token cap is asked once more as halves (PR #1118)', async () => {
+  const diff = ['a', 'b'].map((name) => `diff --git a/${name}.ts b/${name}.ts\n--- a/${name}.ts\n+++ b/${name}.ts\n@@ -1 +1 @@\n-x\n+${'y'.repeat(200)}\n`).join('');
+  const cut = () => { throw new CutOff('the DeepSeek API gave no finished answer (finish_reason: length, cut off at 65536 tokens)'); };
+  const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'No.', findings: [{ severity: 'high', text: 'b.ts: wrong' }] });
+  const run = async (answers: (() => string)[]) => {
+    let calls = 0;
+    const review = await decideReview({ body: 'b', diff, model: MODEL, askModel: async () => (answers[calls++] ?? cut)() });
+    return { review, calls };
+  };
+  // Cut, then both halves approve: one approval, three calls.
+  const healed = await run([cut, () => approve, () => approve]);
+  assert.equal(healed.review.event, 'APPROVE');
+  assert.equal(healed.calls, 3);
+  // A half asks for changes: the part asks for them.
+  assert.equal((await run([cut, () => approve, () => no])).review.event, 'REQUEST_CHANGES');
+  // A half cut again: a comment naming the cut, never an approval; no third try.
+  const twice = await run([cut, () => approve, cut]);
+  assert.equal(twice.review.event, 'COMMENT');
+  assert.match(twice.review.body, /finish_reason: length/);
+  assert.equal(twice.calls, 3);
+  // Another error is not retried.
+  const other = await run([() => { throw new Error('the DeepSeek API answered HTTP 500'); }]);
+  assert.equal(other.review.event, 'COMMENT');
+  assert.equal(other.calls, 1);
 });

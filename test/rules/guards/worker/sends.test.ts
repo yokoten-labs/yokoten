@@ -2,7 +2,8 @@ import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
-import { allowed } from '../../../../test/repo/helpers.ts';
+import { join } from 'node:path';
+import { allowed, makeSandbox, makeTempDir, runChild } from '../../../../test/repo/helpers.ts';
 
 test('guard: a worker does not push, post or change a git folder; the lead may (#555)', () => {
   const worker = { YOKOTEN_ROLE: 'worker' };
@@ -106,6 +107,36 @@ test('guard: a worker does not push, post or change a git folder; the lead may (
     'yokoten check',
     'node bin/yokoten.ts check',
   ]) allowed(command, worker);
+});
+
+// The ways to drop the mark that name a real worktree's git folder, by absolute path or
+// through git's own worktree commands. Moved from the hook test (#1109), which keeps one
+// refusal through the hook for each way the role is found.
+test('guard: in a real worktree, a worker does not prune, move or remove its git folder; the lead may (#555)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('a.md', 'a\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'start');
+  const tree = join(makeTempDir('yokoten-tree-'), 'wt');
+  sandbox.git('worktree', 'add', '-q', '-b', 'task', tree);
+  const gitDir = runChild('git', ['rev-parse', '--absolute-git-dir'], { cwd: tree }).stdout.trim();
+  const worker = { YOKOTEN_ROLE: 'worker' };
+  // A path in a bash command with forward slashes, as Git Bash on Windows takes it: a
+  // backslash there is an escape, so `rm C:\Users\...` never names the file at all.
+  const inBash = (path: string) => path.replace(/\\/g, '/');
+  for (const command of [
+    `rm ${inBash(join(gitDir, 'yokoten-worker'))}`,
+    `rm -rf ${inBash(join(sandbox.repo, '.git', 'worktrees'))}`,
+    'rm -rf "$(git rev-parse --absolute-git-dir)"',
+    `git worktree remove --force ${inBash(tree)}`,
+    'git worktree prune',
+    'git -C ../repo worktree move wt wt2',
+    `git -C ${inBash(sandbox.repo)} worktree move ${inBash(tree)} ${inBash(tree)}2`,
+    'GIT_DIR=../repo/.git git status',
+  ]) {
+    assert.equal(checkCommand(command, { cwd: tree, env: worker })?.id, 'worker-mark', command);
+    assert.notEqual(checkCommand(command, { cwd: tree, env: {} })?.id, 'worker-mark', `the lead may: ${command}`);
+  }
 });
 
 // #650: the bot token that reruns a run can also cancel one or delete its log. Both roles

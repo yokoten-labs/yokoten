@@ -587,7 +587,7 @@ export const RULES = {
   'user-guard': {
     rule: 'every session on this machine meets the tool-call guard',
     why: 'with no guard, an agent pushes a tag, forces a push or reads a token with nothing in the way',
-    check: '`doctor` reads ~/.claude/settings.json for a PreToolUse hook that runs `yokoten hook`; the Claude Code plugin brings the same guard, so while the plugin is on the check passes and `install` writes no guard of its own. Turn the plugin off or remove it and the guard goes too: doctor then fails, and `yokoten install` writes install\'s own',
+    check: '`doctor` reads ~/.claude/settings.json for a PreToolUse hook that runs `yokoten hook` on the shell and every file tool (a guard from an older install that skips one is out of date); the Claude Code plugin brings the same guard, so while the plugin is on the check passes and `install` writes no guard of its own. Turn the plugin off or remove it and the guard goes too: doctor then fails, and `yokoten install` writes install\'s own',
     docs: guide('the-claude-code-plugin'),
   },
   'machine-runtime': {

@@ -19,6 +19,9 @@ test('kit habits: the skills name the merge order, the cause, the road and the i
   const inspect = readSkill('inspect');
   for (const text of [dispatch, cause, release, inspect]) assert.ok(text.includes(MANAGED));
   assert.ok(dispatch.includes('When several pull requests wait'));
+  assert.ok(dispatch.includes('Base: <branch> at <commit>'), 'the brief names the base the work builds on');
+  assert.ok(dispatch.includes('-b <issue>-<slug> <commit>'), 'the worktree starts from the Base commit');
+  assert.ok(dispatch.includes('git log -1 --format=%h'), 'the worker checks the Base first');
   assert.ok(cause.includes('fix its cause before you take the next case'));
   assert.ok(release.includes('Try the beginner road'));
   assert.ok(release.includes('weak model'));

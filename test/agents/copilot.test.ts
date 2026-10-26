@@ -6,6 +6,7 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { addUserHooks, hasUserDir, readTrust, removeUserHooks, userHooksFile, userHooksState } from '../../src/agents/copilot.ts';
+import { GUARDED_TOOLS } from '../../src/agents/runtimes/claude-code.ts';
 import { makeSandbox } from '../repo/helpers.ts';
 
 test('copilot trust on Windows (#1003): drive folders count, without case or separator differences', () => {
@@ -84,7 +85,7 @@ test('copilot user hook: install writes the guard in ~/.copilot/hooks/yokoten.js
   assert.deepEqual(userHooksState(env, cli, missing), { guard: 'same' });
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.equal(written.hooks.PreToolUse[0].hooks[0].command, 'mine', "the user's hook stays");
-  assert.equal(written.hooks.PreToolUse[1].matcher, 'Bash');
+  assert.equal(written.hooks.PreToolUse[1].matcher, GUARDED_TOOLS, 'the tools of the project hook Copilot reads (#1100)');
   assert.match(written.hooks.PreToolUse[1].hooks[0].command, / hook --agent claude-code --commands-only /);
   // $COPILOT_HOME moves the folder, and the report names the variable.
   const elsewhere = join(sandbox.home, 'elsewhere');

@@ -25,6 +25,7 @@ import {
   sep,
 } from 'node:path';
 import { test } from 'node:test';
+import { shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
 import {
   at,
   COMMENTED,
@@ -41,6 +42,9 @@ import { hasHook } from '../../src/agents/hooks-file.ts';
 import { copyRuntime, isEditedManaged, sealManaged, writeManaged } from '../../src/setup/files.ts';
 import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
+
+shareGuardMeasure();
+shareSelfTest();
 
 const BAD_USER_SETTINGS: [content: string, reason: (file: string) => string][] = [
   ['{ not json', (file) => `can't read ${file} ${JSON_FIX('install')}`],
@@ -525,11 +529,11 @@ test('install: the session doctor and the command guard for Codex and Gemini CLI
   const codex = JSON.parse(readFileSync(codexFile, 'utf8'));
   assert.equal(codex.description, 'ours');
   assert.deepEqual(codex.hooks.SessionStart, [{ hooks: [{ type: 'command', command: atStart('doctor --session --agent codex') }] }]);
-  assert.deepEqual(codex.hooks.PreToolUse, [...mine('PreToolUse').PreToolUse, { hooks: [{ type: 'command', command: onCall('hook --agent codex --commands-only') }], matcher: 'Bash' }]);
+  assert.deepEqual(codex.hooks.PreToolUse, [...mine('PreToolUse').PreToolUse, { hooks: [{ type: 'command', command: onCall('hook --agent codex --commands-only') }], matcher: 'Bash|apply_patch' }]);
   const gemini = JSON.parse(readFileSync(geminiFile, 'utf8'));
   assert.equal(gemini.theme, 'x');
   assert.deepEqual(gemini.hooks.SessionStart, [{ hooks: [{ type: 'command', command: atStart('doctor --session --agent gemini').replace(`echo '${line}'`, `echo '{"hookSpecificOutput":{"additionalContext":"${line}"}}'`), name: 'yokoten-session' }] }]);
-  assert.deepEqual(gemini.hooks.BeforeTool, [...mine('BeforeTool').BeforeTool, { hooks: [{ type: 'command', command: onCall('hook --agent gemini --commands-only'), name: 'yokoten-guard' }], matcher: 'run_shell_command' }]);
+  assert.deepEqual(gemini.hooks.BeforeTool, [...mine('BeforeTool').BeforeTool, { hooks: [{ type: 'command', command: onCall('hook --agent gemini --commands-only'), name: 'yokoten-guard' }], matcher: 'run_shell_command|write_file|replace' }]);
   // The command guard stops a tag push in any repo, adopted or not.
   const shell = (text: string, input: object) => spawnSync(text, { shell: '/bin/sh', cwd: sandbox.repo, env: sandbox.env, input: JSON.stringify(input), encoding: 'utf8' });
   const push = { session_id: 's1', cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_input: { command: 'git push --tags' } };
@@ -561,10 +565,10 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  ok {6}${id}$`, 'm'));
   const saved = JSON.parse(readFileSync(agyFile, 'utf8'));
   assert.ok(saved.lint, "another entry stays");
-  assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command');
+  assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command|write_to_file|replace_file_content|multi_replace_file_content');
   const copilot = JSON.parse(readFileSync(copilotFile, 'utf8'));
   assert.equal(copilot.hooks.PreToolUse[0].hooks[0].command, 'mine', "the user's hook stays");
-  assert.equal(copilot.hooks.PreToolUse[1].matcher, 'Bash');
+  assert.equal(copilot.hooks.PreToolUse[1].matcher, 'Bash|Edit|Write|MultiEdit|NotebookEdit');
   // A real run through the shell install wrote: a tag push is refused in each shape.
   const shell = (text: string, input: object) => spawnSync(text, { shell: '/bin/sh', cwd: sandbox.repo, env: sandbox.env, input: JSON.stringify(input), encoding: 'utf8' });
   const agyPush = { toolCall: { name: 'run_command', args: { CommandLine: 'git push --tags', Cwd: sandbox.repo } }, workspacePaths: [sandbox.repo] };

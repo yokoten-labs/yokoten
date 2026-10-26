@@ -9,6 +9,7 @@
 import type { Config } from './config.ts';
 import { matcher } from './config.ts';
 import { type Finding, finding } from './text/message.ts';
+import { GIT_VALUE_OPTIONS } from './guards/bash/read/words.ts';
 
 /** A pull request, as any code host can describe it. */
 export interface PullRequest {
@@ -1142,6 +1143,149 @@ export function readCommandIssueLabels(command: string[]): CommandIssueLabels | 
   if (kind !== 'issue' || (verb !== 'create' && verb !== 'new') || unreadable !== null) return null;
   const repo = options.filter(([name]) => name === '--repo' || name === '-R').at(-1)?.[1] ?? null;
   return { labels: readTitleAndLabels(options).labels, repo };
+}
+
+/**
+ * The labels the repo has for each kind an issue leaves out, so the answer names the
+ * values to pick from (#1120). A kind the issue has, or the repo lacks, gets no line.
+ */
+export function issueLabelChoices(issueLabels: string[], repoLabels: string[]): string[] {
+  const named = (labels: string[]) => labels.map((label) => `\`${label}\``).join(', ');
+  const types = repoLabels.filter(isTypeLabel);
+  const tiers = repoLabels.filter((label) => readLabelTier(label) !== null);
+  const lines: string[] = [];
+  if (types.length && !issueLabels.some(isTypeLabel)) lines.push(`  This repo's type labels: ${named(types)}.`);
+  if (tiers.length && !issueLabels.some((label) => readLabelTier(label) !== null)) lines.push(`  This repo's tier labels: ${named(tiers)}.`);
+  return lines;
+}
+
+// ---- A push sends UTC commits only (#1120) ----
+//
+// A commit's date carries the zone of the machine that made it, and the zone says where
+// the owner is. So before `git push` the bot reads the commits the push would send and
+// refuses any whose author or committer date is not UTC. The answer names each commit by
+// its short hash and subject, never by its offset.
+
+/** The options of `git push` that take the next word as their value. */
+const PUSH_VALUE_OPTIONS = new Set(['--repo', '-o', '--push-option', '--receive-pack', '--exec']);
+
+/** What a `git push` sends: the git options before `push`, the remote, and the local refs. */
+export interface PushPlan {
+  /** The git options before `push`, such as `-C <folder>`, so the reads look where the push does. */
+  options: string[];
+  /** The remote the command names, or null for the default. */
+  remote: string | null;
+  /** The local side of each refspec that sends commits, as written. */
+  sources: string[];
+  /** Whether `--all`, `--branches` or `--mirror` sends every local branch. */
+  every: boolean;
+}
+
+/**
+ * What a `git push` (its arguments after `git`) sends, or null when no commit date needs a
+ * check: another git command, a delete (`--delete`, `:branch`), a dry run, a help page, or
+ * tags only. A tag is the guard's to check, so `tag <name>` sends nothing here.
+ */
+export function readPushPlan(args: string[]): PushPlan | null {
+  let index = 0;
+  while (index < args.length && args[index].startsWith('-')) index += GIT_VALUE_OPTIONS.has(args[index]) ? 2 : 1;
+  if (args[index] !== 'push') return null;
+  const options = args.slice(0, index);
+  const words: string[] = [];
+  let remote: string | null = null;
+  let isDryRun = false;
+  let deletes = false;
+  let tags = false;
+  let every = false;
+  const rest = args.slice(index + 1);
+  for (let at = 0; at < rest.length; at++) {
+    const word = rest[at];
+    if (word === '--') {
+      words.push(...rest.slice(at + 1));
+      break;
+    }
+    if (!word.startsWith('-') || word === '-') {
+      words.push(word);
+      continue;
+    }
+    const [name, attached] = word.startsWith('--') && word.includes('=') ? [word.slice(0, word.indexOf('=')), word.slice(word.indexOf('=') + 1)] : [word, undefined];
+    const value = attached ?? (PUSH_VALUE_OPTIONS.has(name) ? rest[++at] : undefined);
+    if (name === '--repo' && value !== undefined) remote = value;
+    else if (name === '--help' || name === '-h') return null;
+    else if (name === '--delete' || name === '-d') deletes = true;
+    else if (name === '--dry-run' || name === '-n') isDryRun = true;
+    else if (name === '--no-dry-run') isDryRun = false;
+    else if (name === '--tags') tags = true;
+    else if (name === '--all' || name === '--branches' || name === '--mirror') every = true;
+  }
+  if (deletes || isDryRun) return null;
+  // A remote on the command line wins over `--repo`, as git reads it.
+  const [named, ...refspecs] = words;
+  if (named !== undefined) remote = named;
+  const sources: string[] = [];
+  for (let at = 0; at < refspecs.length; at++) {
+    // `tag <name>` is `refs/tags/<name>`: a tag, for the guard.
+    if (refspecs[at] === 'tag') {
+      at++;
+      continue;
+    }
+    const source = refspecs[at].replace(/^\+/, '').split(':')[0];
+    if (source !== '') sources.push(source);
+  }
+  if (!refspecs.length && !every) {
+    if (tags) return null;
+    sources.push('HEAD');
+  }
+  if (!sources.length && !every) return null;
+  return { options, remote, sources, every };
+}
+
+/** One commit a push would send, as `git log --format=<COMMIT_FORMAT>` writes it. */
+export interface PushedCommit {
+  hash: string;
+  short: string;
+  /** Whether it has no parent, so a rebase starts at `--root`. */
+  isRoot: boolean;
+  subject: string;
+}
+
+/** The fields `nonUtcCommits` reads, split by the unit separator: hash, short hash, parents, author date, committer date, subject. */
+export const COMMIT_FORMAT = '%H%x1f%h%x1f%P%x1f%ai%x1f%ci%x1f%s';
+
+/** Whether a `%ai` or `%ci` date is in UTC: git writes UTC as `+0000`. */
+const isUtcDate = (date: string): boolean => / \+0000$/.test(date.trim());
+
+/**
+ * The commits among `lines` (one per commit, in COMMIT_FORMAT) whose author or committer
+ * date is not UTC. The dates are read here and never returned, so no caller can print one.
+ */
+export function nonUtcCommits(lines: string[]): PushedCommit[] {
+  const found: PushedCommit[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const fields = line.split('\x1f');
+    // A line git did not give in COMMIT_FORMAT is refused, never skipped: fail closed.
+    if (fields.length < 6) {
+      found.push({ hash: fields[0], short: fields[0].slice(0, 9), isRoot: false, subject: '(a commit yokoten could not read)' });
+      continue;
+    }
+    const [hash, short, parents, author, committer, ...subject] = fields;
+    if (isUtcDate(author) && isUtcDate(committer)) continue;
+    found.push({ hash, short, isRoot: parents.trim() === '', subject: subject.join('\x1f') });
+  }
+  return found;
+}
+
+/**
+ * The one command that gives the commits UTC dates: an amend when only the tip of this
+ * branch is wrong, else a rebase from the oldest wrong one. `--ignore-date` gives every
+ * commit it replays a new author date, and with TZ=UTC both dates are UTC. `commits` is
+ * newest first, as `git log --topo-order` writes it.
+ */
+export function utcFix(commits: PushedCommit[], head: string | null): string {
+  if (commits.length === 1 && commits[0].hash === head) return 'TZ=UTC git commit --amend --no-edit --date=now';
+  const oldest = commits.at(-1);
+  return oldest === undefined || oldest.isRoot ? 'TZ=UTC git rebase --ignore-date --root' : `TZ=UTC git rebase --ignore-date ${oldest.short}^`;
 }
 
 // ---- The milestone a gh command sets (#512) ----

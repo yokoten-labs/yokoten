@@ -64,7 +64,8 @@ export function fileRules(repos: RuledRepo[]): FileRules {
   const platform = commandPlace.current?.platform;
   const paths = platform === undefined ? nodePath : pathsFor(platform);
   const isHost = platform === undefined || isHostPaths(platform);
-  const real = isHost ? realPath : (path: string) => path;
+  // A short name reads as its long one before any compare, as for the file tools (#1105).
+  const real = commandPlace.current?.realPath ?? (isHost ? realPath : (path: string) => path);
   const ruled: FileRules['ruled'] = ({ path, from }, env) => {
     if (path === '' || path === '-') return null;
     // An unplaced path (`/usr/x` on Windows) is refused by the caller first, as unsure.

@@ -1182,7 +1182,7 @@ function renderImportLine(importLine: ImportLine): string {
  * name either side deleted goes (#809). The base form is the diff3 common ancestor.
  * Null when a line is not an import, or when one side changed a line the other deleted.
  */
-function mergeImportLists(base: string[], ours: string[], theirs: string[]): string[] | null {
+export function mergeImportLists(base: string[], ours: string[], theirs: string[]): string[] | null {
   const baseGroups = groupImports(base);
   const ourGroups = groupImports(ours);
   const theirGroups = groupImports(theirs);
@@ -1240,7 +1240,7 @@ function resolveConflictBlock(block: ConflictBlock): string[] | null {
 type ConflictResult = { ok: true; text: string; hunks: number } | { ok: false; hunks: number; blocks: string[] };
 
 /** Resolve every conflict block in one file, or give the blocks back unchanged. */
-function resolveConflictText(text: string): ConflictResult {
+export function resolveConflictText(text: string): ConflictResult {
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const lines = text.split(eol);
   const blocks = readConflictBlocks(text);

@@ -13,8 +13,8 @@ import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } 
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
-import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import fileTimes, { judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
+import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -558,8 +558,8 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
     const needs = results(docsOnly, {});
     const nodes = evaluate(inBraces(testJob, /^ {8}node: \$\{\{ (.+) \}\}$/m), needs, github) as string[];
     const extra = evaluate(inBraces(testJob, /^ {8}include: \$\{\{ (.+) \}\}$/m), needs, github) as { os: string; node: string; shard: number; of: number }[];
-    // Every setup runs each of its shards: three, or the whole suite in one macOS job
-    // on a pull request, so the shared runners stay free (#568).
+    // Every setup runs each of its shards: three, or two macOS shards on a pull request,
+    // so the shared runners stay free (#568).
     // A docs-only pull request runs one job, not three shards (#1051).
     const shards = evaluate(inBraces(testJob, /^ {8}shard: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
     const ofAxis = evaluate(inBraces(testJob, /^ {8}of: \$\{\{ (.+) \}\}$/m), needs, github) as number[];
@@ -575,6 +575,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
     return {
       setups: [...new Set([...nodes.map((node) => `ubuntu-latest ${node}`), ...extra.map((entry) => `${entry.os} ${entry.node}`)])],
       whole: extra.filter((entry) => entry.of === 1).map((entry) => `${entry.os} ${entry.node} ${entry.shard}/${entry.of}`),
+      macos: extra.filter((entry) => entry.os === 'macos-latest').map((entry) => `${entry.shard}/${entry.of}`),
       budgets,
     };
   };
@@ -586,13 +587,14 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.match(jobBlock(text, 'ci'), /never started/, '`ci` names jobs that never got a runner (#568)');
   assert.deepEqual(matrix('true', 'pull_request').setups, ['ubuntu-latest ^24.22.1']);
   // Each test runs once before a merge (#1084). A pull request runs Linux on Node 22 and
-  // the whole suite in one macOS job (#568); its merge queue group runs Linux on Node 24.
-  // A push to main and the schedule run the full matrix. A docs-only run, the docs tests.
+  // macOS in two shards (#568); its merge queue group runs Linux on Node 24. A push to main
+  // runs Linux on both Nodes and no macOS; the schedule runs the full matrix. A docs-only
+  // run, the docs tests.
   const full = ['ubuntu-latest 22.23.4', 'ubuntu-latest ^24.22.1', 'macos-latest ^24.22.1'];
   const pullRequestSetups = ['ubuntu-latest 22.23.4', 'macos-latest ^24.22.1'];
   const pr = matrix('false', 'pull_request');
   assert.deepEqual(pr.setups, pullRequestSetups, 'a pull request runs no Linux Node 24 shards: the queue runs them');
-  assert.deepEqual(pr.whole, ['macos-latest ^24.22.1 1/1'], 'a pull request runs the whole suite in one macOS job (#568)');
+  assert.deepEqual([pr.whole, pr.macos], [[], ['1/2', '2/2']], 'a pull request runs macOS in two shards, about four minutes (#568)');
   assert.deepEqual(matrix('', 'pull_request').setups, pullRequestSetups, '`changes` failed: the pull request\'s full run');
   const queue = matrix('false', 'merge_group');
   assert.deepEqual([queue.setups, queue.whole], [['ubuntu-latest ^24.22.1'], []], 'a queue group runs Linux Node 24 only, all shards');
@@ -600,14 +602,15 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.deepEqual(matrix('', 'merge_group').setups, ['ubuntu-latest ^24.22.1'], '`changes` failed: one Node still, all shards');
   // No setup runs both before the merge: what the pull request runs, the queue does not.
   assert.deepEqual(pr.setups.filter((setup) => queue.setups.includes(setup)), []);
-  for (const event of ['push', 'schedule']) {
-    const run = matrix('false', event);
-    assert.deepEqual(run.setups, full);
-    assert.deepEqual(run.whole, [], `${event}: the full macOS matrix (#568)`);
-    // Every setup that runs keeps its own budget (#475): 90 s for Linux Node 24, the fastest.
-    assert.deepEqual(run.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90', 'macos-latest ^24.22.1 shard': '' });
-  }
-  assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 whole': '--budget 400' });
+  const daily = matrix('false', 'schedule');
+  assert.deepEqual([daily.setups, daily.macos], [full, ['1/3', '2/3', '3/3']], 'the schedule runs the full macOS matrix (#568)');
+  // Every setup that runs keeps its own budget (#475): 90 s for Linux Node 24, the fastest; macOS fails on the daily run.
+  assert.deepEqual(daily.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90', 'macos-latest ^24.22.1 shard': '' });
+  const push = matrix('false', 'push');
+  assert.deepEqual([push.setups, push.macos], [['ubuntu-latest 22.23.4', 'ubuntu-latest ^24.22.1'], []], 'a push to main runs no macOS: the pull request ran it, and a queued macOS job turned main red (2026-10-26)');
+  assert.deepEqual(push.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
+  // A pull request's macOS shards only warn: the same tests took 454 s and 629 s there (PR #1112).
+  assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 shard': '--budget 240 --warn-only' });
   assert.deepEqual(queue.budgets, { 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
   for (const name of ['typecheck', 'action', 'windows', 'lint']) {
@@ -1502,7 +1505,7 @@ const PLATFORM_READS: [string, number][] = [
   ['rules/guards/hooks/read.ts', 1],
   ['rules/guards/lead-only/edit.ts', 2],
   ['rules/privacy.ts', 1],
-  ['run/hook.ts', 6],
+  ['run/hook.ts', 5],
   ['setup/advice/unsaved.ts', 5],
   ['setup/doctor/checks.ts', 2],
   ['setup/init.ts', 1],
@@ -1763,10 +1766,10 @@ const WINDOWS_BRANCHES: [string, number][] = [
   ['rules/guards/worker/config.test.ts', 1],
   ['rules/guards/worker/mark.test.ts', 4],
   ['rules/privacy.test.ts', 3],
-  ['run/check.test.ts', 2],
+  ['run/check.test.ts', 1],
   ['run/hook.test.ts', 14],
   ['run/notes/translations.test.ts', 1],
-  ['setup/doctor/checks.test.ts', 3],
+  ['setup/doctor/checks.test.ts', 2],
   ['setup/doctor/machine.test.ts', 1],
   ['setup/doctor/report.test.ts', 2],
   ['setup/init.test.ts', 5],
@@ -2015,7 +2018,7 @@ const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/commands/more/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
   'test/run/cli.test.ts': { cap: 9, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache, the demo loop and --help through the real entry' },
-  'test/setup/init.test.ts': { cap: 12, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
+  'test/setup/init.test.ts': { cap: 10, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
   'test/setup/install.test.ts': { cap: 7, reason: 'it runs the copy that install writes, from its own path, which is other code than this checkout' },
 };
 const CHILD_FIX = 'use sandbox.call in place of sandbox.run, or call the function; keep a child only for the entry, with a comment saying why';
@@ -2086,6 +2089,68 @@ test('child processes: each test file starts at most CHILD_CAP, or its allowance
   assert.deepEqual(childProblems(files, helpers), []);
 });
 
+// ---- Whole doctor and init runs (#1109) ----
+//
+// A whole run, in process or not, costs 50 to 400 ms, and init.test.ts once took 240 s on
+// Windows. The limit is TEST_LIMITS' full-runs row; files above it are on FULL_RUN_ALLOWANCE
+// at their count, which may only go down, like CHILD_ALLOWANCE.
+const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
+  'test/setup/init.test.ts': { cap: 136, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/doctor/report.test.ts': { cap: 51, reason: 'the report doctor prints: its order, its notes and the session form' },
+  'test/setup/doctor/checks.test.ts': { cap: 23, reason: 'one whole run for each note that its check and doctor both print' },
+  'test/commands/more/advice/doctor.test.ts': { cap: 22, reason: 'the advice doctor prints for each finding' },
+  'test/agents/runtimes/muse.test.ts': { cap: 15, reason: "init and doctor on a Muse Code project: its settings and trust" },
+  'test/agents/runtimes/grok.test.ts': { cap: 12, reason: "init and doctor on a Grok CLI project: its settings and trust" },
+  'test/setup/install.test.ts': { cap: 11, reason: 'doctor after install, and init from the installed copy' },
+  'test/run/learn.test.ts': { cap: 10, reason: 'the lesson loop: init, then doctor reads the lesson' },
+  'test/commands/hook.test.ts': { cap: 8, reason: 'init writes the hooks that these tests then call' },
+  'test/agents/runtimes/small/opencode.test.ts': { cap: 8, reason: 'init and doctor on an OpenCode project' },
+  'test/repo/architecture.test.ts': { cap: 10, reason: 'the entries the child-process tests run, and four sample runs in the cases for this count' },
+};
+
+/** The whole doctor or init runs a test file writes: sandbox.call or sandbox.run with that command first. */
+const countFullRuns = (text: string): number => text.match(/\b(?:call|run)\(\s*\[\s*'(?:doctor|init)'/g)?.length ?? 0;
+
+/** What is wrong with the whole runs in `files` (test path to source). */
+function fullRunProblems(files: Record<string, string>, allowance = FULL_RUN_ALLOWANCE, { limit, id } = limitOf('full-runs')): string[] {
+  const problems: string[] = [];
+  for (const [path, text] of Object.entries(files)) {
+    const count = countFullRuns(text);
+    const cap = allowance[path]?.cap ?? limit;
+    if (count > cap) problems.push(`${path} writes ${count} whole doctor or init runs, over its cap of ${cap} (${id}): call the function that decides, and keep one whole run for each setting the command passes on`);
+    else if (allowance[path] && count < cap) problems.push(`${path} writes ${count} whole runs, under its allowance of ${cap}: lower it in FULL_RUN_ALLOWANCE to ${count}${count <= limit ? ', or take the file off it' : ''}`);
+  }
+  for (const path of Object.keys(allowance)) if (!(path in files)) problems.push(`FULL_RUN_ALLOWANCE names ${path}, which is not a test file`);
+  return problems;
+}
+
+test('whole runs: a file over the limit fails with the fix, one at it passes, and an allowance only goes down (#1109)', () => {
+  const { limit } = limitOf('full-runs');
+  const runs = (count: number) => Array.from({ length: count }, (_, index) => index % 2 ? "sandbox.call(['doctor', '--all']);" : "sandbox.run([ 'init' ]);").join('\n');
+  assert.equal(countFullRuns("sandbox.call(['doctor']); sandbox.call(['check']); sandbox.run(['init', '--list']); doctor(root);"), 2, 'only doctor and init, by call or run');
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(limit) }, {}), []);
+  assert.match(fullRunProblems({ 'test/a.test.ts': runs(limit + 1) }, {})[0], new RegExp(`writes ${limit + 1} whole doctor or init runs, over its cap of ${limit} \\(full-runs\\): call the function`));
+  const allowance = { 'test/a.test.ts': { cap: 9, reason: 'a test' } };
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(9) }, allowance), []);
+  assert.deepEqual(fullRunProblems({ 'test/a.test.ts': runs(8) }, allowance), ['test/a.test.ts writes 8 whole runs, under its allowance of 9: lower it in FULL_RUN_ALLOWANCE to 8']);
+  assert.match(fullRunProblems({ 'test/a.test.ts': runs(2) }, allowance)[0], /to 2, or take the file off it$/);
+  assert.deepEqual(fullRunProblems({}, allowance), ['FULL_RUN_ALLOWANCE names test/a.test.ts, which is not a test file']);
+});
+
+test('whole runs: each test file writes at most the full-runs limit, or its allowance (#1109)', () => {
+  const paths = execFileSync('git', ['ls-files', 'test'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((path) => path.endsWith('.test.ts'));
+  const files = Object.fromEntries(paths.map((path) => [path, readFileSync(join(ROOT, path), 'utf8')]));
+  assert.ok(countFullRuns(files['test/setup/init.test.ts'] ?? '') > 0, 'no whole run found in init.test.ts; the count is broken');
+  assert.deepEqual(fullRunProblems(files), []);
+});
+
+test('test limits: each row of the table says what, how much, why and where it was decided (record 0051)', () => {
+  assert.deepEqual(TEST_LIMITS.map((row) => row.id), ['file-seconds', 'full-runs']);
+  for (const row of TEST_LIMITS) {
+    assert.ok(row.limit > 0 && row.what && row.reason && /issue #\d+/.test(row.source), `${row.id} has every field`);
+  }
+});
+
 // ---- The suite's time budget (#475) ----
 //
 // CI checks each shard's run time against a budget with scripts/time/suite.ts, from a TAP
@@ -2141,6 +2206,39 @@ test('suite time: a busy runner gets 50% more time for the same work, and a chil
   assert.match(childProblems({ 'test/a.test.ts': childPerTest }, [], {})[0], /starts 5 child processes.*over its cap of 4/);
 });
 
+test('file time: the reporter adds up each file\'s top-level tests, and a file over the limit fails with its name (#1109)', async () => {
+  const event = (type: string, file: string | undefined, nesting: number, ms: number) => ({ type, data: { nesting, file: file && join(process.cwd(), file), details: { duration_ms: ms } } });
+  async function* events() {
+    yield event('test:pass', 'test/a.test.ts', 0, 40_000.4);
+    yield event('test:pass', 'test/a.test.ts', 1, 99_999);
+    yield event('test:fail', 'test/a.test.ts', 0, 25_000);
+    yield event('test:start', 'test/b.test.ts', 0, 99_999);
+    yield event('test:pass', 'test/b.test.ts', 0, 1_200);
+    yield event('test:pass', undefined, 0, 99_999);
+  }
+  const lines: string[] = [];
+  for await (const line of fileTimes(events())) lines.push(line);
+  assert.deepEqual(lines, ['{"file":"test/a.test.ts","ms":65000}\n', '{"file":"test/b.test.ts","ms":1200}\n'], 'nested tests, starts and tests with no file are not counted');
+
+  const { limit } = limitOf('file-seconds');
+  const over = judgeFiles(lines.join(''), { ...limitOf('file-seconds'), limit: 60 });
+  assert.equal(over.isOver, true);
+  assert.match(over.text, /^1 test file took longer than 60 s \(file-seconds\): split the file, or test its decisions by calling their functions\. Why: /);
+  assert.match(over.text, /\n- 65\.0 s: test\/a\.test\.ts \(over\)\n- 1\.2 s: test\/b\.test\.ts\n$/);
+  const under = judgeFiles('{"file":"test/b.test.ts","ms":1200}\n');
+  assert.equal(under.isOver, false);
+  assert.equal(under.text, `Every test file took ${limit} s or less.\n\nThe slowest files:\n- 1.2 s: test/b.test.ts\n`);
+});
+
+test('suite time: --warn-only reports a run over the budget and passes; without it, the run fails (PR #1112)', () => {
+  assert.deepEqual(verdictOf(false, false), { code: 0 });
+  assert.deepEqual(verdictOf(false, true), { code: 0 }, 'a run under the budget says nothing more');
+  assert.deepEqual(verdictOf(true, false), { code: 1 }, 'the budget fails a run over it');
+  const warned = verdictOf(true, true);
+  assert.equal(warned.code, 0);
+  assert.match(warned.warning ?? '', /^::warning title=Test time::.*only warns/);
+});
+
 test('suite time: it reads the report node --test writes on this Node (#475)', () => {
   const dir = makeTempDir('yokoten-suite-');
   writeFileSync(join(dir, 'one.test.ts'), "import { test } from 'node:test';\ntest('one: it runs', () => {});\n");
@@ -2186,6 +2284,16 @@ test('windows known: a new failure and a fixed entry both fail the job; a flaky 
   for (const flaky of [[], ['test/b.test.ts :: flaky']]) {
     assert.deepEqual(judgeKnown(['test/a.test.ts :: still broken', 'test/a.test.ts :: fixed now', ...flaky], known), { added: [], fixed: [] });
   }
+});
+
+test('windows known: a slow file gets twice its last time over the cap; a file that timed out fixes nothing (2026-10-26)', () => {
+  const times = readTimes('177 test/run/check.test.ts\n10 test/a.test.ts\n');
+  assert.equal(capOf('test/run/check.test.ts', times, 240), 354);
+  assert.equal(capOf('test\\run\\check.test.ts', times, 240), 354, 'a Windows path');
+  assert.equal(capOf('test/a.test.ts', times, 240), 240, 'a fast file keeps the cap');
+  assert.equal(capOf('test/new.test.ts', times, 240), 240, 'a file with no time keeps the cap');
+  const known = readKnown('test/a.test.ts :: waived\ntest/b.test.ts :: fixed now\n');
+  assert.deepEqual(judgeKnown([`test/a.test.ts :: ${TIMED_OUT}`], known), { added: [`test/a.test.ts :: ${TIMED_OUT}`], fixed: ['test/b.test.ts :: fixed now'] }, "the time-out is new; its file's waiver is not fixed; another file's is");
 });
 
 test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {
@@ -2258,6 +2366,26 @@ test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads 
     ['test/a.test.ts', ['test/a.test.ts :: old'], 'FIXED   test/a.test.ts (3 s, 1 on the list passes now, 1 waived)'],
     ['test\\c.test.ts', ['test/c.test.ts :: old', 'test/c.test.ts :: brand new'], 'NEW     test/c.test.ts (3 s, 1 new: brand new, 1 waived)'],
   ] as const) assert.equal(fileLine(file, [...found], known, 3), line, line);
+});
+
+test('windows known: the log shows progress, then the verdict first, with passed files folded in Actions (#1119)', () => {
+  assert.equal(progressLine('test\\setup\\init.test.ts', 54, 62, 480), '[54/62] test/setup/init.test.ts (cap 480 s)');
+  assert.equal(slowLine('test/setup/init.test.ts', 120, 480), 'still running test/setup/init.test.ts: 120 s / 480 s');
+  const times = [{ name: 'a', seconds: 3 }, { name: 'c', seconds: 90 }, { name: 'b', seconds: 90 }, { name: 'd', seconds: 1 }];
+  assert.deepEqual(slowestFiles(times, 3), [{ name: 'b', seconds: 90 }, { name: 'c', seconds: 90 }, { name: 'a', seconds: 3 }]);
+  const verdict = ['windows-known: win32, shard 1/1, 3 files, 1 failing (0 waived), 1 new, 0 fixed, 0 flaky, 0 skipped.'];
+  const fileLines = ['ok      test/a.test.ts (3 s)', 'NEW     test/b.test.ts (4 s, 1 new: x)', 'ok      test/c.test.ts (1 s)'];
+  const details = ['Nothing is skipped on win32.'];
+  for (const [isActions, expected] of [
+    [false, [...verdict, fileLines[1], ...details, fileLines[0], fileLines[2]]],
+    [true, [...verdict, fileLines[1], ...details, '::group::passed files (2)', fileLines[0], fileLines[2], '::endgroup::']],
+  ] as const) {
+    const lines = reportLines(verdict, details, fileLines, isActions);
+    assert.deepEqual(lines, expected);
+    assert.ok(lines[0].startsWith('windows-known:'), 'the verdict is the first line');
+  }
+  assert.equal(summaryTable({ added: 1, fixed: 0, waived: 5 }, [{ name: 'test/a.test.ts', seconds: 90 }]), '### Windows known failures\n\n| | Count |\n|---|---|\n| New failures | 1 |\n| Fixed (remove from the list) | 0 |\n| Waived | 5 |\n\n| Slowest files | Seconds |\n|---|---|\n| test/a.test.ts | 90 |\n');
+  assert.ok(!summaryTable({ added: 0, fixed: 0, waived: 0 }, []).includes('Slowest'));
 });
 
 test('windows scope: native Windows skips the desk, its fence and the kanban server, each with its reason (#1068)', () => {

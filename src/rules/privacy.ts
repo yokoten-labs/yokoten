@@ -21,6 +21,7 @@ import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDire
 
 import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
 import { loadMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
+import { GLOBAL_VALUES, postKind, unreadPost } from './privacy/posts.ts';
 
 export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
 
@@ -1221,13 +1222,6 @@ export interface GhCommand {
   stdinText?: string;
 }
 
-// The gh commands that post text, by group and subcommand (`new` is gh's alias for `create`).
-const POSTS: Record<string, string[]> = {
-  issue: ['create', 'new', 'comment', 'edit', 'close'],
-  pr: ['create', 'new', 'comment', 'edit', 'review', 'merge', 'close'],
-  release: ['create', 'new', 'edit'],
-};
-
 // gh options that hold text to post, and those that name a file of it. `-F` is a file in
 // every one of these commands (`--body-file`, or `--notes-file` for a release).
 const TEXT_OPTIONS = new Set(['--title', '-t', '--body', '-b', '--notes', '-n', '--subject']);
@@ -1237,8 +1231,6 @@ const FILE_OPTIONS = new Set(['--body-file', '--notes-file', '-F']);
 // The api subcommand: each field is key=value; `-F key=@file` reads a file, and `--input` sends one.
 const FIELD_OPTIONS = new Set(['-f', '--raw-field', '-F', '--field']);
 const INPUT_OPTIONS = new Set(['--input']);
-// gh's global option that takes a value before the subcommand: `gh -R o/r issue create`.
-const GLOBAL_VALUES = new Set(['-R', '--repo']);
 const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT']);
 // A GraphQL document that changes something: comments first, then `mutation`.
 const MUTATION = /^\s*(?:#[^\n]*\n\s*)*mutation\b/;
@@ -1397,34 +1389,31 @@ export interface CommandFiles {
 /** What a gh command posts: its pieces, a file the guard can't find, or a short-option cluster. Null when it posts nothing. */
 type Missing = { missing: string; unsure: boolean; saw?: Risk };
 
-/** The group and subcommand of a gh command that posts (the first two words that are not options), or null. */
-function postKind(args: string[]): { sub: string; isApi: boolean } | null {
-  const plain: string[] = [];
-  for (let index = 0; index < args.length && plain.length < 2; index++) {
-    if (GLOBAL_VALUES.has(args[index])) index++;
-    else if (!args[index].startsWith('-')) plain.push(args[index]);
-  }
-  const [group, sub] = plain;
-  const isApi = group === 'api';
-  return isApi || POSTS[group]?.includes(sub) ? { sub, isApi } : null;
+/** The fix for a bare gh post the checks can't read (#1104): the bot reads what it sends, or refuses. */
+export const POST_WITH_BOT = 'post it with `yokoten bot`';
+
+/**
+ * A posting gh command in a form the allowlist in privacy/posts.ts does not cover (#1077,
+ * #1104), or null: a short-option cluster that holds a text letter (`-dt`, `-dF`, `-cb`),
+ * `--recover`, `gist create`, or `release create` with files. `isBot` is true for a post sent
+ * by `yokoten bot`: then the fix says how to write the form so the bot can read it. A bare gh
+ * gets "post it with `yokoten bot`".
+ */
+export function unreadPostFinding(args: string[], isBot: boolean): Finding | null {
+  const unread = unreadPost(args);
+  if (!unread) return null;
+  return finding('unreadable-command', unread.what, isBot ? unread.fix : POST_WITH_BOT, {
+    why: 'the privacy check reads a post before it is sent, and an unread one could hold anything',
+  });
 }
 
 /**
- * A short-option cluster with a body letter in a posting gh command (#1077), or null. gh reads
- * `-dF body.md` as `--draft --body-file body.md`, and `-ab x` as `--approve --body x`, but the
- * option tables see only a word's first letter. So a word of letters after one `-` that holds
- * `F` or `b` past its first letter is refused: spelled out, each option is read. A word that
- * starts with `-F` or `-b` is that option with its value joined on, and is read as such.
+ * Whether gh reads a posting command's text from standard input (#1104): only an option
+ * value the bot rewrites (`--body-file -`, `-F -`, `--input -`, `-F key=@-`). A free word such
+ * as a title `x=-` is text, never a read.
  */
-function bodyCluster(args: string[]): Finding | null {
-  const kind = postKind(args);
-  if (!kind || kind.isApi) return null;
-  const end = args.indexOf('--');
-  const word = (end === -1 ? args : args.slice(0, end)).find((arg) => /^-[A-Za-z]/.test(arg) && !/^-[Fb]/.test(arg) && /^-[A-Za-z]+/.exec(arg)?.[0].slice(2).match(/[Fb]/));
-  if (word === undefined) return null;
-  return finding('unreadable-command', 'this gh command joins short options with one that takes the body (`-F` or `-b`), so yokoten cannot tell which body it sends', 'write each short option as its own word, such as `-d -F body.md`, or use the long names, such as `--body-file`', {
-    why: 'the privacy check reads a body before it is posted, and an unread one could hold anything',
-  });
+export function readsStdinBody(args: string[]): boolean {
+  return fileWords(args).some((word) => word.path === '-');
 }
 
 /** One place in a gh command that reads a file: where it is, and how to spell it as stdin. */
@@ -1478,8 +1467,8 @@ function fileWords(args: string[]): FileWord[] {
  * to guess which text gh sends. So is a file it can't read (missing, not a plain file, over 1 MB).
  */
 export function readSentBody(args: string[], cwd: string | null): { args: string[]; text?: string } | Finding {
-  const cluster = bodyCluster(args);
-  if (cluster) return cluster;
+  const unread = unreadPostFinding(args, true);
+  if (unread) return unread;
   const words = fileWords(args);
   if (words.length === 0) return { args };
   if (words.length > 1) {
@@ -1839,12 +1828,13 @@ function isPostHere(gh: GhCommand, { env, command, cwd, from }: { env: Env; comm
  */
 export function checkPost(
   gh: GhCommand,
-  { env, privacy, cwd, command, from, files, isSender = false }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isSender?: boolean },
+  { env, privacy, cwd, command, from, files, isSender = false, viaBot = isSender }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isSender?: boolean; viaBot?: boolean },
 ): Finding | null {
-  // A short-option cluster that holds a body letter (`-dF file`, `-aF file`) reads a body
-  // gh takes but the option tables don't see (#1077): refused, for the guard and the bot.
-  const cluster = bodyCluster(gh.args);
-  if (cluster) return cluster;
+  // A form outside the allowlist (`-dt`, `--recover`, `gist create`) sends text the option
+  // tables don't see (#1077, #1104): refused, for the guard and the bot. A bare gh is sent to
+  // the bot; a line that runs the bot (`viaBot`) gets the bot's own fix.
+  const unread = unreadPostFinding(gh.args, viaBot);
+  if (unread) return unread;
   // The path goes to the kernel as bash hands it to gh, never normalized: join and resolve
   // drop `..` as text, but the kernel goes up from the real folder when the working folder
   // or home is a symlink (#470).

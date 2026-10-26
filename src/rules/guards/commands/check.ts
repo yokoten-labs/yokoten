@@ -2,6 +2,7 @@ import { dirname, isAbsolute, resolve } from 'node:path';
 import { finding, type Finding } from '../../text/message.ts';
 import { checkCommandTitle } from '../../pr.ts';
 import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
+import { mayPost, unreadPost } from '../../privacy/posts.ts';
 import { type Config, type Env } from '../../config.ts';
 import { markFinding, checkWorkerWrites } from '../worker/mark.ts';
 import { checkWorkerBox } from '../worker/box.ts';
@@ -651,13 +652,33 @@ function checkPosted(
   words: string[],
   { env, config, cwd, from, command, titles, files }: { env: Env; config?: Partial<Pick<Config, 'privacy' | 'areas'>>; cwd: string | null; from: string | null; command: string; titles: boolean; files: CommandFiles },
 ): Finding | null {
-  const at = ghIndex(words, findProgramPlaces(words));
-  if (at === -1) return null;
+  const places = findProgramPlaces(words);
+  const at = ghIndex(words, places);
+  if (at === -1) return hiddenPost(words, places);
   const gh = ghCommand(words, at);
-  const leak = checkPost(gh, { env, privacy: config?.privacy, cwd, from, command, files });
+  // `yokoten bot -- gh …`: a form the bot can't read gets the bot's fix, not "use the bot" (#1104).
+  const viaBot = at >= 2 && words[at - 1] === '--' && words[at - 2] === 'bot';
+  const leak = checkPost(gh, { env, privacy: config?.privacy, cwd, from, command, files, viaBot });
+  // A form the checks can't read that also publishes, such as a release with files, says the
+  // owner releases, not "use the bot" (#1104).
+  if (leak && unreadPost(gh.args)) return checkPublish(words, env) ?? leak;
   if (leak || !titles) return leak;
   const [title] = checkCommandTitle([words[at], ...gh.args], config ?? {});
   return title ?? null;
+}
+
+// A program named by a `$` word or a backtick, such as `$G`, `${G}` or `` `echo gh` ``, followed
+// by any word that may belong to a post (#1104): `G="gh issue"; $G comment 3 -b …`. The guard
+// can't name the program, so it does not guess what runs; it refuses, and the bot reads the post.
+export const HIDDEN_PROGRAM_FIX = `write the program by its name, such as \`python3 -c …\`; a post goes through \`yokoten bot\``;
+
+function hiddenPost(words: string[], places: { word: string; index: number }[]): Finding | null {
+  const hidden = places.find((place) => place.index >= 0 && /[$`]/.test(words[place.index] ?? '') && mayPost(words.slice(place.index + 1)));
+  if (!hidden) return null;
+  // Most such commands are not posts (`$PYTHON -c …`), so the fix names both ways out (DeepSeek, PR #1118).
+  return finding('unreadable-command', `yokoten can't tell which program \`${words[hidden.index]}\` runs, and its words may post to GitHub`, HIDDEN_PROGRAM_FIX, {
+    why: 'the privacy check reads a post before it is sent, and an unread one could hold anything',
+  });
 }
 
 // The words after gh without the shell's redirects, and what a `< file` or a `<<<` feeds

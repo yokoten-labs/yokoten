@@ -9,7 +9,7 @@ import { type Finding, finding, type RuleId } from '../../rules/text/message.ts'
 import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
-import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
+import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userGuardMisses, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
 import * as copilot from '../../agents/copilot.ts';
 import * as dsh from '../../agents/runtimes/small/deepseek-harness.ts';
@@ -217,7 +217,13 @@ export function machineChecks(env: Env): Practice[] {
   // guard, and install writes none; when the plugin goes away, nothing is left to stop a
   // risky command, so this is a failure with one fix, never a note. A settings file doctor
   // can't use is already the session-doctor line, so the guard stays quiet then.
-  const guard = problem ? null : practice('user-guard', 'user-guard', plugin || hasUserGuard(env), 'no guard for Claude Code', 'run `yokoten install`');
+  // A guard from an older install that runs on fewer tools is out of date: one line, one fix (#1100).
+  const misses = plugin ? [] : userGuardMisses(env);
+  const guard = problem
+    ? null
+    : misses.length
+      ? practice('user-guard', 'user-guard', false, `the guard for Claude Code is out of date: it skips ${misses.join(', ')}`, 'run `yokoten install`')
+      : practice('user-guard', 'user-guard', plugin || hasUserGuard(env), 'no guard for Claude Code', 'run `yokoten install`');
   return [
     session,
     ...(guard ? [guard] : []),

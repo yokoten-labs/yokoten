@@ -43,7 +43,11 @@ const READ_ONLY = new Set(['read_file', 'grep', 'list_dir', 'web_search', 'web_f
 // (1.0.52): Claude Code's names, which Grok maps to its own tools on every route, and
 // Grok's own (`write`, `search_replace`, `write_file`). A matcher compares whole names.
 export const EDIT_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'EditNotebook', 'search_replace', 'write', 'write_file'];
-const MATCHER = ['Bash', 'run_terminal_command', ...EDIT_TOOLS].join('|');
+/**
+ * The tools both guard hooks run on, the project one and the user one: one list, so the user
+ * guard never misses an edit tool the project hook guards (#1100).
+ */
+export const GUARDED_TOOLS = ['Bash', 'run_terminal_command', ...EDIT_TOOLS].join('|');
 // Seconds Grok waits for the tool-call guard: well past its own deadline (GUARD_DEADLINE_MAX_MS).
 const TIMEOUT = 60;
 // Seconds Grok waits for the stop check: Grok's own default for Stop.
@@ -112,7 +116,7 @@ const projectHooks = (root: string) => join(root, HOOKS_FILE);
 // Grok runs a hook in the workspace root and sets GROK_WORKSPACE_ROOT to it.
 const at = (cli: string) => `"$GROK_WORKSPACE_ROOT/${cli}"`;
 const guardArgs = (root: string, cli: string) =>
-  [projectHooks(root), 'PreToolUse', MATCHER, guardCommand(at(cli), 'hook --agent grok', missingProjectRuntime(cli), { isToolCall: true }), { timeout: TIMEOUT }] as const;
+  [projectHooks(root), 'PreToolUse', GUARDED_TOOLS, guardCommand(at(cli), 'hook --agent grok', missingProjectRuntime(cli), { isToolCall: true }), { timeout: TIMEOUT }] as const;
 const stopArgs = (root: string, cli: string) => [projectHooks(root), 'Stop', undefined, guardCommand(at(cli), 'hook --stop --agent grok', missingProjectRuntime(cli)), { timeout: STOP_TIMEOUT }] as const;
 
 /**
@@ -143,10 +147,12 @@ const userHooks = (env: Env) => join(env.GROK_HOME || join(homeIn(env), '.grok')
 /** The user hook file, as the user would type it. */
 export const userHooksFile = (env: Env): string => (env.GROK_HOME ? '$GROK_HOME/hooks/yokoten.json' : '~/.grok/hooks/yokoten.json');
 
-// Only the command guard: Grok reads only `systemMessage` from a SessionStart hook, for the
-// user, so a session-start doctor would not reach the agent.
+// Only the tool-call guard: Grok reads only `systemMessage` from a SessionStart hook, for the
+// user, so a session-start doctor would not reach the agent. It runs on the shell and every
+// edit tool, as the project hook does: a session with no project hook still keeps a worker
+// out of lead-only files (#1100).
 const userGuardArgs = (env: Env, cli: string, missing: string) =>
-  [userHooks(env), 'PreToolUse', 'Bash', guardCommand(cli, 'hook --agent grok --commands-only', missing, { isToolCall: true }), { timeout: TIMEOUT }] as const;
+  [userHooks(env), 'PreToolUse', GUARDED_TOOLS, guardCommand(cli, 'hook --agent grok --commands-only', missing, { isToolCall: true }), { timeout: TIMEOUT }] as const;
 
 /** The user's command guard, in every repo: no tag pushes, no skipped checks. `missing` is what it says when `cli` is gone. */
 export function addUserHooks(env: Env, cli: string, missing: string): { guard: Added } {

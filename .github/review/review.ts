@@ -26,12 +26,12 @@ export const MAX_DIFF_CHARS = 120_000;
 export const MAX_PARTS = 4;
 /** The part of the pull request body the reviewer reads, in characters. */
 export const MAX_BODY_CHARS = 20_000;
-/** How long one DeepSeek call may take (ms): a full answer, inside the job's 10 minutes. */
+/** How long one DeepSeek call may take (ms): a full answer, inside the job's 20 minutes, with room for one retry of a cut part (two calls in a row). */
 export const MODEL_TIMEOUT_MS = 480_000;
 /**
  * The longest answer DeepSeek may write, in tokens: its reasoning and the JSON both count.
- * 64K is DeepSeek's own default in thinking mode; at 32K a large pull request was cut off
- * before the verdict, twice on PR #1106.
+ * At 32K a large pull request was cut off before the verdict, twice on PR #1106, after about
+ * 200 s; 64K takes about 400 s, inside MODEL_TIMEOUT_MS.
  */
 export const MAX_ANSWER_TOKENS = 65_536;
 /** How long one GitHub call may take (ms). */
@@ -266,17 +266,46 @@ export async function decideReview(input: { body: string; diff: string; model: s
   }
   const files = filesOf(input.diff);
   const at = (index: number): DiffPart | undefined => (parts.length > 1 ? { index: index + 1, count: parts.length, files } : undefined);
-  let answers: string[];
+  let verdicts: (Verdict | null)[];
   try {
-    answers = await Promise.all(parts.map((part, index) => input.askModel(buildMessages(input.body, part, at(index)))));
+    verdicts = await Promise.all(parts.map((part, index) => reviewPart(input, part, at(index))));
   } catch (error) {
     return unsureReview(error instanceof Error ? error.message : 'the model call failed');
   }
-  const verdicts = answers.map(parseVerdict);
   const unclear = verdicts.findIndex((verdict) => !verdict);
   if (unclear !== -1) return unsureReview(`the answer${parts.length > 1 ? ` for part ${unclear + 1} of ${parts.length}` : ''} was not the JSON shape the reviewer asks for`);
   return reviewFor(mergeVerdicts(verdicts as Verdict[]), input.model);
 }
+
+/**
+ * One part's verdict. An answer cut off at MAX_ANSWER_TOKENS is asked once more as halves,
+ * so each half needs less reasoning (the cut came from the reasoning, not the input: a 30K
+ * diff was cut on PR #1117). A half cut again fails the review, as before: never an approval.
+ */
+async function reviewPart(input: { body: string; askModel: (messages: ReturnType<typeof buildMessages>) => Promise<string> }, part: string, where: DiffPart | undefined): Promise<Verdict | null> {
+  try {
+    return parseVerdict(await input.askModel(buildMessages(input.body, part, where)));
+  } catch (error) {
+    if (!(error instanceof CutOff)) throw error;
+  }
+  const halves = splitDiff(part, Math.ceil(part.length / 2));
+  const answers = await Promise.all(halves.map((half) => input.askModel(buildMessages(input.body, half, where))));
+  const verdicts = answers.map(parseVerdict);
+  if (verdicts.some((verdict) => !verdict)) return null;
+  return joinHalves(verdicts as Verdict[]);
+}
+
+/** The halves of a part as one verdict: changes when any half asks for them. */
+export function joinHalves(verdicts: Verdict[]): Verdict {
+  return {
+    verdict: verdicts.some((each) => each.verdict === 'REQUEST_CHANGES') ? 'REQUEST_CHANGES' : 'APPROVE',
+    summary: verdicts.map((each) => each.summary).join(' '),
+    findings: capFindings(verdicts.flatMap((each) => each.findings), MAX_FINDINGS),
+  };
+}
+
+/** An answer cut off at MAX_ANSWER_TOKENS (finish_reason: length). */
+export class CutOff extends Error {}
 
 /** At most this many findings in a review of several parts; the rest are counted in one line. */
 export const MAX_MERGED_FINDINGS = 20;
@@ -295,6 +324,15 @@ export function mergeVerdicts(verdicts: Verdict[]): Verdict {
   };
 }
 
+/**
+ * The request DeepSeek gets. `reasoning_effort` is set, not left to the API's default (high
+ * as of 2026-10-26), so a change of default can't change how long the reasoning runs.
+ */
+export const REASONING_EFFORT = 'high';
+export function requestBody(model: string, messages: ReturnType<typeof buildMessages>): string {
+  return JSON.stringify({ model, messages, response_format: { type: 'json_object' }, reasoning_effort: REASONING_EFFORT, max_tokens: MAX_ANSWER_TOKENS, stream: false });
+}
+
 /** Sends the messages to DeepSeek and returns the answer text. Errors name the status only. */
 export async function askDeepSeek(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>): Promise<string> {
   let response: Response;
@@ -302,7 +340,7 @@ export async function askDeepSeek(apiKey: string, model: string, messages: Retur
     response = await fetch(DEEPSEEK_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, messages, response_format: { type: 'json_object' }, max_tokens: MAX_ANSWER_TOKENS, stream: false }),
+      body: requestBody(model, messages),
       signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
   } catch {
@@ -333,6 +371,7 @@ export function answerOf(data: unknown): string {
   const reason = typeof choice?.finish_reason === 'string' && /^[a-z_]{1,40}$/.test(choice.finish_reason) ? choice.finish_reason : 'none';
   if (reason !== 'stop' || typeof choice?.message?.content !== 'string') {
     const hint = reason === 'length' ? `, cut off at ${MAX_ANSWER_TOKENS} tokens` : '';
+    if (reason === 'length') throw new CutOff(`the DeepSeek API gave no finished answer (finish_reason: ${reason}${hint})`);
     throw new Error(`the DeepSeek API gave no finished answer (finish_reason: ${reason}${hint})`);
   }
   return choice.message.content;

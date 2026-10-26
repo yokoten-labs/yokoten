@@ -6,10 +6,11 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFi
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectHook, addProjectSandbox, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, trustProject, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
+import { addProjectHook, addProjectSandbox, addProjectStopHook, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, trustProject, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 import { codexCanonicalForms, codexCurrentFolder, codexFindKey, codexKeyFold, codexLookupReadings } from '../../../src/platform/folder-keys.ts';
 import type { Env } from '../../../src/rules/config.ts';
+import { agentHooks } from '../../../src/setup/doctor/index.ts';
 
 // Each call is shaped as the runtime's hook docs show it (#30): Codex's PreToolUse
 // (developers.openai.com/codex/hooks) and Gemini CLI's BeforeTool (geminicli.com/docs/hooks).
@@ -204,6 +205,18 @@ test('codex trust (#341): doctor says when Codex skips the hooks, and ok only wh
   // Without the hooks, the note is the missing hook, not the trust.
   writeFileSync(join(root, '.codex', 'hooks.json'), '{"hooks":{}}');
   assert.match(await doctor(), /note +codex-hook: no tool-call guard and no stop check in \.codex\/hooks\.json/);
+});
+
+// Each codex-hook step wants both project hooks (#211): the note names the one that is missing.
+test('agentHooks: codex-hook names the missing stop check or the missing guard (#211)', () => {
+  const codexNote = (root: string) => agentHooks(root, { HOME: makeTempDir() }).find((item) => item.name === 'codex-hook');
+  const guardOnly = makeTempDir('yokoten-codex-');
+  addProjectHook(guardOnly, 'bin/yokoten.mjs');
+  assert.equal(codexNote(guardOnly)?.ok, false);
+  assert.equal(codexNote(guardOnly)?.finding.what, 'no stop check in .codex/hooks.json');
+  const stopOnly = makeTempDir('yokoten-codex-');
+  addProjectStopHook(stopOnly, 'bin/yokoten.mjs');
+  assert.equal(codexNote(stopOnly)?.finding.what, 'no tool-call guard in .codex/hooks.json');
 });
 
 // ---- The project's sandbox (#589) ----

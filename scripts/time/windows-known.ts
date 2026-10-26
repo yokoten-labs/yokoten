@@ -10,7 +10,7 @@
 //
 //   node scripts/time/windows-known.ts                     run, compare with the list
 //   node scripts/time/windows-known.ts --out <file>        also write this run's failures
-//   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file, files at once
+//   node scripts/time/windows-known.ts --cap 240 --jobs 4  seconds per file (or twice its last time), files at once
 //   node scripts/time/windows-known.ts --shard 2/3         this machine's third of the files
 //   node scripts/time/windows-known.ts --list              the files that run, and the skipped areas
 //   node scripts/time/windows-known.ts --platform win32    judge as that system (default: this one)
@@ -23,6 +23,10 @@
 // more. If the second run gets through, the job goes on and names the file as FLAKY, with the
 // first run's stderr; if it crashes again, its stderr is printed and it fails as a new failure
 // unless listed. A time-out is not run again: the cap is minutes.
+// A file's cap is --cap, or twice its last time in windows-times.txt when that is longer: the
+// two slowest files took 174 to 208 s against a flat 240 s, and a slow runner passed it on
+// 2026-10-26 with no test failing. A file that timed out ran none of its listed tests, so
+// none of them is called fixed.
 //
 // Speed (owner 2026-10-25: a fast answer is worth more, even a failing one): the job runs on
 // several machines at once, each with a share of the files by the seconds they took last time
@@ -273,13 +277,17 @@ export function readKnown(text: string): { required: string[]; flaky: string[] }
   return { required, flaky };
 }
 
-/** New failures (not on the list) and fixed ones (on the list, now passing). Both fail the job. */
+/**
+ * New failures (not on the list) and fixed ones (on the list, now passing). Both fail the job.
+ * A listed test in a file that timed out did not run, so it is not fixed.
+ */
 export function judgeKnown(failures: string[], known: { required: string[]; flaky: string[] }): { added: string[]; fixed: string[] } {
   const failing = new Set(failures);
   const listed = new Set([...known.required, ...known.flaky]);
+  const timedOut = new Set(failures.filter((f) => f.endsWith(` :: ${TIMED_OUT}`)).map((f) => f.split(' :: ')[0]));
   return {
     added: failures.filter((f) => !listed.has(f)),
-    fixed: known.required.filter((k) => !failing.has(k)),
+    fixed: known.required.filter((k) => !failing.has(k) && !timedOut.has(k.split(' :: ')[0])),
   };
 }
 
@@ -301,6 +309,43 @@ export function fileLine(file: string, found: string[], known: { required: strin
   if (waived) parts.push(`${waived} waived`);
   const word = added.length ? 'NEW' : fixed.length ? 'FIXED' : found.length ? 'waived' : 'ok';
   return `${word.padEnd(7)} ${name} (${parts.join(', ')})`;
+}
+
+// ---- The log's text (issue #1119) ----
+
+/** The line printed when a file starts: its place in this shard and its time cap. */
+export function progressLine(file: string, position: number, total: number, capSeconds: number): string {
+  return `[${position}/${total}] ${file.replace(/\\/g, '/')} (cap ${capSeconds} s)`;
+}
+
+/** The line printed every minute while a file runs long. */
+export function slowLine(file: string, elapsedSeconds: number, capSeconds: number): string {
+  return `still running ${file.replace(/\\/g, '/')}: ${elapsedSeconds} s / ${capSeconds} s`;
+}
+
+/** The `count` slowest files, longest first; equal times in name order. */
+export function slowestFiles(times: { name: string; seconds: number }[], count = 5): { name: string; seconds: number }[] {
+  return [...times].sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name)).slice(0, count);
+}
+
+/**
+ * The end of the log: the verdict first, then the details. Lines of files that passed (`ok`)
+ * go last; `isActions` folds them into a GitHub Actions group, otherwise they print plainly.
+ * The verdict stays a line of its own that starts with `windows-known:` (scripts read it).
+ */
+export function reportLines(verdict: string[], details: string[], fileLines: string[], isActions: boolean): string[] {
+  const passed = fileLines.filter((line) => line.startsWith('ok '));
+  const others = fileLines.filter((line) => !line.startsWith('ok '));
+  const passedBlock = isActions ? [`::group::passed files (${passed.length})`, ...passed, '::endgroup::'] : passed;
+  return [...verdict, ...others, ...details, ...passedBlock];
+}
+
+/** The markdown for the job summary: the counts, then the slowest files. */
+export function summaryTable(counts: { added: number; fixed: number; waived: number }, slowest: { name: string; seconds: number }[]): string {
+  const rows = [['New failures', counts.added], ['Fixed (remove from the list)', counts.fixed], ['Waived', counts.waived]];
+  const lines = ['### Windows known failures', '', '| | Count |', '|---|---|', ...rows.map(([label, n]) => `| ${label} | ${n} |`)];
+  if (slowest.length) lines.push('', '| Slowest files | Seconds |', '|---|---|', ...slowest.map(({ name, seconds }) => `| ${name} | ${seconds} |`));
+  return `${lines.join('\n')}\n`;
 }
 
 /** Every `*.test.ts` under test/, from the repo root, sorted. */
@@ -337,6 +382,14 @@ export function readTimes(text: string): Map<string, number> {
     if (entry) times.set(entry[2], Number(entry[1]));
   }
   return times;
+}
+
+/** How many times its last run a slow file may take before it is stopped. */
+export const CAP_FACTOR = 2;
+
+/** A file's time cap, in seconds: the cap, or CAP_FACTOR times its last time when that is longer. */
+export function capOf(file: string, times: Map<string, number>, cap: number): number {
+  return Math.max(cap, CAP_FACTOR * (times.get(file.replace(/\\/g, '/')) ?? 0));
 }
 
 /** Each file's weight: its last time, or the median of the known times for a new file (1 with none). */
@@ -399,7 +452,7 @@ it is named as flaky.
   --list               print the skipped areas and the files that would run; run nothing
   --platform <name>    judge as linux, darwin or win32 (default: this system)
   --shard <i>/<n>      this machine's share of the files (default 1/1)
-  --cap <seconds>      time cap per file (default 240)
+  --cap <seconds>      time cap per file (default 240; twice a file's last time when longer)
   --jobs <n>           files at once (default 4)
   --out <file>         write this run's failures in the list's form
   --times <file>       write this run's seconds per file
@@ -439,6 +492,8 @@ async function main(): Promise<number> {
   }
   process.stdout.write(`${skippedHead.join('\n')}\n`);
   const took: string[] = [];
+  const seconds: { name: string; seconds: number }[] = [];
+  const fileLines: string[] = [];
   const failures: string[] = [];
   const flakyFiles: string[] = [];
   const reasons = new Map<string, string>();
@@ -447,10 +502,21 @@ async function main(): Promise<number> {
   let next = 0;
   const worker = async () => {
     while (next < files.length) {
+      const position = next + 1;
       const file = files[next++];
       const name = file.replace(/\\/g, '/');
       const started = Date.now();
-      const { last, first, isFlaky } = await runWithRetry(file, (path) => runFile(path, Number(values.cap) * 1000));
+      const capSeconds = capOf(name, times, Number(values.cap));
+      process.stdout.write(`${progressLine(name, position, files.length, capSeconds)}\n`);
+      // A slow file says so every minute, so a long run does not look like a hang.
+      const ticker = setInterval(() => process.stdout.write(`${slowLine(name, Math.round((Date.now() - started) / 1000), capSeconds)}\n`), 60_000);
+      let result;
+      try {
+        result = await runWithRetry(file, (path) => runFile(path, capSeconds * 1000));
+      } finally {
+        clearInterval(ticker);
+      }
+      const { last, first, isFlaky } = result;
       const { tap, timedOut } = last;
       if (first) {
         // Never hidden: the crash's own words, and whether the second run got through.
@@ -463,7 +529,8 @@ async function main(): Promise<number> {
       failures.push(...found);
       took.push(`${Math.max(1, Math.round((Date.now() - started) / 1000))} ${name}`);
       for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
-      process.stdout.write(`${fileLine(file, found, known, Math.round((Date.now() - started) / 1000))}\n`);
+      seconds.push({ name, seconds: Math.max(1, Math.round((Date.now() - started) / 1000)) });
+      fileLines.push(fileLine(file, found, known, Math.round((Date.now() - started) / 1000)));
     }
   };
   await Promise.all(Array.from({ length: Number(values.jobs) }, worker));
@@ -472,14 +539,15 @@ async function main(): Promise<number> {
   if (values.times) writeFileSync(values.times, `${took.sort((a, b) => a.split(' ')[1].localeCompare(b.split(' ')[1])).join('\n')}\n`);
   const { added, fixed } = judgeKnown(failures, knownFor(known, files));
   const stale = staleKnown(known, scope.skipped.map((entry) => entry.file));
-  const lines = [`windows-known: ${platform}, shard ${index}/${count}, ${files.length} files, ${failures.length} failing (${failures.length - added.length} waived), ${added.length} new, ${fixed.length} fixed, ${flakyFiles.length} flaky, ${scope.skipped.length} skipped.`, ...skippedHead];
+  const verdict = [`windows-known: ${platform}, shard ${index}/${count}, ${files.length} files, ${failures.length} failing (${failures.length - added.length} waived), ${added.length} new, ${fixed.length} fixed, ${flakyFiles.length} flaky, ${scope.skipped.length} skipped.`];
+  const lines = [...skippedHead];
   if (flakyFiles.length) lines.push('Flaky: these crashed, then got through their second run. The job goes on; each crash is in the log above:', ...flakyFiles.sort().map((file) => `  ${file}`));
   if (reasons.size) lines.push('Failures by reason (first line of the error):', ...reasonCounts(reasons.values()));
   if (added.length) lines.push('New failures on Windows. Fix them, or skip a test that cannot run there on win32, with the reason:', ...added.map((a) => `  ${a}${reasons.has(a) ? `\n      why: ${reasons.get(a)}` : ''}`));
   if (fixed.length) lines.push('These pass now. Remove their lines from scripts/time/windows-known.txt:', ...fixed.map((f) => `  ${f}`));
   if (stale.length) lines.push(`These test files do not run on ${platform}, so their waivers are stale. Remove their lines from scripts/time/windows-known.txt:`, ...stale.map((f) => `  ${f}`));
-  process.stdout.write(`${lines.join('\n')}\n`);
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Windows known failures\n\n${lines.join('\n')}\n`);
+  process.stdout.write(`${reportLines(verdict, lines, fileLines, process.env.GITHUB_ACTIONS === 'true').join('\n')}\n`);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summaryTable({ added: added.length, fixed: fixed.length, waived: failures.length - added.length }, slowestFiles(seconds)));
   return added.length || fixed.length || stale.length ? 1 : 0;
 }
 

@@ -7,8 +7,9 @@ import { join, resolve } from 'node:path';
 import { botConfig, botEnv, botProgram, type Gh, installationToken, readApprovalState, readBranchFiles, readCodeOwners, readIssueMilestone, readRepoLabelNames, repoOf } from '../../../host/github/index.ts';
 import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
 import { finding, type Finding } from '../../../rules/text/message.ts';
-import { checkPost, readSentBody } from '../../../rules/privacy.ts';
-import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../../rules/pr.ts';
+import { checkPost, readsStdinBody, readSentBody } from '../../../rules/privacy.ts';
+import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, COMMIT_FORMAT, issueLabelChoices, madeWithFindings, noMilestoneFinding, nonUtcCommits, prTier, type PushedCommit, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier, readPushPlan, utcFix } from '../../../rules/pr.ts';
+import { runGit } from '../../../run/check.ts';
 import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
 
 /** The bot's name: the App's own name when the project sets one, else the default (#1027). */
@@ -30,46 +31,57 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   // Standard input is read once, for the checks, and gh then gets the same text.
   let stdinText: string | undefined;
   const readStdin = (): string => (stdinText ??= readInput(invocation.stdin));
-  // The title first: a bad title is refused before anything is sent, so it never needs a rename.
-  const titleProblems = checkCommandTitle(command, projectConfig);
-  if (titleProblems.length) {
-    print(invocation, [`yokoten bot: ${titleProblems.length} problem(s) in the title; nothing was sent. Fix the title and run it again:`, ...bullets(titleProblems)], invocation.stderr);
-    return 1;
-  }
+  // Every check that needs no token runs first, and all their problems come back in one
+  // answer (#1120): a bad title, body or label is refused before anything is sent, and the
+  // caller fixes them all in one try instead of one per try.
+  const problems = emptyPostProblems();
+  problems.title.push(...checkCommandTitle(command, projectConfig));
   // The body file is read once, here (#1077). gh then gets that same text on stdin, so every
   // check below reads the text that is sent, and a file changed after the check changes nothing.
   if (botProgram(command[0] ?? '') === 'gh') {
     const sent = readSentBody(command.slice(1), cwd);
-    if ('id' in sent) {
-      print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([sent])], invocation.stderr);
-      return 1;
+    if ('id' in sent) problems.sent.push(sent);
+    else {
+      command = [command[0], ...sent.args];
+      if (sent.text !== undefined) stdinText = sent.text;
     }
-    command = [command[0], ...sent.args];
-    if (sent.text !== undefined) stdinText = sent.text;
   }
+  // A body the bot can't send as it read it is not checked further: its text is not the one gh would get.
+  const sendable = !problems.sent.length;
   // Then a pull request's body (#406), by the body rules of `check --pr`. A body for this
   // branch, or one `--head` or `gh pr edit <branch>` names, is checked before anything is sent.
-  const body = root ? readPendingBody(invocation, command, root, readStdin) : null;
+  const body = root && sendable ? readPendingBody(invocation, command, root, readStdin) : null;
   if (body === UNREADABLE) return refuseUnreadable(invocation);
-  if (body && !isLookup(body) && refuseBody(invocation, checkBody(body, localBranch(body), env))) return 1;
+  if (body && !isLookup(body)) {
+    const checked = checkBody(body, localBranch(body), env);
+    problems.body.push(...checked.problems);
+    if (checked.note && !checked.problems.length) print(invocation, [`yokoten bot: note: ${checked.note}`], invocation.stderr);
+  }
   // A comment, a review with a body and a new issue carry the same `Made with` line as a
   // pull request body (#609), so a reader can tell which AI wrote them. Only that line is
   // checked here; an edit stays as it is.
-  const note = root ? readPendingNoteBody(invocation, command, root, readStdin) : null;
+  const note = root && sendable ? readPendingNoteBody(invocation, command, root, readStdin) : null;
   if (note === UNREADABLE) return refuseUnreadable(invocation);
-  if (note && refuseBody(invocation, { problems: checkNote(note) })) return 1;
+  if (note) problems.body.push(...checkNote(note));
   // Then the labels of `gh pr create` (#422): a tier label the body contradicts is refused.
   const labels = root ? readPendingLabels(command, root, body, env) : null;
-  if (labels?.problems.length) {
-    print(invocation, [`yokoten bot: ${labels.problems.length} problem(s) in the labels; nothing was sent. Fix the labels and run it again:`, ...bullets(labels.problems)], invocation.stderr);
-    return 1;
-  }
+  problems.labels.push(...(labels?.problems ?? []));
   // Then the labels of `gh issue create` (#544): checked below, once the token can
   // list the repo's labels. A bad issue is refused, never sent; its labels are not
-  // added, as no line of the command names the type.
+  // added, as no line of the command names the type. With other problems already found,
+  // the token is still asked for, so the one answer names the labels too (#1120).
   const pendingIssue = root ? readPendingIssueLabels(command, root, env) : null;
+  const found = (): boolean => countPostProblems(problems) > 0;
+  const refusePost = (): number => {
+    print(invocation, postRefusal(problems), invocation.stderr);
+    return 1;
+  };
+  if (found() && !pendingIssue) return refusePost();
+  // A push sends only commits made in UTC (#1120): an offset names the machine's zone.
+  if (!found() && botProgram(command[0] ?? '') === 'git' && refuseNonUtcPush(invocation, command)) return 1;
   const config = botConfig(env);
   if (typeof config === 'string') {
+    if (found()) return refusePost();
     print(invocation, [`yokoten bot: ${config}`], invocation.stderr);
     return 1;
   }
@@ -81,10 +93,18 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, env, encoding: 'utf8' });
   const repo = repoOf(remote);
   if (!repo) {
+    if (found()) return refusePost();
     print(invocation, ['yokoten bot: the origin remote is not a GitHub repo'], invocation.stderr);
     return 1;
   }
-  const token = await installationToken(config, repo);
+  let token: string;
+  try {
+    token = await installationToken(config, repo);
+  } catch (error) {
+    // The problems already found are the answer: the labels then stay unchecked.
+    if (found()) return refusePost();
+    throw error;
+  }
   const [file, ...given] = command;
   // One line before the command's own output, on a terminal only: a pipe keeps the command's
   // bytes exactly, so `yokoten bot -- gh pr view --json … | jq` still reads JSON (#1027).
@@ -95,12 +115,12 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const milestone = wanted ? chooseMilestone(invocation, wanted, ghWith(file, cwd, ghEnv)) : null;
   if (milestone === false) return 1;
   if (pendingIssue) {
-    const issueProblems = checkIssueLabels(pendingIssue.labels, readRepoLabelNames(ghWith(file, cwd, ghEnv)));
-    if (issueProblems.length) {
-      print(invocation, [`yokoten bot: ${issueProblems.length} problem(s) in the labels; nothing was sent. Fix the labels and run it again:`, ...bullets(issueProblems)], invocation.stderr);
-      return 1;
-    }
+    const repoLabels = readRepoLabelNames(ghWith(file, cwd, ghEnv));
+    const issueProblems = checkIssueLabels(pendingIssue.labels, repoLabels);
+    problems.labels.push(...issueProblems);
+    if (issueProblems.length) problems.choices.push(...issueLabelChoices(pendingIssue.labels, repoLabels ?? []));
   }
+  if (found()) return refusePost();
   // `gh pr edit <number or URL>`: one `gh pr view` with the same token names its branches,
   // and its labels, so an edit can move the tier label to the one its new body sets (#422).
   let current: string[] | null = null;
@@ -177,8 +197,100 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
 /** The process's own stream by its fd, so gh writes to it straight; else a pipe, copied after (#475). */
 const childStream = (stream: Output): number | 'pipe' => (typeof stream.fd === 'number' ? stream.fd : 'pipe');
 
-/** Whether gh reads a body from standard input: a `-` file, as a word or after `=`, `@` or a short flag. */
-const readsStdin = (args: string[]): boolean => args.some((word) => word === '-' || /(?:=|@|^-[A-Za-z])-$/.test(word));
+// ---- All the problems of a post in one answer (#1120) ----
+
+/** The problems a post has before anything is sent, by the part of the command they are in. */
+export interface PostProblems {
+  title: Finding[];
+  /** What the command sends: a body file the bot can't read, or more than one. */
+  sent: Finding[];
+  /** The pull request body, or the `Made with` line of a comment, review or issue. */
+  body: Finding[];
+  labels: Finding[];
+  /** Lines under the labels that name the values the repo's labels may take. */
+  choices: string[];
+}
+
+export const emptyPostProblems = (): PostProblems => ({ title: [], sent: [], body: [], labels: [], choices: [] });
+
+export const countPostProblems = (problems: PostProblems): number => problems.title.length + problems.sent.length + problems.body.length + problems.labels.length;
+
+type PostPart = 'title' | 'sent' | 'body' | 'labels';
+
+/** Each part in the order a reader fixes it: its name, the word the fix line uses, and how its rows read. */
+const POST_PARTS: { part: PostPart; name: string; fix: string; rows: (findings: Finding[]) => string[] }[] = [
+  { part: 'title', name: 'the title', fix: 'the title', rows: bullets },
+  { part: 'sent', name: 'what this command sends', fix: 'it', rows: problemRows },
+  { part: 'body', name: 'the body', fix: 'the body', rows: problemRows },
+  { part: 'labels', name: 'the labels', fix: 'the labels', rows: bullets },
+];
+
+/**
+ * The one answer for every problem a post has, grouped by part (#1120); empty when there
+ * is none. One part keeps the heading it always had; more parts get one heading and a
+ * short heading of their own each, so the caller fixes them all in one try.
+ */
+export function postRefusal(problems: PostProblems): string[] {
+  const parts = POST_PARTS.filter(({ part }) => problems[part].length);
+  if (!parts.length) return [];
+  const total = countPostProblems(problems);
+  const rowsOf = ({ part, rows }: (typeof POST_PARTS)[number]): string[] => [...rows(problems[part]), ...(part === 'labels' ? problems.choices : [])];
+  if (parts.length === 1) {
+    const [only] = parts;
+    return [`yokoten bot: ${total} problem(s) in ${only.name}; nothing was sent. Fix ${only.fix} and run it again:`, ...rowsOf(only)];
+  }
+  const names = parts.map(({ name }) => name);
+  const joined = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return [
+    `yokoten bot: ${total} problem(s) in ${joined}; nothing was sent. Fix them all and run it again:`,
+    ...parts.flatMap((part) => ['', `In ${part.name} (${problems[part.part].length}):`, ...rowsOf(part)]),
+  ];
+}
+
+/** The answer for a push with commits not in UTC: each commit by short hash and subject, never its offset, and the one fix. */
+export function utcRefusal(commits: PushedCommit[], head: string | null): string[] {
+  return [
+    `yokoten bot: ${commits.length} commit(s) in this push have a time zone other than UTC; nothing was pushed. Give them UTC dates and push again:`,
+    ...commits.map(({ short, subject }) => `- ${short} ${subject}`),
+    "  Why: a commit's time zone tells where the machine that made it is, so every pushed time is UTC.",
+    `  Fix: run \`${utcFix(commits, head)}\` on the branch, then push again.`,
+  ];
+}
+
+/**
+ * Refuses a `git push` that would send a commit not dated in UTC (#1120). True when it
+ * refused. When git can't say which commits the push sends, it refuses too: an unread
+ * commit could carry the zone.
+ */
+function refuseNonUtcPush(invocation: Invocation, command: string[]): boolean {
+  const plan = readPushPlan(command.slice(1));
+  if (!plan) return false;
+  const { cwd, env } = invocation;
+  const git = (args: string[], okCodes = [0]): { text: string; status: number } => {
+    const { stdout, status } = runGit(cwd, [...plan.options, ...args], { env, okCodes });
+    return { text: stdout.toString('utf8'), status };
+  };
+  try {
+    const exists = (ref: string): boolean => git(['show-ref', '--verify', '--quiet', ref], [0, 1]).status === 0;
+    // A tag's commits are the guard's to check (it handles tags), so a tag source is left out.
+    const isTag = (source: string): boolean => source.startsWith('refs/tags/') || (!source.startsWith('refs/') && !exists(`refs/heads/${source}`) && exists(`refs/tags/${source}`));
+    const branches = plan.every ? git(['for-each-ref', '--format=%(refname)', 'refs/heads/']).text.split('\n').filter(Boolean) : [];
+    const sources = [...plan.sources.filter((source) => !isTag(source)), ...branches];
+    if (!sources.length) return false;
+    // What the remote already has is not sent: its remote-tracking refs fence the range. A
+    // remote named by URL, or one with no such refs, is fenced by every remote's refs.
+    const remote = plan.remote ?? 'origin';
+    const tracked = /^[A-Za-z0-9._-]+$/.test(remote) && git(['for-each-ref', '--count=1', '--format=%(refname)', `refs/remotes/${remote}/`]).text.trim() !== '';
+    const lines = git(['log', '--topo-order', `--format=${COMMIT_FORMAT}`, ...sources, '--not', tracked ? `--remotes=${remote}` : '--remotes']).text.split('\n');
+    const commits = nonUtcCommits(lines);
+    if (!commits.length) return false;
+    const head = git(['rev-parse', '--verify', '--quiet', 'HEAD'], [0, 1]).text.trim() || null;
+    print(invocation, utcRefusal(commits, head), invocation.stderr);
+  } catch {
+    print(invocation, ["yokoten bot: git could not say which commits this push sends, so their time zones were not checked; nothing was pushed. Check that each branch you push exists, then push again"], invocation.stderr);
+  }
+  return true;
+}
 
 /**
  * Runs the privacy check of `rules/privacy.ts` on what gh is about to send, as the sender
@@ -186,7 +298,8 @@ const readsStdin = (args: string[]): boolean => args.some((word) => word === '-'
  */
 function refuseLeak(invocation: Invocation, config: Config, args: string[], readStdin: () => string): boolean {
   const { env, cwd } = invocation;
-  const leak = checkPost({ args, stdinText: readsStdin(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
+  // Standard input only for an option value the bot rewrites, never a title such as `x=-` (#1104).
+  const leak = checkPost({ args, stdinText: readsStdinBody(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
   if (!leak) return false;
   print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([leak])], invocation.stderr);
   return true;

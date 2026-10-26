@@ -24,6 +24,12 @@ import type { RuntimeDesk } from '../desk/desk.ts';
 
 // The docs: "Bash and apply_patch use tool_input.command", and unified exec reports as Bash.
 const SHELL = 'Bash';
+/**
+ * The tools both guard hooks run on, the project one and the user one: one list, so the user
+ * guard never misses the edit tool the project hook guards (#1100). The project hook's
+ * matcher, and so its trusted hash, stays `Bash|apply_patch`.
+ */
+export const GUARDED_TOOLS = [SHELL, 'apply_patch'].join('|');
 
 /** The files an apply_patch envelope adds, updates, deletes or moves to. */
 function patchPaths(patch: string): string[] {
@@ -94,7 +100,7 @@ const projectHooks = (root: string) => join(root, '.codex', 'hooks.json');
  * project-dir variable; its docs advise a path from the git root, as here.
  */
 export const addProjectHook = (root: string, cli: string) =>
-  addHook(projectHooks(root), 'PreToolUse', 'Bash|apply_patch', guardCommand(`"$(git rev-parse --show-toplevel)/${cli}"`, 'hook --agent codex', missingProjectRuntime(cli), { isToolCall: true }));
+  addHook(projectHooks(root), 'PreToolUse', GUARDED_TOOLS, guardCommand(`"$(git rev-parse --show-toplevel)/${cli}"`, 'hook --agent codex', missingProjectRuntime(cli), { isToolCall: true }));
 export const hasProjectHook = (root: string): boolean => hasHook(projectHooks(root), 'PreToolUse', 'hook');
 
 // Seconds Codex waits for the stop check, including a worker's done-when command (#614).
@@ -128,12 +134,12 @@ export const userHooksFile = (env: Env): string => (envFolder(env, 'CODEX_HOME')
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
   doctor: [userHooks(env), 'SessionStart', undefined, guardCommand(cli, 'doctor --session --agent codex', missing, { isSessionStart: true })],
-  guard: [userHooks(env), 'PreToolUse', SHELL, guardCommand(cli, 'hook --agent codex --commands-only', missing, { isToolCall: true })],
+  guard: [userHooks(env), 'PreToolUse', GUARDED_TOOLS, guardCommand(cli, 'hook --agent codex --commands-only', missing, { isToolCall: true })],
 });
 
 /**
- * The user's hooks, in every repo: doctor at session start, and the command guard on
- * shell calls. Codex adds a SessionStart hook's plain stdout to the agent's context.
+ * The user's hooks, in every repo: doctor at session start, and the tool-call guard on
+ * the shell and apply_patch, as in the project hook (#1100). Codex adds a SessionStart hook's plain stdout to the agent's context.
  * `missing` is what they say when `cli` is gone.
  */
 export function addUserHooks(env: Env, cli: string, missing: string): { doctor: Added; guard: Added } {
