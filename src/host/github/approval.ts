@@ -5,7 +5,7 @@
 import { execFileSync } from 'node:child_process';
 import type { Env } from '../../rules/config.ts';
 import type { ApprovalCommit, CodeOwners, LeadApproval, MergeApprovalRead } from '../../rules/pr.ts';
-import { type MadeWithAgent, ownersOf, parseCodeOwners, parseLeadApproval, prTier, sameModelWriter, writerAgents } from '../../rules/pr.ts';
+import { isReviewerLogin, type MadeWithAgent, ownersOf, parseCodeOwners, parseLeadApproval, prTier, sameModelWriter, writerAgents } from '../../rules/pr.ts';
 import { asText, type Gh, isObject, labelNames } from './planning.ts';
 import { CODEOWNERS_PLACES, readCodeOwners } from './pull-request.ts';
 
@@ -101,6 +101,10 @@ function latestLeadApproval(text: string, writers: MadeWithAgent[]): LeadReview 
     if (approval) candidates.push({ ...approval, commit: newest.commit, at: newest.at, login: newest.login });
   }
   candidates.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  // The reviewer identity's approval is the one that can count (issue #1088), so another
+  // login's newer line never hides it. Without one, the rules refuse whichever is shown.
+  const reviewer = candidates.find((candidate) => isReviewerLogin(candidate.login));
+  if (reviewer) return reviewer;
   const otherModel = candidates.find((candidate) => writers.length > 0 && !sameModelWriter(writers, { vendor: candidate.vendor, model: candidate.model }));
   return otherModel ?? candidates[0] ?? null;
 }
@@ -464,7 +468,7 @@ export function readApprovalState(gh: Gh, root: string, env: Env, number: number
   if ('unsure' in leadState) return leadState;
   return {
     ...baseState,
-    lead: { lead: lead.lead, vendor: lead.vendor, model: lead.model, ...leadState },
+    lead: { lead: lead.lead, vendor: lead.vendor, model: lead.model, login: lead.login, ...leadState },
     writers,
   };
 }

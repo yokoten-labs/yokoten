@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
-import { checkMergeApproval } from '../../../src/rules/pr.ts';
+import { checkMergeApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -495,18 +495,21 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
   const madeWith = 'tier: A\nMade with worker Claude Code (claude-opus-5-5), reviewed by Anthropic (claude-sonnet-5-5)\n';
   const view = (sha: string, body = madeWith) => ({ body, labels: [{ name: 'tier A' }], head: { sha, ref: 'topic' }, base: { sha: base, ref: 'main' } });
   const review = (login: string, commit: string, at: string, text: string) => JSON.stringify({ login, assoc: 'MEMBER', state: 'APPROVED', commit, at, body: text });
-  const grok = (commit: string, at: string) => review('grok-lead', commit, at, 'LGTM\n\nApproved by area lead Grok (xAI, Grok 4.7)\n');
-  const sonnet = (commit: string, at: string) => review('sonnet-lead', commit, at, 'LGTM\n\nApproved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)\n');
-  const opus = (commit: string, at: string) => review('opus-lead', commit, at, 'LGTM\n\nApproved by area lead Opus (Anthropic, Claude Opus 5.5)\n');
+  const grok = (commit: string, at: string) => review(REVIEWER_LOGIN, commit, at, 'LGTM\n\nApproved by area lead Grok (xAI, Grok 4.7)\n');
+  const sonnet = (commit: string, at: string, login = REVIEWER_LOGIN) => review(login, commit, at, 'LGTM\n\nApproved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)\n');
+  const opus = (commit: string, at: string, login = REVIEWER_LOGIN) => review(login, commit, at, 'LGTM\n\nApproved by area lead Opus (Anthropic, Claude Opus 5.5)\n');
   const pulls: [number, string[], string, string?][] = [
     [50, ['a.txt'], grok(head, '2026-10-23T11:00:00Z')],
     [51, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z')],
     [52, ['a.txt'], sonnet(approved, '2026-10-23T10:00:00Z')],
     [53, ['hard.txt'], sonnet(head, '2026-10-23T11:00:00Z')],
     [54, ['test/a.test.ts'], sonnet(head, '2026-10-23T11:00:00Z')],
-    [55, ['a.txt'], `${opus(head, '2026-10-23T11:00:00Z')}\n${sonnet(head, '2026-10-23T10:00:00Z')}`],
+    [55, ['a.txt'], `${opus(head, '2026-10-23T11:00:00Z', 'opus-lead')}\n${sonnet(head, '2026-10-23T10:00:00Z')}`],
     [56, ['a.txt'], opus(head, '2026-10-23T11:00:00Z')],
     [57, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z'), 'tier: A\nno Made-with line here\n'],
+    // Issue #1088: the same line from the yokoten bot login, or a newer one beside the reviewer's.
+    [58, ['a.txt'], sonnet(head, '2026-10-23T11:00:00Z', 'yokoten-bot[bot]')],
+    [59, ['a.txt'], `${sonnet(head, '2026-10-23T11:00:00Z', 'yokoten-bot[bot]')}\n${sonnet(approved, '2026-10-23T10:00:00Z')}`],
   ];
   const routes: Record<string, unknown> = {};
   for (const [number, files, reviews, body] of pulls) {
@@ -523,7 +526,7 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
     approved: null,
     after: 0,
     sameDiff: true,
-    lead: { lead: 'Grok', vendor: 'xAI', model: 'Grok 4.7', commit: head, after: 0, sameDiff: true },
+    lead: { lead: 'Grok', vendor: 'xAI', model: 'Grok 4.7', login: REVIEWER_LOGIN, commit: head, after: 0, sameDiff: true },
     writers: [writer],
   });
   const noWriter = "the Made-with line names no writer, so the area lead's model can't be checked against the writer's";
@@ -536,6 +539,8 @@ test('approval: an area lead of another model approves tier A (#699, record 0047
     [55, "a newer approval by the writer's own model does not hide another model's", null, { lead: 'Sonnet' }],
     [56, "the writer's own model, spelled another way, is refused", 'the area lead runs Claude Opus 5.5, the same model family as the writer Claude Code (claude-opus-5-5); a lead of another model must approve'],
     [57, 'writers that cannot be read are refused', noWriter],
+    [58, 'the bot login is not the reviewer identity', `the area lead's approval was posted by yokoten-bot[bot], not by ${REVIEWER_LOGIN}; only the review workflow's approval counts`],
+    [59, "a newer bot-login line does not hide the reviewer's stale approval", "the area lead's approval is on " + approved.slice(0, 7) + '; 1 commit with changes came after it; ask the area lead to approve again'],
   ];
   for (const [number, name, what, more] of cases) {
     const state = readApprovalState(gh, dir, env, number, 'me/repo');
