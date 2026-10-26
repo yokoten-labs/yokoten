@@ -24,6 +24,8 @@ export const MAX_DIFF_CHARS = 120_000;
 export const MAX_BODY_CHARS = 20_000;
 /** How long one DeepSeek call may take (ms). */
 export const MODEL_TIMEOUT_MS = 240_000;
+/** The longest answer DeepSeek may write, in tokens: room for its reasoning and the JSON. */
+export const MAX_ANSWER_TOKENS = 32_768;
 /** How long one GitHub call may take (ms). */
 const GITHUB_TIMEOUT_MS = 30_000;
 /** At most this many findings go in the review. */
@@ -160,21 +162,39 @@ export async function askDeepSeek(apiKey: string, model: string, messages: Retur
     response = await fetch(DEEPSEEK_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model, messages, response_format: { type: 'json_object' }, max_tokens: 8192, stream: false }),
+      body: JSON.stringify({ model, messages, response_format: { type: 'json_object' }, max_tokens: MAX_ANSWER_TOKENS, stream: false }),
       signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
   } catch {
     throw new Error('the DeepSeek API did not answer in time');
   }
-  if (!response.ok) throw new Error(`the DeepSeek API answered HTTP ${response.status}`);
   let data: unknown;
   try {
     data = await response.json();
   } catch {
-    throw new Error('the DeepSeek API answer was not JSON');
+    data = null;
   }
-  const choice = (data as { choices?: { finish_reason?: string; message?: { content?: unknown } }[] })?.choices?.[0];
-  if (choice?.finish_reason !== 'stop' || typeof choice.message?.content !== 'string') throw new Error('the DeepSeek API gave no finished answer');
+  if (!response.ok) throw new Error(`the DeepSeek API answered HTTP ${response.status}${apiErrorOf(data)}`);
+  if (data === null) throw new Error('the DeepSeek API answer was not JSON');
+  return answerOf(data);
+}
+
+/** A short, plain reason from an API error body, or nothing. Only letters, digits and simple punctuation pass. */
+export function apiErrorOf(data: unknown): string {
+  const message = (data as { error?: { message?: unknown } } | null)?.error?.message;
+  if (typeof message !== 'string') return '';
+  const plain = message.replace(/[^A-Za-z0-9 .,:_()'-]/g, '').trim().slice(0, 200);
+  return plain ? `: ${plain}` : '';
+}
+
+/** The answer text of a finished answer. An unfinished one throws and names why (finish_reason). */
+export function answerOf(data: unknown): string {
+  const choice = (data as { choices?: { finish_reason?: unknown; message?: { content?: unknown } }[] } | null)?.choices?.[0];
+  const reason = typeof choice?.finish_reason === 'string' && /^[a-z_]{1,40}$/.test(choice.finish_reason) ? choice.finish_reason : 'none';
+  if (reason !== 'stop' || typeof choice?.message?.content !== 'string') {
+    const hint = reason === 'length' ? `, cut off at ${MAX_ANSWER_TOKENS} tokens` : '';
+    throw new Error(`the DeepSeek API gave no finished answer (finish_reason: ${reason}${hint})`);
+  }
   return choice.message.content;
 }
 
