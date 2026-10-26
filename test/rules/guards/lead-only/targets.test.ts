@@ -225,3 +225,33 @@ test('lead-only files: git apply reads only a plain patch file under 1 MB, and s
   assert.equal(run('git apply - < ok.patch'), null);
   assert.equal(checkCommand('git apply big.patch', { env: {}, cwd: sandbox.repo }), null, 'the lead');
 });
+
+// #1105: a shell write by a Windows short name (`GITHUB~1` for `.github`) is read through the
+// real path, as the file tools read it, before it is compared. The place carries each system's
+// disk, so every row runs on every OS: on Windows the short name is the lead-only folder; on
+// Linux and macOS `GITHUB~1` is a folder of that name, and only `.github` is lead-only.
+test('lead-only files: a shell write by a short folder name is read by its long name, per system (#1105)', () => {
+  const longNames = (path: string) => path.replace(/\\GITHUB~1(?=\\|$)/i, '\\.github');
+  const places = {
+    linux: { place: { platform: 'linux', tmp: '/tmp' }, repo: '/home/a/proj' },
+    darwin: { place: { platform: 'darwin', tmp: '/tmp' }, repo: '/Users/a/proj' },
+    win32: { place: { platform: 'win32', tmp: 'C:\\Temp', realPath: longNames }, repo: 'C:\\Users\\a\\proj' },
+  } as const;
+  const rows: [keyof typeof places, string, boolean][] = [
+    ['win32', 'echo x > GITHUB~1/workflows/x.yml', true],
+    ['win32', 'cp a.yml github~1/workflows/x.yml', true],
+    ['win32', 'echo x > ./GITHUB~1/CODEOWNERS', true],
+    ['win32', 'echo x > .github/workflows/x.yml', true],
+    ['win32', 'echo x > src/a.ts', false],
+    ['linux', 'echo x > GITHUB~1/workflows/x.yml', false],
+    ['linux', 'echo x > .github/workflows/x.yml', true],
+    ['darwin', 'echo x > GITHUB~1/workflows/x.yml', false],
+    ['darwin', 'echo x > .github/workflows/x.yml', true],
+  ];
+  for (const [system, command, refused] of rows) {
+    const { place, repo } = places[system];
+    const run = (env: Env) => checkCommand(command, { env, cwd: repo, repos: [{ root: repo, leadOnly: DEFAULTS.leadOnly }], place });
+    assert.equal(run({ YOKOTEN_ROLE: 'worker' })?.id, refused ? 'lead-only' : undefined, `${system} worker: ${command}`);
+    assert.equal(run({}), null, `${system} lead: ${command}`);
+  }
+});

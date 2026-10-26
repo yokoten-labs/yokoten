@@ -87,6 +87,44 @@ test('hook --commands-only: an edit in a yokoten repo gets its file rules wherev
   assert.equal((await codex(patch(join(sandbox.repo, 'src', 'a.ts')))).status, 0);
 });
 
+// #1105: three more ways a worker could write a lead-only file. A file in another repo than the
+// session's takes that repo's rules (re-checked on PR #1106's fix: it already did, and this
+// keeps it so), and CODEOWNERS at the root or in docs/ is lead-only like .github/CODEOWNERS.
+// A project's own "leadOnly" list stays its own: the defaults never rewrite it.
+test('hook: a worker writes no lead-only file in another repo or a CODEOWNERS anywhere; the lead does (#1105)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', '{}\n');
+  const other = makeSandbox().repo;
+  const own = makeSandbox();
+  own.write('yokoten.json', JSON.stringify({ leadOnly: ['AGENTS.md'] }));
+  const cases: { file: string; tool: 'Write' | 'Bash'; refused: boolean }[] = [
+    { file: join(other, '.github', 'workflows', 'x.yml'), tool: 'Write', refused: true },
+    { file: join(other, 'AGENTS.md'), tool: 'Write', refused: true },
+    { file: join(other, '.github', 'workflows', 'x.yml'), tool: 'Bash', refused: true },
+    { file: join(sandbox.repo, 'CODEOWNERS'), tool: 'Write', refused: true },
+    { file: join(sandbox.repo, 'docs', 'CODEOWNERS'), tool: 'Write', refused: true },
+    { file: join(sandbox.repo, 'CODEOWNERS'), tool: 'Bash', refused: true },
+    { file: join(sandbox.repo, 'docs', 'CODEOWNERS'), tool: 'Bash', refused: true },
+    { file: join(other, 'CODEOWNERS'), tool: 'Write', refused: true },
+    // Positive controls: code anywhere, and a project whose own list leaves CODEOWNERS out.
+    { file: join(other, 'src', 'a.ts'), tool: 'Write', refused: false },
+    { file: join(sandbox.repo, 'docs', 'guide.md'), tool: 'Write', refused: false },
+    { file: join(own.repo, 'CODEOWNERS'), tool: 'Write', refused: false },
+  ];
+  for (const { file, tool, refused } of cases) {
+    for (const hook of [['hook'], ['hook', '--commands-only']]) {
+      for (const worker of [true, false]) {
+        const toolInput = tool === 'Bash' ? { command: `echo x > ${file.replaceAll('\\', '/')}` } : { file_path: file, content: 'x' };
+        const input = JSON.stringify({ cwd: sandbox.repo, tool_name: tool, tool_input: toolInput, ...(worker ? { agent_type: 'worker' } : {}) });
+        const result = await sandbox.call(hook, { input });
+        const label = `${hook.join(' ')}, ${worker ? 'worker' : 'lead'} ${tool} ${file}`;
+        assert.equal(result.status, worker && refused ? 2 : 0, `${label}: ${result.stderr}`);
+        if (worker && refused) assert.match(result.stderr, /lead-only/, label);
+      }
+    }
+  }
+});
+
 test('hook: the five safeguards hold in a repo with no yokoten.json (#816)', async () => {
   const sandbox = makeSandbox();
   assert.ok(!existsSync(join(sandbox.repo, 'yokoten.json')), 'no init, no yokoten.json');

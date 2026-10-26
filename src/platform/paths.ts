@@ -10,8 +10,13 @@ import { tmpdir } from 'node:os';
 // guard (#1015). The helpers here are pure: the system and the temp folder come from the
 // caller, so Linux CI tests the Windows logic.
 
-/** Where a command's paths are read: the system, and the folder Git Bash calls `/tmp`. */
-export type PathPlace = { platform: NodeJS.Platform; tmp: string };
+/**
+ * Where a command's paths are read: the system, and the folder Git Bash calls `/tmp`.
+ * `realPath`, when given, reads a full path as that system's disk names it (a Windows short
+ * name such as `GITHUB~1` as `.github`), so a test gives another system its disk (#1105).
+ * Without it the guard reads this disk on this system, and another system's paths as written.
+ */
+export type PathPlace = { platform: NodeJS.Platform; tmp: string; realPath?: (path: string) => string };
 
 /**
  * This machine's place, for an entry point to pass down. The only read of the system and the

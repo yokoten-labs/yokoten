@@ -31,8 +31,9 @@ export const DEFAULTS: Config = {
   // What counts as a test file. A fix task must not change one.
   tests: ['*.test.*', '*.spec.*', '*_test.go', 'test/**', 'tests/**'],
   // What only the lead (the session that reviews and pushes) may change: the rules the
-  // agents work under, and the CI that checks them.
-  leadOnly: ['AGENTS.md', 'CLAUDE.md', 'yokoten.json', '.claude/**', '.claude-plugin/**', '.codex/**', '.gemini/**', '.agents/hooks.json', '.muse/**', '.dsh/**', '.grok/**', '.githooks/**', '.github/**', '.yokoten/**', '.yokotenignore'],
+  // agents work under, the CI that checks them, and who must approve: GitHub reads CODEOWNERS
+  // in .github/, at the root and in docs/ (#1105).
+  leadOnly: ['AGENTS.md', 'CLAUDE.md', 'yokoten.json', 'CODEOWNERS', 'docs/CODEOWNERS', '.claude/**', '.claude-plugin/**', '.codex/**', '.gemini/**', '.agents/hooks.json', '.muse/**', '.dsh/**', '.grok/**', '.githooks/**', '.github/**', '.yokoten/**', '.yokotenignore'],
   // `allow`: literal strings the privacy check lets through (a public support address).
   // `skip`: files it does not read (lockfiles, vendored code).
   // `utc`: commits must record their time in UTC, not the machine's time zone.
