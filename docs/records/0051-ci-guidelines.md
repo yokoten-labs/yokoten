@@ -1,0 +1,60 @@
+# 0051 Our CI follows six rules, each with its source
+
+Status: proposed
+Date: 2026-10-27 (UTC)
+
+## Context
+
+Record 0049 took the Command Line Interface Guidelines ([clig.dev](https://clig.dev)) for
+what a person reads on the screen. CI has no single guide like it. On 2026-10-27 the owner
+asked for one of our own, after PR #1118's CI:
+
+- The Windows job printed nothing for 480 s while `init.test.ts` ran, so it looked stuck,
+  and most of its lines were files that passed ("字很多没重点，没有progress").
+- `init.test.ts` took 240 s on the laptop and passed its cap on the GitHub runner, so one
+  shard waited about 8 minutes (issue #1109).
+- Main went red with no test failing (issue #1114), and a run cancelled by a newer push
+  showed a red `ci`.
+- v0.1.1's pull requests were often found broken by CI, not on the laptop first.
+
+The sources we take from, each for one part:
+
+- Martin Fowler's practices of continuous integration, and the CI certification test he
+  wrote up with Jez Humble: keep the build fast; a red build is fixed or reverted within
+  about ten minutes.
+- GitHub's security hardening guide for Actions, and the OpenSSF Scorecard checks
+  (Token-Permissions, Pinned-Dependencies, Dangerous-Workflow): pin actions to a full
+  commit, give each job the least permissions, treat `pull_request_target` and outside
+  input with care.
+- clig.dev's output rules (record 0049), for the log a person reads.
+
+## Decision
+
+1. **Fast.** A pull request's CI has a time goal; a slow test file is an issue, not a
+   longer cap. (Fowler.)
+2. **Red means broken.** CI is red only when a check failed. A run nobody needs (cancelled
+   by a newer push) is not red; a job that never got a runner says so. (Fowler; issue #1114.)
+3. **The log is readable.** The verdict comes first; a slow step shows progress; passing
+   items are folded; the run page has a summary table. (clig.dev; issue #1119.)
+4. **Safe.** Actions are pinned to a full commit; each job has the least permissions it
+   needs; outside input never builds a shell command; `pull_request_target` runs only code
+   from main. (GitHub hardening guide; Scorecard.)
+5. **Laptop first.** CI is the final check (FAT), not where a problem is first found: the
+   suite and the Windows check run on the laptop before a push.
+6. **Waivers expire.** A known failure on the list has a reason, an issue and a removal
+   date. (Our waiver list, `scripts/time/windows-known.txt`.)
+
+What a program can check, a test or a linter checks; the rest is read in review.
+
+## Options not taken
+
+- **Copy one outside style guide whole** (such as a team's GitHub Actions style guide):
+  each covers naming and layout only, not speed, red-means-broken or waivers.
+- **No written rules, fix each case**: the same problems came back across v0.1.0 to v0.1.2.
+
+## Consequences
+
+- Each new CI change names the rule it serves; a reviewer can refuse one that breaks a rule.
+- Rules 1 and 4 need checks still to build (a time goal per job; a workflow linter such as
+  actionlint, or Scorecard).
+- The owner decides the six before this record is accepted.
