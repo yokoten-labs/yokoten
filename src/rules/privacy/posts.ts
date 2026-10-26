@@ -88,16 +88,22 @@ export function unreadPost(args: string[]): UnreadPost | null {
   }
   const option = words.find((word) => UNREAD_OPTIONS.some((name) => word === name || word.startsWith(`${name}=`)));
   if (option !== undefined) return { what: '`--recover` reads a title and body from a file that the privacy check does not read', fix: 'leave out `--recover`, and give the text with `--title` and `--body-file`' };
-  if (kind.group === 'release' && (kind.sub === 'create' || kind.sub === 'new')) return unreadRelease(words);
+  // A release reads all its words: each one after `--` is a file to upload.
+  if (kind.group === 'release' && (kind.sub === 'create' || kind.sub === 'new')) return unreadRelease(args);
   return null;
 }
 
 // `release create <tag>` with only the options in the tables: a second plain word is a file to
-// upload, and an option the tables don't name may take one, so either is refused.
+// upload, and an option the tables don't name may take one, so either is refused. gh reads each
+// word after `--` as a file too: `release create v1 -F n.md -- a.zip` uploads a.zip.
 function unreadRelease(words: string[]): UnreadPost | null {
   const plain: string[] = [];
   for (let index = 0; index < words.length; index++) {
     const word = words[index];
+    if (word === '--') {
+      plain.push(...words.slice(index + 1));
+      break;
+    }
     const name = word.startsWith('--') && word.includes('=') ? word.slice(0, word.indexOf('=')) : word;
     if (RELEASE_VALUES.has(name)) {
       if (name === word) index++;

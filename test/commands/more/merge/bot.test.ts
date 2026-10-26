@@ -1643,6 +1643,7 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
     { name: 'a -dn cluster on a release is refused', command: ['gh', 'release', 'create', 'v1', '-dn', `Key ${secret}`], sent: false, says: /write each short option as its own word/i },
     { name: 'gist create is refused', command: ['gh', 'gist', 'create', join(sandbox.home, 'secret.md')], sent: false, says: /as an issue or pull request comment/i },
     { name: 'a release with files is refused', command: ['gh', 'release', 'create', 'v1', '--notes-file', join(sandbox.home, 'notes.md'), join(sandbox.home, 'secret.md')], sent: false, says: /upload files by hand/i },
+    { name: 'a release with a file after -- is refused', command: ['gh', 'release', 'create', 'v1', '--notes-file', join(sandbox.home, 'notes.md'), '--', join(sandbox.home, 'secret.md')], sent: false, says: /upload files by hand/i },
     { name: '--recover is refused', command: ['gh', 'issue', 'create', '--recover', join(sandbox.home, 'secret.md')], sent: false, says: /leave out `--recover`/i },
     // Positive control: the same release with its notes file alone is sent.
     { name: 'a release with a clean notes file is sent', command: ['gh', 'release', 'create', 'v1', '--notes-file', file('clean-notes.md', 'All clean.\n')], sent: true },

@@ -19,6 +19,9 @@ test('unreadPost: each form outside the allowlist is named, and a known form is 
     [['release', 'create', 'v1', 'a.zip'], /uploads files/],
     [['release', 'create', 'v1', '--notes-file', 'n.md', 'a.zip'], /uploads files/],
     [['release', 'create', 'v1', '--asset-dir', 'x'], /does not know the option --asset-dir/],
+    // gh reads each word after `--` as a file to upload.
+    [['release', 'create', 'v1', '-F', 'n.md', '--', 'secret.txt'], /uploads files/],
+    [['release', 'new', 'v1', '--', '--draft'], /uploads files/],
     [['issue', 'create', '--recover', 'n.md'], /--recover/],
     [['pr', 'create', '--recover=n.md'], /--recover/],
     // Known forms: spelled out, joined to its own value, after `--`, or a value that starts with -R.
@@ -30,6 +33,7 @@ test('unreadPost: each form outside the allowlist is named, and a known form is 
     [['issue', 'comment', '3', '--body-file', 'n.md', '--', '-dt'], null],
     [['release', 'create', 'v1', '--notes-file', 'n.md', '--draft', '--latest=false', '-t', 'v1'], null],
     [['release', 'create', 'v1', '-Fn.md', '--help'], null],
+    [['release', 'create', '-F', 'n.md', '--', 'v1'], null],
     [['api', 'repos/me/repo/issues', '-dt'], null],
     [['pr', 'list', '-dt'], null],
   ];
