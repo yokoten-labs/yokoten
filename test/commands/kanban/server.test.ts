@@ -177,7 +177,7 @@ test('kanban server: POST, PUT, PATCH and DELETE get a 405 everywhere', async ()
     const paths = ['', 'api/state', `api/sessions/${'0'.repeat(16)}/stream`, 'agents/start', 'agents/stop', 'agents/limits', 'data', 'feed', 'nothing', `?token=${new URL(url).searchParams.get('token')}`];
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
       for (const path of paths) {
-        for (const headers of [{ cookie, 'content-type': 'application/json' }, {}]) {
+        for (const headers of [{ cookie, 'content-type': 'application/json' }, {}] as Record<string, string>[]) {
           const answer = await boardSend(`${base}${path}`, { method, headers, body: '{"issue":"1","vendor":"claude-code"}' });
           assert.equal(answer.status, 405, `${method} /${path}`);
           assert.equal(answer.headers.allow, 'GET, HEAD');
@@ -402,7 +402,7 @@ test('kanban: the access key is never printed, and the browser gets it', { skip:
     writeFileSync(join(bin, name), `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(opened)}, process.argv.slice(2).join(' '));\n`);
     chmodSync(join(bin, name), 0o755);
   }
-  const env = { ...sandbox.env, PATH: `${bin}:${process.env.PATH}` };
+  const env: NodeJS.ProcessEnv = { ...sandbox.env, PATH: `${bin}:${process.env.PATH}` };
   delete env.WSL_DISTRO_NAME;
   const child = spawn(process.execPath, [CLI, 'kanban'], { cwd: sandbox.repo, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
