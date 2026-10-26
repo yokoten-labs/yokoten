@@ -285,12 +285,12 @@ function scaled(source: string, name: string, factor: 'kib' | 'minutes'): string
 /** Every word the open standard has to name, taken from the code. */
 function collectWords(): string[] {
   const hook = read('src/run/hook.ts');
-  const feed = read('src/commands/advice/board/feed/steps.ts');
-  const agents = read('src/commands/advice/board/agents.ts');
+  const feed = read('src/commands/kanban/feed/steps.ts');
+  const agents = read('src/commands/kanban/agents.ts');
   // The attention box and its link live in two files since the board split (#693).
-  const controls = read('src/commands/advice/board/controls.ts') + read('src/commands/advice/board/waiting.ts');
-  const view = read('src/commands/advice/board/view.ts');
-  const script = read('src/commands/advice/board/page/browser/script.ts');
+  const controls = read('src/commands/kanban/controls.ts') + read('src/commands/kanban/feed/read/waiting.ts');
+  const view = read('src/commands/kanban/view.ts');
+  const script = read('src/commands/kanban/page/browser/script.ts');
   const pr = read('src/rules/pr.ts');
   const desk = read('src/agents/desk/desk.ts');
   const env = read('src/agents/desk/agent-env.ts');
@@ -402,24 +402,24 @@ function findingIds(body: string): string[] {
 /** Code and test paths the spec has to link. */
 function holderPaths(): string[] {
   const paths = [
-    'src/commands/advice/board/feed/steps.ts',
-    'test/commands/advice/board/feed/steps.test.ts',
-    'src/commands/advice/board/page/browser/script.ts',
-    'test/commands/advice/board/page/browser/script.test.ts',
+    'src/commands/kanban/feed/steps.ts',
+    'test/commands/kanban/feed/steps.test.ts',
+    'src/commands/kanban/page/browser/script.ts',
+    'test/commands/kanban/page/browser/script.test.ts',
     'src/run/hook.ts',
     'test/run/hook.test.ts',
     'src/commands/hook.ts',
     'test/commands/hook.test.ts',
-    'src/commands/advice/board/agents.ts',
-    'test/commands/advice/board/agents.test.ts',
-    'src/commands/advice/board/controls.ts',
-    'test/commands/advice/board/controls.test.ts',
-    'src/commands/advice/board/view.ts',
-    'test/commands/advice/board/view.test.ts',
+    'src/commands/kanban/agents.ts',
+    'test/commands/kanban/agents.test.ts',
+    'src/commands/kanban/controls.ts',
+    'test/commands/kanban/controls.test.ts',
+    'src/commands/kanban/view.ts',
+    'test/commands/kanban/view.test.ts',
     'src/rules/pr.ts',
     'test/rules/pr.test.ts',
-    'src/commands/merge/bot.ts',
-    'test/commands/merge/bot.test.ts',
+    'src/commands/more/merge/bot.ts',
+    'test/commands/more/merge/bot.test.ts',
     'src/agents/desk/desk.ts',
     'test/agents/desk/desk.test.ts',
     'src/agents/desk/agent-env.ts',

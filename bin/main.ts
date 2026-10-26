@@ -8,21 +8,22 @@
 
 import { withHome } from '../src/rules/privacy.ts';
 import { type Invocation, isTerminal, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
-import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList } from '../src/run/cli.ts';
+import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
 import { VERSION } from '../src/setup/files.ts';
 
 // The help comes from one table, the same one the parser reads (#207).
-// The first step comes first, then the commands in groups, then the details (#944).
-const HELP = [
+// The first step comes first, then the three commands, then the details (#944, #1054).
+// With --all, the commands that moved and the ones agents and CI use follow.
+const help = (all: boolean): string => [
   `yokoten ${VERSION}`,
   '',
   'Start here: run `yokoten` in your project.',
   '',
   'Usage: yokoten <command> [options]',
   '',
-  ...commandList(),
+  ...commandList(all),
   '',
-  'More: `yokoten <command> --help`',
+  all ? 'More: `yokoten <command> --help`' : 'More: `yokoten help --all` lists every command; `yokoten <command> --help` explains one',
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
@@ -61,7 +62,11 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     print(invocation, [line]);
     return 0;
   }
-  switch (cmd) {
+  // A folded command or an old name says where it moved, then runs as before (#1054). The
+  // line is for a person: the session-start hook (`doctor --session`) and JSON for a script go without it.
+  const moved = cmd === undefined || args.includes('--session') || args.includes('--json') ? undefined : movedNote(cmd);
+  if (moved) print(invocation, [moved], invocation.stderr);
+  switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).
       const guard = args.includes('--stop') ? undefined : import('../src/run/hook.ts').then((m) => m.takeGuard());
@@ -74,57 +79,59 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'worker':
       return import('../src/commands/hook.ts').then((m) => m.runWorker(invocation));
     case 'desk':
-      return import('../src/commands/hook.ts').then((m) => m.runDesk(invocation));
+      return import('../src/commands/desk/desk.ts').then((m) => m.runDesk(invocation));
+    case 'tidy':
+      return import('../src/commands/tidy/tidy.ts').then((m) => m.runTidy(invocation));
     case 'msg':
-      return import('../src/commands/advice/messages.ts').then((m) => m.runMsg(invocation));
+      return import('../src/commands/more/advice/messages.ts').then((m) => m.runMsg(invocation));
     case 'check':
-      return import('../src/commands/check.ts').then((m) => m.runCheck(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runCheck(invocation));
     case 'ci-health':
-      return import('../src/commands/check.ts').then((m) => m.runCiHealth(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runCiHealth(invocation));
     case 'provenance':
-      return import('../src/commands/check.ts').then((m) => m.runProvenance(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runProvenance(invocation));
     case 'mcp':
-      return import('../src/commands/advice/mcp.ts').then((m) => m.runMcp(invocation));
+      return import('../src/commands/more/advice/mcp.ts').then((m) => m.runMcp(invocation));
     case 'borrowed':
-      return import('../src/commands/check.ts').then((m) => m.runBorrowed(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runBorrowed(invocation));
     case 'redact':
-      return import('../src/commands/check.ts').then((m) => m.runRedact(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runRedact(invocation));
     case 'test':
-      return import('../src/commands/check.ts').then((m) => m.runTest(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runTest(invocation));
     case 'marks':
-      return import('../src/commands/check.ts').then((m) => m.runMarks(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runMarks(invocation));
     case 'changelog':
-      return import('../src/commands/learn.ts').then((m) => m.runChangelog(invocation));
+      return import('../src/commands/more/learn.ts').then((m) => m.runChangelog(invocation));
     case 'learn':
-      return import('../src/commands/learn.ts').then((m) => m.runLearn(invocation));
+      return import('../src/commands/more/learn.ts').then((m) => m.runLearn(invocation));
     case 'doctor':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runDoctor(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runDoctor(invocation));
     case 'explain':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runExplain(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runExplain(invocation));
     case 'adopt':
-      return import('../src/commands/advice/doctor.ts').then((m) => m.runAdopt(invocation));
+      return import('../src/commands/more/advice/doctor.ts').then((m) => m.runAdopt(invocation));
     case 'init':
-      return import('../src/commands/setup.ts').then((m) => m.runInit(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runInit(invocation));
     case 'trust':
-      return import('../src/commands/setup.ts').then((m) => m.runTrust(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runTrust(invocation));
     case 'update':
-      return import('../src/commands/setup.ts').then((m) => m.runUpdate(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUpdate(invocation));
     case 'upgrade':
-      return import('../src/commands/setup.ts').then((m) => m.runUpgrade(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUpgrade(invocation));
     case 'bot':
-      return import('../src/commands/merge/bot.ts').then((m) => m.runBot(invocation));
+      return import('../src/commands/more/merge/bot.ts').then((m) => m.runBot(invocation));
     case 'pr':
-      return import('../src/commands/check.ts').then((m) => m.runPr(invocation));
+      return import('../src/commands/more/check.ts').then((m) => m.runPr(invocation));
     case 'train':
-      return import('../src/commands/merge/train.ts').then((m) => m.runTrain(invocation));
+      return import('../src/commands/more/merge/train.ts').then((m) => m.runTrain(invocation));
     case 'conflicts':
-      return import('../src/commands/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
-    case 'board':
-      return import('../src/commands/advice/board/server.ts').then((m) => m.runBoard(invocation));
+      return import('../src/commands/more/merge/conflicts/report.ts').then((m) => m.runConflicts(invocation));
+    case 'kanban':
+      return import('../src/commands/kanban/server.ts').then((m) => m.runBoard(invocation));
     case 'install':
-      return import('../src/commands/setup.ts').then((m) => m.runInstall(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runInstall(invocation));
     case 'uninstall':
-      return import('../src/commands/setup.ts').then((m) => m.runUninstall(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runUninstall(invocation));
     case 'version': {
       const options = parse('version', args);
       if (typeof options === 'string') return usage(invocation, options);
@@ -139,7 +146,10 @@ function dispatch(invocation: Invocation): number | Promise<number> {
       const options = parse('help', args);
       if (typeof options === 'string') return usage(invocation, options);
       const [name] = options.positional;
-      if (name === undefined) break;
+      if (name === undefined) {
+        print(invocation, [help(options.flags.has('--all'))]);
+        return 0;
+      }
       const named = findCommand(name);
       if (!named) return unknownCommand(invocation, name);
       print(invocation, commandHelp(named));
@@ -147,14 +157,14 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     }
     case undefined:
       // No command in a project is not an error: it is the start (#548).
-      return import('../src/commands/setup.ts').then((m) => m.runStart(invocation));
+      return import('../src/commands/more/setup.ts').then((m) => m.runStart(invocation));
     case '--help':
     case '-h':
       break;
     default:
-      return unknownCommand(invocation, cmd);
+      return unknownCommand(invocation, cmd ?? '');
   }
-  print(invocation, [HELP]);
+  print(invocation, [help(false)]);
   return 0;
 }
 

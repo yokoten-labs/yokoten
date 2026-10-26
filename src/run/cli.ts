@@ -153,6 +153,16 @@ export interface CommandOption {
  */
 export interface Command {
   name: string;
+  /**
+   * Where `yokoten help` shows it (issue #1054, record 0043): `always` in the short list,
+   * `all` only with `help --all`, and `folded` with `help --all` among the moved ones.
+   * A folded command still runs, after a first line that says where it moved.
+   */
+  shown: 'always' | 'all' | 'folded';
+  /** For a folded command: the command it moved into. */
+  into?: 'yokoten' | 'desk' | 'kanban';
+  /** Old names that still run this command, after a line that names the new one: `board` for `kanban`. */
+  oldNames?: string[];
   /** One line, for the command list. */
   summary: string;
   /** The words after `yokoten <name>`, as the usage line shows them. */
@@ -174,6 +184,8 @@ export const HELP_OPTIONS = ['--help', '-h'];
 export const COMMANDS: Command[] = [
   {
     name: 'install',
+    shown: 'folded',
+    into: 'yokoten',
     summary: 'skills, agents and user-level hooks for this machine',
     usage: '[--yes] [--list]',
     text: [
@@ -191,6 +203,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'init',
+    shown: 'folded',
+    into: 'yokoten',
     summary: 'put the practices into a project (adds only, never overwrites)',
     usage: '[dir] [--no-ci] [--github --yes [--remove-default-labels] [--board]]',
     text: [
@@ -212,6 +226,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'trust',
+    shown: 'folded',
+    into: 'yokoten',
     summary: "turn on yokoten's guard in the agents installed here",
     usage: '[dir] [--undo]',
     text: [
@@ -227,6 +243,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'update',
+    shown: 'folded',
+    into: 'yokoten',
     summary: "the core rules in AGENTS.md: preview, or --write",
     usage: '[dir] [--write] [--all]',
     text: [
@@ -239,6 +257,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'upgrade',
+    shown: 'all',
     summary: 'yokoten itself, to the newest version',
     usage: '',
     text: [
@@ -253,6 +272,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'doctor',
+    shown: 'folded',
+    into: 'yokoten',
     summary: 'the road: where this project is and its next step',
     usage: '[--all] [--session] [--json] [--agent <name>]',
     text: ['Shows where the project is, what is left to do, and the next command, on one screen.', 'With --all it shows every stage and step of the road, and what this machine is missing.', 'It exits 1 on a problem: a failed self-test, or a core-rules, tree or machine line', 'marked MISSING. Steps left on the road are to do, not problems. Always 0 with --session.'],
@@ -266,6 +287,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'adopt',
+    shown: 'all',
     summary: 'a draft of the adoption table for an old project',
     usage: '[--json] [--all]',
     text: ['Drafts the adoption table: what the project does today, and as-is, lighter or not now', 'for each step. You decide every row. It writes no file.'],
@@ -274,6 +296,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'check',
+    shown: 'all',
     summary: 'layout, privacy and lead-only files, and a PR or issue',
     usage: '[--staged | --history | --pr [number] | --issue | --anchor] [--all] [--json]',
     text: ['Checks the whole tree by default. Use one mode at most.', '--pr with a number reads that pull request through gh, so you can run it without CI.', '--anchor checks the event log against its daily entries in Sigstore Rekor.'],
@@ -292,6 +315,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'ci-health',
+    shown: 'all',
     summary: 'the last 200 Actions runs, in one issue that is updated in place',
     usage: '[--repo owner/name] [--write] [--dry-run]',
     text: [
@@ -308,6 +332,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'provenance',
+    shown: 'all',
     summary: 'the writer, reviewers and approver of a commit',
     usage: '<ref> [--json]',
     text: ['Reads the message a squash merge leaves on the branch, and the Approve on the pull request it names.', 'The approver is the latest Approve; when gh cannot read it, it shows unknown.', 'A range shows each commit, oldest first.'],
@@ -317,6 +342,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'mcp',
+    shown: 'all',
     summary: 'check the project MCP server and its tools',
     usage: '[dir] [--command "<command>"] [--json]',
     text: [
@@ -336,6 +362,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'borrowed',
+    shown: 'all',
     summary: 'borrowed code against upstream, with issues',
     usage: '[--dry-run] [--json]',
     text: [
@@ -350,6 +377,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'redact',
+    shown: 'all',
     summary: 'hide your private marks in a pipeline',
     usage: '',
     text: [
@@ -363,6 +391,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'test',
+    shown: 'all',
     summary: 'run the tests light: niced, with few at once',
     usage: '[--heavy] [--print] [-- <test runner words>]',
     text: [
@@ -379,6 +408,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'marks',
+    shown: 'all',
     summary: 'your private marks, never their values',
     usage: '[add | remove | off <kind> | on <kind> | allow <mark> --here | allow --remove <mark> --here]',
     text: [
@@ -404,6 +434,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'changelog',
+    shown: 'all',
     summary: 'the entries the files in changes/ add under [Unreleased]',
     usage: '[--write] | --notes <version>',
     text: ['Shows the entries the files in changes/ add under [Unreleased] in CHANGELOG.md.'],
@@ -415,6 +446,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'learn',
+    shown: 'all',
     summary: 'a check draft from an incident issue, for a person to review',
     usage: '<issue> [--write] | --ship <id> | --export <id> [--out <file>] | --import <file> [--write] | --upstream "<what happened>" [--area <name>] [--fix <idea>] | --upstream --list | --upstream --done <id>',
     text: [
@@ -446,6 +478,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'hook',
+    shown: 'all',
     summary: 'the tool-call guard, or the stop check with --stop',
     usage: '[--agent <name>] [--commands-only] [--stop] [--json] [--denial <mode>] [--protocol]',
     text: [
@@ -467,6 +500,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'anchor',
+    shown: 'all',
     summary: "list a worker's checkpoints: commits whose checks passed",
     usage: '[--json] [--all]',
     text: [
@@ -479,6 +513,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'stops',
+    shown: 'all',
     summary: 'the log of the guard stops on this computer, or turn it off and on',
     usage: '[off | on]',
     text: [
@@ -491,6 +526,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'worker',
+    shown: 'folded',
+    into: 'desk',
     summary: "mark a worktree as a worker's",
     usage: 'mark <dir> | unmark <dir> | env [runtime]',
     text: [
@@ -513,6 +550,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'desk',
+    shown: 'always',
     summary: "a worker's agent in its own fenced desk",
     usage: '<agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>',
     text: [
@@ -536,6 +574,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'msg',
+    shown: 'folded',
+    into: 'desk',
     summary: 'messages between agents on this team',
     usage: 'send <to> [<text>] | inbox | who | log',
     text: [
@@ -552,6 +592,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'explain',
+    shown: 'all',
     summary: 'a rule or a step: what it is, why, and how it is checked',
     usage: '[<id>] [--json]',
     text: ['Explains one rule or one step of the road. With no id, it lists the ids.'],
@@ -561,6 +602,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'pr',
+    shown: 'all',
     summary: 'keep open pull requests up to date',
     usage: 'sync',
     text: [
@@ -576,6 +618,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'bot',
+    shown: 'all',
     summary: 'run one command as the bot account',
     usage: '-- <command>',
     text: [
@@ -588,6 +631,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'train',
+    shown: 'all',
     summary: 'merge an approved queue, one at a time',
     usage: '[<pr>...] [--wait <seconds>] [--next]',
     text: [
@@ -611,7 +655,9 @@ export const COMMANDS: Command[] = [
     example: 'yokoten train 1207 1209 1211',
   },
   {
-    name: 'board',
+    name: 'kanban',
+    shown: 'always',
+    oldNames: ['board'],
     summary: 'the team at a glance, live (preview)',
     usage: '[--text] [--all] [--no-open] [--role name] [--vendor name]',
     text: [
@@ -620,7 +666,7 @@ export const COMMANDS: Command[] = [
       'The folder name is the host. The port stays with this repo. The first visit',
       'sets a cookie and opens the page without the token. Agents sit on the left.',
       'The picked one fills the rest. Needs you is a bell next to Live. The',
-      'board opens the page in your browser, prints the link, and runs until you stop it.',
+      'kanban opens the page in your browser, prints the link, and runs until you stop it.',
       'Chrome and Edge can install it as its own window. The page refreshes every 15',
       'seconds. Agents in this repo, its worktrees and its desks show by themselves:',
       'the hooks write .yokoten-agent.json for them.',
@@ -632,10 +678,20 @@ export const COMMANDS: Command[] = [
       { name: '--role', value: 'name', text: 'with --text: only this role in the usage view: engineer, reviewer or checker' },
       { name: '--vendor', value: 'name', text: 'with --text: only this vendor in the usage view, such as claude or muse' },
     ],
-    example: 'yokoten board --text',
+    example: 'yokoten kanban --text',
+  },
+  {
+    name: 'tidy',
+    shown: 'always',
+    summary: 'find old branches, worktrees and desks, and put them away (not ready yet)',
+    usage: '',
+    text: ['Not ready yet: it comes later in this release. For now it says so, and changes nothing.'],
+    options: [],
+    example: 'yokoten tidy',
   },
   {
     name: 'conflicts',
+    shown: 'all',
     summary: 'which open changes collide, and what to merge first',
     usage: '[--json] [--rebuild <id>]',
     text: [
@@ -653,6 +709,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'uninstall',
+    shown: 'all',
     summary: 'take back what install wrote',
     usage: '[--list]',
     text: [
@@ -666,15 +723,20 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'help',
+    shown: 'all',
     summary: 'this list, or the help of one command',
-    usage: '[<command>]',
-    text: ['Prints the command list, or the usage, options and an example of one command.'],
-    options: [],
+    usage: '[<command>] [--all]',
+    text: [
+      'Prints the three commands to start with, or the usage, options and an example of one command.',
+      'With --all it lists every command: the ones that moved, and the ones agents and CI use.',
+    ],
+    options: [{ name: '--all', text: 'every command, in two groups' }],
     argument: 'command',
     example: 'yokoten help check',
   },
   {
     name: 'version',
+    shown: 'all',
     summary: 'the version of this yokoten',
     usage: '',
     text: ['Prints the version. `yokoten --version` and `yokoten -v` do the same.'],
@@ -684,7 +746,7 @@ export const COMMANDS: Command[] = [
 ];
 
 /** The command with this name, if there is one. */
-export const findCommand = (name: string): Command | undefined => COMMANDS.find((command) => command.name === name);
+export const findCommand = (name: string): Command | undefined => COMMANDS.find((command) => command.name === name || command.oldNames?.includes(name));
 
 /** The option as its help shows it: `--agent <name>`. */
 const optionLabel = (option: CommandOption): string => (option.value ? `${option.name} <${option.value}>` : option.name);
@@ -727,27 +789,39 @@ export function commandHelp(command: Command): string[] {
 }
 
 /**
- * The groups `yokoten help` shows, in order (#944): a beginner needs the first group and can
- * leave the rest. Every command is in exactly one group; a test keeps it that way.
+ * The groups `yokoten help --all` shows after the short list, in order (issue #1054): the
+ * commands that moved, then the ones agents and CI run. Each comes from the table's `shown`.
  */
-export const COMMAND_GROUPS: readonly { title: string; names: readonly string[] }[] = [
-  { title: 'Start', names: ['install', 'init', 'doctor', 'trust', 'uninstall', 'upgrade'] },
-  { title: 'Every day', names: ['check', 'conflicts', 'train', 'pr', 'changelog', 'explain', 'stops', 'marks', 'redact', 'test'] },
-  { title: 'A team of agents', names: ['worker', 'desk', 'msg', 'board', 'bot', 'anchor', 'provenance', 'mcp'] },
-  { title: 'Keep the project healthy', names: ['update', 'adopt', 'ci-health', 'borrowed', 'learn', 'hook', 'help', 'version'] },
+export const ALL_GROUPS: readonly { title: string; shown: Command['shown'] }[] = [
+  { title: 'Moved (each still runs, and says where it went)', shown: 'folded' },
+  { title: 'For agents and CI', shown: 'all' },
 ];
 
 /**
- * The command list, for `yokoten help` (issue #1027): one block per group, a blank line
- * between, each command on one line of at most SCREEN_WIDTH (R1, R3).
+ * The command list (issue #1027, #1054): `yokoten help` lists only the `always` rows;
+ * `help --all` adds the two groups, a blank line between, each command on one line of at
+ * most SCREEN_WIDTH (R1, R3).
  */
-export function commandList(): string[] {
+export function commandList(all = false): string[] {
   const width = Math.max(...COMMANDS.map((command) => command.name.length)) + 2;
-  return COMMAND_GROUPS.flatMap(({ title, names }, at) => [
-    ...(at ? [''] : []),
-    `${title}:`,
-    ...names.map((name) => findCommand(name)).filter((command) => command !== undefined).map((command) => `  ${command.name.padEnd(width)}${command.summary}`),
-  ]);
+  const rows = (shown: Command['shown']) => COMMANDS.filter((command) => command.shown === shown).map((command) => `  ${command.name.padEnd(width)}${command.summary}`);
+  return [
+    'Commands:',
+    ...rows('always'),
+    ...(all ? ALL_GROUPS.flatMap(({ title, shown }) => ['', `${title}:`, ...rows(shown)]) : []),
+  ];
+}
+
+/**
+ * The first line a folded command or an old name prints before it runs (issue #1054), or
+ * undefined for a command that has not moved. `name` is the word that was typed.
+ */
+export function movedNote(name: string): string | undefined {
+  const command = findCommand(name);
+  if (!command) return undefined;
+  const into = command.name !== name ? command.name : command.shown === 'folded' ? command.into : undefined;
+  if (!into) return undefined;
+  return `note: yokoten ${name} moved to ${into === 'yokoten' ? 'yokoten' : `yokoten ${into}`}. It runs as before this time.`;
 }
 
 /** How many single-letter edits turn one word into the other (Levenshtein). */

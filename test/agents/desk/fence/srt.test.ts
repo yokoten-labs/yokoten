@@ -190,7 +190,7 @@ test('fenceCommand: native Windows gets the guard and WSL; a fence that cannot s
 const real = findSrt(process.env, process.platform, [process.cwd()]);
 const reason = typeof real === 'string' ? srtProblem(real, process.env, makeTempDir('fence-'), [process.cwd()]) : real.problem;
 
-test('fenceCommand: with srt here, the command writes in the root and nowhere else', { skip: (process.platform === 'win32' && 'no srt fence on native Windows') || reason || false }, () => {
+test('fenceCommand: with srt here, the command writes in the root and nowhere else', { skip: reason || false }, () => {
   const projects = realpathSync(makeTempDir('projects-'));
   const root = join(projects, 'desk');
   mkdirSync(join(root, '.git'), { recursive: true });
