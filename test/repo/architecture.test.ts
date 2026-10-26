@@ -1924,7 +1924,7 @@ test('windows scope: native Windows skips the desk, its fence and the kanban ser
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/kanban/server.test.ts'));
   // The CLI, the guard hooks and install still run there.
-  for (const kept of ['test/commands/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
+  for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
     assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);
   }
   assert.equal(windows.run.length + windows.skipped.length, files.length, 'every file either runs or is skipped with a reason');
@@ -1982,7 +1982,7 @@ test('windows known: --list shows the skipped areas with their reasons, then the
   assert.match(text, /^Skipped on win32, by area:$/m);
   for (const area of ['desk', 'desk fence', 'kanban server']) assert.match(text, new RegExp(`^  ${area} \\(\\d+ files?\\): the desk runs in WSL on Windows`, 'm'));
   assert.match(text, /^ {2}skip {2}test\/agents\/desk\/start\.test\.ts \(desk\)$/m);
-  assert.match(text, /^ {2}run {3}test\/commands\/check\.test\.ts$/m);
+  assert.match(text, /^ {2}run {3}test\/commands\/more\/check\.test\.ts$/m);
   assert.doesNotMatch(text, /^ {2}run {3}test\/agents\/desk\//m);
   assert.deepEqual(listLines('linux', '1/1', [], []).slice(1), ['Nothing is skipped on linux.']);
 });
