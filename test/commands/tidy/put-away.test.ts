@@ -37,6 +37,8 @@ test('put-away: a move across drives copies, checks, then removes; links stay li
   mkdirSync(join(from, 'sub'), { recursive: true });
   writeFileSync(join(from, 'sub', 'file'), 'work\n');
   symlinkSync('/nowhere', join(from, 'link'));
+  // Node on Windows writes '/nowhere' as a full path on the current drive: the move keeps what is there.
+  const linkText = readlinkSync(join(from, 'link'));
   const crossDrive = () => {
     throw Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
   };
@@ -44,7 +46,7 @@ test('put-away: a move across drives copies, checks, then removes; links stay li
   assert.equal(existsSync(from), false);
   assert.equal(readFileSync(join(base, 'trash', 'desk', 'sub', 'file'), 'utf8'), 'work\n');
   assert.ok(lstatSync(join(base, 'trash', 'desk', 'link')).isSymbolicLink());
-  assert.equal(readlinkSync(join(base, 'trash', 'desk', 'link')), '/nowhere');
+  assert.equal(readlinkSync(join(base, 'trash', 'desk', 'link')), linkText);
   // The positive control: a target that is there already is refused, and the source stays.
   mkdirSync(join(base, 'again'));
   mkdirSync(join(base, 'taken'));

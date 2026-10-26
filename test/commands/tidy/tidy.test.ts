@@ -85,8 +85,10 @@ function makeMessyRepo() {
   ok('worktree', 'add', '-q', '--detach', done, 'main');
   writeFileSync(join(done, 'a.txt'), 'changed here\n');
   writeFileSync(join(done, 'new.txt'), 'only here\n');
-  // A worktree past 260 characters: no crash, and a short name in the trash.
-  const long = join(base, 'l'.repeat(90), 'o'.repeat(90), `wt-${'n'.repeat(100)}`);
+  // A worktree with a long name, deep down: a short name in the trash. Its path stays near
+  // 170 characters: on Windows, git itself refuses a worktree past about 210 ("'$GIT_DIR' too
+  // big", "Filename too long"), so no one there has a longer one for tidy to find.
+  const long = join(base, 'l'.repeat(20), 'o'.repeat(20), `wt-${'n'.repeat(50)}`);
   mkdirSync(dirname(long), { recursive: true });
   ok('worktree', 'add', '-q', '--detach', long, 'main');
   // Desks: plain clones that yokoten desk marked, beside the repo.
@@ -131,9 +133,9 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
   const group = (heading: string) => (text.split(`\n${heading}\n`)[1]?.split('\n\n')[0] ?? '').replace(/\n {26}/g, ' ');
   const putAway = group('Can put away:');
   assert.match(putAway, /merged-one +branch: merged into the main branch, and no change for a day; no commit of its own\./);
-  assert.match(putAway, /desk-7 +desk at .*repo-desks\/desk-7: merged into the main branch/);
+  assert.match(putAway, /desk-7 +desk at .*repo-desks[\\/]desk-7: merged into the main branch/);
   assert.match(putAway, /desk-gone\.state logs at .*: its desk is gone; 3 B\./);
-  assert.match(putAway, /wt-n{100} worktree at .*o{90}\/wt-n{100}: merged/);
+  assert.match(putAway, /wt-n{50} worktree at .*o{20}[\\/]wt-n{50}: merged/);
   const saved = group('Can put away with a saved copy:');
   assert.match(saved, /gone-one +branch: its branch on the remote is gone, but 1 commit on no remote; 1 commit not in the main branch\./);
   assert.match(saved, /wt-done +worktree at .*: merged into the main branch, and no change for a day, but changes not committed; \d+ B\./);
@@ -149,12 +151,13 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
 test('tidy --local: saves, then moves; the bundle and the patch bring the work back; a desk in use stays (#1055)', async () => {
   const messy = makeMessyRepo();
   const goneHead = messy.ok('rev-parse', 'gone-one');
-  // The index keeps real paths; on macOS the temp folder is a link (/var to /private/var).
-  const realBase = realpathSync(messy.base);
+  // The index keeps real paths: on macOS the temp folder is a link (/var to /private/var), and
+  // a Windows runner's temp folder has a short (8.3) name.
+  const realBase = realpathSync.native(messy.base);
   const real = (path: string) => realBase + path.slice(messy.base.length);
   const result = await messy.call(['tidy', '--local']);
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.match(result.stdout, /^yokoten tidy --local · put away 6 things in\s+~\/\.local\/state\/yokoten\/trash\//);
+  assert.match(result.stdout, /^yokoten tidy --local · put away 6 things in\s+~[\\/]\.local[\\/]state[\\/]yokoten[\\/]trash[\\/]/);
   // Moved: the old branches, the worktrees and their git folders, the desk and its logs.
   assert.equal(messy.git('rev-parse', '-q', '--verify', 'refs/heads/merged-one').status, 1);
   assert.equal(messy.git('rev-parse', '-q', '--verify', 'refs/heads/gone-one').status, 1);

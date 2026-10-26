@@ -78,10 +78,13 @@ export function isInside(path: string, folder: string): boolean {
   return way === '' || (!way.startsWith('..') && !isAbsolute(way));
 }
 
-/** The real path, or the path as it is when it can't be read. */
+/**
+ * The real path, or the path as it is when it can't be read. The system's own call, so on
+ * Windows a short (8.3) name such as `C:\Users\RUNNER~1` and its long name read the same.
+ */
 const realOrSame = (path: string): string => {
   try {
-    return realpathSync(path);
+    return realpathSync.native(path);
   } catch {
     return resolve(path);
   }
@@ -224,7 +227,8 @@ function readWorktrees(root: string, env: Env): WorktreeRecord[] {
     .filter((fields) => fields.some((field) => field.startsWith('worktree ')))
     .map((fields) => {
       const value = (key: string) => fields.find((field) => field.startsWith(`${key} `))?.slice(key.length + 1) ?? '';
-      return { path: value('worktree'), head: value('HEAD'), branch: value('branch').replace(/^refs\/heads\//, ''), isLocked: fields.some((field) => field === 'locked' || field.startsWith('locked ')) };
+      // Git on Windows writes `C:/Users/x`: the real path is in this system's form.
+      return { path: realOrSame(value('worktree')), head: value('HEAD'), branch: value('branch').replace(/^refs\/heads\//, ''), isLocked: fields.some((field) => field === 'locked' || field.startsWith('locked ')) };
     });
 }
 
