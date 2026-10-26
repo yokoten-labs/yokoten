@@ -792,7 +792,7 @@ test('help: lists exactly the always rows; help --all lists the rest in two grou
   }
   const all = (await sandbox.call(['help', '--all'])).stdout;
   for (const { title, shown } of ALL_GROUPS) {
-    assert.match(all, new RegExp(`^${title.replace(/[()]/g, '\\$&')}:$`, 'm'), `${title} has a heading`);
+    assert.match(all, new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:$`, 'm'), `${title} has a heading`);
     const block = all.slice(all.indexOf(`${title}:`)).split('\n\n')[0];
     assert.deepEqual(listed(block), COMMANDS.filter((command) => command.shown === shown).map((command) => command.name), `${title}: its rows`);
   }
