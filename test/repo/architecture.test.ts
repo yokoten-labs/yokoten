@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import { judgeSuite, readReport, SUITE_BUDGET } from '../../scripts/time/suite.ts';
-import { entriesOf, judgeKnown, knownFor, knownText, maskReason, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, shardOf, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -531,8 +531,14 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
   assert.equal(onPullRequest(['package.json']), 'docs_only=false\n');
   // A push to main: the full run.
   assert.equal(runChanges({ EVENT: 'push', BASE_SHA: '', HEAD_SHA: '' }).output, 'docs_only=false\n');
-  // A merge queue group: the full run. The event names no pull request (#590).
+  // A merge queue group reads its files from the group's base to its head, as a pull request does (#1068).
+  const docsHead = pullRequest(['docs/guide.md']);
+  assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: docsHead }).output, 'docs_only=true\n');
+  assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: pullRequest(['src/a.ts']) }).output, 'docs_only=false\n');
+  // A group whose files can't be read is a full run.
   assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: '', HEAD_SHA: '' }).output, 'docs_only=false\n');
+  // Any other event, such as the daily schedule, is a full run.
+  assert.equal(runChanges({ EVENT: 'schedule', BASE_SHA: base, HEAD_SHA: docsHead }).output, 'docs_only=false\n');
   // The file list can't be read: the full run, and a warning says why.
   const head = pullRequest(['docs/guide.md']);
   for (const [baseSha, headSha] of [['0'.repeat(40), head], ['', head], [base, ''], [head, head]]) {
@@ -576,8 +582,12 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   const pr = matrix('false', 'pull_request');
   assert.deepEqual(pr.setups, full);
   assert.deepEqual(pr.whole, ['macos-latest ^24.22.1 1/1'], 'a pull request runs the whole suite in one macOS job (#568)');
-  // A merge queue group runs the full matrix too: it becomes main (#590).
-  for (const event of ['push', 'schedule', 'merge_group']) {
+  // A merge queue group runs one Node on Linux: the pull request ran the full matrix, and
+  // a push to main runs it again after the merge (#1068). A docs-only group runs the docs tests.
+  assert.deepEqual(matrix('false', 'merge_group'), { setups: ['ubuntu-latest ^24.22.1'], whole: [] });
+  assert.deepEqual(matrix('true', 'merge_group').setups, ['ubuntu-latest ^24.22.1']);
+  assert.deepEqual(matrix('', 'merge_group').setups, ['ubuntu-latest ^24.22.1'], '`changes` failed: one Node still, all shards');
+  for (const event of ['push', 'schedule']) {
     const run = matrix('false', event);
     assert.deepEqual(run.setups, full);
     assert.deepEqual(run.whole, [], `${event}: the full macOS matrix (#568)`);
@@ -634,7 +644,7 @@ test('ci: the kit lets a project skip its own jobs on a docs-only pull request; 
 // `yokoten.yml` reports `ci` and `pr.yml` reports `pr`: both checks are required, so
 // both workflows run on `merge_group`, and a queued merge runs the same checks as a
 // pull request. `issue.yml` is not a check on a merge, so it stays off. There is no
-// pull request on a merge group run: `yokoten.yml` runs every job in full, and the `pr`
+// pull request on a merge group run: `yokoten.yml` reads the group's files as a pull request's, and the `pr`
 // job skips, which the queue counts as green. Read in both dirs: the kit files and
 // this repo's own workflows carry the same trigger lines.
 // The events in the top-level `on:` block: each key two spaces in.
@@ -1904,6 +1914,78 @@ test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads 
     ['test/a.test.ts', ['test/a.test.ts :: old'], 'FIXED   test/a.test.ts (3 s, 1 on the list passes now, 1 waived)'],
     ['test\\c.test.ts', ['test/c.test.ts :: old', 'test/c.test.ts :: brand new'], 'NEW     test/c.test.ts (3 s, 1 new: brand new, 1 waived)'],
   ] as const) assert.equal(fileLine(file, [...found], known, 3), line, line);
+});
+
+test('windows scope: native Windows skips the desk, its fence and the kanban server, each with its reason (#1068)', () => {
+  const files = testFiles();
+  const windows = scopeFor(files, 'win32');
+  const skippedAreas = new Set(windows.skipped.map((entry) => entry.area));
+  assert.deepEqual([...skippedAreas].sort(), ['desk', 'desk fence', 'kanban server']);
+  for (const entry of windows.skipped) assert.equal(entry.reason, 'the desk runs in WSL on Windows (record 0043)', entry.file);
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/agents/desk/bwrap.test.ts' && entry.area === 'desk fence'), 'the fence is its own area');
+  assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/kanban/server.test.ts'));
+  // The CLI, the guard hooks and install still run there.
+  for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
+    assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);
+  }
+  assert.equal(windows.run.length + windows.skipped.length, files.length, 'every file either runs or is skipped with a reason');
+  assert.match(skippedLines(windows.skipped).join('\n'), /^desk fence \(\d+ files\): the desk runs in WSL on Windows/m);
+  // Linux and macOS run every file.
+  for (const platform of ['linux', 'darwin'] as const) assert.deepEqual(scopeFor(files, platform).skipped, [], platform);
+  // Fail closed: an unknown system is refused, and so is a table path that names no test file.
+  assert.throws(() => platformOf('aix'), /no test scope for the system "aix"/);
+  assert.throws(() => scopeFor(files, 'win32', [...TEST_AREAS, { area: 'gone', paths: ['test/gone/'], skip: { win32: 'x' } }]), /gone: test\/gone\//);
+  // No waiver stays on the list for a file that does not run on Windows.
+  const known = readKnown(readFileSync(join(ROOT, 'scripts/time/windows-known.txt'), 'utf8'));
+  assert.deepEqual(staleKnown(known, windows.skipped.map((entry) => entry.file)), []);
+  // Positive control: such a waiver is caught.
+  assert.deepEqual(staleKnown(readKnown('test/agents/desk/desk.test.ts :: planDesk\ntest/a.test.ts :: b\n'), ['test\\agents\\desk\\desk.test.ts']), ['test/agents/desk/desk.test.ts :: planDesk']);
+});
+
+test('windows known: a crashed file runs once more; a second run that gets through is flaky, and both keep stderr (#1068)', async () => {
+  const file = 'test\\a\\crash.test.ts';
+  const crash: FileRun = { tap: 'TAP version 13\n# boom on stderr\n# Subtest: test\\a\\crash.test.ts\nnot ok 1 - test\\a\\crash.test.ts\n  ---\n  error: \'test failed\'\n  ...\n# tests 1\n# fail 1\n', stderr: 'Error: at D:\\a\\yokoten\\x.ts\n', code: 1, timedOut: false };
+  const pass: FileRun = { tap: 'TAP version 13\nok 1 - fine\n', stderr: '', code: 0, timedOut: false };
+  const fail: FileRun = { tap: 'TAP version 13\nnot ok 1 - a real failure\n', stderr: '', code: 1, timedOut: false };
+  // A crash is the file named as its own failure, or a non-zero exit with no test line at all.
+  assert.equal(isCrash(file, crash), true);
+  assert.equal(isCrash(file, { tap: '', stderr: 'node: bad option', code: 9, timedOut: false }), true);
+  assert.equal(isCrash(file, pass), false);
+  assert.equal(isCrash(file, fail), false, 'a failing test is not a crash');
+  assert.equal(isCrash(file, { ...crash, timedOut: true }), false, 'a time-out is not run again');
+  assert.deepEqual(entriesOf(file, crash.tap, false), [`test/a/crash.test.ts :: ${CRASHED}`]);
+  // Node's TAP on Windows escapes each backslash in the file's name (CI, 2026-10-26).
+  const escaped: FileRun = { ...crash, tap: crash.tap.replaceAll('test\\a\\crash', 'test\\\\a\\\\crash') };
+  assert.equal(isCrash(file, escaped), true, 'a crash named with escaped backslashes is a crash');
+  assert.deepEqual(entriesOf(file, escaped.tap, false), [`test/a/crash.test.ts :: ${CRASHED}`]);
+  const runs = (...answers: FileRun[]) => {
+    const calls: string[] = [];
+    return { calls, run: async (path: string) => (calls.push(path), answers[calls.length - 1]) };
+  };
+  const flaky = runs(crash, pass);
+  const once = await runWithRetry(file, flaky.run);
+  assert.deepEqual([flaky.calls.length, once.isFlaky, once.first, once.last], [2, true, crash, pass]);
+  const twice = runs(crash, crash);
+  const again = await runWithRetry(file, twice.run);
+  assert.deepEqual([twice.calls.length, again.isFlaky, entriesOf(file, again.last.tap, false)], [2, false, [`test/a/crash.test.ts :: ${CRASHED}`]]);
+  // Positive control: a plain failure runs once and is judged as it is.
+  const plain = runs(fail);
+  assert.deepEqual([(await runWithRetry(file, plain.run)).first, plain.calls.length], [undefined, 1]);
+  // The crash's words reach the log, folders hidden; the TAP totals do not.
+  const said = crashLines(crash, { root: 'D:\\a\\yokoten', home: 'C:\\Users\\sample' });
+  assert.deepEqual(said, ['      | boom on stderr', '      | Error: at .\\x.ts']);
+  assert.deepEqual(crashLines({ ...pass, tap: '' }, { root: '/r', home: '/h' }), ['      | (no stderr and no output)']);
+});
+
+test('windows known: --list shows the skipped areas with their reasons, then the files (#1068)', () => {
+  const windows = scopeFor(testFiles(), 'win32');
+  const text = listLines('win32', '1/1', windows.run, windows.skipped).join('\n');
+  assert.match(text, /^Skipped on win32, by area:$/m);
+  for (const area of ['desk', 'desk fence', 'kanban server']) assert.match(text, new RegExp(`^  ${area} \\(\\d+ files?\\): the desk runs in WSL on Windows`, 'm'));
+  assert.match(text, /^ {2}skip {2}test\/agents\/desk\/start\.test\.ts \(desk\)$/m);
+  assert.match(text, /^ {2}run {3}test\/commands\/more\/check\.test\.ts$/m);
+  assert.doesNotMatch(text, /^ {2}run {3}test\/agents\/desk\//m);
+  assert.deepEqual(listLines('linux', '1/1', [], []).slice(1), ['Nothing is skipped on linux.']);
 });
 
 test('the release workflow publishes the tarball as a file, not a GitHub repo name', () => {

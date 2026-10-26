@@ -14,6 +14,8 @@ import {
 } from 'node:child_process';
 import {
   chmodSync,
+  copyFileSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -25,6 +27,8 @@ import { tmpdir } from 'node:os';
 import {
   dirname,
   join,
+  posix,
+  win32,
 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -572,6 +576,50 @@ export function fence(team: string): () => void {
 export const blocked = (command: string, env: Env = {}) => assert.ok(checkCommand(command, { cwd: process.cwd(), env }), `should block: ${command}`);
 
 export const allowed = (command: string, env: Env = {}) => assert.equal(checkCommand(command, { cwd: process.cwd(), env }), null, `should allow: ${command}`);
+
+/**
+ * A fake program `name` in `dir`, written in Node, that the code under test finds on PATH,
+ * on each system (issue #1068). Returns the env to add: PATH with `dir` first, joined by the
+ * system's delimiter, and on Windows the NODE_OPTIONS that load it.
+ *
+ * `body` is synchronous JavaScript that sees `args` (the program's arguments) and may use
+ * `process.getBuiltinModule`; it ends by returning, or by `process.exit(code)`.
+ *   - linux, darwin: `dir/name`, a `#!/usr/bin/env node` file, mode 755.
+ *   - win32: Node's spawn finds only `.exe` and `.com` on PATH, never a `.cmd` (libuv). So
+ *     `dir/name.exe` is a link to (or copy of) node itself, and `dir/name.cjs` is preloaded by
+ *     NODE_OPTIONS; it runs `body` only in a process started as `name.exe`, and exits before
+ *     Node reads the first argument as a script. The first argument must not start with `-`.
+ */
+export function writeNodeProgram(dir: string, name: string, body: string, platform: NodeJS.Platform = process.platform, env: Env = process.env): Record<string, string> {
+  mkdirSync(dir, { recursive: true });
+  const pathList = [dir, env.PATH ?? ''].join((platform === 'win32' ? win32 : posix).delimiter);
+  if (platform !== 'win32') {
+    writeFileSync(join(dir, name), `#!/usr/bin/env node\nconst args = process.argv.slice(2);\n${body}\n`, { mode: 0o755 });
+    return { PATH: pathList };
+  }
+  const program = join(dir, `${name}.exe`);
+  try {
+    linkSync(process.execPath, program);
+  } catch {
+    copyFileSync(process.execPath, program);
+  }
+  const preload = join(dir, `${name}.cjs`);
+  writeFileSync(
+    preload,
+    `const { basename, dirname } = require('node:path');
+if (basename(process.execPath).toLowerCase() === ${JSON.stringify(`${name}.exe`.toLowerCase())}) {
+  // Node made the first argument an absolute path, as for a script: take the word back.
+  const args = process.argv.slice(1);
+  if (args[0] !== undefined && dirname(args[0]) === process.cwd()) args[0] = basename(args[0]);
+  (() => {
+${body}
+  })();
+  process.exit(process.exitCode ?? 0);
+}
+`,
+  );
+  return { PATH: pathList, NODE_OPTIONS: [env.NODE_OPTIONS, `--require ${JSON.stringify(preload)}`].filter(Boolean).join(' ') };
+}
 
 // The hooks setting in a project with its own hooks folder (#217). A repo with husky's
 // pre-commit running the check (and husky's own `.husky/_/pre-commit`, which git runs), a
