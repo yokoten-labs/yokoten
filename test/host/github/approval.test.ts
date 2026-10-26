@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, MAX_ANSWER_TOKENS, MAX_DIFF_CHARS, parseVerdict, reviewFor } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MODEL_TIMEOUT_MS, parseVerdict, reviewFor } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -703,4 +703,18 @@ test('review: an unfinished DeepSeek answer names why, and an API error says wha
   assert.equal(apiErrorOf({ error: { message: '<!-- @owner --> `x`' } }), ': -- owner -- x');
   assert.equal(apiErrorOf({ error: { message: 'a'.repeat(500) } }).length, 202);
   for (const data of [null, {}, { error: 'flat' }, { error: { message: 42 } }, { error: { message: '<>' } }]) assert.equal(apiErrorOf(data), '');
+});
+
+// #1111: the answer cap and the model's time both fit what holds them. DeepSeek's limits
+// (V4 Flash, thinking mode): 64K output by default, 384K at most, and a 1M-token context.
+test('review: the answer cap fits DeepSeek, and the model call fits the job (#1111)', () => {
+  assert.ok(MAX_ANSWER_TOKENS >= 65_536, 'at least DeepSeek\'s own default in thinking mode, or the reasoning cuts off the verdict');
+  assert.ok(MAX_ANSWER_TOKENS <= 393_216, 'no more than DeepSeek\'s output limit');
+  // A character is at least a token, so this counts the input high.
+  assert.ok(MAX_DIFF_CHARS + MAX_BODY_CHARS + 20_000 + MAX_ANSWER_TOKENS < 1_000_000, 'input and answer fit the context');
+  const code = readFileSync(join(ROOT, '.github/workflows/review.yml'), 'utf8').replace(/^[ \t]*#.*\n/gm, '');
+  const minutes = Number(/^ {4}timeout-minutes: (\d+)$/m.exec(code)?.[1]);
+  assert.ok(minutes > 0, 'the review job has a time limit');
+  // Two minutes stay for checkout, the diff, and the GitHub calls around the model.
+  assert.ok(MODEL_TIMEOUT_MS + 120_000 <= minutes * 60_000, `the model call (${MODEL_TIMEOUT_MS} ms) leaves two minutes of the job's ${minutes}`);
 });
