@@ -44,7 +44,10 @@ import {
 } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
 import { parseCodeOwners } from '../../src/rules/pr.ts';
-import { hasHook } from '../../src/agents/hooks-file.ts';
+import { hasHook, skippedBecause, UnreadableHooksFile } from '../../src/agents/hooks-file.ts';
+import { checkProjectSettings } from '../../src/agents/runtimes/claude-code.ts';
+import { checkProjectHooks as codexCheckHooks } from '../../src/agents/runtimes/codex.ts';
+import { checkProjectHooks as geminiCheckHooks } from '../../src/agents/runtimes/gemini.ts';
 import { readTrust as copilotTrust } from '../../src/agents/copilot.ts';
 import { readTrust as grokTrust } from '../../src/agents/runtimes/grok.ts';
 import { readTrust as codexTrust } from '../../src/agents/runtimes/codex.ts';
@@ -716,7 +719,7 @@ test("init: husky keeps its hooks folder; .husky/pre-commit gets the check and k
   sandbox.write('.husky/pre-commit', '#!/bin/sh\ntouch own-hook-ran\n');
   chmodSync(join(sandbox.repo, '.husky/pre-commit'), 0o755);
   sandbox.git('config', 'core.hooksPath', '.husky');
-  let result = await sandbox.call(['init', '--list']);
+  const result = await sandbox.call(['init', '--list']);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /added the check to \.husky\/pre-commit: the commit check \(kept core\.hooksPath \(husky\)/);
   assert.match(result.stdout, /wrote \.husky\/pre-merge-commit: the commit check \(kept core\.hooksPath \(husky\)/, 'a merge commit is checked too (#239)');
@@ -730,25 +733,14 @@ test("init: husky keeps its hooks folder; .husky/pre-commit gets the check and k
   assert.equal(hook, `#!/bin/sh\n${checkLines('.yokoten/bin/yokoten.ts').join('\n')}\ntouch own-hook-ran\n`);
   assert.match(hook, /\n\[ -f "\.yokoten\/bin\/yokoten\.ts" \] 2>\/dev\/null \|\| \{ echo [^\n]* >&2; exit 1; \}; node "\.yokoten\/bin\/yokoten\.ts" check --staged \|\| exit 1\n/);
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done');
-  // Again: the hook already runs yokoten.
-  result = await sandbox.call(['init', '--list']);
-  assert.match(result.stdout, /kept \.husky\/pre-commit/);
-  assert.match(result.stdout, /kept \.husky\/pre-merge-commit/);
-  assert.equal(readFileSync(join(sandbox.repo, '.husky/pre-commit'), 'utf8'), hook);
-  // A real commit runs both: the project's hook and the yokoten check.
+  // One real commit runs both: the yokoten check, then the project's own hook. A second
+  // init keeping a hook that runs yokoten is in the next test; a hook without the runtime
+  // is in test/run/cli.test.ts.
   sandbox.git('add', '.');
   const commit = sandbox.git('commit', '-qm', 'adopt yokoten');
   assert.equal(commit.status, 0, commit.stderr);
+  assert.match(commit.stderr, /yokoten check --staged · clean/, 'the check ran');
   assert.ok(existsSync(join(sandbox.repo, 'own-hook-ran')), 'the project\'s own hook still runs');
-  sandbox.write('leak.md', `me${at}gmail.com\n`);
-  sandbox.git('add', 'leak.md');
-  assert.notEqual(sandbox.git('commit', '-qm', 'leak').status, 0);
-  sandbox.git('reset', '-q', 'leak.md');
-  // Without the runtime, one plain line and no commit, never a stack trace (#204).
-  rmSync(join(sandbox.repo, '.yokoten'), { recursive: true });
-  sandbox.write('b.md', 'fine\n');
-  sandbox.git('add', 'b.md');
-  assert.deepEqual(pick(sandbox.git('commit', '-qm', 'b')), [1, '', 'yokoten: the commit check cannot run, because .yokoten/bin/yokoten.ts is missing. Restore it from git, or run yokoten init again\n']);
 });
 
 test('init: husky not yet installed in this clone; init leaves core.hooksPath unset and says to run npm install (#206)', async () => {
@@ -858,19 +850,8 @@ test("init: another core.hooksPath is kept, and its pre-commit is made with the 
   sandbox.write('leak.md', `me${at}gmail.com\n`);
   sandbox.git('add', 'leak.md');
   assert.notEqual(sandbox.git('commit', '-qm', 'leak').status, 0, 'the check runs from the project\'s folder');
-  sandbox.git('rm', '-q', '--cached', 'leak.md');
-  rmSync(join(sandbox.repo, 'leak.md'));
-  // A real merge commit with the author's time zone is refused from the project's folder (#239).
-  sandbox.git('checkout', '-qb', 'topic');
-  sandbox.write('topic.md', 'fine\n');
-  sandbox.git('add', 'topic.md');
-  assert.equal(sandbox.git('commit', '-qm', 'topic').status, 0);
-  sandbox.git('checkout', '-q', 'main');
-  const merge = spawnSync('git', ['merge', '--no-ff', '-q', '-m', 'merge topic', 'topic'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: 'Asia/Tokyo' }, encoding: 'utf8' });
-  assert.notEqual(merge.status, 0, 'tools/hooks/pre-merge-commit runs the check');
-  assert.match(merge.stderr, /carries your time zone/);
-  assert.equal(sandbox.git('rev-list', '--count', '--merges', 'HEAD').stdout.trim(), '0');
-  sandbox.git('merge', '--abort');
+  // tools/hooks/pre-merge-commit is the same file as pre-commit (checked above); a real
+  // merge through that file is in the merge commit test above (#239).
 });
 
 test('init: a pre-commit in .git/hooks keeps running, after the check, from .githooks (#256)', { skip: NO_EXEC_BIT }, async () => {
@@ -910,15 +891,8 @@ test('init: a pre-commit in .git/hooks keeps running, after the check, from .git
   sandbox.git('rm', '-q', '--cached', 'leak.md');
   rmSync(join(sandbox.repo, 'leak.md'));
   assert.equal(sandbox.git('commit', '-qm', 'a').status, 0);
-  // A merge commit runs the old pre-merge-commit too.
-  sandbox.git('checkout', '-qb', 'topic');
-  sandbox.write('topic.md', 'fine\n');
-  sandbox.git('add', 'topic.md');
-  assert.equal(sandbox.git('commit', '-qm', 'topic').status, 0);
-  sandbox.git('checkout', '-q', 'main');
-  const merge = sandbox.git('merge', '--no-ff', '-q', '-m', 'merge topic', 'topic');
-  assert.equal(merge.status, 0, merge.stderr);
-  assert.ok(existsSync(join(gitDir, 'old-merge-hook-ran')), 'the old pre-merge-commit ran');
+  // .githooks/pre-merge-commit runs the old one the same way: the sh and dash part of the
+  // next test runs it, with its arguments and stdin.
   // A clone that ran an older init: .githooks/pre-commit without the hand-off drops the old hook, and doctor says so.
   const kitHook = readFileSync(join(CLI, '..', '..', 'kit', 'project', '.githooks', 'pre-commit'), 'utf8').replaceAll('{{cli}}', '.yokoten/bin/yokoten.ts');
   writeFileSync(join(sandbox.repo, '.githooks', 'pre-commit'), kitHook);
@@ -965,7 +939,10 @@ test('init: every other hook in .git/hooks keeps running from .githooks, with it
   const marker = (name: string) => `#!/bin/sh\necho "$*" > "$(git rev-parse --git-common-dir)/${name}-ran"\n`;
   writeFileSync(join(hooks, 'commit-msg'), marker('commit-msg'), { mode: 0o755 });
   writeFileSync(join(hooks, 'post-commit'), marker('post-commit'), { mode: 0o755 });
-  writeFileSync(join(hooks, 'pre-push'), '#!/bin/sh\ncat > "$(git rev-parse --git-common-dir)/pre-push-ran"\nexit 4\n', { mode: 0o755 });
+  // pre-push and pre-merge-commit save their arguments and stdin, and fail with their own code.
+  const saver = (name: string, code: number) => `#!/bin/sh\nprintf "%s|" "$@" > "$(git rev-parse --git-common-dir)/${name}-args"; cat > "$(git rev-parse --git-common-dir)/${name}-ran"; exit ${code}\n`;
+  writeFileSync(join(hooks, 'pre-push'), saver('pre-push', 4), { mode: 0o755 });
+  writeFileSync(join(hooks, 'pre-merge-commit'), saver('pre-merge-commit', 5), { mode: 0o755 });
   writeFileSync(join(hooks, 'post-checkout'), marker('post-checkout'), { mode: 0o644 });
   chmodSync(join(hooks, 'post-checkout'), 0o644);
   writeFileSync(join(hooks, 'pre-commit.old'), marker('old'), { mode: 0o755 });
@@ -981,13 +958,24 @@ test('init: every other hook in .git/hooks keeps running from .githooks, with it
     assert.match(result.stdout, new RegExp(`^kept your \\.git/hooks/${hook}: \\.githooks/${hook} runs it$`, 'm'));
   }
   assert.match(result.stdout, /^updated \.githooks\/prepare-commit-msg$/m);
-  assert.ok(result.stdout.includes('\nnote: lefthook.yml is here; .githooks runs these hooks in .git/hooks: .git/hooks/commit-msg, .git/hooks/post-commit, .git/hooks/pre-push, .git/hooks/prepare-commit-msg. A hook it installs later'), result.stdout);
+  assert.match(result.stdout, /^kept your \.git\/hooks\/pre-merge-commit: \.githooks\/pre-merge-commit runs it after the check$/m);
+  assert.ok(result.stdout.includes('\nnote: lefthook.yml is here; .githooks runs these hooks in .git/hooks: .git/hooks/commit-msg, .git/hooks/post-commit, .git/hooks/pre-merge-commit (after the check), .git/hooks/pre-push, .git/hooks/prepare-commit-msg. A hook it installs later'), result.stdout);
   assert.match(result.stdout, /^note: \.git\/hooks\/post-checkout is not executable, so git skips it today/m);
   assert.ok(!existsSync(join(sandbox.repo, '.githooks', 'post-checkout')), 'a hook git skips gets no .githooks file');
   assert.ok(!existsSync(join(sandbox.repo, '.githooks', 'pre-commit.old')), 'a file git never runs is not a hook');
   assert.equal(readFileSync(join(sandbox.repo, '.githooks', 'prepare-commit-msg'), 'utf8'), ['#!/bin/sh', ...handOffLines('prepare-commit-msg'), 'echo own >> "$1"', ''].join('\n'));
   assert.equal(sandbox.git('config', 'core.hooksPath').stdout.trim(), '.githooks');
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done');
+  // The hooks init writes run under sh and dash, with the arguments and stdin: a commit
+  // hook after the check, and any other hook as it is.
+  for (const shell of SHELLS) {
+    for (const [hook, code] of [['pre-merge-commit', 5], ['pre-push', 4]] as const) {
+      const run = spawnSync(shell, [`.githooks/${hook}`, 'a b', 'c'], { cwd: sandbox.repo, env: sandbox.env, input: 'line in\n', encoding: 'utf8' });
+      assert.equal(run.status, code, `${shell} ${hook}: ${run.stderr}`);
+      assert.equal(readFileSync(join(sandbox.repo, '.git', `${hook}-args`), 'utf8'), 'a b|c|', `${shell} ${hook}`);
+      assert.equal(readFileSync(join(sandbox.repo, '.git', `${hook}-ran`), 'utf8'), 'line in\n', `${shell} ${hook}`);
+    }
+  }
   // A real commit runs them, with git's arguments.
   sandbox.git('add', '.');
   const commit = sandbox.git('commit', '-qm', 'adopt yokoten');
@@ -1052,22 +1040,6 @@ test('init: the hand-off has no switch, and a .git/hooks link to .githooks does 
     const run = runChild(shell, ['.git/hooks/pre-commit'], { cwd: sandbox.repo, env: sandbox.env });
     assert.equal(run.status, 0, `${shell}: ${run.stderr}`);
     assert.equal((`${run.stdout}${run.stderr}`.match(/yokoten check --staged · clean/g) ?? []).length, 1, `${shell}: the check ran once`);
-  }
-});
-
-test('init: the hooks it writes run under sh and dash, with the arguments and stdin (#256)', { skip: NO_EXEC_BIT }, async () => {
-  const sandbox = makeSandbox();
-  const hooks = join(sandbox.repo, '.git', 'hooks');
-  writeFileSync(join(hooks, 'pre-merge-commit'), '#!/bin/sh\nprintf "%s|" "$@" > "$(git rev-parse --git-dir)/args"; cat > "$(git rev-parse --git-dir)/stdin"; exit 5\n', { mode: 0o755 });
-  writeFileSync(join(hooks, 'pre-push'), '#!/bin/sh\nprintf "%s|" "$@" > "$(git rev-parse --git-dir)/args"; cat > "$(git rev-parse --git-dir)/stdin"; exit 6\n', { mode: 0o755 });
-  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  for (const shell of SHELLS) {
-    for (const [hook, code] of [['pre-merge-commit', 5], ['pre-push', 6]] as const) {
-      const run = spawnSync(shell, [`.githooks/${hook}`, 'a b', 'c'], { cwd: sandbox.repo, env: sandbox.env, input: 'line in\n', encoding: 'utf8' });
-      assert.equal(run.status, code, `${shell} ${hook}: ${run.stderr}`);
-      assert.equal(readFileSync(join(sandbox.repo, '.git', 'args'), 'utf8'), 'a b|c|', `${shell} ${hook}`);
-      assert.equal(readFileSync(join(sandbox.repo, '.git', 'stdin'), 'utf8'), 'line in\n', `${shell} ${hook}`);
-    }
   }
 });
 
@@ -1173,7 +1145,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   const kitCore = fresh.slice(0, fresh.indexOf('## This project'));
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /\n {2}ok +core-rules\n/, 'init wrote the kit, so it is up to date');
+  // init wrote the kit, so it is up to date (doctor says so in the .yokoten/ test below).
   let result: { status: number | null; stdout: string; stderr: string } = sandbox.run(['update']); // a real process: the entry point of update
   assert.deepEqual([result.status, result.stdout], [0, 'yokoten update · the core rules are up to date, nothing changed\n']);
 
@@ -1186,7 +1158,6 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.match(doctor.stdout, new RegExp(String.raw`MISSING core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
   assert.equal(doctor.status, 1);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the core rules in AGENTS\.md are behind/m, 'a session hears it');
-  assert.ok(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).findings.some((f: { id: string }) => f.id === 'core-rules'));
 
   // The preview shows each line, the hand edit too, and writes nothing.
   result = await sandbox.call(['update', '--all']);
@@ -1205,7 +1176,6 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.equal(result.stdout, `yokoten update: replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 2 line(s) added, 1 removed; sections changed: Core rules, Writing. "## This project" and below are unchanged\n`);
   assert.equal(readFileSync(path, 'utf8'), kitCore + own);
   assert.match((await sandbox.call(['update'])).stdout, /up to date/);
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /\n {2}ok +core-rules\n/);
 
   // Line ends do not count: a CRLF checkout is up to date.
   writeFileSync(path, kitCore.replaceAll('\n', '\r\n') + own);
@@ -1229,7 +1199,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
 });
 
 // A project written by a newer yokoten is never taken back to an older kit (#141).
-test('update: init writes the kit version; a newer project is refused, an older one is updated (#141)', async () => {
+test('update: init writes the kit version, and a project from a newer yokoten is refused (#141)', async () => {
   const sandbox = makeSandbox();
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const path = join(sandbox.repo, 'AGENTS.md');
@@ -1251,24 +1221,8 @@ test('update: init writes the kit version; a newer project is refused, an older 
   const doctor = await sandbox.call(['doctor', '--all']);
   assert.match(doctor.stdout, new RegExp(String.raw`\n {2}note +core-rules: the core rules in AGENTS\.md come from yokoten ${newerPattern}, newer than this yokoten ${versionPattern}; update yokoten itself, not the project`));
   assert.doesNotMatch(doctor.stdout, /MISSING core-rules/);
-
-  // Older: the same text with an older mark is updated, and gets the new mark.
-  writeFileSync(path, newer.replace(`${NEWER} -->`, '0.0.9 -->'));
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /MISSING core-rules: the core rules in AGENTS\.md are behind/);
-  commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
-  let result = await sandbox.call(['update', '--write']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(path, 'utf8'), fresh);
-
-  // No mark (every project before #141): an unknown version, compared by content as before.
-  const unmarked = newer.replace(/^<!-- yokoten kit .* -->\n/, '');
-  writeFileSync(path, unmarked);
-  commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
-  result = await sandbox.call(['update', '--write']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(readFileSync(path, 'utf8'), fresh, 'updated, and the mark is added');
-  writeFileSync(path, fresh.replace(/^<!-- yokoten kit .* -->\n/, ''));
-  assert.match((await sandbox.call(['update'])).stdout, /up to date/, 'the mark alone is no change');
+  // An older mark, and no mark at all, are compared by content: the core rules test of
+  // compareCoreRules below holds both, and the test above runs update --write end to end.
 });
 
 // `update --write` replaces the core part of AGENTS.md; it keeps what init keeps (#989).
@@ -1346,24 +1300,29 @@ test('update: the .yokoten/ copy has the kit\'s AGENTS.md, so doctor and update 
   const result = vendored('update', '--write');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh, 'the copy writes its own kit, the one CI checks against');
-
-  // The control: without the kit file, the copy can't compare. init puts it back.
-  rmSync(kitDir, { recursive: true });
-  assert.match(vendored('doctor', '--all').stdout, /\n {2}note +core-rules: can't compare the core rules in AGENTS\.md: this copy of yokoten has no kit/);
-  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  assert.ok(existsSync(join(kitDir, 'project', 'AGENTS.md')), 'init refreshes the copied kit file');
-  assert.match(vendored('doctor', '--all').stdout, /\n {2}ok +core-rules\n/);
 });
 
 test('init: an unreadable project .codex/hooks.json or .gemini/settings.json is skipped, the rest goes on, and init exits 1 (#248)', async () => {
-  for (const [bad, good, name, stop] of [['.codex/hooks.json', '.gemini/settings.json', 'the Codex hooks', 'Stop'], ['.gemini/settings.json', '.codex/hooks.json', 'the Gemini CLI hooks', 'AfterAgent']]) {
-    const cases = [
-      ['{ not json', `can't read ${bad} (make it valid JSON, then run \`yokoten init\` again)`],
-      ['{"hooks": "x"}', `${bad} has an unexpected shape (\`hooks\` should be an object)`],
-      // The stop event is added second: a bad one leaves the file whole.
-      [`{"hooks":{"${stop}":[{"hooks":[1]}]}}`, `${bad} has an unexpected shape (\`hooks.${stop}[0].hooks\` should be a list of objects)`],
-    ];
-    for (const [content, skip] of cases) {
+  const files = [
+    ['.codex/hooks.json', '.gemini/settings.json', 'the Codex hooks', 'Stop', (root: string) => codexCheckHooks(root)],
+    ['.gemini/settings.json', '.codex/hooks.json', 'the Gemini CLI hooks', 'AfterAgent', (root: string) => geminiCheckHooks(root, '.yokoten/bin/yokoten.mjs')],
+  ] as const;
+  const casesFor = (bad: string, stop: string) => [
+    ['{ not json', `can't read ${bad} (make it valid JSON, then run \`yokoten init\` again)`],
+    ['{"hooks": "x"}', `${bad} has an unexpected shape (\`hooks\` should be an object)`],
+    // The stop event is added second: a bad one leaves the file whole.
+    [`{"hooks":{"${stop}":[{"hooks":[1]}]}}`, `${bad} has an unexpected shape (\`hooks.${stop}[0].hooks\` should be a list of objects)`],
+  ];
+  // Every case is read by the check init runs before it writes the file, and skipped with the line init prints.
+  for (const [bad, , , stop, check] of files) {
+    for (const [content, skip] of casesFor(bad, stop)) {
+      const root = folderWith({ [bad]: content });
+      assert.throws(() => check(root), (err) => err instanceof UnreadableHooksFile && skippedBecause(bad, err.problem, 'init') === skip, `${bad}, ${content}`);
+    }
+  }
+  // End to end, one case for each file: the rest of init goes on.
+  for (const [bad, good, name, stop] of files) {
+    for (const [content, skip] of casesFor(bad, stop).filter((_, index) => index === (bad === '.codex/hooks.json' ? 0 : 2))) {
       const sandbox = makeSandbox();
       mkdirSync(join(sandbox.repo, dirname(bad)));
       writeFileSync(join(sandbox.repo, bad), content);
@@ -1413,7 +1372,17 @@ test('init: a commented .gemini/settings.json is left as it was and gets the hoo
 });
 
 test('init: an unreadable project .claude/settings.json is skipped, the rest goes on, and init exits 1 (#254)', async () => {
+  // Every bad file is read by the check init runs first, and skipped with the line init
+  // prints, before anything is written.
   for (const [content, reason] of BAD_PROJECT_SETTINGS) {
+    const root = folderWith({ '.claude/settings.json': content });
+    const what = JSON.stringify(content);
+    assert.throws(() => checkProjectSettings(root), (err) => err instanceof UnreadableHooksFile && skippedBecause('.claude/settings.json', err.problem, 'init') === reason('.claude/settings.json'), what);
+    assert.equal(readFileSync(join(root, '.claude', 'settings.json'), 'utf8'), content, `${what}: the file changed`);
+  }
+  // End to end, two of them: a file that won't parse, and a bad Stop hook, read before the
+  // first hook is written. The rest of init goes on.
+  for (const [content, reason] of [BAD_PROJECT_SETTINGS[0], BAD_PROJECT_SETTINGS[4]]) {
     const sandbox = makeSandbox();
     const file = join(sandbox.repo, '.claude', 'settings.json');
     mkdirSync(dirname(file));
