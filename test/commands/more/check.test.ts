@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createServer } from 'node:http';
+import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
@@ -21,6 +22,7 @@ import {
   CLI,
   makeSandbox,
   ROOT,
+  writeNodeProgram,
 } from '../../repo/helpers.ts';
 import { invoke } from '../../repo/invoke.ts';
 import { type ActionsHealth, cutPoint, failureWord, readActionsRuns, redactStream, runRedact, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
@@ -1052,28 +1054,48 @@ test('marks: the count names both files when the setting adds one (#656)', async
  * The stub is fixed text: its answers and its log path arrive in the environment, as data (#368).
  */
 function healthGh(sandbox: ReturnType<typeof makeSandbox>, answers: Record<string, string>): Record<string, string> {
-  const bin = join(sandbox.home, 'bin');
   const answersFile = join(sandbox.home, 'gh-answers.json');
   const log = join(sandbox.home, 'gh.log');
-  mkdirSync(bin, { recursive: true });
   writeFileSync(answersFile, JSON.stringify(answers));
-  writeFileSync(
-    join(bin, 'gh'),
-    `#!/usr/bin/env node
-// A dynamic import works whether Node loads this file as CommonJS or as an ES module.
-import('node:fs').then(({ appendFileSync, readFileSync }) => {
-  const call = process.argv.slice(2).join(' ');
-  appendFileSync(process.env.YOKOTEN_HEALTH_GH_LOG, call + '\\n');
-  const answers = JSON.parse(readFileSync(process.env.YOKOTEN_HEALTH_GH_ANSWERS, 'utf8'));
-  const key = Object.keys(answers).find((one) => call === one || call.startsWith(one + ' '));
-  if (key === undefined) process.exit(1);
-  console.log(answers[key]);
-});
-`,
-    { mode: 0o755 },
+  // getBuiltinModule works whether Node loads the program as CommonJS or as an ES module.
+  const program = writeNodeProgram(
+    join(sandbox.home, 'bin'),
+    'gh',
+    `const { appendFileSync, readFileSync } = process.getBuiltinModule('node:fs');
+const call = args.join(' ');
+appendFileSync(process.env.YOKOTEN_HEALTH_GH_LOG, call + '\\n');
+const answers = JSON.parse(readFileSync(process.env.YOKOTEN_HEALTH_GH_ANSWERS, 'utf8'));
+const key = Object.keys(answers).find((one) => call === one || call.startsWith(one + ' '));
+if (key === undefined) process.exit(1);
+process.stdout.write(answers[key] + '\\n');`,
   );
-  return { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_HEALTH_GH_ANSWERS: answersFile, YOKOTEN_HEALTH_GH_LOG: log };
+  return { ...program, YOKOTEN_HEALTH_GH_ANSWERS: answersFile, YOKOTEN_HEALTH_GH_LOG: log };
 }
+
+// The fake gh above runs on each system (issue #1068). Both forms run here, whatever the
+// system: the Windows form is node under the name gh.exe, with its preload.
+test('writeNodeProgram: the fake program answers with its arguments, as a script and as gh.exe with a preload', () => {
+  const body = `process.stdout.write(JSON.stringify(args));`;
+  const base = makeSandbox().home;
+  const posixDir = join(base, 'posix');
+  assert.equal(writeNodeProgram(posixDir, 'gh', body, 'linux', { PATH: '/usr/bin' }).PATH, `${posixDir}:/usr/bin`);
+  if (process.platform !== 'win32') {
+    const ran = spawnSync(join(posixDir, 'gh'), ['api', 'repos/octo/demo'], { encoding: 'utf8' });
+    assert.equal(ran.stdout, '["api","repos/octo/demo"]', ran.stderr);
+  }
+  const windowsDir = join(base, 'windows');
+  const extra = writeNodeProgram(windowsDir, 'gh', body, 'win32', { PATH: 'C:\\Windows', NODE_OPTIONS: '--no-warnings' });
+  assert.equal(extra.PATH, `${windowsDir};C:\\Windows`, 'Windows joins PATH with ;');
+  assert.match(extra.NODE_OPTIONS, /^--no-warnings --require "/, 'the preload is added to NODE_OPTIONS, not in place of it');
+  assert.ok(existsSync(join(windowsDir, 'gh.exe')) && existsSync(join(windowsDir, 'gh.cjs')));
+  const env = { PATH: process.env.PATH, NODE_OPTIONS: extra.NODE_OPTIONS };
+  const ran = spawnSync(join(windowsDir, 'gh.exe'), ['issue', 'pin 12', '--repo', 'octo/demo'], { cwd: windowsDir, env, encoding: 'utf8' });
+  assert.equal(ran.stdout, '["issue","pin 12","--repo","octo/demo"]', ran.stderr);
+  assert.equal(ran.status, 0);
+  // Positive control: in a process not named gh.exe (this one), the preload does nothing.
+  createRequire(import.meta.url)(join(windowsDir, 'gh.cjs'));
+  assert.equal(process.exitCode, undefined, 'the preload left this process alone');
+});
 
 const healthCalls = (sandbox: ReturnType<typeof makeSandbox>): string[] => {
   const log = join(sandbox.home, 'gh.log');
