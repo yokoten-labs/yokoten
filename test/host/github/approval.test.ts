@@ -677,7 +677,7 @@ test('review: the workflow runs the base reviewer from main with the App token a
   assert.match(code, /!github\.event\.pull_request\.draft/);
   // The App token, minted by a pinned action from environment secrets, posts the review.
   assert.match(code, /^ {8}uses: actions\/create-github-app-token@[0-9a-f]{40} # v\d+\.\d+\.\d+$/m);
-  assert.match(code, /^ {10}app-id: \$\{\{ secrets\.REVIEWER_APP_ID \}\}$/m);
+  assert.match(code, /^ {10}client-id: \$\{\{ secrets\.REVIEWER_CLIENT_ID \}\}$/m);
   assert.match(code, /^ {10}private-key: \$\{\{ secrets\.REVIEWER_APP_KEY \}\}$/m);
   assert.match(code, /^ {10}REVIEWER_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}$/m);
   assert.doesNotMatch(code, /github\.token|secrets\.GITHUB_TOKEN/, 'the review is posted with the App token, not the Actions token');

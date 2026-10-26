@@ -193,6 +193,15 @@ jobs:
           node-version: '^22.23.4'
       - run: npm ci
       - run: npm run typecheck
+      # The copy check (issue #1091): kanban code must not copy a block from elsewhere in
+      # src (.jscpd.json: 50 tokens and 5 lines or more). Clones already on the base are
+      # known and listed; only a new one fails. A public fetch, so no token is kept.
+      - if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          git fetch --quiet --no-tags --depth=1 origin "$BASE_SHA"
+          npx --no-install jscpd --baseline-from-ref "$BASE_SHA" --fail-on-new-clones
       # The npm package (record 0008): pack it, install it offline, run install, init and doctor.
       - run: npm run check-package
   # The same check as the commit hook, for commits made without it.

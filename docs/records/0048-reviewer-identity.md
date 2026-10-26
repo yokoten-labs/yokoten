@@ -23,7 +23,7 @@ So a writer could post that line and claim to be another model (issue #1088).
    diff and the body to DeepSeek, and posts one review on the head commit: APPROVE or
    REQUEST_CHANGES. The model id is pinned in the workflow and named on the approval line.
 3. **The App's key stays on main.** The job uses the `reviewer` environment, which the
-   owner limits to the main branch. The environment holds `REVIEWER_APP_ID`,
+   owner limits to the main branch. The environment holds `REVIEWER_CLIENT_ID`,
    `REVIEWER_APP_KEY` and `DEEPSEEK_API_KEY`. The job mints a short-lived App token and
    posts the review with it. The job's own token only reads.
 4. **The pull request is data.** `pull_request_target` runs the workflow and the reviewer
