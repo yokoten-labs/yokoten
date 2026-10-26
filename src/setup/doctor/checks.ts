@@ -581,7 +581,7 @@ export function commandWording(env: Env): ((text: string) => string) | null {
 
 /**
  * Where a clone keeps the conflict map (#909): MAP_FILE in
- * src/commands/merge/conflicts/types.ts. This layer sits below `commands`, so it reads the
+ * src/commands/more/merge/conflicts/types.ts. This layer sits below `commands`, so it reads the
  * file itself and never imports the builder; map.test.ts holds the two names together.
  */
 export const CONFLICT_MAP_PATH = 'yokoten/conflicts.json';

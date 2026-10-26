@@ -26,7 +26,7 @@ import {
   table,
 } from '../../../src/setup/advice/adopt.ts';
 import { ROAD } from '../../../src/setup/road.ts';
-import { adoptScreen } from '../../../src/commands/advice/doctor.ts';
+import { adoptScreen } from '../../../src/commands/more/advice/doctor.ts';
 
 const statusOf = (rows: Fact[]) => Object.fromEntries(rows.map((r) => [r.key, r.status]));
 

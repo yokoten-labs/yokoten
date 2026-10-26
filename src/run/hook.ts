@@ -1698,7 +1698,7 @@ const sayIgnored = (ignored: IgnoredPart) =>
 // most once per guard call for each repo, cached by its time on disk, so the guard keeps its
 // budget (record 0013). No git process runs: the map's folder and the branch come from files.
 
-// These two mirror MAP_FILE and MAP_MAX_AGE_MS in src/commands/merge/conflicts/types.ts.
+// These two mirror MAP_FILE and MAP_MAX_AGE_MS in src/commands/more/merge/conflicts/types.ts.
 // That file sits in the commands layer, above rules and run, so neither may import it
 // (record 0004). Keep each pair the same.
 const LEASE_MAP_FILE = 'yokoten/conflicts.json';
