@@ -29,7 +29,7 @@ const isToPutAway = (item: TidyItem): boolean => item.judged.verdict === 'old' |
 function itemText(item: TidyItem): string {
   const size = item.kind === 'branch' ? (item.commits ? `${count(item.commits, 'commit')} not in the main branch` : 'no commit of its own') : formatSize(item.size);
   const place = item.kind === 'branch' ? 'branch' : `${item.kind === 'log' ? 'logs' : item.kind} at ${item.path}`;
-  return `${place}: ${item.judged.why}. ${size}.`;
+  return `${place}: ${item.judged.why}; ${size}.`;
 }
 
 const rows = (items: TidyItem[], mark: Parameters<typeof row>[0]): string[] => items.flatMap((item) => row(mark, itemText(item), item.name));
@@ -50,7 +50,8 @@ export function listScreen(scan: TidyScan, trash: TrashFolder[]): string[] {
   const inUse = scan.items.filter((item) => item.judged.verdict === 'in-use');
   const kept = scan.items.filter((item) => item.judged.verdict === 'keep');
   const ready = old.length + first.length;
-  const lines = title('tidy', ready ? `${ready} to put away, ${formatSize(sizeOf([...old, ...first]))}; nothing was changed` : 'nothing to put away; nothing was changed');
+  const size = sizeOf([...old, ...first]);
+  const lines = title('tidy', ready ? `${ready} to put away${size ? `, ${formatSize(size)}` : ''}; nothing was changed` : 'nothing to put away; nothing was changed');
   if (old.length) lines.push('', 'Can put away:', ...rows(old, 'next'));
   if (first.length) lines.push('', 'Can put away with a saved copy:', ...rows(first, 'note'));
   if (inUse.length) lines.push('', 'In use, never touched:', ...rows(inUse, 'skipped'));

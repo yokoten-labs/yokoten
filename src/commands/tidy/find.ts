@@ -7,6 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { pathsFor } from '../../platform/paths.ts';
 import type { Env } from '../../rules/config.ts';
 import { homeIn } from '../../rules/privacy.ts';
 import { AGENT_STATUS_FILE, DESK_FILE, DESK_LIST_FILE } from '../../run/hook.ts';
@@ -64,12 +65,11 @@ export function readGit(cwd: string, args: string[], env: Env): string | null {
 
 /** Yokoten's own state folder for tidy: XDG_STATE_HOME or ~/.local/state, or %LOCALAPPDATA% on Windows. */
 export function tidyStateDir(env: Env, platform: NodeJS.Platform): string {
-  if (platform === 'win32') {
-    const local = env.LOCALAPPDATA && isAbsolute(env.LOCALAPPDATA) ? env.LOCALAPPDATA : join(homeIn(env), 'AppData', 'Local');
-    return join(local, 'yokoten');
-  }
-  const state = env.XDG_STATE_HOME && isAbsolute(env.XDG_STATE_HOME) ? env.XDG_STATE_HOME : join(homeIn(env), '.local', 'state');
-  return join(state, 'yokoten');
+  // The system's own path rules, so Linux CI tests the Windows case (record 0040). A relative
+  // value is ignored: it would land in the folder the command runs in.
+  const paths = pathsFor(platform);
+  const [name, fallback] = platform === 'win32' ? [env.LOCALAPPDATA, ['AppData', 'Local']] : [env.XDG_STATE_HOME, ['.local', 'state']];
+  return paths.join(name && paths.isAbsolute(name) ? name : paths.join(homeIn(env), ...fallback), 'yokoten');
 }
 
 /** Whether `path` is `folder` or inside it. */

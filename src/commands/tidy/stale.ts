@@ -58,16 +58,14 @@ const plural = (n: number, one: string): string => `${n} ${one}${n === 1 ? '' : 
 
 /** Why it is old, or '' when there is no clear sign. */
 function oldSign(facts: StaleFacts, age: number | null): string {
-  const isQuiet = age === null || age >= QUIET_MS;
-  switch (facts.kind) {
-    case 'log':
-      if (facts.isGone) return 'its desk is gone';
-      return age !== null && age >= LOG_AGE_MS ? 'no write for 30 days' : '';
-    default:
-      if (facts.isGone) return 'its folder is gone; git still lists it';
-      if (facts.isUpstreamGone) return 'its branch on the remote is gone';
-      return facts.isMerged && isQuiet ? 'merged into the main branch, and no change for a day' : '';
+  if (facts.kind === 'log') {
+    if (facts.isGone) return 'its desk is gone';
+    return age !== null && age >= LOG_AGE_MS ? 'no write for 30 days' : '';
   }
+  if (facts.isGone) return 'its folder is gone; git still lists it';
+  if (facts.isUpstreamGone) return 'its branch on the remote is gone';
+  const isQuiet = age === null || age >= QUIET_MS;
+  return facts.isMerged && isQuiet ? 'merged into the main branch, and no change for a day' : '';
 }
 
 /** Which of the four `facts` is at `now`: the first rule that holds, in the order of the table in stale.test.ts. */
