@@ -564,7 +564,7 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command');
   const copilot = JSON.parse(readFileSync(copilotFile, 'utf8'));
   assert.equal(copilot.hooks.PreToolUse[0].hooks[0].command, 'mine', "the user's hook stays");
-  assert.equal(copilot.hooks.PreToolUse[1].matcher, 'Bash');
+  assert.equal(copilot.hooks.PreToolUse[1].matcher, 'Bash|Edit|Write|MultiEdit|NotebookEdit');
   // A real run through the shell install wrote: a tag push is refused in each shape.
   const shell = (text: string, input: object) => spawnSync(text, { shell: '/bin/sh', cwd: sandbox.repo, env: sandbox.env, input: JSON.stringify(input), encoding: 'utf8' });
   const agyPush = { toolCall: { name: 'run_command', args: { CommandLine: 'git push --tags', Cwd: sandbox.repo } }, workspacePaths: [sandbox.repo] };

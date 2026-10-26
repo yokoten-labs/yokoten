@@ -111,6 +111,31 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   assert.ok(!(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { findings: { id: string }[] }).findings.some((found) => found.id === 'user-guard'));
 });
 
+// #1100: a user who updated yokoten but not the install keeps a guard on Bash alone, so a
+// worker's Write or Edit meets no guard in a session with no project hook. Doctor says it in
+// one line per guard, with the one fix; install moves only yokoten's own entry.
+test('doctor: a user guard older than this yokoten is one line, and install fixes it (#1100)', async () => {
+  const sandbox = makeSandbox();
+  mkdirSync(join(sandbox.home, '.grok'));
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
+  const files = [join(sandbox.home, '.claude', 'settings.json'), join(sandbox.home, '.grok', 'hooks', 'yokoten.json')];
+  const mine = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook' }] };
+  for (const file of files) {
+    const settings = JSON.parse(readFileSync(file, 'utf8'));
+    settings.hooks.PreToolUse[0].matcher = 'Bash';
+    settings.hooks.PreToolUse.push(mine);
+    writeFileSync(file, JSON.stringify(settings));
+  }
+  const lines = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').filter((line) => /user-guard|grok-user-hook/.test(line));
+  assert.deepEqual(await lines(), [
+    '  MISSING user-guard: the guard for Claude Code is out of date: it skips Edit, Write, MultiEdit, NotebookEdit; run `npx yokoten install`',
+    '  note    grok-user-hook: the command guard in ~/.grok/hooks/yokoten.json is out of date; `npx yokoten install` updates it',
+  ]);
+  assert.equal((await sandbox.call(['install', '--list'])).status, 0);
+  assert.deepEqual(await lines(), ['  ok      user-guard', '  ok      grok-user-hook']);
+  for (const file of files) assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse.at(-1), mine, "the user's own hook stays as it was");
+});
+
 test('doctor: names the release channel this machine runs (#632)', async () => {
   const sandbox = makeSandbox();
   const version: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version;

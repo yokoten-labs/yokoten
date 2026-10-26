@@ -22,6 +22,7 @@ import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from './folder-
 import { type TrustChange, type TrustPlan } from './runtimes/codex.ts';
 import { type Added, addHook, checkHooksFile, type HookState, hookState, isObject, readSettings, removeHook } from './hooks-file.ts';
 import type { RuntimeEnv } from './desk/agent-env.ts';
+import { GUARDED_TOOLS } from './runtimes/claude-code.ts';
 
 /** The one step that makes Copilot CLI run the project's hooks. */
 export const TRUST_STEP = TRUST_COMMAND;
@@ -115,12 +116,13 @@ const userHooks = (env: Env): string => join(userHome(env), 'hooks', 'yokoten.js
 export const userHooksFile = (env: Env): string => (env.COPILOT_HOME ? '$COPILOT_HOME/hooks/yokoten.json' : '~/.copilot/hooks/yokoten.json');
 
 /**
- * The user's command guard, as `addHook`'s arguments. Copilot sends Claude Code's shape, so
- * the default reader judges it. Commands only: file rules stay with the project. Copilot
+ * The user's guard, as `addHook`'s arguments. Copilot sends Claude Code's shape, so the
+ * default reader judges it, on the tools the project hook in `.claude/settings.json` runs on:
+ * one list, so a worker's edit is checked where no project hook runs (#1100). Copilot
  * refuses on exit 2 alone, so `--denial exit2` keeps that answer rather than Claude Code's
  * JSON deny on exit 0 (#707).
  */
-const userGuardArgs = (env: Env, cli: string, missing: string) => [userHooks(env), 'PreToolUse', 'Bash', guardCommand(cli, 'hook --agent claude-code --commands-only --denial exit2', missing, { isToolCall: true })] as const;
+const userGuardArgs = (env: Env, cli: string, missing: string) => [userHooks(env), 'PreToolUse', GUARDED_TOOLS, guardCommand(cli, 'hook --agent claude-code --commands-only --denial exit2', missing, { isToolCall: true })] as const;
 
 /** Write the user's guard, in every folder; `missing` is what it says when `cli` is gone. */
 export function addUserHooks(env: Env, cli: string, missing: string): { guard: Added } {

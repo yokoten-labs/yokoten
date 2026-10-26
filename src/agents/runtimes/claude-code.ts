@@ -6,7 +6,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { envFolder, folderIn, folderOf, homeIn } from '../../rules/privacy.ts';
-import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
+import { guardCommand, missingProjectRuntime, runsByPath } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import type { AgentAdapter } from './runtime.ts';
 import { type Added, addHook, checkHooksFile, hasHook, isObject, type Problem, readTable, removeHook, type Settings, UnreadableHooksFile, writeSettings } from '../hooks-file.ts';
@@ -228,6 +228,22 @@ export function addUserHooks(env: Env, cli: string, missing: string): { doctor: 
 // With no home folder there are no user settings to read: nothing is on (#356).
 export const hasSessionDoctor = (env: Env): boolean => userDirOf(env) !== null && hasHook(userSettings(env), 'SessionStart', 'doctor');
 export const hasUserGuard = (env: Env): boolean => userDirOf(env) !== null && hasHook(userSettings(env), 'PreToolUse', 'hook');
+
+/**
+ * The tools of GUARDED_TOOLS that yokoten's user guard does not run on: an older install
+ * wrote it for Bash alone, and only `install` moves it (#1100). Empty with no guard, or with
+ * a guard on all of them (`*` or an empty matcher runs on every tool). Read-only.
+ */
+export function userGuardMisses(env: Env): string[] {
+  if (userDirOf(env) === null) return [];
+  const table = readTable(userSettings(env), ['PreToolUse']);
+  if ('problem' in table) return [];
+  const ours = (table.settings.hooks?.PreToolUse ?? []).filter((group) => (group.hooks ?? []).some((hook) => runsByPath('hook').test(hook.command ?? '')));
+  if (!ours.length) return [];
+  const covered = new Set(ours.flatMap((group) => (group.matcher ?? '').split('|')));
+  if (covered.has('*') || covered.has('')) return [];
+  return GUARDED_TOOLS.split('|').filter((tool) => !covered.has(tool));
+}
 
 /**
  * Whether Claude Code keeps its user settings here: the file `install` adds its two hooks

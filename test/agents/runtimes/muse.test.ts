@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectHooks, addUserHooks, hasUserDir, isGuardOff, projectHooksState, readToolCall, readTrust, userHooksState, userSettingsFile } from '../../../src/agents/runtimes/muse.ts';
+import { addProjectHooks, addUserHooks, GUARDED_TOOLS, hasUserDir, isGuardOff, projectHooksState, readToolCall, readTrust, userHooksState, userSettingsFile } from '../../../src/agents/runtimes/muse.ts';
 import { CLI, makeSandbox, makeTempDir, runChild } from '../../repo/helpers.ts';
 
 /** Write Muse's trust store in `home`, in the shape Muse Code 1.4.11 writes it (#341). */
@@ -190,7 +190,7 @@ test('muse user hooks (#557): install writes the doctor and the guard in its set
   assert.match(result.stdout, /^added the Muse Code command guard in ~\/\.config\/muse\/settings\.json$/m);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.match(written.hooks.SessionStart[0].hooks[0].command, /doctor --session --agent muse$/);
-  assert.equal(written.hooks.PreToolUse[0].matcher, 'bash');
+  assert.equal(written.hooks.PreToolUse[0].matcher, GUARDED_TOOLS, 'the shell and the edit tools, as the project hook (#1100)');
   assert.match(written.hooks.PreToolUse[0].hooks[0].command, /hook --agent muse --commands-only/);
   assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +muse-user-hook/);
   const explainUser = (await sandbox.call(['explain', 'muse-user-hook'])).stdout.replace(/\s+/g, ' ');

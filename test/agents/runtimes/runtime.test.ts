@@ -9,7 +9,11 @@ import { test } from 'node:test';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { judge } from '../../../src/run/hook.ts';
 import { ADAPTERS, GUIDE_AGENTS, adapterFor, denialOf, rewriteOf, stopReaderOf, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
-import { ROOT } from '../../repo/helpers.ts';
+import { makeSandbox, ROOT } from '../../repo/helpers.ts';
+import * as claudeCode from '../../../src/agents/runtimes/claude-code.ts';
+import * as copilot from '../../../src/agents/copilot.ts';
+import * as grok from '../../../src/agents/runtimes/grok.ts';
+import * as muse from '../../../src/agents/runtimes/muse.ts';
 
 const adapters = Object.values(ADAPTERS);
 const options = { root: null, config: DEFAULTS, env: {}, cwd: '/repo' };
@@ -96,4 +100,77 @@ test('guide: every adapter has a row, and the Works with table is the generated 
   // Positive control: one changed capability must change the table.
   const changed = GUIDE_AGENTS.map((entry) => (entry.label === 'Codex CLI' ? { ...entry, changes: { canRewrite: true } } : entry));
   assert.notEqual(worksWithTable(changed), worksWithTable(), 'the generator ignores a capability; the table is not from the data');
+});
+
+// #1100: a runtime's user guard runs in every session, the project hook only in a repo that
+// loads it. Each runtime's two hooks are written as install and init write them, and the user
+// guard must run on every tool the project hook runs on: one list in the adapter, never one
+// chosen by hand. Then each edit tool, through the user guard: a worker's write into a CI
+// workflow is refused, and the lead's is allowed.
+const GUARD_PAIRS: { name: string; reader: string; install: (repo: string, env: { HOME: string }) => { project: string; user: string } }[] = [
+  {
+    name: 'claude-code',
+    reader: 'claude-code',
+    install: (repo, env) => {
+      claudeCode.addProjectHook(repo, '.yokoten/bin/yokoten.mjs');
+      claudeCode.addUserHooks(env, '/x/yokoten.mjs', 'gone');
+      return { project: join(repo, '.claude', 'settings.json'), user: join(env.HOME, '.claude', 'settings.json') };
+    },
+  },
+  {
+    // Copilot CLI runs the project hook in .claude/settings.json, and its own user guard.
+    name: 'copilot',
+    reader: 'claude-code',
+    install: (repo, env) => {
+      claudeCode.addProjectHook(repo, '.yokoten/bin/yokoten.mjs');
+      copilot.addUserHooks(env, '/x/yokoten.mjs', 'gone');
+      return { project: join(repo, '.claude', 'settings.json'), user: join(env.HOME, '.copilot', 'hooks', 'yokoten.json') };
+    },
+  },
+  {
+    name: 'grok',
+    reader: 'grok',
+    install: (repo, env) => {
+      grok.addProjectHooks(repo, '.yokoten/bin/yokoten.mjs');
+      grok.addUserHooks(env, '/x/yokoten.mjs', 'gone');
+      return { project: join(repo, grok.HOOKS_FILE), user: join(env.HOME, '.grok', 'hooks', 'yokoten.json') };
+    },
+  },
+  {
+    name: 'muse',
+    reader: 'muse',
+    install: (repo, env) => {
+      muse.addProjectHooks(repo, '.yokoten/bin/yokoten.mjs');
+      muse.addUserHooks(env, '/x/yokoten.mjs', 'gone');
+      return { project: join(repo, '.muse', 'hooks.json'), user: join(env.HOME, '.config', 'muse', 'settings.json') };
+    },
+  },
+];
+
+test('user guard: every runtime runs it on each tool its project hook guards, and it keeps a worker out of CI files (#1100)', async () => {
+  for (const { name, reader, install } of GUARD_PAIRS) {
+    const sandbox = makeSandbox();
+    const files = install(sandbox.repo, { HOME: sandbox.home });
+    const guardOf = (file: string) => (JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse as { matcher?: string; hooks: { command: string }[] }[]).find((group) => group.hooks.some((hook) => / hook\b/.test(hook.command)));
+    const project = guardOf(files.project)?.matcher?.split('|') ?? [];
+    const user = guardOf(files.user);
+    assert.ok(project.length > 0 && user, `${name}: both guards are written`);
+    // The cause: a tool the project hook guards that the user guard skips.
+    assert.deepEqual(project.filter((tool) => !user.matcher?.split('|').includes(tool)), [], `${name}: the user guard skips a tool its project hook guards`);
+    const args = /\/x\/yokoten\.mjs (hook [^;]*?) 2>&1/.exec(user.hooks[0].command)?.[1].split(' ');
+    assert.ok(args, user.hooks[0].command);
+    const file = join(sandbox.repo, '.github', 'workflows', 'x.yml');
+    const adapter = ADAPTERS[reader];
+    const edits = project.filter((tool) => adapter.readToolCall({ cwd: sandbox.repo, tool_name: tool, tool_input: { file_path: file, path: file, notebook_path: file } }).paths.length > 0);
+    assert.ok(edits.length > 0, `${name}: the project hook guards no edit tool`);
+    for (const tool of edits) {
+      for (const worker of [true, false]) {
+        const input = JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: { file_path: file, path: file, notebook_path: file, content: 'x' } });
+        const result = await sandbox.call(args, { input, extra: worker ? { YOKOTEN_ROLE: 'worker' } : {} });
+        const refused = result.status === 2 || /"(?:permissionDecision|decision)":"deny"/.test(result.stdout);
+        assert.equal(refused, worker, `${name} user guard, ${worker ? 'worker' : 'lead'} ${tool}: ${result.stdout}${result.stderr}`);
+        if (worker) assert.match(result.stderr + result.stdout, /lead-only/, `${name} ${tool}`);
+      }
+    }
+  }
 });

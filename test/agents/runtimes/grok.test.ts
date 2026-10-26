@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { addProjectHooks, addProjectSandbox, addUserHooks, EDIT_TOOLS, projectHooksState, readStop, readToolCall, readTrust, sandboxProblem, userHooksState } from '../../../src/agents/runtimes/grok.ts';
+import { addProjectHooks, addProjectSandbox, addUserHooks, EDIT_TOOLS, GUARDED_TOOLS, projectHooksState, readStop, readToolCall, readTrust, sandboxProblem, userHooksState } from '../../../src/agents/runtimes/grok.ts';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 
 // The events Grok CLI 1.0.52 sent its hooks in the real run of #407 (2026-10-20), as
@@ -332,7 +332,7 @@ test('grok user hook: install writes the command guard in ~/.grok/hooks only whe
   result = await sandbox.call(['install', '--list']);
   assert.match(result.stdout, /^added the Grok CLI command guard in ~\/\.grok\/hooks\/yokoten\.json$/m);
   const written = JSON.parse(readFileSync(file, 'utf8'));
-  assert.equal(written.hooks.PreToolUse[0].matcher, 'Bash');
+  assert.equal(written.hooks.PreToolUse[0].matcher, GUARDED_TOOLS, 'the shell and every edit tool, as the project hook (#1100)');
   assert.equal(written.hooks.PreToolUse[0].hooks[0].timeout, 60);
   assert.match(written.hooks.PreToolUse[0].hooks[0].command, /hook --agent grok --commands-only/);
   assert.equal(written.hooks.SessionStart, undefined, 'Grok shows a session-start hook only to the user');

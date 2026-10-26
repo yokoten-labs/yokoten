@@ -27,7 +27,8 @@ import type { AgentAdapter } from './runtime.ts';
 // bash takes `command` and `workdir`; the edit tools take `path`.
 const SHELL = 'bash';
 const EDITS = new Set(['write_file', 'edit_file', 'apply_patch']);
-const MATCHER = [SHELL, ...EDITS].join('|');
+/** The tools both guard hooks run on, the project one and the user one: one list (#1100). */
+export const GUARDED_TOOLS = [SHELL, ...EDITS].join('|');
 
 /** A PreToolUse call, as an Action. Any other tool (read_file, read_skill, MCP) is neither. */
 export function readToolCall(input: unknown): Action {
@@ -53,7 +54,7 @@ const projectHooks = (root: string) => join(root, '.muse', 'hooks.json');
 // Muse sets no project-dir variable; the path comes from the git root, as in Codex's hook.
 const at = (cli: string) => `"$(git rev-parse --show-toplevel)/${cli}"`;
 const guardArgs = (root: string, cli: string) =>
-  [projectHooks(root), 'PreToolUse', MATCHER, guardCommand(at(cli), 'hook --agent muse', missingProjectRuntime(cli), { isToolCall: true })] as const;
+  [projectHooks(root), 'PreToolUse', GUARDED_TOOLS, guardCommand(at(cli), 'hook --agent muse', missingProjectRuntime(cli), { isToolCall: true })] as const;
 // Seconds Muse Code waits for a settings hook in `.muse/hooks.json`. Its hooks guide
 // says this `timeout` is seconds (default 600). A plugin hook uses `timeoutMs` instead.
 // Muse Code 1.4.11 keeps the two fields apart. A short value would cut the done-when
@@ -197,12 +198,12 @@ export const userSettingsFile = (env: Env): string => configHomeShown(env, 'muse
 /** The two user hooks, as `addHook`'s arguments: one builder for `addUserHooks` and `userHooksState`. */
 const userHookArgs = (env: Env, cli: string, missing: string): Record<'doctor' | 'guard', HookArgs> => ({
   doctor: [userSettings(env), 'SessionStart', undefined, guardCommand(cli, 'doctor --session --agent muse', missing, { isSessionStart: true })],
-  guard: [userSettings(env), 'PreToolUse', SHELL, guardCommand(cli, 'hook --agent muse --commands-only', missing, { isToolCall: true })],
+  guard: [userSettings(env), 'PreToolUse', GUARDED_TOOLS, guardCommand(cli, 'hook --agent muse --commands-only', missing, { isToolCall: true })],
 });
 
 /**
- * The user's hooks, in every repo: doctor at session start, and the command guard on
- * shell calls. `missing` is what they say when `cli` is gone. A settings file yokoten
+ * The user's hooks, in every repo: doctor at session start, and the tool-call guard on
+ * the shell and the edit tools, as in the project hook (#1100). `missing` is what they say when `cli` is gone. A settings file yokoten
  * can't edit throws `UnreadableHooksFile` before either hook is written.
  */
 export function addUserHooks(env: Env, cli: string, missing: string): { doctor: Added; guard: Added } {
