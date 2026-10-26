@@ -23,7 +23,7 @@ import {
   dirname,
   join,
 } from 'node:path';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import {
   at,
   CLI,
@@ -50,7 +50,7 @@ import { readTrust as grokTrust } from '../../src/agents/runtimes/grok.ts';
 import { readTrust as codexTrust } from '../../src/agents/runtimes/codex.ts';
 import { readTrust as museTrust } from '../../src/agents/runtimes/muse.ts';
 import { readCodeOwners } from '../../src/host/github/index.ts';
-import { REAL_MACHINE } from '../../src/setup/doctor/machine.ts';
+import { shareGuardMeasure } from '../repo/helpers.ts';
 import { KIT, readWorkflowHashes, render, textHash, VERSION } from '../../src/setup/files.ts';
 
 // The version under test, read from package.json: a release bump must not need test edits.
@@ -74,19 +74,7 @@ import {
   splitFrontMatter,
 } from '../../src/setup/init.ts';
 
-// Full doctor runs the guard once in a child process to measure what a call costs (#461).
-// This file runs doctor in this process over a hundred times, and those children were about
-// half its time on Linux, and more on Windows, where a process starts slowly (#1109). A shared
-// cache: the first doctor measures for real, and the rest reuse that cost, so the report keeps
-// its real lines. The `run` tests start doctor in a child process, which measures on its own.
-const realMeasureGuard = REAL_MACHINE.measureGuard;
-before(() => {
-  let cached: { cost: ReturnType<NonNullable<typeof realMeasureGuard>> } | undefined;
-  REAL_MACHINE.measureGuard = (cli, root, env) => (cached ??= { cost: realMeasureGuard?.(cli, root, env) ?? null }).cost;
-});
-after(() => {
-  REAL_MACHINE.measureGuard = realMeasureGuard;
-});
+shareGuardMeasure();
 
 const guarded = (path: string, args: string) => `[ -f ${path} ] 2>/dev/null || { echo '${MISSING_PROJECT}' >&2; exit 1; }; node ${path} ${args}`;
 

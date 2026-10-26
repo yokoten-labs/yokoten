@@ -34,6 +34,7 @@ import { fileURLToPath } from 'node:url';
 import {
   after,
   afterEach,
+  before,
   beforeEach,
 } from 'node:test';
 import { templateRepo } from './git-template.ts';
@@ -53,6 +54,7 @@ import {
 import { checkCommand } from '../../src/rules/guards/index.ts';
 import type { MachineProbe } from '../../src/setup/doctor/machine.ts';
 import { lineHash } from '../../src/host/sigstore/record.ts';
+import { REAL_MACHINE } from '../../src/setup/doctor/machine.ts';
 
 export const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'yokoten.ts');
 
@@ -714,3 +716,19 @@ export const yokotenSandbox = () => {
   return sandbox;
 };
 
+// One real guard measure per test file (#461, #1109). Full doctor runs the guard once in a
+// child process to measure what a call costs; a file that runs doctor in-process a hundred
+// times started a hundred children, slow on Windows. The first doctor measures for real and
+// the rest of the file reuse that cost, so reports keep their real lines.
+// test/host/light.test.ts and test/setup/doctor/machine.test.ts test the measure itself.
+/** Call once at the top of a test file: its in-process doctor runs share one guard measure. */
+export function shareGuardMeasure(): void {
+  const realMeasureGuard = REAL_MACHINE.measureGuard;
+  before(() => {
+    let cached: { cost: ReturnType<NonNullable<typeof realMeasureGuard>> } | undefined;
+    REAL_MACHINE.measureGuard = (cli, root, env) => (cached ??= { cost: realMeasureGuard?.(cli, root, env) ?? null }).cost;
+  });
+  after(() => {
+    REAL_MACHINE.measureGuard = realMeasureGuard;
+  });
+}

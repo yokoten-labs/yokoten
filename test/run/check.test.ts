@@ -20,6 +20,7 @@ import {
   join,
 } from 'node:path';
 import { test } from 'node:test';
+import { shareGuardMeasure } from '../repo/helpers.ts';
 import {
   at,
   CLI,
@@ -56,6 +57,8 @@ import {
   syncPull,
   withGitReads,
 } from '../../src/run/check.ts';
+
+shareGuardMeasure();
 
 /** The screen as one line of words: rows wrap at 80 columns (#1027), and a match reads the words. */
 const flat = (text: string): string => text.replace(/\s+/g, ' ');
