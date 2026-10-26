@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { approvalLine, buildMessages, decideReview, MAX_DIFF_CHARS, parseVerdict, reviewFor } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, MAX_ANSWER_TOKENS, MAX_DIFF_CHARS, parseVerdict, reviewFor } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -685,4 +685,22 @@ test('review: the workflow runs the base reviewer from main with the App token a
   assert.match(code, /^ {10}DEEPSEEK_API_KEY: \$\{\{ secrets\.DEEPSEEK_API_KEY \}\}$/m);
   const owners = readFileSync(join(ROOT, '.github/CODEOWNERS'), 'utf8');
   for (const path of ['/.github/workflows/', '/.github/review/']) assert.match(owners, new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, (mark) => `\\${mark}`)} @`, 'm'), `CODEOWNERS owns ${path}`);
+});
+
+test('review: an unfinished DeepSeek answer names why, and an API error says what it said (#1088)', () => {
+  const answer = (finish_reason: unknown, content: unknown = '{}') => ({ choices: [{ finish_reason, message: { content } }] });
+  assert.equal(answerOf(answer('stop', '{"verdict":"APPROVE"}')), '{"verdict":"APPROVE"}');
+  const cases: [unknown, RegExp][] = [
+    [answer('length'), new RegExp(`finish_reason: length, cut off at ${MAX_ANSWER_TOKENS} tokens`)],
+    [answer('content_filter'), /finish_reason: content_filter\)/],
+    [answer('stop', null), /finish_reason: stop\)/],
+    [answer('<b>@x</b>'), /finish_reason: none\)/],
+    [{ choices: [] }, /finish_reason: none\)/],
+    [null, /finish_reason: none\)/],
+  ];
+  for (const [data, reason] of cases) assert.throws(() => answerOf(data), reason);
+  assert.equal(apiErrorOf({ error: { message: 'Model Not Exist' } }), ': Model Not Exist');
+  assert.equal(apiErrorOf({ error: { message: '<!-- @owner --> `x`' } }), ': -- owner -- x');
+  assert.equal(apiErrorOf({ error: { message: 'a'.repeat(500) } }).length, 202);
+  for (const data of [null, {}, { error: 'flat' }, { error: { message: 42 } }, { error: { message: '<>' } }]) assert.equal(apiErrorOf(data), '');
 });
