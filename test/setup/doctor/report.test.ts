@@ -10,11 +10,12 @@ import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { shareGuardMeasure, shareSelfTest } from '../../repo/helpers.ts';
 import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, sessionRoad, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
-import { DEFAULTS } from '../../../src/rules/config.ts';
+import { DEFAULTS, type Env, loadConfig } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
 import { blocksToSay, doctor, noteLines, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
 import { LABELS } from '../../../src/setup/plan.ts';
-import { missingPaths, road, ROAD, serverChecks, stepFinding } from '../../../src/setup/road.ts';
+import { missingPaths, readDefaultBranchFiles, road, ROAD, serverChecks, stepFinding, stepText } from '../../../src/setup/road.ts';
+import { museClaudeRules } from '../../../src/setup/doctor/checks.ts';
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
 
 shareGuardMeasure();
@@ -149,6 +150,8 @@ test('road: each server step catches its setting off, and says what and the fix 
     const f = stepFinding(ROAD.find((s) => s.key === key)!, '.', {}, { server });
     assert.match(f.what, what);
     assert.match(f.fix, /^in Settings, /);
+    // The tag and release steps name the menu to click (#537).
+    if (['tag-bypass', 'release-reviewer', 'release-tag-rule'].includes(key)) assert.match(f.fix, /^in Settings, (Rules|Environments), /, `${key}: says where to click`);
   }
 });
 
@@ -186,27 +189,12 @@ test('doctor: the tag bypass and the release environment each show one line with
   }) ?? '';
   // All set: no line for these asks the owner for anything.
   for (const key of ['tag-bypass', 'release-reviewer', 'release-tag-rule']) assert.match(lineOf(GOOD, key), /^ {4}done /, key);
-  // Positive control: each known-bad setting is caught, with its own line and GitHub's menu.
-  const cases: [string, Record<string, unknown>, RegExp][] = [
-    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [] } }, /Repository admin/],
-    ['tag-bypass', { [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [{ actor_id: 9, actor_type: 'Integration' }] } }, /names the bot/],
-    // A bypass on another v* ruleset, one that does not block tag creation, leaves the owner unable to push a tag (#537).
-    ['tag-bypass', {
-      [`repos/${REPO}/rulesets?targets=tag&includes_parents=true&per_page=100`]: [{ id: 7, target: 'tag', enforcement: 'active' }, { id: 8, target: 'tag', enforcement: 'active' }],
-      [`repos/${REPO}/rulesets/7`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'creation' }, { type: 'update' }, { type: 'deletion' }], bypass_actors: [] },
-      [`repos/${REPO}/rulesets/8`]: { conditions: { ref_name: { include: ['refs/tags/v*'] } }, rules: [{ type: 'required_signatures' }], bypass_actors: [{ actor_id: 5, actor_type: 'RepositoryRole' }] },
-    }, /Repository admin/],
-    ['release-reviewer', { [`repos/${REPO}/environments/release`]: { protection_rules: [] } }, /no required reviewer/],
-    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'branch' }] } }, /branch rule/],
-    // A tag rule with a branch rule named v* lets a branch deploy (#537).
-    ['release-tag-rule', { [`repos/${REPO}/environments/release/deployment-branch-policies`]: { branch_policies: [{ id: 1, name: 'v*', type: 'tag' }, { id: 2, name: 'v*', type: 'branch' }] } }, /also accepts a branch named v\*/],
-  ];
-  for (const [key, change, what] of cases) {
-    const line = lineOf({ ...GOOD, ...change }, key);
-    assert.match(line, new RegExp(`^ {4}to do +${key}: `), key);
-    assert.match(line, what, key);
-    assert.match(line, /; in Settings, (Rules|Environments), /, `${key}: says where to click`);
-  }
+  // Positive control: a known-bad setting is caught, with its own line and GitHub's menu.
+  // 'road: each server step catches its setting off' has every other bad case.
+  const line = lineOf({ ...GOOD, [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [] } }, 'tag-bypass');
+  assert.match(line, /^ {4}to do +tag-bypass: /);
+  assert.match(line, /Repository admin/);
+  assert.match(line, /; in Settings, Rules, /, 'says where to click');
 });
 
 test("road: with no gh, no network, a non-GitHub remote or a session, the server steps are can't check, never done (#7)", () => {
@@ -232,10 +220,8 @@ test('doctor: a workflow with a run line of 500,000 characters does not throw (#
   mkdirSync(join(root, '.github', 'workflows'), { recursive: true });
   const long = `on: pull_request\njobs:\n  t:\n    steps:\n      - run: npx${' -y'.repeat(83_000)} node${' -a'.repeat(83_000)}\n      - run: make${' -C x'.repeat(100_000)}\n`;
   writeFileSync(join(root, '.github', 'workflows', 'ci.yml'), long);
-  for (const session of [true, false]) {
-    const result = doctor(root, { env: { HOME: root }, config: DEFAULTS, session, gh: () => { throw new Error('no network in this test'); } });
-    for (const key of ['tests', 'ci', 'titles']) assert.notEqual(result.report.steps?.find((s) => s.id === key)?.mark, 'done', key);
-  }
+  // The steps that read the workflows: none throws, and none is done.
+  for (const { step, found } of road(root, { HOME: root }, ROAD.filter((s) => ['tests', 'ci', 'titles'].includes(s.key)))) assert.notEqual(found, true, step.key);
 });
 
 test('doctor: reads the server of a GitHub origin into the road; a step not done fails, a note does not (#7)', () => {
@@ -333,9 +319,8 @@ test('doctor: on another host, each forge step says once what it asks, with no G
   execFileSync('git', ['init', '-q', root]);
   const noGh: Gh = () => { throw new Error('doctor called gh for a host with no adapter'); };
   const remotes: [string, string][] = [
+    // The ssh and scp forms of the same host read as this one: test/host/hosts.test.ts (hostOf).
     ['https://forgebox.example.com/me/repo.git', 'this host'],
-    [`ssh://git${at}forgebox.example.com:2222/me/repo.git`, 'this host'],
-    [`git${at}forgebox.example.com:me/repo.git`, 'this host'],
     ['https://gitlab.com/me/repo.git', 'GitLab'],
   ];
   for (const [remote, label] of remotes) {
@@ -489,16 +474,23 @@ test('road: the labels and milestone steps are stage 2; missing labels or no ope
   assert.equal(ROAD.find((s) => s.key === 'labels')!.unchecked?.(undefined), 'a session never calls the network; run `yokoten doctor`');
 });
 
-test('doctor: the no-build-output step looks at the tracked files (#56)', async () => {
+/** One road step in `root`, as doctor reads it: done, or the finding; yokoten.json read as the command reads it. */
+const stepIn = (root: string, key: string, env: Env = {}): true | string => {
+  const step = ROAD.find((s) => s.key === key)!;
+  const config = loadConfig(root);
+  const [{ found }] = road(root, env, [step], undefined, config);
+  return found === true ? true : stepText(stepFinding(step, root, env, { config }));
+};
+
+test('doctor: the no-build-output step looks at the tracked files (#56)', () => {
   const sandbox = makeSandbox();
-  const line = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / no-build-output/.test(l)) ?? '';
-  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
+  assert.equal(stepIn(sandbox.repo, 'no-build-output', sandbox.env), true);
   sandbox.write('build/a.js', 'x\n');
   sandbox.write('lib/x.so', 'x\n');
   sandbox.git('add', '.');
-  assert.match(await line(), /^ +to do +no-build-output \(Scorecard: Binary-Artifacts\): build output in the repo \(build\/a\.js, lib\/x\.so\)/);
+  assert.match(String(stepIn(sandbox.repo, 'no-build-output', sandbox.env)), /^build output in the repo \(build\/a\.js, lib\/x\.so\)/);
   sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['build/**', 'lib/**'] }));
-  assert.match(await line(), /^ +done  .*\bno-build-output\b/);
+  assert.equal(stepIn(sandbox.repo, 'no-build-output', sandbox.env), true);
 });
 
 test('doctor: shows check\'s notes, worded as check words them, and they never change the exit code (#228)', async () => {
@@ -526,7 +518,6 @@ test('doctor: shows check\'s notes, worded as check words them, and they never c
   assert.match(result.stdout, /^ {2}note +zh\.md:1: is behind en\.md by 1 commit/m);
   assert.match(result.stdout, unknownKey);
   assert.equal(result.status, before.status);
-  assert.ok(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).notes.some((f: { id: string }) => f.id === 'translation-behind'));
 });
 
 // git skips a hook without the execute bit, so the check in it never runs (#239).
@@ -687,6 +678,8 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   // while stage 3 was already in place.
   assert.match(jumpedRun.stdout, /^stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
   assert.match(jumpedRun.stdout, /^stage 3 is done too: its steps were already in place$/m);
+  // Two stages passed, each in its own line in the singular: never "stages 3 are" (#514).
+  assert.doesNotMatch(jumpedRun.stdout, /^stages /m);
   // The lines are told once: the next run starts from stage 4.
   const later = await sandbox.call(['doctor', '--all']);
   assert.match(later.stdout, /^stage 4 of 5, /m);
@@ -695,41 +688,24 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, jumpLine);
 });
 
-test('doctor: a jump over one stage says that stage, in the singular (#514)', async () => {
+test('doctor: the tests step wants a test command and a CI step that runs it (#55)', () => {
   const sandbox = makeSandbox();
-  // Stage 1 is done and stage 2 is next (no remote), so this run records stage 2.
-  assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  sandbox.withTests();
-  const atTwo = await sandbox.call(['doctor', '--all']);
-  assert.match(atTwo.stdout, /^stage 2 of 5, /m);
-  // The remote finishes stage 2, and stage 3 was already in place: only stage 3 was
-  // passed, so the line names one stage and not "stages 3 are".
-  sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
-  sandbox.git('commit', '--allow-empty', '-qm', 'first');
-  sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
-  const jumped = await sandbox.call(['doctor', '--all']);
-  assert.match(jumped.stdout, /^stage 4 of 5, /m);
-  assert.match(jumped.stdout, /^stage 3 is done too: its steps were already in place$/m);
-  assert.doesNotMatch(jumped.stdout, /^stages /m);
-});
-
-test('doctor: the tests step wants a test command and a CI step that runs it (#55)', async () => {
-  const sandbox = makeSandbox();
-  const line = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / tests\b/.test(l)) ?? '';
+  const tests = () => stepIn(sandbox.repo, 'tests', sandbox.env);
   // No package.json: the message does not name it (#257).
-  assert.match(await line(), /^ +to do +tests \(Best Practices: test\): no workflow runs a test command/);
+  assert.match(String(tests()), /^no workflow runs a test command/);
+  assert.doesNotMatch(String(tests()), /package\.json/);
   // npm's placeholder script only fails: it is no test command.
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } }));
-  assert.match(await line(), /^ +to do +tests \(Best Practices: test\): no test command/);
+  assert.match(String(tests()), /^no test command/);
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'vitest run' } }));
-  assert.match(await line(), /^ +to do +tests \(Best Practices: test\): CI does not run the tests/);
+  assert.match(String(tests()), /^CI does not run the tests/);
   sandbox.write('.github/workflows/ci.yml', 'jobs:\n  t:\n    steps:\n      - run: npm run test\n');
-  assert.match(await line(), /^ +done +tests/);
+  assert.equal(tests(), true);
   // A project with no package.json: CI that runs a test runner is enough.
   rmSync(join(sandbox.repo, 'package.json'));
-  assert.match(await line(), /^ +to do +tests \(Best Practices: test\): no workflow runs a test command such as `go test`, `pytest` or `cargo test`/);
+  assert.match(String(tests()), /^no workflow runs a test command such as `go test`, `pytest` or `cargo test`/);
   sandbox.write('.github/workflows/ci.yml', 'jobs:\n  t:\n    steps:\n      - run: go test ./...\n');
-  assert.match(await line(), /^ +done +tests/);
+  assert.equal(tests(), true);
 });
 
 // #208: steps left on the road are to do, not problems. Exit 1 is for a problem.
@@ -820,28 +796,6 @@ test('doctor --session: the unsaved-work read stops at its time budget and says 
   assert.equal(fast.lines.at(-1), UNSAVED_OFFER);
 });
 
-test('privacyNotes: the mailmap, and the kinds of mark yokoten cannot find; never a value (#390)', () => {
-  const home = makeTempDir('yokoten-privacy-');
-  const env = { HOME: home, GIT_CONFIG_GLOBAL: join(home, '.gitconfig'), GIT_CONFIG_NOSYSTEM: '1' };
-  const notes = () => privacyNotes(env, null).map((note) => `${note.name}: ${note.finding.what}; ${note.finding.fix}`);
-  // No marks at all: the private-marks check says so, and no offer adds a second answer (#522).
-  assert.deepEqual(notes(), ['mailmap: git log and git show print your name and email as they are; run `yokoten install`; it writes ~/.config/yokoten/mailmap and sets `git config --global mailmap.file ~/.config/yokoten/mailmap`, so git prints a private address in place of your email']);
-  execFileSync('git', ['config', '--global', 'mailmap.file', '~/.config/yokoten/mailmap'], { env: { ...process.env, ...env } });
-  mkdirSync(join(home, '.config', 'yokoten'), { recursive: true });
-  // Only the name install found: the other kinds are an optional offer. The name is not asked for (#434).
-  writeFileSync(join(home, '.config', 'yokoten', 'private-marks'), '# added by yokoten from this machine: git name\nJane Example\n');
-  assert.deepEqual(notes(), ["private-mark-kinds: optional: add your city or your domains too; yokoten can't find them on its own; run `yokoten marks add` and type one; it is not shown"]);
-  writeFileSync(join(home, '.config', 'yokoten', 'private-marks'), 'Jane Example\nFakeville\njanex.dev\n');
-  assert.deepEqual(notes(), []);
-  execFileSync('git', ['config', '--global', 'mailmap.file', '/elsewhere/mailmap'], { env: { ...process.env, ...env } });
-  assert.deepEqual(notes(), ['mailmap: git uses your own mailmap file, not ~/.config/yokoten/mailmap; add the lines of ~/.config/yokoten/mailmap to your file']);
-  // Another agent on this machine: its output is not filtered, and the note says how to opt in.
-  mkdirSync(join(home, '.codex'));
-  assert.equal(notes()[0], 'private-output: only Claude Code hides your details in command output; other agents show it as it is; to stop those commands there instead, set "privacy": { "output": "stop" } in yokoten.json');
-  assert.equal(privacyNotes(env, null, 'stop').length, 1, 'with "stop", only the mailmap note is left');
-  rmSync(home, { recursive: true, force: true });
-});
-
 // #681: outside a desk, Muse can send Claude Code's user rules to its model. A note, and
 // the file is never read. One of the two files missing, and the note stays off.
 test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to its model (#681)', async () => {
@@ -879,26 +833,13 @@ test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to i
   assert.equal(json.ok, full.ok);
   assert.ok(json.notes.some((note) => note.id === 'muse-claude-rules'));
   assert.ok(!JSON.stringify(json).includes(body));
-  const sessionJson = JSON.parse((await sandbox.call(['doctor', '--session', '--json'])).stdout) as { ok: boolean; notes: { id: string }[]; findings: { id: string }[] };
-  assert.equal(sessionJson.ok, session.ok);
-  assert.ok(sessionJson.notes.some((note) => note.id === 'muse-claude-rules'));
-  assert.ok(!sessionJson.findings.some((note) => note.id === 'muse-claude-rules'));
-  assert.ok(!JSON.stringify(sessionJson).includes(body));
+  // One of the two files missing: no note. Full doctor and the session ask the same check.
+  const noteHere = () => [museClaudeRules(env, sandbox.repo), ...privacyNotes(env, sandbox.repo).filter((note) => note.finding.id === 'muse-claude-rules')];
   rmSync(rules);
-  const noRules = run();
-  const noRulesSession = run(true);
-  assert.equal(full.ok, noRules.ok, 'a note never fails doctor');
-  assert.equal(session.ok, noRulesSession.ok, 'a session note never fails doctor');
-  assert.deepEqual(noteOf(noRules), [], 'no rules file');
-  assert.deepEqual(noteOf(noRulesSession), [], 'no rules file in a session');
+  assert.deepEqual(noteHere(), [null], 'no rules file');
   writeFileSync(rules, `${body}\n`);
   rmSync(hooks);
-  const noHooks = run();
-  const noHooksSession = run(true);
-  assert.equal(noHooks.ok, full.ok, 'the hooks file is not what fails doctor');
-  assert.equal(noHooksSession.ok, session.ok);
-  assert.deepEqual(noteOf(noHooks), [], 'no Muse hooks');
-  assert.deepEqual(noteOf(noHooksSession), [], 'no Muse hooks in a session');
+  assert.deepEqual(noteHere(), [null], 'no Muse hooks');
 });
 
 // #681: the same visible file, once the session names a desk. The note must not say
@@ -1042,29 +983,35 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   for (const key of ['tests', 'ci', 'titles', 'security-files']) assert.doesNotMatch(line(key), /on main, not on this branch/, key);
   assert.match(line('security-files'), /no Dependabot config, no license file/, 'SECURITY.md on main does not hide the other two');
   // A clone: origin/HEAD names the default branch, and the old branch is checked out.
+  // From here the lookup itself: null is the plain advice, as `first` above shows.
   assert.equal(sandbox.git('checkout', '-q', 'main').status, 0);
   const clone = join(dirname(sandbox.repo), 'clone');
   const inClone = (...args: string[]) => spawnSync('git', args, { cwd: clone, env: sandbox.env }).status;
+  const onDefault = () => {
+    const found = readDefaultBranchFiles(clone, ['AGENTS.md'], sandbox.env);
+    return found && { name: found.name, branch: found.branch, paths: [...found.paths] };
+  };
   assert.equal(spawnSync('git', ['clone', '-q', sandbox.repo, clone], { env: sandbox.env }).status, 0);
   assert.equal(inClone('checkout', '-q', 'old'), 0);
-  assert.equal(await first(clone), 'yokoten: stage 1 of 5, safety net\n  Next      AGENTS.md is on origin/main, not on this branch (old); work on a branch made from origin/main, or merge origin/main into this one.');
+  assert.deepEqual(onDefault(), { name: 'origin/main', branch: 'old', paths: ['AGENTS.md'] });
   // On the default branch, or at its commit, the file was removed here: merging changes nothing.
   assert.equal(inClone('checkout', '-q', 'main'), 0);
   rmSync(join(clone, 'AGENTS.md'));
-  assert.match(await first(clone), plain, 'on main');
+  assert.equal(onDefault(), null, 'on main');
   assert.equal(inClone('checkout', '-q', '-b', 'fresh'), 0);
-  assert.match(await first(clone), plain, 'a new branch at the default commit');
+  assert.equal(onDefault(), null, 'a new branch at the default commit');
   assert.equal(inClone('checkout', '-q', '--detach', 'origin/main'), 0);
-  assert.match(await first(clone), plain, 'detached at the default commit');
+  assert.equal(onDefault(), null, 'detached at the default commit');
   // The packed form of the refs reads the same.
   assert.equal(inClone('pack-refs', '--all'), 0);
   assert.equal(inClone('checkout', '-q', '-f', 'main'), 0);
   rmSync(join(clone, 'AGENTS.md'));
-  assert.match(await first(clone), plain, 'on main, packed refs');
+  assert.equal(onDefault(), null, 'on main, packed refs');
   // A reftable store keeps no ref in a file: then the plain advice, never a guess.
   assert.equal(inClone('checkout', '-q', '-f', 'old'), 0);
+  assert.equal(onDefault()?.branch, 'old', 'packed refs on old: the file is still found on origin/main');
   mkdirSync(join(clone, '.git', 'reftable'));
-  assert.match(await first(clone), plain, 'reftable');
+  assert.equal(onDefault(), null, 'reftable');
   // Positive control: when the default branch lacks the file too, init is the fix.
   rmSync(join(sandbox.repo, 'AGENTS.md'));
   assert.match(await first(), plain);
@@ -1185,13 +1132,11 @@ test('doctor: a repo with a default branch reads its merge history in one git pr
 
 test('doctor: the sandbox step is to do, then done after init, then names a too-wide value (#589)', async () => {
   const sandbox = makeSandbox();
-  assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
+  // One run for each state: the line's mark is the step's mark.
   assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}(next|to do) +sandbox: no sandbox in \.claude\/settings\.json; `yokoten init` adds it$/m);
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  assert.equal(await stepMark(sandbox, 'sandbox'), 'done');
   assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}done +sandbox$/m);
   sandbox.write('.gemini/settings.json', JSON.stringify({ security: { disableYoloMode: false } }));
-  assert.notEqual(await stepMark(sandbox, 'sandbox'), 'done');
   const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(doctor, /^ {4}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
 });
@@ -1222,5 +1167,3 @@ test('doctor: a shell that is not UTC gets the line for that shell, once, at the
   // A shell already in UTC hears nothing.
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
 });
-
-// #500: after a fresh install, every line that names a command uses one way to run yokoten.

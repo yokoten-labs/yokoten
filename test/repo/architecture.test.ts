@@ -1769,7 +1769,7 @@ const WINDOWS_BRANCHES: [string, number][] = [
   ['run/check.test.ts', 1],
   ['run/hook.test.ts', 14],
   ['run/notes/translations.test.ts', 1],
-  ['setup/doctor/checks.test.ts', 3],
+  ['setup/doctor/checks.test.ts', 2],
   ['setup/doctor/machine.test.ts', 1],
   ['setup/doctor/report.test.ts', 2],
   ['setup/init.test.ts', 5],
