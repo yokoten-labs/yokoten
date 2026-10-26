@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, decideReview, filesOf, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -842,4 +842,30 @@ test('requestBody: the effort and the answer cap are set, never left to the API 
   assert.equal(body.model, 'deepseek-flash');
   assert.deepEqual(body.response_format, { type: 'json_object' });
   assert.equal(body.stream, false);
+});
+
+test('review: an answer cut off at the token cap is asked once more as halves (PR #1118)', async () => {
+  const diff = ['a', 'b'].map((name) => `diff --git a/${name}.ts b/${name}.ts\n--- a/${name}.ts\n+++ b/${name}.ts\n@@ -1 +1 @@\n-x\n+${'y'.repeat(200)}\n`).join('');
+  const cut = () => { throw new CutOff('the DeepSeek API gave no finished answer (finish_reason: length, cut off at 65536 tokens)'); };
+  const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'No.', findings: [{ severity: 'high', text: 'b.ts: wrong' }] });
+  const run = async (answers: (() => string)[]) => {
+    let calls = 0;
+    const review = await decideReview({ body: 'b', diff, model: MODEL, askModel: async () => (answers[calls++] ?? cut)() });
+    return { review, calls };
+  };
+  // Cut, then both halves approve: one approval, three calls.
+  const healed = await run([cut, () => approve, () => approve]);
+  assert.equal(healed.review.event, 'APPROVE');
+  assert.equal(healed.calls, 3);
+  // A half asks for changes: the part asks for them.
+  assert.equal((await run([cut, () => approve, () => no])).review.event, 'REQUEST_CHANGES');
+  // A half cut again: a comment naming the cut, never an approval; no third try.
+  const twice = await run([cut, () => approve, cut]);
+  assert.equal(twice.review.event, 'COMMENT');
+  assert.match(twice.review.body, /finish_reason: length/);
+  assert.equal(twice.calls, 3);
+  // Another error is not retried.
+  const other = await run([() => { throw new Error('the DeepSeek API answered HTTP 500'); }]);
+  assert.equal(other.review.event, 'COMMENT');
+  assert.equal(other.calls, 1);
 });

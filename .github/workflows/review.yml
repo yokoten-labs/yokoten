@@ -22,7 +22,7 @@ jobs:
     # A draft waits for ready_for_review.
     if: ${{ github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     # The owner limits this environment to the main branch; its secrets live only here.
     environment: reviewer
     # The job token only reads. The App token posts the review.
