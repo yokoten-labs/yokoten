@@ -85,15 +85,11 @@ export function boardHostName(root: string): string {
   return label || 'board';
 }
 
-/**
- * The first port this repo asks for: a stable hash of its real path, in a high range. The
- * system's real path (`realpathSync.native`): on Windows a short 8.3 folder name, such as
- * a CI runner's TEMP, and its long name are one folder, so they share a port and a link file.
- */
+/** The first port this repo asks for: a stable hash of its real path, in a high range. */
 export function boardPort(root: string): number {
   let path = root;
   try {
-    path = realpathSync.native(root);
+    path = realpathSync(root);
   } catch {
     // The folder is not there yet: hash the path as given.
   }
