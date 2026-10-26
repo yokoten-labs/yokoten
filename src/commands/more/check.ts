@@ -311,7 +311,7 @@ async function runMode(invocation: Invocation, mode: string, root: string, confi
       }
       problems = checkPullRequest(pr, config);
       // Provenance (#756): the line names each desk that worked on the branch, and a
-      // reviewer comes from another vendor. Only status files here can say what ran.
+      // reviewer is another model (record 0045). Only status files here can say what ran.
       problems.push(...provenanceFindings(parseMadeWith(pr.body)?.roles ?? null, readBranchDesks(root, env, pr.branch)));
       // Each change file the pull request leaves (#132) must be one `yokoten changelog` can read.
       for (const file of pr.files.filter(isChangeFile)) {

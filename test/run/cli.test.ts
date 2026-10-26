@@ -827,3 +827,52 @@ test('help: a moved command still runs, and its first line says where it went (#
   // The line is for a person: the session-start hook and JSON for a script go without it.
   for (const words of [['doctor', '--session'], ['doctor', '--json']]) assert.doesNotMatch((await sandbox.call(words)).stderr, /^note: /m, words.join(' '));
 });
+
+// #1053: --help or -h anywhere in the words only prints help. Nothing is written, and no
+// child process starts: the real entry runs with git, gh and friends replaced by logging shims.
+test('help: --help at any position only prints: exit 0, same file tree, no child process (#1053)', async () => {
+  const sandbox = makeSandbox();
+  const shims = join(makeTempDir(), 'shims');
+  const log = join(shims, 'calls.log');
+  mkdirSync(shims);
+  for (const tool of ['git', 'gh', 'npm', 'npx', 'curl', 'ssh']) {
+    writeFileSync(join(shims, tool), `#!/bin/sh\necho "${tool} $*" >> "${log}"\nexit 1\n`, { mode: 0o755 });
+  }
+  const env = { ...sandbox.env, PATH: `${shims}:${sandbox.env.PATH ?? ''}` };
+  const tree = () => [...readdirSync(sandbox.repo, { recursive: true }).sort(), ...readdirSync(sandbox.home, { recursive: true }).sort()];
+  const start = tree();
+  const spawned = (words: string[]) => spawnSync(process.execPath, [CLI, ...words], { cwd: sandbox.repo, env, input: '', encoding: 'utf8' });
+  const entries: string[][] = [];
+  for (const command of COMMANDS) {
+    for (const rest of [['--help'], ['-h'], ['extra', '--help'], ['--help', 'extra'], ['extra', '-h', 'more']]) {
+      const words = [command.name, ...rest];
+      const r = await invoke(words, { env: sandbox.env, cwd: sandbox.repo });
+      assert.deepEqual([r.code, r.stderr], [0, ''], words.join(' '));
+      assert.match(r.stdout, /^Usage: yokoten /, words.join(' '));
+    }
+    entries.push([command.name, '--help'], [command.name, 'extra', '-h']);
+  }
+  // bot and desk pass the words after -- on, so only the words before it ask for help.
+  for (const name of ['bot', 'desk']) entries.push([name, '--help', '--', 'gh', 'pr', 'list']);
+  // The real entry, in one place: a child per case, each with the shims first on its PATH.
+  for (const words of entries) {
+    const r = spawned(words);
+    assert.equal(r.status, 0, `${words.join(' ')}: ${r.stderr}`);
+    assert.match(r.stdout, new RegExp(`^Usage: yokoten ${words[0]}\\b`), words.join(' '));
+  }
+  assert.equal(existsSync(log), false, 'no child process started');
+  assert.deepEqual(tree(), start, 'the file tree is unchanged');
+});
+
+test('hook and redact started by hand on a terminal print one line and exit 0 (#1053)', async () => {
+  const sandbox = makeSandbox();
+  for (const name of ['hook', 'redact']) {
+    const r = await invoke([name], { env: sandbox.env, cwd: sandbox.repo, isTTY: true });
+    assert.equal(r.code, 0, name);
+    assert.match(r.stdout, new RegExp(`^yokoten ${name} [^\\n]+\\n$`), name);
+    assert.equal(r.stderr, '', name);
+  }
+  // A pipe is not a terminal: redact still works on its input.
+  const piped = await invoke(['redact'], { env: sandbox.env, cwd: sandbox.repo, stdin: 'plain text\n' });
+  assert.equal(piped.stdout, 'plain text\n');
+});

@@ -1,6 +1,7 @@
 # 0021 AI checks AI: no agent writes, reviews and merges its own work
 
 Status: accepted
+Status: replaced in part by 0045 (the reviewer must be another model, not another vendor).
 Date: 2026-10-22 (UTC)
 
 ## Context
