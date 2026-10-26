@@ -413,7 +413,7 @@ The line must name each desk with its vendor and model.
 The same vendor may be spelt two ways, such as `Claude Code` and `claude-code`.
 A desk the line does not name at all is skipped, so an older line is not a finding.
 A run with no status files has nothing to compare, and makes no desk finding.
-A reviewer from the writer's own vendor is a finding (record 0021).
+Reviewers who are all the writer's own model are a finding; one reviewer of another model passes (record 0045).
 The finding id is `pr-provenance`.
 
 `yokoten provenance <ref>` prints one record for a commit, or one for each commit of a range.

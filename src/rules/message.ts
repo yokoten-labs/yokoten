@@ -339,8 +339,8 @@ export const RULES = {
     docs: guide('the-core-rules'),
   },
   'pr-provenance': {
-    rule: 'the Made-with line names each desk that worked on the branch with its vendor and model, and a reviewer comes from another vendor than the writer (core rule 8, record 0021)',
-    why: 'every change is traced to the model that wrote it and another vendor that reviewed it, not by hand',
+    rule: 'the Made-with line names each desk that worked on the branch with its vendor and model, and at least one reviewer is another model than the writer (core rule 8, record 0045)',
+    why: 'every change is traced to the model that wrote it and another model that reviewed it, not by hand',
     check: `${PR_CHECK}, against the desk status files of the branch's worktrees and desks; a run with no status files has nothing to compare, so it is not a finding`,
     docs: guide('the-core-rules'),
   },

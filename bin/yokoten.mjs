@@ -17,6 +17,7 @@
 // bin/yokoten.ts, the name older hooks and the docs use, loads this file.
 import module from 'node:module';
 import { homedir } from 'node:os';
+import { isatty } from 'node:tty';
 import { isAbsolute, join } from 'node:path';
 
 /** The user's cache folder for yokoten, or undefined when there is no home folder. */
@@ -45,5 +46,8 @@ try {
 }
 // A tool-call guard starts its worker first, so the worker starts while the command loads
 // and reads the call: it is the slowest part of the hook (src/run/hook.ts).
-if (process.argv[2] === 'hook' && !process.argv.includes('--stop')) (await import('../src/run/hook.ts')).startGuardEarly();
+// Not for help, and not for a person at a terminal: those only print (#1053).
+const words = process.argv.slice(2);
+const printsOnly = words.some((word) => word === '--help' || word === '-h') || isatty(0);
+if (words[0] === 'hook' && !words.includes('--stop') && !printsOnly) (await import('../src/run/hook.ts')).startGuardEarly();
 await (await import('./main.ts')).runFromProcess();

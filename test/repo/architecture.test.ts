@@ -1643,7 +1643,7 @@ const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/commands/check.test.ts': { cap: 8, reason: 'the entries of two commands, check --pr and redact; redact also runs in a shell pipe and on an 8 MB stream, as its hook runs it' },
   'test/commands/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
-  'test/run/cli.test.ts': { cap: 8, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache and the demo loop' },
+  'test/run/cli.test.ts': { cap: 9, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache, the demo loop and --help through the real entry' },
   'test/setup/init.test.ts': { cap: 12, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
   'test/setup/install.test.ts': { cap: 7, reason: 'it runs the copy that install writes, from its own path, which is other code than this checkout' },
 };
