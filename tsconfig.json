@@ -17,5 +17,6 @@
     "skipLibCheck": true
   },
   // kit/lessons: the checks the kit ships (#147), which doctor runs in every project.
-  "include": ["bin", "src", "test", "scripts", "kit/lessons"]
+  // .github/review: the script the review workflow runs (#1088).
+  "include": ["bin", "src", "test", "scripts", "kit/lessons", ".github/review"]
 }
