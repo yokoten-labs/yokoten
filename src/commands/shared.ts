@@ -4,6 +4,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
+import { row, wrap } from '../platform/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -296,44 +297,11 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 }
 
 // One screen per command (issue #1027, the CLI design the owner approved 2026-10-25): a title line,
-// groups of rows, and the command to type last. Lines stay within SCREEN_WIDTH, so an 80-column
-// terminal never breaks a word. Rows carry the mark words `styleLine` already draws: a terminal
-// sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
-
-/** The widest line a screen prints (Heroku's CLI style guide; Claude Code's help wraps here too). */
-export const SCREEN_WIDTH = 80;
-
-/** One text as lines no wider than `width`; later lines start under the first line's text. */
-export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string[] {
-  const lines: string[] = [];
-  const indent = ' '.repeat(prefix.length);
-  let line = prefix;
-  let isEmpty = true;
-  // A command in backticks is one word, so a line never breaks it in two (#1027).
-  for (const word of text.match(/`[^`]*`\S*|\S+/g) ?? []) {
-    if (!isEmpty && line.length + 1 + word.length > width) {
-      lines.push(line);
-      line = indent + word;
-    } else line += isEmpty ? word : ` ${word}`;
-    isEmpty = false;
-  }
-  lines.push(line);
-  return lines;
-}
-
-/** A screen's first line: `yokoten <command> · <what is true now>`. */
-export const title = (command: string, summary: string): string[] => wrap(`yokoten ${command} · `, summary);
-
-/** The state words a row starts with; `print` draws ✔ ● ✘ ⚠ ? for them on a terminal. */
-export type RowMark = 'ok' | 'done' | 'next' | 'to do' | 'MISSING' | 'note' | "can't check" | 'skipped';
-
-/** One row: the mark, an optional label in a 12-column field, then the text, wrapped under itself. */
-export function row(mark: RowMark, text: string, label?: string): string[] {
-  // A label wider than its column (a long path) takes its own line, so every text starts in one column.
-  if (label !== undefined && label.length > 11) return [`  ${mark.padEnd(11)} ${label}`, ...wrap(' '.repeat(26), text)];
-  const head = `  ${mark.padEnd(11)} ${label === undefined ? '' : `${label.padEnd(11)} `}`;
-  return wrap(head, text);
-}
+// groups of rows, and the command to type last. The layout itself is src/platform/screen.ts
+// (record 0049, issue #1099): every screen, the guard's refusals in src/rules/ too, builds on it,
+// so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
+// a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
+export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, title, wrap } from '../platform/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
 function textColumn(where: string | undefined): number {
@@ -356,17 +324,6 @@ export function problemRows(problems: Finding[]): string[] {
     return [...row('MISSING', problem.what, where), ...wrap(' '.repeat(textColumn(where)), `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
   });
 }
-
-/** One row with no mark: a label, then the text, wrapped under itself (#1027). */
-export function field(label: string, text: string): string[] {
-  return wrap(`  ${label.padEnd(12)}`, text);
-}
-
-/** The last line: the one command to type next. */
-export const nextLine = (command: string): string[] => wrap('Next: ', `\`${command}\``);
-
-/** Where the rest is: the flag that shows it all. */
-export const moreLine = (text: string): string[] => wrap('More: ', text);
 
 /** "1 file", "3 files": a count with its noun in the right number. */
 export const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;

@@ -184,7 +184,7 @@ test('help: every command has --help, -h and `help <command>`; each exits 0 and 
       assert.deepEqual([r.code, r.stderr], [0, ''], args.join(' '));
       assert.match(r.stdout, new RegExp(`^Usage: yokoten ${command.name}\\b`), args.join(' '));
       for (const option of [...command.options.map((o) => o.name), ...HELP_OPTIONS]) assert.ok(r.stdout.includes(option), `${args.join(' ')}: names ${option}`);
-      assert.match(r.stdout, /\nExample:\n {2}\S/, `${args.join(' ')}: one example`);
+      assert.match(r.stdout, /\nExamples?:\n {2}\S/, `${args.join(' ')}: an example`);
     }
   }
   assert.deepEqual(before(), start, '--help writes nothing');
@@ -205,7 +205,7 @@ test('help: the kanban row and `kanban --help` say preview (#933)', () => {
   assert.ok(board !== undefined, 'kanban is a command');
   const row = commandList().find((line) => line.trimStart().startsWith('kanban '));
   assert.match(row ?? '', /\(preview\)/);
-  assert.match(commandHelp(board).join('\n'), /preview: it may change\. Read only: nothing on the page starts, stops or\nchanges work\./i);
+  assert.match(commandHelp(board).join('\n'), /preview: it may change\. Read only: nothing on the page starts, stops or\s+changes\s+work\./i);
   assert.ok(commandHelp(board).every((line) => line.length <= 80), 'each line fits 80 columns');
 });
 

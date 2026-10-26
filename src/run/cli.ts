@@ -5,6 +5,10 @@
 // npx, npx --yes, bunx, pnpm dlx, npm exec. "yokoten-check" or "echo npx yokoten" is not one.
 // The flags are read one word at a time, so a long line takes linear time and never throws
 // (#431): a regex that repeats a group over the whole line ran out of stack.
+
+import { helpScreen, type HelpExample, type HelpSection, type HelpSpec } from '../platform/screen.ts';
+import { docsLink } from '../rules/message.ts';
+
 const RUNNER_HEAD = /^[ \t]*(?:npx|bunx|pnpm[ \t]+dlx|npm[ \t]+exec)/gm;
 const RUNNER_FLAG = /[ \t]+-\S+/y;
 
@@ -151,7 +155,32 @@ export interface CommandOption {
  * parser reads `options` and `argument` from here, so the help and the parser can't
  * drift apart (#207).
  */
-export interface Command {
+export type Command = CommandEntry & (HelpPage | OldHelpText);
+
+/**
+ * A help page as the layout's spec (record 0049, issue #1099): a summary of one or two lines,
+ * the examples, and the details as rows under headings. The usage and options come from the
+ * entry, so the help and the parser still read one table.
+ */
+export interface HelpPage {
+  help: {
+    summary: string;
+    examples: HelpExample[];
+    sections?: HelpSection[];
+    /** Where the rest is: a link or a command in backticks. */
+    more?: string;
+  };
+}
+
+/** The help text before the layout's spec: paragraphs, then one example. Each entry moves to `help` (#1099). */
+export interface OldHelpText {
+  /** Paragraphs, a blank line between; each is joined and wrapped once. */
+  text: string[];
+  example: string;
+}
+
+/** What every entry holds, whichever help form it has. */
+interface CommandEntry {
   name: string;
   /**
    * Where `yokoten help` shows it (issue #1054, record 0043): `always` in the short list,
@@ -167,7 +196,6 @@ export interface Command {
   summary: string;
   /** The words after `yokoten <name>`, as the usage line shows them. */
   usage: string;
-  text: string[];
   options: CommandOption[];
   /** The one positional argument it takes, if any. */
   argument?: string;
@@ -175,7 +203,6 @@ export interface Command {
   arguments?: string[];
   /** It takes any number of positional arguments, in the order given: a merge train's queue (#320). */
   many?: boolean;
-  example: string;
 }
 
 /** Every command takes these, and prints its help. */
@@ -553,36 +580,40 @@ export const COMMANDS: Command[] = [
     shown: 'always',
     summary: 'give one task to one AI, in its own fenced desk',
     usage: '[<issue> | "<task>"] [--agent <name>] [--pr] [--no-install]',
-    text: [
-      'With no words, lists your desks and writes nothing. With an issue number or a task in',
-      'quotes, makes the desk ../<repo>-desks/<n>/ (its own clone, branch desk/<n>), writes a',
-      'brief, and starts the AI there inside the fence. It never pushes. When the AI exits,',
-      'the desk runs the check and the tests in the fence and shows the evidence. A stopped',
-      'desk shows on the next start; `yokoten desk <n>` again goes on from its last commit.',
-      '--pr pushes the branch and opens the pull request (as the bot when it is set up).',
-      'On native Windows, run it in WSL.',
-      '',
-      'The old form, for scripts: yokoten desk <agent> <folder> -- <command>.',
-      'Starts the command after -- in a sandbox around <folder>, which must be its own git clone.',
-      "The agent writes only in the folder and the desk's own state folder, <folder>.state, which",
-      'gets only your login file. Your home, other projects and agent state are hidden.',
-      "Commands have no network; only the agent's API hosts pass the proxy, for any command inside.",
-      '.git/config and .git/hooks stay read-only. YOKOTEN_ROLE=worker and TZ=UTC; tokens stay out.',
-      'Agents: claude-code, codex (DeepSeek too), grok, muse. Linux and WSL2 use bwrap; macOS',
-      'uses sandbox-exec; native Windows is not built yet. Run the commit check outside until #665.',
-      'The agent joins the team of the project you run it from, by the desk folder\'s name or --name: see `yokoten msg`.',
-    ],
+    // The worked example of the help spec (issue #1099): two lines of summary, the common
+    // uses first, then the fence as rows. The guide's desk section holds the rest.
+    help: {
+      summary: 'Gives one task to one AI in its own fenced desk, a clone on the branch desk/<n>. When the AI exits, the desk runs the check and the tests and shows the evidence.',
+      examples: [
+        { command: 'yokoten desk', text: 'list your desks; writes nothing' },
+        { command: 'yokoten desk 42', text: 'a desk for issue 42; run again, it goes on from there' },
+        { command: 'yokoten desk "fix it"', text: 'a desk for a task in quotes' },
+        { command: 'yokoten desk 42 --pr', text: "push desk 42's branch and open its pull request" },
+      ],
+      sections: [
+        {
+          heading: 'The fence',
+          rows: [
+            ['writes', 'the desk folder and <folder>.state; not .git/config or .git/hooks'],
+            ['hides', 'your home, other projects, agent state and your tokens'],
+            ['network', "only the agent's API hosts, through a proxy"],
+            ['scripts', '`yokoten desk <agent> <folder> -- <command>`, in a clone you made'],
+            ['until #665', 'run the commit check outside the fence'],
+          ],
+        },
+      ],
+      more: docsLink('guide.md', 'the-desk'),
+    },
     options: [
       { name: '--agent', value: 'name', text: 'the AI to start: claude-code (first when installed) or codex' },
-      { name: '--pr', text: 'push the desk\'s branch and open its pull request; nothing is pushed without it' },
+      { name: '--pr', text: "push the desk's branch and open its pull request" },
       { name: '--no-install', text: 'skip npm ci in a new desk' },
       { name: '--name', value: 'name', text: "the agent's name on the team (default: the desk folder's name)" },
       { name: '--read', value: 'paths', text: 'more paths to show read-only, joined by commas' },
       { name: '--host', value: 'hosts', text: "more API hosts the agent may reach, joined by commas" },
-      { name: '--marks', text: 'show the private-marks file read-only (off: the agent could read it until #665)' },
+      { name: '--marks', text: 'show your private-marks file, read-only (off until #665)' },
     ],
     arguments: ['agent', 'folder'],
-    example: 'yokoten desk 42',
   },
   {
     name: 'msg',
@@ -773,42 +804,30 @@ export const findCommand = (name: string): Command | undefined => COMMANDS.find(
 /** The option as its help shows it: `--agent <name>`. */
 const optionLabel = (option: CommandOption): string => (option.value ? `${option.name} <${option.value}>` : option.name);
 
-/** One help line, wrapped at 80 columns with later lines under the first line's text (R10). */
-const helpWrap = (prefix: string, text: string, width = 80): string[] => {
-  const lines: string[] = [];
-  const indent = ' '.repeat(prefix.length);
-  let line = prefix;
-  for (const word of text.split(' ')) {
-    if (line !== prefix && line.length + 1 + word.length > width) {
-      lines.push(line);
-      line = indent + word;
-    } else line += line === prefix ? word : ` ${word}`;
+/** Hand-broken lines as paragraphs: a blank entry ends one, and each is joined so the layout wraps it once (#1099). */
+function paragraphsOf(lines: readonly string[]): string[] {
+  const paragraphs: string[][] = [[]];
+  for (const line of lines) {
+    if (line === '') paragraphs.push([]);
+    else paragraphs.at(-1)?.push(line);
   }
-  lines.push(line);
-  return lines;
-};
+  return paragraphs.filter((words) => words.length).map((words) => words.join(' '));
+}
+
+/** A command's help page as the layout's spec: its own `help`, or its older text and example. */
+export function helpSpecOf(command: Command): HelpSpec {
+  const usage = `yokoten ${command.name}${command.usage ? ` ${command.usage}` : ''}`;
+  const options = [...command.options.map((option) => [optionLabel(option), option.text] as const), [HELP_OPTIONS.join(', '), 'this help'] as const];
+  if (!('help' in command)) return { usage, summary: paragraphsOf(command.text), examples: [{ command: command.example, text: '' }], options };
+  const { summary, examples, sections, more } = command.help;
+  return { usage, summary: [summary], examples, options, sections, more };
+}
 
 /**
- * What `yokoten <name> --help` prints (issue #1027, R10): a usage line, at most four
- * lines of text, the options aligned, and one example. No line passes SCREEN_WIDTH,
- * and a longer option text wraps under itself.
+ * What `yokoten <name> --help` prints (record 0049, issue #1099): the usage, a short summary,
+ * the examples, the options aligned, then the sections. The layout wraps each text once.
  */
-export function commandHelp(command: Command): string[] {
-  const rows: [string, string][] = [...command.options.map((option): [string, string] => [optionLabel(option), option.text]), [HELP_OPTIONS.join(', '), 'this help']];
-  const width = Math.min(Math.max(...rows.map(([label]) => label.length)) + 2, 24);
-  const text = command.text.flatMap((line) => helpWrap('', line));
-  return [
-    ...helpWrap('Usage: ', `yokoten ${command.name}${command.usage ? ` ${command.usage}` : ''}`),
-    '',
-    ...text,
-    '',
-    'Options:',
-    ...rows.flatMap(([label, words]) => helpWrap(`  ${label.padEnd(width)}`, words)),
-    '',
-    'Example:',
-    ...helpWrap('  ', command.example),
-  ];
-}
+export const commandHelp = (command: Command): string[] => helpScreen(helpSpecOf(command));
 
 /**
  * The groups `yokoten help --all` shows after the short list, in order (issue #1054): the
