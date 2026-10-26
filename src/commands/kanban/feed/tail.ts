@@ -4,7 +4,7 @@
 // is masked before it is kept, so nothing unmasked ever leaves the server.
 
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs';
-import { type Env } from '../../../rules/config.ts';
+import { type KanbanEnv } from '../ports.ts';
 import { findAgentLog, type FoundLog, type LogCache } from './read/logs.ts';
 import { LINE_READERS, type StreamItem, type StreamSource } from './items.ts';
 
@@ -52,7 +52,7 @@ export interface StreamStore {
   find: (tree: string, vendor: string, log: string) => FoundLog | null;
 }
 
-export function makeStreamStore(env: Env, mask: (text: string) => string, find?: (tree: string, vendor: string, log: string) => FoundLog | null): StreamStore {
+export function makeStreamStore(env: KanbanEnv, mask: (text: string) => string, find?: (tree: string, vendor: string, log: string) => FoundLog | null): StreamStore {
   const cache: LogCache = new Map();
   return { tails: new Map(), found: new Map(), used: new Map(), cache, count: 0, mask, find: find ?? ((tree, vendor, log) => findAgentLog(tree, vendor, env, cache, log)) };
 }

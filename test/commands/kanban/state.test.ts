@@ -10,7 +10,7 @@ import { sessionId } from '../../../src/commands/kanban/agents.ts';
 import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
 import { boardDataBody } from '../../../src/commands/kanban/server.ts';
 import { actionsOf, collectState, pullsOf, renderStateText, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
-import type { KanbanState } from '../../../src/commands/kanban/types.ts';
+import type { KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { type AgentView, type BoardData, vendorOf } from '../../../src/commands/kanban/view.ts';
 import type { HealthRun } from '../../../src/commands/more/check.ts';
 import type { BoardPull } from '../../../src/host/github/index.ts';

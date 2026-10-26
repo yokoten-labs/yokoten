@@ -2,16 +2,15 @@
 // with the desks `yokoten desk` started (#685). An agent joins by writing the file at its
 // worktree's root, and leaves by removing it. The hooks write it for every vendor (#685).
 
-import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { type Env } from '../../rules/config.ts';
-import { commonGitDir, DESK_LIST_FILE } from '../../run/hook.ts';
+import { readProgram } from '../../platform/process.ts';
+import { deskListFile, type KanbanEnv, sharedGitDir } from './ports.ts';
 
 /** The repo's main folder. Every worktree shares it, and the lead's log path is kept there. */
 export function boardHome(root: string): string {
-  const common = commonGitDir(root);
+  const common = sharedGitDir(root);
   return common && basename(common) === '.git' ? dirname(common) : root;
 }
 
@@ -141,7 +140,7 @@ export interface BoardWorktree {
 }
 
 /** `git worktree list --porcelain -z` as worktrees, then the desks, or why git can't read them. */
-export function readBoardWorktrees(root: string, env: Env): BoardWorktree[] | string {
+export function readBoardWorktrees(root: string, env: KanbanEnv): BoardWorktree[] | string {
   const trees = readGitWorktrees(root, env);
   if (typeof trees === 'string') return trees;
   const seen = new Set(trees.map((tree) => tree.path));
@@ -154,11 +153,11 @@ export function readBoardWorktrees(root: string, env: Env): BoardWorktree[] | st
  * gone, or is no clone, is skipped. The branch comes from its HEAD, with no git process.
  */
 export function readBoardDesks(root: string): BoardWorktree[] {
-  const common = commonGitDir(root);
+  const common = sharedGitDir(root);
   if (!common) return [];
   let text: string;
   try {
-    text = readFileSync(join(common, DESK_LIST_FILE), 'utf8');
+    text = readFileSync(join(common, deskListFile()), 'utf8');
   } catch {
     return [];
   }
@@ -178,10 +177,10 @@ export function readBoardDesks(root: string): BoardWorktree[] {
 }
 
 /** `git worktree list --porcelain -z` as worktrees, or why git can't read them. */
-function readGitWorktrees(root: string, env: Env): BoardWorktree[] | string {
+function readGitWorktrees(root: string, env: KanbanEnv): BoardWorktree[] | string {
   let text: string;
   try {
-    text = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: BOARD_READ_TIMEOUT_MS });
+    text = readProgram('git', ['worktree', 'list', '--porcelain', '-z'], { cwd: root, env, timeout: BOARD_READ_TIMEOUT_MS });
   } catch {
     return 'git could not list the worktrees: run it again';
   }
@@ -220,7 +219,7 @@ export function parseBoardSeats(text: string): Record<string, number> | null {
 
 /** The seats file in the common git folder, or null when it is missing or bad. */
 export function readBoardSeats(root: string): Record<string, number> | null {
-  const common = commonGitDir(root);
+  const common = sharedGitDir(root);
   if (!common) return null;
   try {
     return parseBoardSeats(readFileSync(join(common, BOARD_SEATS_FILE), 'utf8'));

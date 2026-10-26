@@ -1,7 +1,6 @@
 // `yokoten board --text` (#601, #603): the board's data as plain text, for a terminal or an agent.
 
-import { terminalText } from '../../../run/learn.ts';
-import { count, field, moreLine, row, title, type RowMark } from '../../shared.ts';
+import { counted, fieldLines, moreLines, rowLines, type RowState, terminalSafe, titleLines } from '../ports.ts';
 import type { BoardRun, BoardWaiting } from '../feed/read/waiting.ts';
 import { type BoardUsage, costWords, tokenText, totalOf } from '../feed/read/usage.ts';
 import type { AgentView, BoardData, PullView } from '../view.ts';
@@ -111,11 +110,11 @@ export function renderBoardText(board: BoardData, extra?: BoardTextExtra): strin
     'Worktrees:',
     ...(typeof board.worktrees === 'string' ? [`- ${board.worktrees}`] : worktrees.length ? worktrees.map((tree) => `- ${tree.path}${tree.branch ? ` (${tree.branch})` : ''}`) : ['- none.']),
     ...(board.usage && (board.usage.cells.length || board.usage.partial.length || board.usage.filter) ? ['', ...formatUsage(board.usage)] : []),
-  ].map(terminalText);
+  ].map(terminalSafe);
 }
 
 /** The mark and the word for what an agent does now (issue #1027). */
-function agentMark(agent: AgentView): { mark: RowMark; word: string } {
+function agentMark(agent: AgentView): { mark: RowState; word: string } {
   if (agent.dot === 'done') return { mark: 'ok', word: 'done' };
   if (agent.dot === 'waiting') return { mark: 'next', word: 'waiting for you' };
   if (agent.dot === 'failing') return { mark: 'MISSING', word: 'stopped: asks for help' };
@@ -126,7 +125,7 @@ function agentMark(agent: AgentView): { mark: RowMark; word: string } {
 function addGroup(lines: string[], heading: string, rows: string[][], cap: number): void {
   lines.push(heading);
   for (const one of rows.slice(0, cap)) lines.push(...one);
-  if (rows.length > cap) lines.push(...row('to do', `${count(rows.length - cap, 'more row')}, all of them with \`yokoten board --text --all\``));
+  if (rows.length > cap) lines.push(...rowLines('to do', `${counted(rows.length - cap, 'more row')}, all of them with \`yokoten board --text --all\``));
 }
 
 /**
@@ -137,33 +136,33 @@ function addGroup(lines: string[], heading: string, rows: string[][], cap: numbe
 export function renderBoardScreen(board: BoardData, extra?: BoardTextExtra, livePage?: string): string[] {
   const pulls = typeof board.pulls === 'string' ? [] : board.pulls;
   const worktrees = typeof board.worktrees === 'string' ? [] : board.worktrees;
-  const lines: string[] = title('board', `${count(board.agents.length, 'agent')}, ${count(pulls.length, 'pull request')}, ${count(worktrees.length, 'worktree')}`);
+  const lines: string[] = titleLines('board', `${counted(board.agents.length, 'agent')}, ${counted(pulls.length, 'pull request')}, ${counted(worktrees.length, 'worktree')}`);
   lines.push('');
   const agents = board.agents.map((agent) => {
     const { mark, word } = agentMark(agent);
     const who = agent.nickname || agent.name;
     const vendor = agent.vendor.name === 'Unknown' ? '' : agent.vendor.name;
-    return row(mark, [vendor, word].filter(Boolean).join(' · '), who);
+    return rowLines(mark, [vendor, word].filter(Boolean).join(' · '), who);
   });
   addGroup(lines, 'Agents', agents.length ? agents : [['  none. Start an agent in this repo or its worktrees.']], 4);
   lines.push('');
-  const pullRows = pulls.map((pull: PullView) => field(`PR #${pull.number}`, `${pull.label}${pull.tier ? `, tier ${pull.tier}` : ''}`));
+  const pullRows = pulls.map((pull: PullView) => fieldLines(`PR #${pull.number}`, `${pull.label}${pull.tier ? `, tier ${pull.tier}` : ''}`));
   addGroup(lines, 'Pull requests', typeof board.pulls === 'string' ? [[`  ${board.pulls}`]] : pullRows.length ? pullRows : [['  none open.']], 3);
   lines.push('');
-  const treeRows = worktrees.map((tree) => field(tree.path, tree.branch || 'no branch'));
+  const treeRows = worktrees.map((tree) => fieldLines(tree.path, tree.branch || 'no branch'));
   addGroup(lines, 'Worktrees', typeof board.worktrees === 'string' ? [[`  ${board.worktrees}`]] : treeRows.length ? treeRows : [['  none.']], 2);
   // A need is a question for the owner: it is never folded (R5).
   const waiting = extra?.waiting ?? [];
   if (board.needs.length || waiting.length) {
     lines.push('');
     lines.push('Needs you');
-    for (const need of board.needs.slice(0, 3)) lines.push(...row('next', need.why, need.title));
-    for (const one of waiting.slice(0, 3)) lines.push(...row('next', one.why, one.agent || 'an agent'));
+    for (const need of board.needs.slice(0, 3)) lines.push(...rowLines('next', need.why, need.title));
+    for (const one of waiting.slice(0, 3)) lines.push(...rowLines('next', one.why, one.agent || 'an agent'));
   }
   if (extra?.runs.length) {
-    lines.push(...row('ok', `${count(extra.runs.length, 'run')} started here`));
+    lines.push(...rowLines('ok', `${counted(extra.runs.length, 'run')} started here`));
   }
   lines.push('');
-  lines.push(...moreLine(livePage === undefined ? '`yokoten board` opens the live page' : `the live page at ${livePage}`));
-  return lines.map(terminalText);
+  lines.push(...moreLines(livePage === undefined ? '`yokoten board` opens the live page' : `the live page at ${livePage}`));
+  return lines.map(terminalSafe);
 }

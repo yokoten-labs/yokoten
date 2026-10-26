@@ -99,7 +99,7 @@ const closeServer = (server: { close: (done: () => void) => void; closeAllConnec
 
 /** Every required key of each interface in types.ts, read from the file, so a new key cannot skip the check. */
 function requiredKeys(name: string): string[] {
-  const types = readFileSync(join(ROOT, 'src/commands/kanban/types.ts'), 'utf8');
+  const types = readFileSync(join(ROOT, 'src/commands/kanban/page/browser/types.ts'), 'utf8');
   const body = new RegExp(`export interface ${name} \\{([\\s\\S]*?)\\n\\}`).exec(types)?.[1];
   assert.ok(body, `types.ts has ${name}`);
   return [...body.matchAll(/^ {2}(\w+):/gm)].map((match) => match[1]);

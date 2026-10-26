@@ -4,9 +4,8 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { type Gh, type GhLater } from '../../../../host/github/index.ts';
+import { emptySchedule, type GhCall, type GhCallLater, scheduleOfIssues, type ScheduleNumbers } from '../../ports.ts';
 import { ageText, BOARD_AGENT_FILE, parseBoardAgent, type BoardRole, type BoardWorktree } from '../../agents.ts';
-import { EMPTY_SCHEDULE, planSchedule, scheduleIssueOf, type SchedulePlan, type ScheduleSummary, summarizeSchedule } from '../../../more/advice/schedule.ts';
 import { dependsOf } from './desk.ts';
 import { type AgentView, type BoardData, BOARD_ISSUE_LIMIT, type PullView } from '../../view.ts';
 
@@ -91,7 +90,7 @@ function boardIssueQuery(repo: string): string[] {
 }
 
 /** The open issues, gh's order, or why gh cannot read them. */
-export function readBoardIssues(gh: Gh, repo: string): BoardIssue[] | string {
+export function readBoardIssues(gh: GhCall, repo: string): BoardIssue[] | string {
   let text: string;
   try {
     text = gh(boardIssueQuery(repo));
@@ -102,7 +101,7 @@ export function readBoardIssues(gh: Gh, repo: string): BoardIssue[] | string {
 }
 
 /** readBoardIssues without blocking (#688); `signal` stops the call. */
-export async function readBoardIssuesLater(gh: GhLater, repo: string, signal?: AbortSignal): Promise<BoardIssue[] | string> {
+export async function readBoardIssuesLater(gh: GhCallLater, repo: string, signal?: AbortSignal): Promise<BoardIssue[] | string> {
   let text: string;
   try {
     text = await gh(boardIssueQuery(repo), signal);
@@ -259,17 +258,11 @@ export function collectBoardWaiting(board: BoardData, attention: BoardAttention[
 }
 
 /**
- * The dependency plan of the open issues, or null when they cannot be read or were
+ * The schedule of the open issues, or an empty one when they cannot be read or were
  * actually cut off. The read asks for one issue past the limit, so a list longer than
  * the limit is the only proof that issues are missing (#693).
  */
-export function planOf(issues: BoardIssue[] | string): SchedulePlan | null {
-  if (typeof issues === 'string' || issues.length > BOARD_ISSUE_LIMIT) return null;
-  return planSchedule(issues.map(scheduleIssueOf));
-}
-
-/** The schedule of the open issues, or an empty one when they cannot be read or were cut off. */
-export function scheduleOf(issues: BoardIssue[] | string): ScheduleSummary {
-  const plan = planOf(issues);
-  return plan ? summarizeSchedule(plan) : { ...EMPTY_SCHEDULE };
+export function scheduleOf(issues: BoardIssue[] | string): ScheduleNumbers {
+  if (typeof issues === 'string' || issues.length > BOARD_ISSUE_LIMIT) return emptySchedule();
+  return scheduleOfIssues(issues);
 }

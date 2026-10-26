@@ -65,7 +65,7 @@ const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
   'host/github/index.ts', // re-exports the GitHub adapter's public names
   'commands/more/merge/conflicts/types.ts', // shapes and constants only; every conflicts test uses them (#914)
-  'commands/kanban/types.ts', // the kanban page's API types only, no code: tsc checks them where the core and the page use them (#1054)
+  'commands/kanban/page/browser/types.ts', // the kanban page's API types only, no code: tsc checks them where the core and the page use them (#1054)
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user

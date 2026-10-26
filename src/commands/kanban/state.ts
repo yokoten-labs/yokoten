@@ -3,14 +3,10 @@
 // files and the session logs on this machine, and takes what GitHub said from the caller,
 // so the server never waits for gh. Read only: nothing here starts, stops or changes work.
 
-import { type BoardPull } from '../../host/github/index.ts';
-import { type Env } from '../../rules/config.ts';
-import { hideHome } from '../../rules/privacy.ts';
-import { VERSION } from '../../setup/files.ts';
-import { type HealthRun, summarizeActionsHealth } from '../more/check.ts';
+import { type ActionsRun, branchHealth, hideHomeIn, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
 import { readBoardDesks, sessionId } from './agents.ts';
 import { totalOf, type UsageCell } from './feed/read/usage.ts';
-import type { KanbanActions, KanbanCost, KanbanPull, KanbanSession, KanbanState } from './types.ts';
+import type { KanbanActions, KanbanCost, KanbanPull, KanbanSession, KanbanState } from './page/browser/types.ts';
 import { type AgentView, type BoardData, collectBoardWith, pullView } from './view.ts';
 
 /** A session with no output for this long is stuck: the same 15 minutes as a live seat (#698). */
@@ -26,9 +22,9 @@ const QUEUED_STATES = new Set(['queued', 'waiting', 'pending', 'requested']);
 export interface StateSources {
   /** `owner/name`, or null without a GitHub remote. */
   remote: string | null;
-  pulls: BoardPull[] | string;
+  pulls: PullRow[] | string;
   /** The latest Actions runs, newest first. */
-  runs: HealthRun[] | string;
+  runs: ActionsRun[] | string;
   /** The branch merges land on. */
   defaultBranch: string;
 }
@@ -50,7 +46,7 @@ function costOf(cells: UsageCell[]): { tokens: number; usd: number | null } {
 }
 
 /** One session as the page shows it. A desk runs inside the system fence; any other folder has only the guard. */
-function sessionOf(view: AgentView, cells: UsageCell[], desks: Set<string>, open: BoardPull[], now: number): KanbanSession {
+function sessionOf(view: AgentView, cells: UsageCell[], desks: Set<string>, open: PullRow[], now: number): KanbanSession {
   const pull = view.ref?.kind === 'pr' ? view.ref.number : open.find((row) => view.branch && row.branch === view.branch)?.number;
   return {
     id: sessionId(view.key),
@@ -86,7 +82,7 @@ const NOT_READY: Record<string, string> = {
  * tier), and the ones merged lately. One waits on you at your step: tier A at the Approve,
  * no tier when it is ready to merge.
  */
-export function pullsOf(rows: BoardPull[], now: number): KanbanPull[] {
+export function pullsOf(rows: PullRow[], now: number): KanbanPull[] {
   const open = rows
     .filter((row) => (row.stage === 'open' || row.stage === 'draft') && (row.tier === 'A' || row.tier === ''))
     .map((row): KanbanPull => {
@@ -109,12 +105,12 @@ export const NO_ACTIONS: KanbanActions = { main: { state: 'unknown' }, queuedOve
  * still going makes it running only when nothing failed. Flaky is a
  * workflow that both passed and failed on main, with its last ten results.
  */
-export function actionsOf(runs: HealthRun[], defaultBranch: string, now: number): KanbanActions {
-  const health = summarizeActionsHealth(runs, [], defaultBranch);
-  const failed = new Set(health.mainFailures.map((run) => run.id));
+export function actionsOf(runs: ActionsRun[], defaultBranch: string, now: number): KanbanActions {
+  const health = branchHealth(runs, defaultBranch);
+  const failed = new Set(health.failedIds);
   const onMain = runs.filter((run) => run.branch === defaultBranch);
   // Each workflow's completed runs on main, newest first: a queued rerun keeps main red until it passes.
-  const byWorkflow = new Map<string, HealthRun[]>();
+  const byWorkflow = new Map<string, ActionsRun[]>();
   for (const run of onMain.filter((one) => one.status === 'completed')) byWorkflow.set(run.workflow, [...(byWorkflow.get(run.workflow) ?? []), run]);
   const latest = [...byWorkflow.values()].map((list) => list[0]);
   let main: KanbanActions['main'] = { state: 'unknown' };
@@ -158,7 +154,7 @@ export function stateOf(board: BoardData, sources: StateSources, desks: Set<stri
   const cells = board.usage?.cells ?? [];
   const problems = [sources.pulls, sources.runs, board.worktrees].filter((one): one is string => typeof one === 'string');
   return {
-    version: VERSION,
+    version: yokotenVersion(),
     readAt: new Date(now).toISOString(),
     repo: board.repoUrl ? { name: board.repoName, url: board.repoUrl } : null,
     sessions: board.agents.map((view) => sessionOf(view, cells, desks, open, now)),
@@ -170,9 +166,9 @@ export function stateOf(board: BoardData, sources: StateSources, desks: Set<stri
 }
 
 /** The kanban's snapshot of this repo now. GitHub's lists come from the caller. */
-export function collectState(root: string, env: Env, sources: StateSources, now: number = Date.now()): KanbanState {
+export function collectState(root: string, env: KanbanEnv, sources: StateSources, now: number = Date.now()): KanbanState {
   const board = collectBoardWith(root, env, sources.remote, sources.pulls, now);
-  const desks = new Set(readBoardDesks(root).map((desk) => hideHome(desk.path, env)));
+  const desks = new Set(readBoardDesks(root).map((desk) => hideHomeIn(desk.path, env)));
   return stateOf(board, sources, desks, now);
 }
 

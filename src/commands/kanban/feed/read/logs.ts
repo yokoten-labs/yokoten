@@ -16,9 +16,7 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, closeSync, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, sep } from 'node:path';
-import { type Env } from '../../../../rules/config.ts';
-import { homeOf } from '../../../../rules/privacy.ts';
-import { commonGitDir } from '../../../../run/hook.ts';
+import { homeFolderOf, type KanbanEnv, sharedGitDir } from '../../ports.ts';
 import { boardHome } from '../../agents.ts';
 import { LINE_READERS, type StreamItem, type StreamSource } from '../items.ts';
 
@@ -127,13 +125,13 @@ export function claudeTask(head: string): string {
 export type LogCache = Map<string, boolean | string>;
 
 /** Claude Code's `projects` folders for a worktree: the lead's state, and a desk's own. */
-function claudeProjects(tree: string, home: string, env: Env): string[] {
+function claudeProjects(tree: string, home: string, env: KanbanEnv): string[] {
   return [stateDir(env.CLAUDE_CONFIG_DIR, ['.claude'], home), join(`${tree}.state`, 'claude-code')].map((root) => join(root, 'projects'));
 }
 
 /** The lead log file in the repo's main git folder, or null outside a checkout. */
 function leadSessionPath(folder: string): string | null {
-  const common = commonGitDir(boardHome(folder));
+  const common = sharedGitDir(boardHome(folder));
   return common ? join(common, LEAD_SESSION_FILE) : null;
 }
 
@@ -175,8 +173,8 @@ export function writeLeadSession(folder: string, transcriptPath: string): boolea
 }
 
 /** True when `realFile` is inside one of Claude Code's projects folders. */
-function isInsideProjects(realFile: string, tree: string, env: Env): boolean {
-  const home = homeOf(env);
+function isInsideProjects(realFile: string, tree: string, env: KanbanEnv): boolean {
+  const home = homeFolderOf(env);
   if (!home) return false;
   return claudeProjects(tree, home, env).some((root) => {
     try {
@@ -194,7 +192,7 @@ function isInsideProjects(realFile: string, tree: string, env: Env): boolean {
  * `.jsonl`, and resolve to a regular file inside Claude Code's projects folder. A
  * missing file, a `..` path that leaves that folder, or a symlink out of it is refused.
  */
-function readLeadSession(tree: string, env: Env): FoundLog | null {
+function readLeadSession(tree: string, env: KanbanEnv): FoundLog | null {
   if (!isMainCheckout(tree)) return null;
   const path = leadSessionPath(tree);
   if (!path) return null;
@@ -275,10 +273,10 @@ export function lastAssistantText(file: string, source: StreamSource, tree: stri
 }
 
 /** Every Claude Code log of a worktree: its own sessions, or a subagent whose task names it. */
-export function claudeLogs(tree: string, env: Env, cache: LogCache, now: number = Date.now()): FoundLog[] {
+export function claudeLogs(tree: string, env: KanbanEnv, cache: LogCache, now: number = Date.now()): FoundLog[] {
   const registered = readLeadSession(tree, env);
   if (registered) return [registered];
-  const home = homeOf(env);
+  const home = homeFolderOf(env);
   if (!home) return [];
   const roots = claudeProjects(tree, home, env);
   const found: FoundLog[] = [];
@@ -312,7 +310,7 @@ export function claudeLogs(tree: string, env: Env, cache: LogCache, now: number 
 }
 
 /** The newest Claude Code log of a worktree: its own sessions, or a subagent whose task names it. */
-export function findClaudeLog(tree: string, env: Env, cache: LogCache, now: number = Date.now()): FoundLog | null {
+export function findClaudeLog(tree: string, env: KanbanEnv, cache: LogCache, now: number = Date.now()): FoundLog | null {
   return newest(claudeLogs(tree, env, cache, now));
 }
 
@@ -329,8 +327,8 @@ export function museRoot(head: string): string {
 }
 
 /** Every Muse Code session of a worktree: one whose workspace is the worktree. */
-export function museLogs(tree: string, env: Env, cache: LogCache, now: number = Date.now()): FoundLog[] {
-  const home = homeOf(env);
+export function museLogs(tree: string, env: KanbanEnv, cache: LogCache, now: number = Date.now()): FoundLog[] {
+  const home = homeFolderOf(env);
   if (!home) return [];
   const roots = [join(stateDir(env.XDG_DATA_HOME, ['.local', 'share'], home), 'muse'), join(`${tree}.state`, 'muse', 'data', 'muse')].map((root) => join(root, 'sessions'));
   const found: FoundLog[] = [];
@@ -358,13 +356,13 @@ export function museLogs(tree: string, env: Env, cache: LogCache, now: number = 
 }
 
 /** The newest Muse Code session of a worktree: one whose workspace is the worktree. */
-export function findMuseLog(tree: string, env: Env, cache: LogCache, now: number = Date.now()): FoundLog | null {
+export function findMuseLog(tree: string, env: KanbanEnv, cache: LogCache, now: number = Date.now()): FoundLog | null {
   return newest(museLogs(tree, env, cache, now));
 }
 
 /** The newest Grok session of a worktree: Grok keeps one folder of sessions per working folder. */
-export function findGrokLog(tree: string, env: Env): FoundLog | null {
-  const home = homeOf(env);
+export function findGrokLog(tree: string, env: KanbanEnv): FoundLog | null {
+  const home = homeFolderOf(env);
   if (!home) return null;
   const roots = [stateDir(env.GROK_HOME, ['.grok'], home), join(`${tree}.state`, 'grok')];
   const found: FoundLog[] = [];
@@ -401,8 +399,8 @@ function codexRoot(head: string): string {
  * `~/.codex/sessions`, and in a desk's own `<worktree>.state/codex`. A rollout counts
  * when its `cwd` is the worktree.
  */
-export function findCodexLog(tree: string, env: Env, cache: LogCache, now: number = Date.now()): FoundLog | null {
-  const home = homeOf(env);
+export function findCodexLog(tree: string, env: KanbanEnv, cache: LogCache, now: number = Date.now()): FoundLog | null {
+  const home = homeFolderOf(env);
   if (!home) return null;
   const roots = [stateDir(env.CODEX_HOME, ['.codex'], home), join(`${tree}.state`, 'codex')];
   const found: FoundLog[] = [];
@@ -439,10 +437,10 @@ const PLAIN_LOG_PATH_LIMIT = 4096;
  * runtime folder, and the runtime's data folder. OpenCode keeps its log at
  * `<data>/opencode/log/opencode.log`.
  */
-function plainLogFolders(tree: string, key: string, env: Env): string[] {
+function plainLogFolders(tree: string, key: string, env: KanbanEnv): string[] {
   if (key !== 'opencode') return [];
   const folders = [join(`${tree}.state`, 'opencode', 'log')];
-  const home = homeOf(env);
+  const home = homeFolderOf(env);
   if (home) folders.push(join(stateDir(env.XDG_DATA_HOME, ['.local', 'share'], home), 'opencode', 'log'));
   return folders;
 }
@@ -469,7 +467,7 @@ function isInsideRoot(real: string, root: string): boolean {
  * folder. A symlink that leaves those folders is refused. Every line is masked like any
  * other.
  */
-export function findPlainLog(tree: string, vendor: string, env: Env, path: string): FoundLog | null {
+export function findPlainLog(tree: string, vendor: string, env: KanbanEnv, path: string): FoundLog | null {
   const file = path.trim();
   if (!file || file.length > PLAIN_LOG_PATH_LIMIT || !isAbsolute(file)) return null;
   let real = '';
@@ -494,7 +492,7 @@ export function findPlainLog(tree: string, vendor: string, env: Env, path: strin
  * OpenCode 2 keeps its sessions in a data folder, but not as JSON lines this reader can
  * follow, so an OpenCode agent uses that plain log.
  */
-export function findAgentLog(tree: string, vendor: string, env: Env, cache: LogCache, logPath = ''): FoundLog | null {
+export function findAgentLog(tree: string, vendor: string, env: KanbanEnv, cache: LogCache, logPath = ''): FoundLog | null {
   const key = vendor.trim().toLowerCase();
   const session = sessionLog(tree, key, env, cache);
   return session ?? findPlainLog(tree, key, env, logPath);
@@ -505,7 +503,7 @@ export function findAgentLog(tree: string, vendor: string, env: Env, cache: LogC
  * (#611). A plain text log stands in when there is no session log. The vendor key is read
  * as in `findAgentLog`.
  */
-export function findAgentLogs(tree: string, vendor: string, env: Env, cache: LogCache, logPath = '', now: number = Date.now()): FoundLog[] {
+export function findAgentLogs(tree: string, vendor: string, env: KanbanEnv, cache: LogCache, logPath = '', now: number = Date.now()): FoundLog[] {
   const key = vendor.trim().toLowerCase();
   const found = sessionLogs(tree, key, env, cache, now);
   if (!found.length) {
@@ -516,12 +514,12 @@ export function findAgentLogs(tree: string, vendor: string, env: Env, cache: Log
 }
 
 /** The session log for a vendor key, or null. No plain log here: its path comes from the status file. */
-function sessionLog(tree: string, key: string, env: Env, cache: LogCache): FoundLog | null {
+function sessionLog(tree: string, key: string, env: KanbanEnv, cache: LogCache): FoundLog | null {
   return newest(sessionLogs(tree, key, env, cache, Date.now()));
 }
 
 /** Every session log for a vendor key, in no order. No plain log here: its path comes from the status file. */
-function sessionLogs(tree: string, key: string, env: Env, cache: LogCache, now: number): FoundLog[] {
+function sessionLogs(tree: string, key: string, env: KanbanEnv, cache: LogCache, now: number): FoundLog[] {
   if (key === 'deepseek' || key === 'deepseek-harness') return single(findCodexLog(tree, env, cache));
   if (key === 'opencode') return [];
   if (key === 'claude' || key === 'claude-code') return claudeLogs(tree, env, cache, now);

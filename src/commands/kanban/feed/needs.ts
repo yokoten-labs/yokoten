@@ -3,7 +3,7 @@
 // open page drops it without a reload. A review that is still running is not the
 // owner's turn, so it is not a row and the page does not call it "all checks pass".
 
-import type { BoardPull } from '../../../host/github/index.ts';
+import type { PullRow } from '../ports.ts';
 
 /** An agent, with only the fields this list reads. */
 export interface NeedAgent {
@@ -43,7 +43,7 @@ export function isOlderThanDay(at: string, now: number): boolean {
 }
 
 /** True when a tier A pull request is open, green, and not approved on its head commit. */
-function isNeedingApproval(pull: BoardPull): boolean {
+function isNeedingApproval(pull: PullRow): boolean {
   return pull.stage === 'open' && pull.tier === 'A' && pull.checks === 'pass' && pull.review !== 'changes' && !pull.isApprovedOnHead;
 }
 
@@ -61,7 +61,7 @@ function isReviewOpen(agents: readonly NeedAgent[], number: number): boolean {
  * when the open-issue list is known and does not name it. A missing pull request
  * stays, because the board cannot prove it is closed.
  */
-function isSettledRef(ref: { kind: 'issue' | 'pr'; number: number }, pulls: readonly BoardPull[], openIssues: ReadonlySet<number> | null): boolean {
+function isSettledRef(ref: { kind: 'issue' | 'pr'; number: number }, pulls: readonly PullRow[], openIssues: ReadonlySet<number> | null): boolean {
   if (ref.kind === 'issue') return openIssues !== null && !openIssues.has(ref.number);
   const pull = pulls.find((row) => row.number === ref.number);
   if (!pull) return false;
@@ -80,7 +80,7 @@ function startedAt(agents: readonly NeedAgent[], kind: 'pr' | 'issue', number: n
  * request or issue is merged or closed. A reviewer still on a pull request keeps
  * that approval off the list. An agent with no number keeps its own row.
  */
-export function buildNeeds(agents: readonly NeedAgent[], pulls: readonly BoardPull[], openIssues: number[] | null = null): BuiltNeed[] {
+export function buildNeeds(agents: readonly NeedAgent[], pulls: readonly PullRow[], openIssues: number[] | null = null): BuiltNeed[] {
   const open = openIssues === null ? null : new Set(openIssues);
   const seen = new Set<string>();
   const needs: BuiltNeed[] = [];

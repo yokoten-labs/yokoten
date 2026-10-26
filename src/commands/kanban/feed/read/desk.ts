@@ -3,8 +3,7 @@
 // bad file is ignored. The words are masked like a session before they reach the page.
 
 import { join } from 'node:path';
-import { type Env } from '../../../../rules/config.ts';
-import { commonGitDir, readStatusText } from '../../../../run/hook.ts';
+import { type KanbanEnv, readStatusFile, sharedGitDir } from '../../ports.ts';
 import { boardHome } from '../../agents.ts';
 import { makeFeedMask } from '../route.ts';
 import { findAgentLog, lastAssistantText } from './logs.ts';
@@ -125,10 +124,10 @@ export function firstSentence(text: string): { reply: string; rest: string } {
  * and a file that is not a JSON object are bad. A mask that cannot be built hides the
  * file, so unmarked private text never reaches the page.
  */
-export function readLeadDesk(root: string, env: Env): DeskFile | null {
-  const common = commonGitDir(boardHome(root));
+export function readLeadDesk(root: string, env: KanbanEnv): DeskFile | null {
+  const common = sharedGitDir(boardHome(root));
   if (!common) return null;
-  const text = readStatusText(join(common, LEAD_DESK_FILE));
+  const text = readStatusFile(join(common, LEAD_DESK_FILE));
   if (text === null) return null;
   const parsed = parseLeadDesk(text);
   if (!parsed) return null;
@@ -152,7 +151,7 @@ export function readLeadDesk(root: string, env: Env): DeskFile | null {
  * The lead's newest reply, masked, as the first sentence and the rest.
  * No log, or a mask that cannot be built: both parts are empty.
  */
-export function readLeadReply(tree: string, vendor: string, env: Env, root: string): { reply: string; rest: string } {
+export function readLeadReply(tree: string, vendor: string, env: KanbanEnv, root: string): { reply: string; rest: string } {
   const log = findAgentLog(tree, vendor, env, new Map());
   if (!log) return { reply: '', rest: '' };
   const text = lastAssistantText(log.file, log.source, tree).slice(0, REPLY_LIMIT);
