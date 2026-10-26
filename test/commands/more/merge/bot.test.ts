@@ -1275,12 +1275,20 @@ test('bot: a note body gh posts is always checked, whatever the spelling (#609)'
     await refused(['gh', '--hostname', 'example.com', 'pr', 'review', '5', '--comment', '-b', 'A review.\n']);
     await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-r', '--body', 'An issue.\n']);
     await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--assignee', '--body', 'An issue.\n']);
-    // A run-together word starting with a boolean letter: gh expands it.
-    await refused(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-wb', 'An issue.\n']);
-    await refused(['gh', 'pr', 'comment', '5', '-wb', 'A note.\n']);
+    // A run-together word with a body letter: gh expands it, so the bot refuses it before any
+    // other check, and asks for the options spelled out (#1077).
+    for (const command of [
+      ['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '-wb', 'An issue.\n'],
+      ['gh', 'pr', 'comment', '5', '-wb', 'A note.\n'],
+      ['gh', 'pr', 'review', '5', '--comment', '-rb', 'A review.\n'],
+    ]) {
+      const r = await run(command);
+      assert.equal(r.status, 1, command.join(' '));
+      assert.match(r.stderr.replace(/\s+/g, ' '), /joins short options with one that takes the body/, command.join(' '));
+      assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
+    }
     // On `pr review`, `-a` and `-r` are booleans, not values.
     await refused(['gh', 'pr', 'review', '5', '--comment', '-a', '-b', 'A review.\n']);
-    await refused(['gh', 'pr', 'review', '5', '--comment', '-rb', 'A review.\n']);
     // With the line, a global flag before the noun passes through unchanged.
     const good = 'A note.\n\nMade with worker (opus)\n';
     const sent = await run(['gh', '--hostname', 'example.com', 'pr', 'comment', '5', '--body', good]);
@@ -1625,6 +1633,10 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
     { name: 'a missing pull request body file is not sent', command: ['gh', 'pr', 'edit', 'topic', '--body-file', missing], sent: false, says: /can't read the file after --body-file/ },
     { name: 'a missing comment body file is not sent', command: ['gh', 'issue', 'comment', '5', '--body-file', missing], sent: false, says: /can't read the file after --body-file/ },
     { name: 'a missing api input file is not sent', command: ['gh', 'api', 'repos/me/repo/issues', '--input', missing], sent: false, says: /can't read the file after --input/ },
+    // A short-option cluster with a body letter: gh reads `-dF file` as `--draft --body-file file`.
+    { name: 'a -dF cluster is refused', command: ['gh', 'pr', 'create', '-t', 'fix(host): a', '-dF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
+    { name: 'a -aF cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-aF', join(sandbox.home, 'secret.md')], sent: false, says: /joins short options with one that takes the body/ },
+    { name: 'a -cb cluster on pr review is refused', command: ['gh', 'pr', 'review', '5', '-cb', `Key ${secret}`], sent: false, says: /joins short options with one that takes the body/ },
     // More than one place to read the text from: the bot can't tell which gh sends, so it refuses.
     { name: 'two body files are refused', command: ['gh', 'issue', 'comment', '5', '--body-file', join(sandbox.home, 'clean.md'), '-F', join(sandbox.home, 'clean.md')], sent: false, says: /reads its text from 2 places/ },
     { name: 'a body file and standard input are refused', command: ['gh', 'issue', 'comment', '5', '-F', '-', '--body-file', join(sandbox.home, 'clean.md')], input: `x${madeWith}`, sent: false, says: /reads its text from 2 places/ },

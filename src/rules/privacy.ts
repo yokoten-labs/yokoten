@@ -1409,6 +1409,24 @@ function postKind(args: string[]): { sub: string; isApi: boolean } | null {
   return isApi || POSTS[group]?.includes(sub) ? { sub, isApi } : null;
 }
 
+/**
+ * A short-option cluster with a body letter in a posting gh command (#1077), or null. gh reads
+ * `-dF body.md` as `--draft --body-file body.md`, and `-ab x` as `--approve --body x`, but the
+ * option tables see only a word's first letter. So a word of letters after one `-` that holds
+ * `F` or `b` past its first letter is refused: spelled out, each option is read. A word that
+ * starts with `-F` or `-b` is that option with its value joined on, and is read as such.
+ */
+function bodyCluster(args: string[]): Finding | null {
+  const kind = postKind(args);
+  if (!kind || kind.isApi) return null;
+  const end = args.indexOf('--');
+  const word = (end === -1 ? args : args.slice(0, end)).find((arg) => /^-[A-Za-z]/.test(arg) && !/^-[Fb]/.test(arg) && /^-[A-Za-z]+/.exec(arg)?.[0].slice(2).match(/[Fb]/));
+  if (word === undefined) return null;
+  return finding('unreadable-command', 'this gh command joins short options with one that takes the body (`-F` or `-b`), so yokoten cannot tell which body it sends', 'write each short option as its own word, such as `-d -F body.md`, or use the long names, such as `--body-file`', {
+    why: 'the privacy check reads a body before it is posted, and an unread one could hold anything',
+  });
+}
+
 /** One place in a gh command that reads a file: where it is, and how to spell it as stdin. */
 type FileWord = { path: string; option: string; toStdin: (args: string[]) => void };
 
@@ -1460,6 +1478,8 @@ function fileWords(args: string[]): FileWord[] {
  * to guess which text gh sends. So is a file it can't read (missing, not a plain file, over 1 MB).
  */
 export function readSentBody(args: string[], cwd: string | null): { args: string[]; text?: string } | Finding {
+  const cluster = bodyCluster(args);
+  if (cluster) return cluster;
   const words = fileWords(args);
   if (words.length === 0) return { args };
   if (words.length > 1) {
@@ -1811,16 +1831,20 @@ function isPostHere(gh: GhCommand, { env, command, cwd, from }: { env: Env; comm
  * is the whole command text, for the heredocs that feed stdin. `cwd` is where the command
  * runs, for a relative file; null when the guard cannot tell.
  *
- * One check, two callers (#1077). The guard calls it before the shell runs, with
- * `isBotCall` when the post goes through `yokoten bot --`: the bot reads the files then, so
- * the guard reads none, and writing a body file and posting it may be one command. The bot
- * calls it with `isSender` as it sends: the shell has run, so each path is read as gh gets
- * it, and a file the bot can't read (missing, not a plain file, over 1 MB) stops the send.
+ * One check, two callers (#1077). The guard calls it before the shell runs, for a bare gh and
+ * for `yokoten bot --` alike: the yokoten that runs may be an older one, or a stand-in, so
+ * the guard never leaves a body file to it. The bot calls it again with `isSender` as it
+ * sends: the shell has run, so each path is read as gh gets it, and a file the bot can't
+ * read (missing, not a plain file, over 1 MB) stops the send.
  */
 export function checkPost(
   gh: GhCommand,
-  { env, privacy, cwd, command, from, files, isBotCall = false, isSender = false }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isBotCall?: boolean; isSender?: boolean },
+  { env, privacy, cwd, command, from, files, isSender = false }: { env: Env; privacy?: Partial<Pick<Config['privacy'], 'allow' | 'skipOwnName'>>; cwd: string | null; command: string; from?: string | null; files?: CommandFiles; isSender?: boolean },
 ): Finding | null {
+  // A short-option cluster that holds a body letter (`-dF file`, `-aF file`) reads a body
+  // gh takes but the option tables don't see (#1077): refused, for the guard and the bot.
+  const cluster = bodyCluster(gh.args);
+  if (cluster) return cluster;
   // The path goes to the kernel as bash hands it to gh, never normalized: join and resolve
   // drop `..` as text, but the kernel goes up from the real folder when the working folder
   // or home is a symlink (#470).
@@ -1837,14 +1861,6 @@ export function checkPost(
   };
   const readFile = (path: string): FileRead => {
     if (isSender) return readSentFile(path, cwd);
-    if (!isBotCall) return readOnDisk(path, files?.mayWrite ?? false);
-    // A `yokoten bot` call (#1077): a file already on disk is still read, in case the yokoten
-    // that runs is a stand-in. One that is not there yet, or that the command may change, is
-    // left to the bot, which checks the text it sends.
-    const read = readOnDisk(path, false);
-    return typeof read === 'object' && 'texts' in read ? read : 'skip';
-  };
-  const readOnDisk = (path: string, mayWrite: boolean): FileRead => {
     let full = path;
     if (path.startsWith('~')) {
       // Bash takes `~` from HOME, or from the system when HOME is unset; only a full HOME
@@ -1879,8 +1895,8 @@ export function checkPost(
       return isReadable ? { texts: [files.heredoc.text, readFileSync(at, 'utf8')] } : 'unsure';
     }
     if (stat === null) return 'missing';
-    if (mayWrite) {
-      const risk = files?.saw?.(isMarked);
+    if (files?.mayWrite) {
+      const risk = files.saw?.(isMarked);
       return risk ? { saw: risk } : 'unsure';
     }
     return isReadable ? { texts: [readFileSync(at, 'utf8')] } : 'skip';

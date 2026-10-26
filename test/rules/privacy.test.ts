@@ -1109,10 +1109,10 @@ test('reading the heredoc shape stays linear (#439)', () => {
 
 test("the lead's command with a body file on disk: commands that write no file don't stop it (#439)", () => {
   const body = join(postDir, 'lead-body.md');
-  // A bare gh: the guard reads the body file. Through `yokoten bot --`, the bot reads it (#1077).
-  const lead = `cd ${postDir} && export NODE_USE_ENV_PROXY=1 GH_REPO=o/r; gh pr create --title t --body-file ${body}`;
+  const lead = `cd ${postDir} && export NODE_USE_ENV_PROXY=1 GH_REPO=o/r; node bin/yokoten.ts bot -- gh pr create --title t --body-file ${body}`;
   writeFileSync(body, 'All clean.\n');
   assert.equal(post(lead), null);
+  assert.equal(post(lead.replace('node bin/yokoten.ts bot', 'yokoten bot')), null);
   // Loading a file with . or source may run anything, so the file on disk is not trusted.
   plainRefusal(`set -a; . ~/.config/yokoten/keys.env; set +a; ${lead}`);
   // A `$` the shell fills in may run code, so the older form with $(…) is refused too.
@@ -1514,50 +1514,60 @@ test('inside "...", only $, backticks, \\ and ! make the line unsure (#439)', ()
 
 // ---- A body file through `yokoten bot` (#1077) ----
 //
-// The bot reads and checks each body file as it sends (test/commands/more/merge/bot.test.ts),
-// so the guard leaves it a file that is not there yet: writing the file and posting it may be
-// one command. A file already on disk is still read, in case a stand-in yokoten runs. A bare
-// gh keeps the guard's reading.
+// The bot checks the text it sends, but the yokoten that runs may be an older one, or a
+// stand-in. So the guard reads a bot call's body file exactly as a bare gh's: a file it
+// can't read yet stops the command. The bot's own checks are in bot.test.ts.
 
-test('through yokoten bot, the guard leaves a file not yet written to the bot; a file on disk is still read (#1077)', () => {
-  const body = join(postDir, 'bot-1077.md');
-  rmSync(body, { force: true });
-  const write = `cat > ${body} <<'EOF'\nAll clean.\nEOF\n`;
-  const botPost = `yokoten bot -- gh pr create --title t --body-file ${body}`;
-  const ghPost = `gh pr create --title t --body-file ${body}`;
-  const cases: [command: string, sent: boolean][] = [
-    // Written and posted in one command, through the bot: the guard lets it run.
-    [`${write}${botPost}`, true],
-    [`${write}node bin/yokoten.ts bot -- gh issue comment 3 -F ${body}`, true],
-    [`printf 'All clean.\\n' > ${body} && ${botPost}`, true],
-    [`echo QuietVale > ${body}; ${botPost} 2>&1 | tail -2`, true],
-    // The same through a bare gh: the guard can't read the file yet, so it is refused.
-    [`${write}${ghPost}`, false],
-    [`printf 'All clean.\\n' > ${body} && ${ghPost}`, false],
-    [`echo QuietVale > ${body}; ${ghPost}`, false],
-    // A yokoten the guard can't be sure runs is no bot call: the file is read, and refused.
-    [`printf x > ${body} && node '~/x/bin/yokoten.ts' bot -- gh issue comment 3 -F ${body}`, false],
-    [`printf x > ${body} && node evil.js yokoten bot -- gh issue comment 3 -F ${body}`, false],
-    [`printf x > ${body} && X=1 yokoten bot -- gh issue comment 3 -F ${body}`, false],
-  ];
-  for (const [command, sent] of cases) {
+test('through yokoten bot, the guard still reads the body file, as for a bare gh (#1077)', () => {
+  rmSync(join(postDir, 'n.md'), { force: true });
+  rmSync(join(postDir, 'new.md'), { force: true });
+  const comment = 'bot -- gh issue comment 3 -F n.md';
+  const vcs = ['g', 'it'].join('');
+  const seen: string[] = [];
+  for (const command of [
+    // A file the command writes: an older bot would send it unchecked.
+    `${vcs} show HEAD:secret > n.md && yokoten ${comment}`,
+    `cat > n.md <<'EOF' && yokoten ${comment}\nx\nEOF`,
+    // Something other than yokoten may run.
+    `yokoten() { gh "$@"; }; yokoten ${comment}`,
+    `export PATH=/tmp/evil:$PATH; yokoten ${comment}`,
+    `hash -p /tmp/evil/yokoten yokoten; yokoten ${comment}`,
+    `cd /tmp/evil && ./yokoten ${comment}`,
+    'printf x > new.md && node /tmp/evil/yokoten.ts bot -- gh issue comment 3 -F new.md',
+  ]) {
     const f = post(command);
-    if (sent) assert.equal(f, null, `${command}: ${f?.what}`);
-    else assert.equal(f?.id, 'unreadable-command', command);
+    assert.notEqual(f, null, command);
+    seen.push(`${f?.id}`);
   }
-  // Text on the command line is still the guard's: a mark in --body is refused, through the bot too.
-  assert.equal(post('yokoten bot -- gh issue comment 3 --body "Seen in QuietVale."')?.id, 'private-mark');
-  // Positive controls: a mark in a file already on disk is found, through a bare gh and through
-  // the bot, even when the command writes the file again: a planted yokoten.ts gets no pass.
-  writeFileSync(body, 'Seen in QuietVale.\n');
-  assert.equal(post(ghPost)?.id, 'private-mark');
-  for (const command of [botPost, `node bin/yokoten.ts bot -- gh issue comment 3 -F ${body}`, `printf 'All clean.\\n' > ${body} && ${botPost}`]) {
-    assert.equal(post(command)?.id, 'private-mark', command);
+  // As on main: a function named yokoten is refused as an alias, the rest as unreadable.
+  assert.deepEqual(seen, ['unreadable-command', 'unreadable-command', 'alias', 'unreadable-command', 'unreadable-command', 'unreadable-command', 'unreadable-command']);
+  // Positive control: a mark in a body file on disk is found through the bot.
+  writeFileSync(join(postDir, 'n.md'), 'Seen in QuietVale.\n');
+  assert.equal(post(`yokoten ${comment}`)?.id, 'private-mark');
+  writeFileSync(join(postDir, 'n.md'), 'All clean.\n');
+  assert.equal(post(`yokoten ${comment}`), null);
+  rmSync(join(postDir, 'n.md'));
+});
+
+test('a short-option cluster with a body letter is refused, through gh or the bot (#1077)', () => {
+  writeFileSync(join(postDir, 'n.md'), 'All clean.\n');
+  for (const command of [
+    'gh pr create -t t -dF n.md',
+    'yokoten bot -- gh pr create -t t -dF n.md',
+    'gh pr review 5 -aF n.md',
+    'yokoten bot -- gh pr review 5 -aF n.md',
+    'gh pr review 5 -cb "a note"',
+    'gh issue comment 3 -wb "a note"',
+  ]) {
+    const f = post(command);
+    assert.equal(f?.id, 'unreadable-command', command);
+    assert.match(f?.what ?? '', /joins short options with one that takes the body/, command);
   }
-  // A clean file on disk that the command writes again passes: the bot checks the new text.
-  writeFileSync(body, 'All clean.\n');
-  assert.equal(post(`echo more >> ${body} && ${botPost}`), null);
-  rmSync(body);
+  // Control: spelled out, or joined to its own value, each option is read and passes.
+  for (const command of ['gh pr create -t t -d -F n.md', 'gh pr create -t t -Fn.md', 'gh pr review 5 -c -b "a note"', 'gh pr comment 3 -b"a note"']) {
+    assert.equal(post(command), null, command);
+  }
+  rmSync(join(postDir, 'n.md'));
 });
 
 // ---- A read-only pipe after a post (#498) ----
@@ -1568,17 +1578,17 @@ test('through yokoten bot, the guard leaves a file not yet written to the bot; a
 test('a pipe at the end into tail, head, grep, sed s/// and the like still reads the body file (#498)', () => {
   const body = join(postDir, 'piped.md');
   writeFileSync(body, 'All clean.\n');
-  const ghPost = `gh pr create --title "fix: a plain title" --body-file ${body}`;
+  const bot = `node bin/yokoten.ts bot -- gh pr create --title "fix: a plain title" --body-file ${body}`;
   const passes = [
-    `${ghPost} 2>&1 | tail -2`,
-    `${ghPost} | tail -2`,
-    `${ghPost} | sed "s/x/y/g"`,
-    `${ghPost} 2>&1 | sed "s/someone/<owner>/g" | tail -2`,
-    `${ghPost} | sed -n -e 's|a|b|gp' -e 's/c/d/'`,
-    `${ghPost} | grep -v x | head -n 5 | cut -c1-80 | wc -l`,
-    `${ghPost} | sort -rk2,2 | uniq -c | tr a-z A-Z`,
-    `${ghPost} 2>&1`,
-    `cd ${postDir} && ${ghPost} | tail -2`,
+    `${bot} 2>&1 | tail -2`,
+    `${bot} | tail -2`,
+    `${bot} | sed "s/x/y/g"`,
+    `${bot} 2>&1 | sed "s/someone/<owner>/g" | tail -2`,
+    `${bot} | sed -n -e 's|a|b|gp' -e 's/c/d/'`,
+    `${bot} | grep -v x | head -n 5 | cut -c1-80 | wc -l`,
+    `${bot} | sort -rk2,2 | uniq -c | tr a-z A-Z`,
+    `${bot} 2>&1`,
+    `cd ${postDir} && ${bot} | tail -2`,
   ];
   for (const command of passes) assert.equal(post(command), null, command);
   // The file is still read: a mark in it is found through the pipe.
@@ -1591,35 +1601,35 @@ test('a pipe or a command that may change the body file is refused, by name (#49
   const body = join(postDir, 'piped.md');
   writeFileSync(body, 'All clean.\n');
   mkdirSync(join(postDir, 'sub'), { recursive: true });
-  const ghPost = `gh pr create --title t --body-file ${body}`;
+  const bot = `node bin/yokoten.ts bot -- gh pr create --title t --body-file ${body}`;
   const refused: [string, string][] = [
-    [`${ghPost} | tee ${body}`, 'a pipe to `tee`'],
-    [`${ghPost} | sed -i s/x/y/ ${body}`, 'a `sed` with `-i`'],
-    [`${ghPost} | sed --in-place s/x/y/ ${body}`, 'a `sed` with `-i`'],
-    [`${ghPost} | sed 's/x/y/w ${body}'`, 'a `sed` with `-i`'],
-    [`${ghPost} | sed 's/x/y/e'`, 'a `sed` with `-i`'],
-    [`${ghPost} | sed -f script.sed`, 'a `sed` with `-i`'],
-    [`${ghPost} | sort -o ${body}`, 'a `sort` with an option'],
-    [`${ghPost} | sort "$X"`, 'a `sort` with an option'],
-    [`${ghPost} | uniq - ${body}`, 'a `uniq` with a second file'],
-    [`${ghPost} | tail -2 > ${body}`, 'a pipe to `tail` that does not end the line'],
-    [`${ghPost} | tail -2; cd /tmp`, 'a pipe to `tail` that does not end the line'],
-    [`${ghPost} | tail -2 | grep "$(id)"`, 'a pipe to `tail` that does not end the line'],
-    [`${ghPost} | grep "\${X}"`, 'a pipe to `grep` that does not end the line'],
-    [`${ghPost} | xargs tail`, 'a pipe to `xargs`'],
-    [`${ghPost} | (cat > ${body})`, 'a pipe'],
-    [`${ghPost} |& tail -2`, 'a pipe'],
-    [`${ghPost} || tail -2`, 'a `||`'],
-    [`echo x | tail -2; ${ghPost}`, 'a pipe to `tail` that does not end the line'],
+    [`${bot} | tee ${body}`, 'a pipe to `tee`'],
+    [`${bot} | sed -i s/x/y/ ${body}`, 'a `sed` with `-i`'],
+    [`${bot} | sed --in-place s/x/y/ ${body}`, 'a `sed` with `-i`'],
+    [`${bot} | sed 's/x/y/w ${body}'`, 'a `sed` with `-i`'],
+    [`${bot} | sed 's/x/y/e'`, 'a `sed` with `-i`'],
+    [`${bot} | sed -f script.sed`, 'a `sed` with `-i`'],
+    [`${bot} | sort -o ${body}`, 'a `sort` with an option'],
+    [`${bot} | sort "$X"`, 'a `sort` with an option'],
+    [`${bot} | uniq - ${body}`, 'a `uniq` with a second file'],
+    [`${bot} | tail -2 > ${body}`, 'a pipe to `tail` that does not end the line'],
+    [`${bot} | tail -2; cd /tmp`, 'a pipe to `tail` that does not end the line'],
+    [`${bot} | tail -2 | grep "$(id)"`, 'a pipe to `tail` that does not end the line'],
+    [`${bot} | grep "\${X}"`, 'a pipe to `grep` that does not end the line'],
+    [`${bot} | xargs tail`, 'a pipe to `xargs`'],
+    [`${bot} | (cat > ${body})`, 'a pipe'],
+    [`${bot} |& tail -2`, 'a pipe'],
+    [`${bot} || tail -2`, 'a `||`'],
+    [`echo x | tail -2; ${bot}`, 'a pipe to `tail` that does not end the line'],
     [`cd sub && gh pr create --title t --body-file ../piped.md | tail -2`, 'a `cd` before a path with `..`'],
-    [`cd -; ${ghPost}`, 'a `cd` the guard can'],
-    [`mv a.md ${body}; ${ghPost} | tail -2`, 'a `mv`'],
-    [`export A=1 B=2; ${ghPost}`, 'an `export` of a name other than GH_REPO'],
-    [`OWNER=$(gh pr view 3 -q .x); ${ghPost}`, 'a command substitution `$(…)`'],
-    [`[ -n x ] || exit 1; ${ghPost}`, 'a `[ … ]` test'],
-    [`${ghPost} > ${body}`, 'a redirect `>`'],
-    [`${ghPost} 2>&1 > ${body}`, 'a redirect `>`'],
-    [`X=1 ${ghPost}`, 'a variable other than GH_REPO'],
+    [`cd -; ${bot}`, 'a `cd` the guard can'],
+    [`mv a.md ${body}; ${bot} | tail -2`, 'a `mv`'],
+    [`export A=1 B=2; ${bot}`, 'an `export` of a name other than GH_REPO'],
+    [`OWNER=$(gh pr view 3 -q .x); ${bot}`, 'a command substitution `$(…)`'],
+    [`[ -n x ] || exit 1; ${bot}`, 'a `[ … ]` test'],
+    [`${bot} > ${body}`, 'a redirect `>`'],
+    [`${bot} 2>&1 > ${body}`, 'a redirect `>`'],
+    [`X=1 ${bot}`, 'a variable other than GH_REPO'],
   ];
   for (const [command, saw] of refused) {
     const f = post(command);
@@ -1634,16 +1644,16 @@ test('a pipe or a command that may change the body file is refused, by name (#49
 test('a `$` anywhere in a sed after the post is refused: bash fills it in before sed reads the script (#498)', () => {
   const body = join(postDir, 'piped.md');
   writeFileSync(body, 'All clean.\n');
-  const ghPost = `gh pr create --title t --body-file ${body}`;
+  const bot = `node bin/yokoten.ts bot -- gh pr create --title t --body-file ${body}`;
   for (const command of [
-    `${ghPost} 2>&1 | sed "s/$OWNER/<owner>/g" | tail -2`,
-    `${ghPost} | sed "s/x/$NAME/"`,
-    `${ghPost} | sed -e "s/x/y/$FLAGS"`,
-    `${ghPost} | sed "$S"`,
-    `${ghPost} | sed s/x/y/ "$F"`,
-    `${ghPost} | sed 's/x$/y/'`,
-    `${ghPost} | sed "s/$(id)/x/"`,
-    `${ghPost} | sed "s/\${X}/x/"`,
+    `${bot} 2>&1 | sed "s/$OWNER/<owner>/g" | tail -2`,
+    `${bot} | sed "s/x/$NAME/"`,
+    `${bot} | sed -e "s/x/y/$FLAGS"`,
+    `${bot} | sed "$S"`,
+    `${bot} | sed s/x/y/ "$F"`,
+    `${bot} | sed 's/x$/y/'`,
+    `${bot} | sed "s/$(id)/x/"`,
+    `${bot} | sed "s/\${X}/x/"`,
   ]) {
     const f = post(command);
     assert.equal(f?.id, 'unreadable-command', command);
@@ -1651,19 +1661,19 @@ test('a `$` anywhere in a sed after the post is refused: bash fills it in before
     assert.equal(f?.fix, 'type the value into the sed script in place of the `$`, or leave out the pipe, or write the file in one command, then post it in the next, and give its full path');
   }
   // grep may take a value: it writes no file whatever the value holds.
-  assert.equal(post(`${ghPost} | grep -v "$OWNER"`), null);
+  assert.equal(post(`${bot} | grep -v "$OWNER"`), null);
   rmSync(body);
 });
 
 test('a refusal never names a program that holds a private mark (#498)', () => {
   const body = join(postDir, 'piped.md');
   writeFileSync(body, 'All clean.\n');
-  const ghPost = `gh pr create --title t --body-file ${body}`;
+  const bot = `node bin/yokoten.ts bot -- gh pr create --title t --body-file ${body}`;
   const named = [
-    [`${ghPost} | quietvale-tool x`, 'a pipe'],
-    [`${ghPost} | /opt/QuietVale/bin/send`, 'a pipe to `send`'],
-    [`quietvale-tool x; ${ghPost}`, 'a command'],
-    [`QuietVale x; ${ghPost}`, 'a command'],
+    [`${bot} | quietvale-tool x`, 'a pipe'],
+    [`${bot} | /opt/QuietVale/bin/send`, 'a pipe to `send`'],
+    [`quietvale-tool x; ${bot}`, 'a command'],
+    [`QuietVale x; ${bot}`, 'a command'],
   ];
   for (const [command, saw] of named) {
     const f = post(command);
@@ -1672,8 +1682,8 @@ test('a refusal never names a program that holds a private mark (#498)', () => {
     assert.ok(!/quietvale/i.test(formatFinding(f)), `${command}: the mark is never printed`);
   }
   // Control: a program with no mark in it is named.
-  assert.ok(post(`${ghPost} | tee x`)?.what.includes('a pipe to `tee`'));
-  assert.ok(post(`othertool x; ${ghPost}`)?.what.includes('a `othertool`'));
+  assert.ok(post(`${bot} | tee x`)?.what.includes('a pipe to `tee`'));
+  assert.ok(post(`othertool x; ${bot}`)?.what.includes('a `othertool`'));
   rmSync(body);
 });
 
@@ -1704,7 +1714,6 @@ test('a ~/ path to yokoten and the allowed variables before it still read the bo
     `node /opt/x/bin/yokoten.ts ${comment}`,
   ];
   for (const command of passes) assert.equal(post(command), null, command);
-  // A file already on disk is still read through the bot, in case a stand-in yokoten runs (#1077).
   writeFileSync(body, 'Seen in QuietVale.\n');
   for (const command of passes) assert.equal(post(command)?.id, 'private-mark', command);
   writeFileSync(body, 'All clean.\n');
@@ -2529,10 +2538,10 @@ test('a refusal folds the marks before it names a program (#507)', () => {
   writeFileSync(marks, `${WIDE('quietvale')}\n`);
   const body = join(dir, 'body.md');
   writeFileSync(body, 'All clean.\n');
-  const ghPost = `gh pr create --title t --body-file ${body}`;
+  const bot = `node bin/yokoten.ts bot -- gh pr create --title t --body-file ${body}`;
   const run = (command: string) => checkCommand(command, { env: { HOME: dir, YOKOTEN_PRIVATE_MARKS: marks }, config: DEFAULTS, cwd: dir });
-  assert.ok(run(`${ghPost} | quietvale-tool x`)?.what.includes('and a pipe in this command'));
-  assert.ok(run(`quietvale-tool x; ${ghPost}`)?.what.includes('and a command in this command'));
+  assert.ok(run(`${bot} | quietvale-tool x`)?.what.includes('and a pipe in this command'));
+  assert.ok(run(`quietvale-tool x; ${bot}`)?.what.includes('and a command in this command'));
   rmSync(dir, { recursive: true });
 });
 
