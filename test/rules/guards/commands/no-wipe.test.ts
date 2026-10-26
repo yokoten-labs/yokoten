@@ -164,14 +164,14 @@ test('guard: no disk commands (#969)', () => {
   ]) allowed(command);
 });
 
-test('guard: the refusal keeps its four lines (#969)', () => {
+test('guard: the refusal keeps its four parts, each row wrapped under its own text (#969, #1099)', () => {
   const text = formatRefusal(checkCommand('rm -rf ~', { cwd: process.cwd(), env: withHome })!);
   const lines = text.split('\n');
-  assert.equal(lines.length, 5);
-  assert.match(lines[0], /^yokoten stopped this: .* \[wipe-home-or-system\]$/);
-  assert.match(lines[2], /^  Why       /);
-  assert.match(lines[3], /^  Instead   /);
-  assert.match(lines[4], /^  More      https:/);
+  assert.match(lines[0] ?? '', /^yokoten stopped this: /);
+  assert.match(text, /^yokoten stopped this: [^[]*\[wipe-home-or-system\]\n\n {2}Why {7}/);
+  assert.deepEqual(lines.filter((line) => /^ {2}\S/.test(line)).map((line) => line.slice(0, 12)), ['  Why       ', '  Instead   ', '  More      ']);
+  assert.ok(lines.every((line) => line === '' || /^(?:yokoten stopped this: | {2}\S| {12}\S| {22}\S)/.test(line)), 'every other line goes on under its row');
+  assert.match(lines.at(-1) ?? '', /^ {2}More {6}https:\S+$/);
 });
 
 test('guard: a wipe run through cmd /c is read as the same wipe (#1015)', () => {

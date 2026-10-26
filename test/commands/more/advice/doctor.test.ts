@@ -11,6 +11,14 @@ import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.
 import { runDoctor } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 
+// What Codex and Gemini CLI hear at a session start: they don't filter command output (#390), as a note (#1099).
+const UNFILTERED_NOTE = [
+  'yokoten: only Claude Code hides your details in command output; other agents',
+  '         show it as it is',
+  '  Next      To stop those commands there instead, set "privacy": { "output":',
+  '            "stop" } in yokoten.json.',
+].join('\n');
+
 // Codex adds a SessionStart hook's plain stdout to the context; Gemini CLI reads JSON only (#211).
 test('doctor --session --agent: plain text for Codex, hookSpecificOutput JSON for Gemini CLI (#211)', async () => {
   const sandbox = makeSandbox();
@@ -18,7 +26,7 @@ test('doctor --session --agent: plain text for Codex, hookSpecificOutput JSON fo
   const plain = sandbox.run(['doctor', '--session']);
   assert.match(plain.stdout, /^yokoten: stage 1 of 5/);
   // Codex and Gemini CLI also hear that they don't filter command output (#390).
-  const unfiltered = 'yokoten: only Claude Code hides your details in command output; other agents show it as it is. To stop those commands there instead, set "privacy": { "output": "stop" } in yokoten.json.\n';
+  const unfiltered = `\n${UNFILTERED_NOTE}\n`;
   assert.deepEqual(pick(await sandbox.call(['doctor', '--session', '--agent', 'codex'])), [plain.status, plain.stdout + unfiltered, plain.stderr]);
   const result = await sandbox.call(['doctor', '--session', '--agent', 'gemini']);
   assert.equal(result.status, 0, result.stderr);
@@ -39,7 +47,7 @@ test('doctor --session: a desk names the real model and vendor first, and the bo
   sandbox.write('yokoten.json', '{}\n');
   const identity = 'yokoten: you are DeepSeek (deepseek-flash), served through codex; codex is your harness, and what it says about its own maker is the tool, not you.';
   const out = (await sandbox.call(['doctor', '--session', '--agent', 'codex'], { extra: { YOKOTEN_MODEL: 'deepseek-flash', YOKOTEN_VENDOR: 'DeepSeek' } })).stdout;
-  assert.equal(out.split('\n')[0], identity, 'the brief starts with who the agent is');
+  assert.equal(out.split('\n\n')[0]?.replace(/\n +/g, ' '), identity, 'the brief starts with who the agent is');
   assert.equal(JSON.parse(readFileSync(join(sandbox.repo, '.yokoten-agent.json'), 'utf8')).model, 'deepseek-flash', 'the board reads the real model');
   // A model of the harness's own vendor needs no line: its prompt already tells the truth.
   const own = (await sandbox.call(['doctor', '--session', '--agent', 'codex'], { extra: { YOKOTEN_MODEL: 'gpt-6.1-sol', YOKOTEN_VENDOR: 'OpenAI' } })).stdout;
@@ -48,7 +56,7 @@ test('doctor --session: a desk names the real model and vendor first, and the bo
 
 test('doctor --session: an agent that cannot filter output hears it once, with the opt-in (#390)', async () => {
   const sandbox = makeSandbox();
-  const line = 'yokoten: only Claude Code hides your details in command output; other agents show it as it is. To stop those commands there instead, set "privacy": { "output": "stop" } in yokoten.json.';
+  const line = UNFILTERED_NOTE;
   assert.ok((await sandbox.call(['doctor', '--session', '--agent', 'codex'])).stdout.includes(line));
   assert.ok(!(await sandbox.call(['doctor', '--session'])).stdout.includes(line), 'Claude Code filters it');
   sandbox.write('yokoten.json', JSON.stringify({ privacy: { output: 'stop' } }));
@@ -64,7 +72,7 @@ test('doctor --session: after a compaction, Claude Code hears only what changed 
   assert.equal(await start({ session_id: 's-1', source: 'compact' }), '', 'a compaction start with nothing new prints nothing');
   sandbox.write('AGENTS.md', '# rules\n');
   const changed = await start({ session_id: 's-1', source: 'compact' });
-  assert.match(changed, /^yokoten: stage 1 of 5, safety net\. Next: no tool-call guard/);
+  assert.match(changed, /^yokoten: stage 1 of 5, safety net\n  Next      No tool-call guard/);
   assert.match(changed, /^Tell the user in plain words/m, 'a changed step keeps its offer line');
   assert.doesNotMatch(changed, /private-marks/, 'a note the session heard is not repeated');
   // No session id, or no hook: as today.
