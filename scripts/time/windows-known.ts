@@ -208,7 +208,7 @@ export function reasonCounts(reasons: Iterable<string>, top = 15): string[] {
  */
 export function entriesOf(file: string, tap: string, timedOut: boolean): string[] {
   const name = file.replace(/\\/g, '/');
-  const tests = readFailures(tap).map((test) => (test.replace(/\\/g, '/') === name ? CRASHED : test));
+  const tests = readFailures(tap).map((test) => (test.replace(/\\+/g, '/') === name ? CRASHED : test));
   return [...tests.map((test) => `${name} :: ${test}`), ...(timedOut ? [`${name} :: ${TIMED_OUT}`] : [])];
 }
 
@@ -227,7 +227,7 @@ export interface FileRun {
 export function isCrash(file: string, run: FileRun): boolean {
   if (run.timedOut) return false;
   const name = file.replace(/\\/g, '/');
-  if (readFailures(run.tap).some((test) => test.replace(/\\/g, '/') === name)) return true;
+  if (readFailures(run.tap).some((test) => test.replace(/\\+/g, '/') === name)) return true;
   return run.code !== 0 && !/^(?:not )?ok \d+ - /m.test(run.tap);
 }
 

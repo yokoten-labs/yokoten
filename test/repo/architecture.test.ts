@@ -1936,6 +1936,10 @@ test('windows known: a crashed file runs once more; a second run that gets throu
   assert.equal(isCrash(file, fail), false, 'a failing test is not a crash');
   assert.equal(isCrash(file, { ...crash, timedOut: true }), false, 'a time-out is not run again');
   assert.deepEqual(entriesOf(file, crash.tap, false), [`test/a/crash.test.ts :: ${CRASHED}`]);
+  // Node's TAP on Windows escapes each backslash in the file's name (CI, 2026-10-26).
+  const escaped: FileRun = { ...crash, tap: crash.tap.replaceAll('test\\a\\crash', 'test\\\\a\\\\crash') };
+  assert.equal(isCrash(file, escaped), true, 'a crash named with escaped backslashes is a crash');
+  assert.deepEqual(entriesOf(file, escaped.tap, false), [`test/a/crash.test.ts :: ${CRASHED}`]);
   const runs = (...answers: FileRun[]) => {
     const calls: string[] = [];
     return { calls, run: async (path: string) => (calls.push(path), answers[calls.length - 1]) };
