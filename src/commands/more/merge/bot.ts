@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { botConfig, botEnv, botProgram, type Gh, installationToken, readApprovalState, readBranchFiles, readCodeOwners, readIssueMilestone, readRepoLabelNames, repoOf } from '../../../host/github/index.ts';
 import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/config.ts';
 import { finding, type Finding } from '../../../rules/message.ts';
-import { checkPost } from '../../../rules/privacy.ts';
+import { checkPost, readSentBody } from '../../../rules/privacy.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, madeWithFindings, noMilestoneFinding, prTier, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier } from '../../../rules/pr.ts';
 import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
 
@@ -17,8 +17,9 @@ export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bo
 /** The one line before the command's own output: `yokoten bot · as yokoten-bot · gh pr create`. */
 export const botHeading = (env: Env, command: string[]): string[] => title('bot', `as ${botName(env)} · ${command.join(' ')}`);
 
-async function bot(invocation: Invocation, command: string[]): Promise<number> {
+async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const { env, cwd } = invocation;
+  let command = written;
   // gh and git only (#295): a wrapper such as `env gh` or `sh -c` would run a title unchecked.
   if (command.length && !botProgram(command[0])) {
     print(invocation, [`yokoten bot: runs gh and git only; run \`${command[0]}\` without the bot`], invocation.stderr);
@@ -34,6 +35,17 @@ async function bot(invocation: Invocation, command: string[]): Promise<number> {
   if (titleProblems.length) {
     print(invocation, [`yokoten bot: ${titleProblems.length} problem(s) in the title; nothing was sent. Fix the title and run it again:`, ...bullets(titleProblems)], invocation.stderr);
     return 1;
+  }
+  // The body file is read once, here (#1077). gh then gets that same text on stdin, so every
+  // check below reads the text that is sent, and a file changed after the check changes nothing.
+  if (botProgram(command[0] ?? '') === 'gh') {
+    const sent = readSentBody(command.slice(1), cwd);
+    if ('id' in sent) {
+      print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([sent])], invocation.stderr);
+      return 1;
+    }
+    command = [command[0], ...sent.args];
+    if (sent.text !== undefined) stdinText = sent.text;
   }
   // Then a pull request's body (#406), by the body rules of `check --pr`. A body for this
   // branch, or one `--head` or `gh pr edit <branch>` names, is checked before anything is sent.

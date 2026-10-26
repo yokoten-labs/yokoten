@@ -1,3 +1,3 @@
 Changed
 
-`yokoten bot` now checks the body it sends. It reads each body file and note file as it sends, after the shell has written it, and runs the privacy check on it. A file it can't read is never sent. The guard leaves these files to the bot, so you may write a body file and post it with `yokoten bot` in one command. A bare `gh` with a body file works as before (#1077).
+`yokoten bot` now checks the body it sends. It reads each body, note or input file once, as it sends, and runs the privacy check on it. Then it hands gh that same text on standard input, so a file changed after the check can't change what is sent. A file it can't read is never sent, and neither is a command that reads its text from more than one place. The guard leaves the bot a body file that does not exist yet, so you may write a body file and post it with `yokoten bot` in one command. A file already on disk is still read by the guard. A bare `gh` with a body file works as before (#1077).

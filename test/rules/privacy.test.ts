@@ -1515,10 +1515,11 @@ test('inside "...", only $, backticks, \\ and ! make the line unsure (#439)', ()
 // ---- A body file through `yokoten bot` (#1077) ----
 //
 // The bot reads and checks each body file as it sends (test/commands/more/merge/bot.test.ts),
-// so the guard leaves them to it: writing the file and posting it may be one command. A bare
+// so the guard leaves it a file that is not there yet: writing the file and posting it may be
+// one command. A file already on disk is still read, in case a stand-in yokoten runs. A bare
 // gh keeps the guard's reading.
 
-test('through yokoten bot, the guard leaves the body file to the bot; a bare gh is still read (#1077)', () => {
+test('through yokoten bot, the guard leaves a file not yet written to the bot; a file on disk is still read (#1077)', () => {
   const body = join(postDir, 'bot-1077.md');
   rmSync(body, { force: true });
   const write = `cat > ${body} <<'EOF'\nAll clean.\nEOF\n`;
@@ -1546,9 +1547,16 @@ test('through yokoten bot, the guard leaves the body file to the bot; a bare gh 
   }
   // Text on the command line is still the guard's: a mark in --body is refused, through the bot too.
   assert.equal(post('yokoten bot -- gh issue comment 3 --body "Seen in QuietVale."')?.id, 'private-mark');
-  // Positive control for a bare gh: a mark in a file on disk is still found.
+  // Positive controls: a mark in a file already on disk is found, through a bare gh and through
+  // the bot, even when the command writes the file again: a planted yokoten.ts gets no pass.
   writeFileSync(body, 'Seen in QuietVale.\n');
   assert.equal(post(ghPost)?.id, 'private-mark');
+  for (const command of [botPost, `node bin/yokoten.ts bot -- gh issue comment 3 -F ${body}`, `printf 'All clean.\\n' > ${body} && ${botPost}`]) {
+    assert.equal(post(command)?.id, 'private-mark', command);
+  }
+  // A clean file on disk that the command writes again passes: the bot checks the new text.
+  writeFileSync(body, 'All clean.\n');
+  assert.equal(post(`echo more >> ${body} && ${botPost}`), null);
   rmSync(body);
 });
 
@@ -1696,10 +1704,9 @@ test('a ~/ path to yokoten and the allowed variables before it still read the bo
     `node /opt/x/bin/yokoten.ts ${comment}`,
   ];
   for (const command of passes) assert.equal(post(command), null, command);
-  // The bot reads the file as it sends, so the guard leaves it (#1077); a bare gh is still read.
+  // A file already on disk is still read through the bot, in case a stand-in yokoten runs (#1077).
   writeFileSync(body, 'Seen in QuietVale.\n');
-  for (const command of passes) assert.equal(post(command), null, command);
-  assert.equal(post(`gh issue comment 505 --body-file ${body}`)?.id, 'private-mark');
+  for (const command of passes) assert.equal(post(command)?.id, 'private-mark', command);
   writeFileSync(body, 'All clean.\n');
   // A ~ elsewhere, a quoted ~, a ~ that is not $HOME, or another program stays refused.
   for (const command of [
