@@ -164,7 +164,7 @@ test('lessons: a session hears a new lesson that finds something once; a project
   let result = await startFound({ session_id: 's-1', source: 'startup' });
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout.split('\n').filter((text) => text.includes('new lesson')).length, 1, result.stdout);
-  assert.ok(result.stdout.includes(`${line}\n`), result.stdout);
+  assert.ok(result.stdout.replace(/\n {9}/g, ' ').includes(`${line}\n`), result.stdout);
   // A compaction start does not repeat it, from the state or from what the session heard.
   assert.ok(!(await startFound({ session_id: 's-1', source: 'compact' })).stdout.includes('new lesson'));
   rmSync(foundState);
@@ -178,7 +178,7 @@ test('lessons: a session hears a new lesson that finds something once; a project
   assert.ok(!(await startFound({ session_id: 's-3', source: 'startup' })).stdout.includes('new lesson'));
   // The plugin names its own command; "not now" silences the line.
   rmSync(foundState);
-  assert.ok((await found.call(['doctor', '--session'], { extra: { CLAUDE_PLUGIN_ROOT: found.repo } })).stdout.includes('Run /yokoten:doctor to see where.'));
+  assert.ok((await found.call(['doctor', '--session'], { extra: { CLAUDE_PLUGIN_ROOT: found.repo } })).stdout.replace(/\s+/g, ' ').includes('Run /yokoten:doctor to see where.'));
   rmSync(foundState);
   found.write('yokoten.json', JSON.stringify({ notNow: { 'incident-138': 'no proxy on this team' } }));
   assert.ok(!(await found.call(['doctor', '--session'])).stdout.includes('new lesson'));

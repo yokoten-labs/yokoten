@@ -36,6 +36,7 @@ import {
   finding,
   type Finding,
   formatFinding,
+  formatNote,
   formatRefusal,
   measureWork,
   noteWork,
@@ -412,6 +413,25 @@ test('refusal: title, why, do instead and more, the same for every rule (#707)',
   assert.equal(parsed?.fix, 'Ask the owner to start a new session.');
   assert.equal(parsed?.docs, `${DOCS_URL}#how-to-release`);
   assert.equal(parseRefusal('yokoten: an older form'), null);
+});
+
+// #1099: a refusal and a session note keep the screen limits of record 0049. Each row wraps
+// under its own text at 80 columns; the board still reads every part whole.
+test('refusal and note: long rows wrap under their text, and the parts read back whole (#1099)', () => {
+  const what = 'a long command that names a very long path in the project folder is refused here';
+  const fix = 'save the file first with `git add -A && git commit -m "chore: save work"`, then ask the lead what to do next';
+  const text = formatRefusal(finding('release', what, fix));
+  const lines = text.split('\n');
+  assert.ok(lines.slice(0, -1).every((line) => line.length <= 80), text);
+  assert.ok(lines.some((line) => line.startsWith(' '.repeat(22))), 'the title goes on under its text');
+  assert.ok(lines.some((line) => line.includes('`git add -A && git commit -m "chore: save work"`')), 'a command in backticks is never broken');
+  const parsed = parseRefusal(text);
+  assert.equal(parsed?.title, `yokoten stopped this: ${what} [release]`);
+  assert.equal(parsed?.fix, `${fix.charAt(0).toUpperCase()}${fix.slice(1)}.`);
+  const note = formatNote(finding('release', what, fix));
+  assert.equal(note[0]?.startsWith('yokoten: a long command'), true);
+  assert.ok(note.slice(0, -1).every((line) => line.length <= 80), note.join('\n'));
+  assert.deepEqual(note.filter((line) => /^ {2}\S/.test(line)).map((line) => line.slice(0, 12)), ['  Why       ', '  Next      ', '  More      ']);
 });
 
 test('docs: no message names a docs/<file>.md path without a link (#524)', () => {

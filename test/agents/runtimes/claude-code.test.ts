@@ -138,7 +138,7 @@ test('plugin: install keeps a direct path, and the guard the plugin registers bl
   const session = run(hooks.SessionStart[0].hooks[0].command);
   assert.equal(session.status, 0, session.stderr);
   assert.match(session.stdout, /^yokoten: stage 1 of 5/);
-  assert.match(session.stdout, /runs as \/yokoten:init, \/yokoten:doctor and \/yokoten:update/);
+  assert.match(session.stdout.replace(/\s+/g, ' '), /runs as \/yokoten:init, \/yokoten:doctor and \/yokoten:update/);
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /yokoten:init/, 'only from the plugin');
 });
 
@@ -181,7 +181,7 @@ async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: Gua
       assert.ok(new RegExp(`^(?:${hook.matcher})$`).test(tool), `${label}: the hook runs on it`);
       const isRefused = result.status === 2 || /"permissionDecision":"deny"/.test(result.stdout);
       assert.equal(isRefused, refused, `${label}: ${result.stdout}${result.stderr}`);
-      if (refused) assert.match(result.stderr, /is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]|which is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]/, label);
+      if (refused) assert.match(result.stderr.replace(/\s+/g, ' '), /is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]|which is lead-only \(yokoten\.json "leadOnly"\) \[lead-only\]/, label);
     }
   }
 }

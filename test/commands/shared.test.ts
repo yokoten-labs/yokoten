@@ -40,7 +40,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   stopCheckoutWalk(sandbox.home);
   const away = join(sandbox.home, 'away');
   mkdirSync(away);
-  const said = (command: string) => new RegExp(`^yokoten ${command}: ~/away is not inside a git repo\\. The checks read commits, so yokoten needs git history\\. Run it inside your project, or \`git init\` first\\.\\n  docs: \\S+#commands\\n$`);
+  const said = (command: string) => new RegExp(`^yokoten ${command} · ~/away\\s+is\\s+not\\s+inside\\s+a\\s+git\\s+repo\\nNext: run \`git init\` here to start a project, or go to your project's folder\\.\\n$`);
   const runs: [string[], string, Record<string, string>?][] = [
     [['doctor'], 'doctor'],
     [['check'], 'check'],
@@ -93,7 +93,7 @@ test('git not installed: a command that needs a repo says git is missing, not "n
   for (const command of ['check', 'doctor']) {
     const result = await sandbox.call([command], { extra: { PATH: noGit } });
     assert.equal(result.status, 1, command);
-    assert.match(result.stderr.replace(/^note: .*\n/, ''), new RegExp(`^yokoten ${command}: git is not installed \\(or not on PATH\\); yokoten needs git\\. `), command);
+    assert.match(result.stderr.replace(/^note: .*\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
   }
 });
 
@@ -334,7 +334,7 @@ test('output colour: help bolds the usage and sections, and names each command i
   const one = await sandbox.call(['help', 'check'], { isTTY: true });
   assert.match(one.stdout, /\u001b\[1mUsage: yokoten \u001b\[36mcheck\u001b\[0m\u001b\[1m/, 'the usage names the command in cyan');
   assert.match(one.stdout, /\u001b\[1mOptions:\u001b\[0m/, 'the options title is bold');
-  assert.match(one.stdout, /\u001b\[1mExample:\u001b\[0m/, 'the example title is bold');
+  assert.match(one.stdout, /\u001b\[1mExamples?:\u001b\[0m/, 'the example title is bold');
 });
 
 

@@ -63,7 +63,8 @@ When it stops something, it says why and what to do instead:
 yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
   Why       Only the owner decides when to release.
-  Instead   Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
+  Instead   Stop and tell the owner: only the owner releases, with the steps in
+            How to release; do not look for another way.
   More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 

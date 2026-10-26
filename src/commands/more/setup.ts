@@ -7,13 +7,12 @@ import { Writable } from 'node:stream';
 import { ghIn } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
 import { hideHome, homeOf, NO_HOME } from '../../rules/privacy.ts';
-import { formatFinding } from '../../rules/message.ts';
 import { init, trust, undoTrust, updateCoreRules } from '../../setup/init.ts';
 import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skillNames, uninstall } from '../../setup/install.ts';
 import { readOriginUrl, setUpPlanning } from '../../setup/plan.ts';
 import { VERSION } from '../../setup/files.ts';
 import { enabledPlugin } from '../../setup/advice/marketplace.ts';
-import { count, type Invocation, moreLine, nextLine, noRootFinding, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from '../shared.ts';
+import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from '../shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -27,7 +26,7 @@ export async function runStart(invocation: Invocation): Promise<number> {
   // Outside a project yokoten writes nothing: the first step is git's, not ours.
   if (!root) {
     const missing = noRootFinding(cwd, env);
-    print(invocation, [`yokoten: ${formatFinding(missing)}.`, 'A project starts with git: run `git init` here, then `yokoten` again.', 'Run `yokoten help` to see every command.'], invocation.stderr);
+    print(invocation, noRootScreen(undefined, missing), invocation.stderr);
     return 1;
   }
   // No home folder means no place to install into (#548). Say it the way install does,

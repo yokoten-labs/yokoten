@@ -8,10 +8,10 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, st
 import { syncBuiltinESMExports } from 'node:module';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
+import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, sessionRoad, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
-import { blocksToSay, doctor, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
+import { blocksToSay, doctor, noteLines, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
 import { LABELS } from '../../../src/setup/plan.ts';
 import { missingPaths, road, ROAD, serverChecks, stepFinding } from '../../../src/setup/road.ts';
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
@@ -304,6 +304,9 @@ test("doctor: a slow server read stops in time, and each step says it can't be c
 });
 
 // The steps that only the code host can judge (#504): on a host with no adapter, each says what it asks.
+/** A session's notes, each block as one text with its wrapped lines joined (#1099). */
+const sessionNotes = (report: ReturnType<typeof doctor>): string[] => (report.blocks ?? []).map((block) => block.join('\n').replace(/\n {9,}/g, ' '));
+
 const FORGE_STEPS = ['tests', 'ci', 'labels', 'milestone', 'titles', 'codeowners', 'bot', 'review', 'protection', 'merge-settings', 'security-settings', 'tag-bypass', 'release-reviewer', 'release-tag-rule'];
 // What only GitHub has: its menus, its CLI, init's GitHub flag, the GitHub App. A standard's name ("GitHub community profile") and yokoten's own docs are not instructions.
 const GITHUB_ONLY = /github\.com(?!\/yokoten-labs\/yokoten\/)|\bgh\b|--github|in Settings, |GitHub App|Rulesets|Dependabot alerts/;
@@ -546,18 +549,22 @@ test('doctor: a workflow of the project\'s own that init keeps gets the step to 
   assert.doesNotMatch(doctor, /`yokoten init` adds \.github\/workflows/);
 });
 
-// The road (record 0004). A session hears three lines about one step; the marks file is
-// set so that the private-marks note does not add a fourth.
-test('doctor --session: exactly three lines, about the first step of the first stage not done', async () => {
+// The road (record 0004). A session hears one block about one step: the stage, the next
+// step and why as rows, then the offer (#1099). The marks file is set so that the
+// private-marks note does not add a second block.
+test('doctor --session: one block, about the first step of the first stage not done', async () => {
   const sandbox = makeSandbox();
   const marks = join(sandbox.home, 'marks');
   writeFileSync(marks, 'placeholder-mark\n');
   const r = await sandbox.call(['doctor', '--session'], { extra: { YOKOTEN_PRIVATE_MARKS: marks } });
   assert.equal(r.status, 0, 'a session always starts');
   assert.deepEqual(r.stdout.trimEnd().split('\n'), [
-    'yokoten: stage 1 of 5, safety net. Next: no AGENTS.md, so the agents have no written rules here; `yokoten init` adds one.',
-    'Why: an agent follows the rules it can read, and only those.',
-    'Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).',
+    'yokoten: stage 1 of 5, safety net',
+    '  Next      No AGENTS.md, so the agents have no written rules here;',
+    '            `yokoten init` adds one.',
+    '  Why       An agent follows the rules it can read, and only those.',
+    'Tell the user in plain words, one step at a time, and offer to do it (as-is,',
+    'lighter, or not now with a reason).',
   ]);
   // Outside a repo it says nothing (unless yokoten itself is broken). A stop marker keeps
   // the walk from finding the repo around this folder when TMPDIR lives inside one.
@@ -567,13 +574,13 @@ test('doctor --session: exactly three lines, about the first step of the first s
 
 test('doctor --session: "not now" skips a step, by the names yokoten.json already uses', async () => {
   const sandbox = makeSandbox();
-  const next = async () => (await sandbox.call(['doctor', '--session'])).stdout.split('\n')[0];
+  const next = async () => sessionRoad((await sandbox.call(['doctor', '--session'])).stdout);
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { rules: 'our rules live in the wiki for now' } }));
-  assert.match(await next(), /stage 1 of 5, safety net\. Next: no tool-call guard/);
+  assert.match(await next(), /stage 1 of 5, safety net\n  Next      No tool-call guard/);
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { rules: 'a', 'tool-hook': 'b', 'commit-check': 'c', runtime: 'd', tests: 'e', remote: 'no remote yet' } }));
-  assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: CI does not run/, 'a stage with every step not now is passed');
+  assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      CI does not run/, 'a stage with every step not now is passed');
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { rules: 'a', 'tool-hook': 'b', 'commit-check': 'c', runtime: 'd', tests: 'e', remote: 'no remote yet', ci: 'no remote yet', issues: 'f' } }));
-  assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: no issue templates and no pull request template/);
+  assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      No issue templates and no pull request template/);
   const full = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.match(full, /^ +not now +ci \(Scorecard: CI-Tests\): no remote yet$/m, 'the full map shows the reason');
   assert.match(full, /^ +next +templates \(GitHub community profile\): /m);
@@ -589,53 +596,53 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   const key = join(sandbox.home, 'bot.pem');
   const extra = { YOKOTEN_PRIVATE_MARKS: marks };
   const session = async (more: Record<string, string> = {}) => (await sandbox.call(['doctor', '--session'], { extra: { ...extra, ...more } })).stdout.trimEnd().split('\n');
-  const next = async (more?: Record<string, string>) => (await session(more))[0];
-  assert.match(await next(), /stage 1 of 5, safety net\. Next: no AGENTS\.md/);
+  const next = async (more?: Record<string, string>) => sessionRoad((await session(more)).join('\n'));
+  assert.match(await next(), /stage 1 of 5, safety net\n  Next      No AGENTS\.md/);
   // Stage 1 done, stage 2 not: init without its CI workflow.
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   sandbox.withTests();
   // The remote comes first (#655): make the repo, add it as origin, and push.
-  assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: there is no origin remote/);
+  assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      There is no origin remote/);
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   rmSync(join(sandbox.repo, '.github', 'workflows', 'yokoten.yml'));
-  assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: CI does not run `yokoten check`/, 'the pull request check alone is not the CI check');
+  assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      CI does not run `yokoten check`/, 'the pull request check alone is not the CI check');
   sandbox.write('TODO.md', '- one\n');
   await sandbox.call(['init', '--list']);
-  assert.match(await next(), /stage 2 of 5, issues and pull requests\. Next: a todo file \(TODO\.md\)/);
+  assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      A todo file \(TODO\.md\)/);
   rmSync(join(sandbox.repo, 'TODO.md'));
   // Stage 2 done. init wrote a changelog and changes/; without both, stage 3 is next.
   rmSync(join(sandbox.repo, 'CHANGELOG.md'));
   assert.match(await next(), /stage 4 of 5/, 'changes/ alone passes the changelog step (#132)');
   rmSync(join(sandbox.repo, 'changes'), { recursive: true });
-  assert.match(await next(), /stage 3 of 5, release\. Next: no CHANGELOG\.md with an "Unreleased" section, and no changes\/ folder/);
+  assert.match(await next(), /stage 3 of 5, release\n  Next      No CHANGELOG\.md with an "Unreleased" section, and no changes\/ folder/);
   sandbox.write('CHANGELOG.md', '# Changelog\n\n## [Unreleased]\n');
   // Stage 3 done.
-  assert.match(await next(), /stage 4 of 5, a team of agents\. Next: \.github\/CODEOWNERS names no owner yet \(@YOUR_GITHUB_HANDLE\); put your GitHub handle in \.github\/CODEOWNERS/);
+  assert.match(await next(), /stage 4 of 5, a team of agents\n  Next      \.github\/CODEOWNERS names no owner yet \(@YOUR_GITHUB_HANDLE\); put your GitHub handle in \.github\/CODEOWNERS/);
   // init wrote CODEOWNERS with the placeholder owner; a real owner finishes the step.
   sandbox.write('.github/CODEOWNERS', '* @octo\n');
-  assert.match(await next(), /stage 4 of 5, a team of agents\. Next: the bot is not set up on this machine: YOKOTEN_BOT_APP_ID is not set, in the environment or in ~\/\.config\/yokoten\/keys\.env;/);
+  assert.match(await next(), /stage 4 of 5, a team of agents\n  Next      The bot is not set up on this machine: YOKOTEN_BOT_APP_ID is not set, in the environment or in ~\/\.config\/yokoten\/keys\.env;/);
   // The key file in its default place, but no App ID anywhere: the step names what is missing (#364).
   const config = join(sandbox.home, '.config', 'yokoten');
   mkdirSync(config, { recursive: true });
   writeFileSync(join(config, 'bot.pem'), 'not a real key\n');
-  assert.match(await next(), /Next: the bot is not set up on this machine: the bot's key file is here, but YOKOTEN_BOT_APP_ID is not set/);
+  assert.match(await next(), /Next {6}The bot is not set up on this machine: the bot's key file is here, but YOKOTEN_BOT_APP_ID is not set/);
   // The App ID in the keys file, as `yokoten bot` reads it, and none in the session (#405).
   writeFileSync(join(config, 'keys.env'), 'OTHER_KEY=x\nexport YOKOTEN_BOT_APP_ID="1"\n');
-  assert.match(await next(), /stage 4 of 5, a team of agents\. Next: the yokoten skills are not in/, 'the keys file counts: no "no bot"');
+  assert.match(await next(), /stage 4 of 5, a team of agents\n  Next      The yokoten skills are not in/, 'the keys file counts: no "no bot"');
   for (const file of ['bot.pem', 'keys.env']) rmSync(join(config, file));
   writeFileSync(key, 'not a real key\n');
   const bot = { YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key };
-  assert.match(await next(bot), /stage 4 of 5, a team of agents\. Next: the yokoten skills are not in/);
+  assert.match(await next(bot), /stage 4 of 5, a team of agents\n  Next      The yokoten skills are not in/);
   assert.equal((await sandbox.call(['install'])).status, 0);
   // Stage 4 done. init writes a security policy and Dependabot; the license is the owner's choice.
-  assert.match(await next(bot), /stage 5 of 5, going public\. Next: no license file; /);
+  assert.match(await next(bot), /stage 5 of 5, going public\n  Next      No license file; /);
   sandbox.write('LICENSE', 'placeholder license\n');
   assert.deepEqual(await session(bot), ['yokoten: every step yokoten can check is done, or marked not now.']);
   // The order is advice, not a gate: a later step done early counts as done.
   rmSync(join(sandbox.repo, 'AGENTS.md'));
-  assert.match(await next(bot), /stage 1 of 5, safety net\. Next: no AGENTS\.md/);
+  assert.match(await next(bot), /stage 1 of 5, safety net\n  Next      No AGENTS\.md/);
   assert.match((await sandbox.call(['doctor', '--all'], { extra: { ...extra, ...bot } })).stdout, /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
 });
 
@@ -735,14 +742,15 @@ test('doctor: lists the work only on this machine; a session hears at most three
   const marks = join(sandbox.home, 'marks');
   writeFileSync(marks, 'placeholder-mark\n');
   const extra = { YOKOTEN_PRIVATE_MARKS: marks };
-  const session = async () => (await sandbox.call(['doctor', '--session'], { extra })).stdout.trimEnd().split('\n');
+  // The session's blocks, one blank line between them (#1099).
+  const session = async () => (await sandbox.call(['doctor', '--session'], { extra })).stdout.trimEnd().split('\n\n');
   // A fresh change is work going on now: the session does not hear it.
   sandbox.write('a.txt', 'a\n');
-  assert.equal((await session()).length, 3, 'only the road');
+  assert.equal((await session()).length, 1, 'only the road');
   assert.match((await sandbox.call(['doctor', '--all'], { extra })).stdout, /^unsaved work \(only on this machine\):\n {2}note {4}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
   const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   utimesSync(join(sandbox.repo, 'a.txt'), old, old);
-  assert.deepEqual((await session()).slice(3), ['yokoten: . has 1 uncommitted file, the oldest changed 2 days ago; commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it.', UNSAVED_OFFER]);
+  assert.deepEqual((await session()).slice(1), [[...noteLines('yokoten: . has 1 uncommitted file, the oldest changed 2 days ago; commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it.'), ...noteLines(UNSAVED_OFFER)].join('\n')]);
   const json = JSON.parse((await sandbox.call(['doctor', '--session', '--json'], { extra })).stdout);
   assert.deepEqual(json.notes.map((n: { id: string }) => n.id), ['uncommitted-changes']);
   assert.equal(json.ok, true, 'a note never fails doctor');
@@ -755,7 +763,8 @@ test('doctor: lists the work only on this machine; a session hears at most three
     writeFileSync(join(tree, 'b.txt'), 'b\n');
     utimesSync(join(tree, 'b.txt'), old, old);
   }
-  const lines = (await session()).slice(3);
+  // The first line of each item: three notes, the count of the rest, and the offer.
+  const lines = (await session())[1]?.split('\n').filter((line) => /^(?:yokoten: |Tell )/.test(line)) ?? [];
   assert.equal(lines.length, 5, lines.join('\n'));
   assert.equal(lines[3], 'yokoten: 2 more like this; `yokoten doctor` lists them all.');
   assert.ok(lines.every((line) => !line.includes(sandbox.home)), 'never the full home path');
@@ -842,7 +851,7 @@ test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to i
   assert.deepEqual(noteOf(full).map((note) => [note.what, note.why, note.fix]), [[what, 'the file was written for one vendor', fix]]);
   assert.ok(!full.report.findings.some((note) => note.id === 'muse-claude-rules'));
   const session = run(true);
-  assert.ok(session.lines.some((text) => text.startsWith(`yokoten: ${what}.`) && text.includes('`yokoten desk muse`') && text.includes('home folder stays hidden')));
+  assert.ok(sessionNotes(session).some((text) => text.startsWith(`yokoten: ${what}\n  Why `) && text.includes('`yokoten desk muse`') && text.includes('home folder stays hidden')));
   assert.deepEqual(noteOf(session).map((note) => note.what), [what]);
   assert.ok(!session.report.findings.some((note) => note.id === 'muse-claude-rules'));
   const noteLines = [...full.lines, ...session.lines].filter((text) => text.includes('muse-claude-rules') || text.includes('~/.claude/CLAUDE.md'));
@@ -914,8 +923,8 @@ test('doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder
   assert.ok(report.lines.includes(`  note    muse-claude-rules: ${what}; ${fix}`), report.lines.join('\n'));
   assert.ok(!report.report.findings.some((note) => note.id === 'muse-claude-rules'));
   assert.deepEqual(report.report.notes?.filter((note) => note.id === 'muse-claude-rules').map((note) => [note.what, note.fix]), [[what, fix]]);
-  const sessionLine = session.lines.find((text) => text.includes('~/.claude/CLAUDE.md'));
-  assert.ok(sessionLine?.startsWith(`yokoten: ${what}.`), sessionLine);
+  const sessionLine = sessionNotes(session).find((text) => text.includes('~/.claude/CLAUDE.md'));
+  assert.ok(sessionLine?.startsWith(`yokoten: ${what}\n  Why `), sessionLine);
   assert.match(sessionLine ?? '', /desk needs attention/);
   assert.doesNotMatch(sessionLine ?? '', /outside a desk/);
   assert.ok(!session.report.findings.some((note) => note.id === 'muse-claude-rules'));
@@ -953,7 +962,7 @@ test('doctor: in the yokoten repo, the session and doctor count the notes from o
   sandbox.write('bin/yokoten.ts', '');
   const session = await sandbox.call(['doctor', '--session']);
   assert.equal(session.status, 0, session.stderr);
-  assert.equal(session.stdout.trimEnd().split('\n').at(-1), line);
+  assert.equal(session.stdout.trimEnd().split('\n\n').at(-1)?.replace(/\n {9}/g, ' '), line);
   const note = upstreamNote(sandbox.repo, { HOME: sandbox.home });
   assert.equal(note?.id, 'upstream-inbox');
   assert.equal(note?.what, line.replace(/^yokoten: /, ''));
@@ -1004,11 +1013,11 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   sandbox.write('SECURITY.md', '# Security\n');
   sandbox.git('add', '.');
   sandbox.git('commit', '-q', '-m', 'docs: add the rules');
-  const first = async (cwd = sandbox.repo) => (await sandbox.call(['doctor', '--session'], { cwd })).stdout.split('\n')[0];
-  const plain = /Next: no AGENTS\.md, so the agents have no written rules here; `yokoten init` adds one\./;
+  const first = async (cwd = sandbox.repo) => sessionRoad((await sandbox.call(['doctor', '--session'], { cwd })).stdout);
+  const plain = /Next {6}No AGENTS\.md, so the agents have no written rules here; `yokoten init` adds one\./;
   // No origin: init.defaultBranch, else main.
   assert.equal(sandbox.git('checkout', '-q', 'old').status, 0);
-  assert.equal(await first(), 'yokoten: stage 1 of 5, safety net. Next: AGENTS.md is on main, not on this branch (old); work on a branch made from main, or merge main into this one.');
+  assert.equal(await first(), 'yokoten: stage 1 of 5, safety net\n  Next      AGENTS.md is on main, not on this branch (old); work on a branch made from main, or merge main into this one.');
   const full = (await sandbox.call(['doctor', '--all'])).stdout;
   const line = (key: string) => full.split('\n').find((l) => new RegExp(` ${key}[ :]`).test(l)) ?? '';
   assert.match(line('rules'), /AGENTS\.md is on main, not on this branch \(old\)/);
@@ -1022,7 +1031,7 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   const inClone = (...args: string[]) => spawnSync('git', args, { cwd: clone, env: sandbox.env }).status;
   assert.equal(spawnSync('git', ['clone', '-q', sandbox.repo, clone], { env: sandbox.env }).status, 0);
   assert.equal(inClone('checkout', '-q', 'old'), 0);
-  assert.equal(await first(clone), 'yokoten: stage 1 of 5, safety net. Next: AGENTS.md is on origin/main, not on this branch (old); work on a branch made from origin/main, or merge origin/main into this one.');
+  assert.equal(await first(clone), 'yokoten: stage 1 of 5, safety net\n  Next      AGENTS.md is on origin/main, not on this branch (old); work on a branch made from origin/main, or merge origin/main into this one.');
   // On the default branch, or at its commit, the file was removed here: merging changes nothing.
   assert.equal(inClone('checkout', '-q', 'main'), 0);
   rmSync(join(clone, 'AGENTS.md'));
