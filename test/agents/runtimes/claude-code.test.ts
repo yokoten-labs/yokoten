@@ -22,7 +22,7 @@ import {
 } from '../../repo/helpers.ts';
 import { addProjectHook, addProjectSandbox, addProjectStopHook, addUserHooks, GUARDED_TOOLS, agentFile, DESK, formatRewrite, hasSessionDoctor, hasSessionInput, hasUserGuard, readSessionStart, readStop, removeUserHooks, sandboxProblem, setProjectEnv, skillFile, userDir, userSettingsFile } from '../../../src/agents/runtimes/claude-code.ts';
 import { pluginHookCommand } from '../../../src/run/cli.ts';
-import { USER_MISSING } from '../../../src/setup/install.ts';
+import { USER_CLI, USER_MISSING } from '../../../src/setup/install.ts';
 
 test('claude-code readStop: a Stop or SubagentStop event is checked; a worker subagent is a worker (#614)', () => {
   assert.deepEqual(readStop({ cwd: '/w', stop_hook_active: false }), { cwd: '/w', active: false, worker: false, subagent: false, sessionId: undefined });
@@ -232,8 +232,10 @@ test('claude-code install: an older Bash-only user guard becomes one guard on ev
 test('claude-code guard: a missing or broken user guard on a Write says how to fix it (#1095)', () => {
   const sandbox = makeSandbox();
   const env = { HOME: sandbox.home };
-  const cli = join(sandbox.home, 'yokoten.mjs');
-  addUserHooks(env, cli, USER_MISSING);
+  // The real install's path, written with $HOME: a Windows path pasted into the bash command
+  // would lose its backslashes, and the copy would never be found.
+  const cli = join(sandbox.home, '.local', 'share', 'yokoten', 'bin', 'yokoten.mjs');
+  addUserHooks(env, USER_CLI, USER_MISSING);
   const hook = JSON.parse(readFileSync(join(sandbox.home, '.claude', 'settings.json'), 'utf8')).hooks.PreToolUse[0].hooks[0].command as string;
   const input = JSON.stringify({ cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: join(sandbox.repo, 'src', 'x.ts'), content: 'x' } });
   const run = () => spawnSync(hook, { shell: 'bash', cwd: sandbox.repo, env: sandbox.env, input, encoding: 'utf8' });
@@ -241,6 +243,7 @@ test('claude-code guard: a missing or broken user guard on a Write says how to f
   assert.equal(result.status, 1, 'a missing copy is reported, and the call runs');
   assert.equal(result.stderr, `${USER_MISSING}\n`);
   assert.match(USER_MISSING, /run the install again/);
+  mkdirSync(join(cli, '..'), { recursive: true });
   writeFileSync(cli, 'process.exit(3);\n');
   result = run();
   assert.equal(result.status, 2, 'a guard that fails refuses the call');
