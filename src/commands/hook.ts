@@ -961,7 +961,8 @@ export async function runDesk(invocation: Invocation): Promise<number> {
   };
   if (workerRole(invocation.env, [invocation.cwd]) !== null) return fail('only the lead starts a desk: this session is a worker.');
   const [{ planDesk }, { chooseBackend, startDesk }, { paths }, team, { teamFolderFor, teamName }] = await Promise.all([import('../agents/desk/desk.ts'), import('../agents/desk/start.ts'), import('../setup/install.ts'), import('../agents/desk/team/who.ts'), import('../agents/desk/team/team.ts')]);
-  const backend = chooseBackend(process.platform, invocation.env);
+  // srt never comes from the lead's project or the desk (P6 review).
+  const backend = chooseBackend(process.platform, invocation.env, [invocation.cwd, resolve(invocation.cwd, folder)]);
   if (typeof backend === 'string') return fail(backend);
   const list = (name: string) => (options.values[name] ?? '').split(',').map((word) => word.trim()).filter(Boolean);
   const installed = paths(invocation.env);

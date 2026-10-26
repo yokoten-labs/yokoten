@@ -21,10 +21,10 @@ import { markWorktree } from '../../../src/commands/hook.ts';
 import { CLI, makeTempDir } from '../../repo/helpers.ts';
 
 test('chooseBackend: native Windows is sent to WSL, an unknown system or fence is named', () => {
-  const windows = chooseBackend('win32', {}) as string;
+  const windows = chooseBackend('win32', {}, []) as string;
   assert.match(windows, /does not run on native Windows\. Run yokoten in WSL/);
-  assert.match(chooseBackend('aix', {}) as string, /not on aix/);
-  assert.match(chooseBackend('linux', { YOKOTEN_FENCE: 'none' }) as string, /YOKOTEN_FENCE is "none"; it can only be "own"/);
+  assert.match(chooseBackend('aix', {}, []) as string, /not on aix/);
+  assert.match(chooseBackend('linux', { YOKOTEN_FENCE: 'none' }, []) as string, /YOKOTEN_FENCE is "none"; it can only be "own"/);
 });
 
 test('signalEnd: the real signal number, the signal named, and the sandbox hint when quiet', () => {
@@ -207,7 +207,7 @@ async function holdsContract(backend: DeskBackend): Promise<void> {
 // The contract runs against each fence this system can start; a fence that can't is skipped with its reason.
 const withoutFence = Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== 'YOKOTEN_FENCE'));
 for (const [name, env] of [['sandbox-runtime', withoutFence], ['the old fence, YOKOTEN_FENCE=own', { ...withoutFence, YOKOTEN_FENCE: 'own' }]] as const) {
-  const backend = chooseBackend(process.platform, env);
+  const backend = chooseBackend(process.platform, env, [process.cwd()]);
   test(`the desk contract holds on this system: ${name}`, { skip: typeof backend === 'string' && backend }, async () => {
     if (typeof backend !== 'string') await holdsContract(backend);
   });

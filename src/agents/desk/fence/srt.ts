@@ -1,7 +1,8 @@
 // The desk fence on Linux and macOS: anthropics/sandbox-runtime (`srt`, Apache-2.0), the
 // sandbox Claude Code itself uses (bubblewrap on Linux, Seatbelt on macOS, and a proxy that
 // lets through only the allowed hosts). yokoten runs it as a program and ships none of its
-// code: `srt` on PATH when it is the pinned version, else the pinned version through `npx`.
+// code: `srt` on PATH when it is the pinned version, else the pinned version through `npx`,
+// and never an `srt` from the project or the desk (`findSrt`).
 // It is never a dependency of the package (the core has none).
 //
 // - The plan becomes srt's settings file in a pure function, `srtSettings`.
@@ -12,9 +13,9 @@
 // - `YOKOTEN_FENCE=own` picks the old backends (bwrap.ts, seatbelt.ts) for a while, in start.ts.
 
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { findProgram } from '../../../platform/process.ts';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn } from '../../../rules/privacy.ts';
@@ -106,8 +107,8 @@ const listFolder = (folder: string): string[] | null => {
 /** Runs a program with no shell and gives its output, or null when it fails. A test passes a table. */
 export type RunProgram = (file: string, args: string[]) => string | null;
 
-const runWith = (env: Env): RunProgram => (file, args) => {
-  const ran = spawnSync(file, args, { env, encoding: 'utf8', timeout: 120_000, shell: false });
+const runWith = (env: Env, cwd?: string): RunProgram => (file, args) => {
+  const ran = spawnSync(file, args, { env, cwd, encoding: 'utf8', timeout: 120_000, shell: false });
   return ran.status === 0 ? ran.stdout : null;
 };
 
@@ -116,18 +117,73 @@ export function srtRefusal(reason: string): string {
   return `the sandbox (sandbox-runtime ${SRT_VERSION}) can't start here: ${reason}. Nothing was started.`;
 }
 
+/** The real path, or the path itself when it is not there. */
+const realOr = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
+};
+
+/** The folder and the git checkout it is in (the nearest folder above with `.git`), real. */
+const withCheckout = (folder: string): string[] => {
+  const real = realOr(folder);
+  for (let at = real; ; at = dirname(at)) {
+    if (existsSync(join(at, '.git'))) return [real, at];
+    if (dirname(at) === at) return [real];
+  }
+};
+
+const fencedFolders = (projects: string[]): string[] => projects.flatMap(withCheckout);
+
+/** npx's own cache for one package: `<npm cache>/_npx/<hash>/node_modules/.bin`. */
+const NPX_CACHE_BIN = /[\\/]_npx[\\/][0-9a-f]+[\\/]node_modules[\\/]\.bin$/;
+
 /**
- * The srt program to start: the one on PATH when it is the pinned version, else the pinned
- * version through npx (kept in npm's own cache, never in the project). Else the reason, in one line.
+ * The PATH folders an srt may come from: absolute, and neither inside `projects` (the desk,
+ * the folder the lead runs in, and their git checkouts) nor a `node_modules/.bin`, which a
+ * repository fills. With `npx`, npx's own cache for the package is let through too. Each
+ * folder is judged by its real path, so a link into a project is caught.
  */
-export function findSrt(env: Env, platform: NodeJS.Platform, run: RunProgram = runWith(env)): string | { problem: string } {
-  const isPinned = (file: string | null): file is string => file !== null && run(file, ['--version'])?.trim() === SRT_VERSION;
-  const onPath = findProgram('srt', env.PATH, platform, env);
-  if (isPinned(onPath)) return onPath;
-  const npxPath = run('npx', [...NPX_ARGS, 'node', '-e', 'process.stdout.write(process.env.PATH ?? "")']);
-  if (npxPath === null) return { problem: srtRefusal(`npx can't get ${SRT_PACKAGE}@${SRT_VERSION}; check the network, or run npm install -g ${SRT_PACKAGE}@${SRT_VERSION}`) };
-  const fetched = findProgram('srt', npxPath, platform, env);
-  return isPinned(fetched) ? fetched : { problem: srtRefusal(`npx gave no srt ${SRT_VERSION}`) };
+export function trustedPath(path: string | undefined, projects: string[], npx: boolean): string {
+  const fenced = fencedFolders(projects);
+  const trusted = (entry: string) => {
+    if (!isAbsolute(entry)) return false;
+    const both = [resolve(entry), realOr(entry)];
+    if (both.some((folder) => fenced.some((project) => isInside(folder, project)))) return false;
+    if (both.every((folder) => !folder.endsWith(`${sep}node_modules${sep}.bin`))) return true;
+    return npx && both.every((folder) => NPX_CACHE_BIN.test(folder));
+  };
+  return (path ?? '').split(delimiter).filter(trusted).join(delimiter);
+}
+
+/**
+ * The srt program to start, never one a project put there: the one on a trusted PATH
+ * folder (`trustedPath`) when it is the pinned version, else the pinned version through npx,
+ * run from an empty folder so no project's packages count, and taken only from npx's own
+ * cache. Else the reason, in one line (fail closed). `projects` are the desk and the folder
+ * the lead runs in. A candidate is run (`--version`) only after its folder passed.
+ */
+export function findSrt(env: Env, platform: NodeJS.Platform, projects: string[], run?: RunProgram): string | { problem: string } {
+  const safe: Env = { ...env, PATH: trustedPath(env.PATH, projects, false) };
+  const away = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-npx-')));
+  try {
+    const runs = run ?? runWith(safe, away);
+    // The program itself may be a link into a project, from a folder that passed.
+    const fenced = fencedFolders(projects);
+    const isPinned = (file: string | null): file is string => file !== null && !fenced.some((project) => isInside(realOr(file), project)) && runs(file, ['--version'])?.trim() === SRT_VERSION;
+    const onPath = findProgram('srt', safe.PATH, platform, env);
+    if (isPinned(onPath)) return onPath;
+    const npx = findProgram('npx', safe.PATH, platform, env);
+    const npxPath = npx === null ? null : runs(npx, [...NPX_ARGS, 'node', '-e', 'process.stdout.write(process.env.PATH ?? "")']);
+    if (npxPath === null) return { problem: srtRefusal(`npx can't get ${SRT_PACKAGE}@${SRT_VERSION}; check the network, or run npm install -g ${SRT_PACKAGE}@${SRT_VERSION}`) };
+    const cached = trustedPath(npxPath, projects, true).split(delimiter).filter((folder) => NPX_CACHE_BIN.test(resolve(folder)));
+    const fetched = findProgram('srt', cached.join(delimiter), platform, env);
+    return isPinned(fetched) ? fetched : { problem: srtRefusal(`npx gave no srt ${SRT_VERSION}`) };
+  } finally {
+    rmSync(away, { recursive: true, force: true });
+  }
 }
 
 /** Write the settings for `plan` into `folder`, read-only, and return the file. */
@@ -171,7 +227,7 @@ const withSrtFiles = (plan: SrtPlan, srt: string): SrtPlan => ({ ...plan, readab
 export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJS.Platform, env: Env): FencedCommand {
   if (platform === 'win32') return { command, fence: 'guard', notice: WINDOWS_NOTICE };
   if (env.YOKOTEN_FENCE === 'own') throw new Error('YOKOTEN_FENCE=own runs only through `yokoten desk <agent> <folder> -- <command>`. Unset it to use sandbox-runtime.');
-  const srt = findSrt(env, platform);
+  const srt = findSrt(env, platform, [spec.root]);
   if (typeof srt !== 'string') throw new Error(srt.problem);
   const folder = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-fence-')));
   const problem = srtProblem(srt, env, folder);

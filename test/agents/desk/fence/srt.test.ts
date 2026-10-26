@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { fenceCommand, findSrt, NPX_ARGS, splitHidden, SRT_VERSION, type SrtPlan, srtProblem, srtSettings } from '../../../../src/agents/desk/fence/srt.ts';
+import { fenceCommand, findSrt, NPX_ARGS, splitHidden, SRT_VERSION, type SrtPlan, srtProblem, srtSettings, trustedPath } from '../../../../src/agents/desk/fence/srt.ts';
 import { startOptions, treeKill } from '../../../../src/platform/process.ts';
 import { makeTempDir } from '../../../repo/helpers.ts';
 
@@ -65,19 +65,72 @@ function fakeProgram(name: string, version: string, code: number): string {
   return folder;
 }
 
+/** A pinned srt in a folder shaped like npx's cache: `<temp>/_npx/<hash>/node_modules/.bin`. */
+function npxCache(): string {
+  const bin = join(realpathSync(makeTempDir('npm-')), '_npx', '0a1b2c', 'node_modules', '.bin');
+  mkdirSync(bin, { recursive: true });
+  const file = join(fakeProgram('srt', SRT_VERSION, 0), 'srt');
+  writeFileSync(join(bin, 'srt'), readFileSync(file));
+  chmodSync(join(bin, 'srt'), 0o755);
+  return bin;
+}
+
+/** A run table: npx at the pinned version gives `npxGives` as its PATH; each other program really runs, and is logged. */
+function runTable(npxGives: string | null, ran: string[] = []) {
+  return (file: string, args: string[]) => {
+    ran.push(file);
+    if (file.endsWith('/npx')) return args.slice(0, NPX_ARGS.length).join(' ') === NPX_ARGS.join(' ') ? npxGives : null;
+    return spawnSync(file, args, { encoding: 'utf8' }).stdout;
+  };
+}
+
 test('findSrt: srt on PATH at the pinned version, else npx at the pinned version, else one line (case table)', () => {
   const pinned = fakeProgram('srt', SRT_VERSION, 0);
   const older = fakeProgram('srt', '0.0.1', 0);
-  const run = (npxGives: string | null) => (file: string, args: string[]) => {
-    if (file === 'npx') return args.slice(0, NPX_ARGS.length).join(' ') === NPX_ARGS.join(' ') ? npxGives : null;
-    return spawnSync(file, args, { encoding: 'utf8' }).stdout;
-  };
-  assert.equal(findSrt({ PATH: pinned }, 'linux', run(null)), join(pinned, 'srt'), 'the pinned one on PATH');
-  assert.equal(findSrt({ PATH: older }, 'darwin', run(pinned)), join(pinned, 'srt'), 'another version on PATH: npx');
-  assert.equal(findSrt({ PATH: '' }, 'linux', run(`/usr/bin:${pinned}`)), join(pinned, 'srt'), 'none on PATH: npx');
-  const offline = findSrt({ PATH: older }, 'linux', run(null));
+  const npx = fakeProgram('npx', '', 0);
+  const cache = npxCache();
+  const project = [realpathSync(makeTempDir('project-'))];
+  assert.equal(findSrt({ PATH: pinned }, 'linux', project, runTable(null)), join(pinned, 'srt'), 'the pinned one on PATH');
+  assert.equal(findSrt({ PATH: `${older}:${npx}` }, 'darwin', project, runTable(cache)), join(cache, 'srt'), 'another version on PATH: npx');
+  assert.equal(findSrt({ PATH: npx }, 'linux', project, runTable(`/usr/bin:${cache}`)), join(cache, 'srt'), 'none on PATH: npx');
+  const offline = findSrt({ PATH: `${older}:${npx}` }, 'linux', project, runTable(null));
   assert.match((offline as { problem: string }).problem, /^the sandbox \(sandbox-runtime 0\.0\.81\) can't start here: npx can't get @anthropic-ai\/sandbox-runtime@0\.0\.81; .*Nothing was started\.$/);
-  assert.match((findSrt({ PATH: '' }, 'linux', run(older)) as { problem: string }).problem, /npx gave no srt 0\.0\.81/);
+  assert.match((findSrt({ PATH: older }, 'linux', project, runTable(cache)) as { problem: string }).problem, /npx can't get/, 'no npx on PATH: one line');
+  assert.match((findSrt({ PATH: npx }, 'linux', project, runTable(older)) as { problem: string }).problem, /npx gave no srt 0\.0\.81/);
+  assert.match((findSrt({ PATH: npx }, 'linux', project, runTable(pinned)) as { problem: string }).problem, /npx gave no srt 0\.0\.81/, 'npx gave a PATH folder that is not its cache');
+});
+
+test('findSrt: an srt the project planted is never chosen, nor run (positive control)', () => {
+  const project = realpathSync(makeTempDir('project-'));
+  mkdirSync(join(project, '.git'));
+  const planted = join(project, 'node_modules', '.bin');
+  mkdirSync(planted, { recursive: true });
+  writeFileSync(join(planted, 'srt'), readFileSync(join(fakeProgram('srt', SRT_VERSION, 0), 'srt')));
+  chmodSync(join(planted, 'srt'), 0o755);
+  const npx = fakeProgram('npx', '', 0);
+  const desk = join(project, 'desk');
+  mkdirSync(desk);
+  // Any node_modules/.bin, even outside the project; and a folder inside the checkout, found from the desk.
+  const elsewhere = join(realpathSync(makeTempDir('other-')), 'node_modules', '.bin');
+  mkdirSync(elsewhere, { recursive: true });
+  writeFileSync(join(elsewhere, 'srt'), readFileSync(join(planted, 'srt')));
+  chmodSync(join(elsewhere, 'srt'), 0o755);
+  const inside = join(project, 'tools');
+  mkdirSync(inside);
+  writeFileSync(join(inside, 'srt'), readFileSync(join(planted, 'srt')));
+  chmodSync(join(inside, 'srt'), 0o755);
+  for (const [name, path] of [['the project node_modules/.bin', planted], ['another node_modules/.bin', elsewhere], ['a folder in the checkout', inside]] as const) {
+    const ran: string[] = [];
+    const found = findSrt({ PATH: `${path}:${npx}` }, 'linux', [desk], runTable(null, ran));
+    assert.equal(typeof found, 'object', `${name}: refused`);
+    assert.ok(!ran.some((file) => file.startsWith(path)), `${name}: never run`);
+  }
+  // npx's PATH carries the project's node_modules/.bin first: only npx's own cache counts.
+  const cache = npxCache();
+  assert.equal(findSrt({ PATH: npx }, 'linux', [desk], runTable(`${planted}:${cache}`)), join(cache, 'srt'), 'npx: the cache, not the project');
+  assert.equal(typeof findSrt({ PATH: npx }, 'linux', [desk], runTable(`${planted}:${join(project, '_npx', '0a1b2c', 'node_modules', '.bin')}`)), 'object', 'a cache-shaped folder inside the project');
+  // The lead's own PATH dropping the project folders.
+  assert.equal(trustedPath(`${planted}:relative:${npx}:${inside}`, [desk], false), npx);
 });
 
 test('srtProblem: srt that fails to start gives its first line; one that starts gives null', () => {
@@ -100,7 +153,7 @@ test('fenceCommand: native Windows gets the guard and WSL; a fence that cannot s
   assert.throws(() => fenceCommand(spec, ['agent'], 'linux', { YOKOTEN_FENCE: 'own' }), /YOKOTEN_FENCE=own runs only through `yokoten desk/);
 });
 
-const real = findSrt(process.env, process.platform);
+const real = findSrt(process.env, process.platform, [process.cwd()]);
 const reason = typeof real === 'string' ? srtProblem(real, process.env, makeTempDir('fence-')) : real.problem;
 
 test('fenceCommand: with srt here, the command writes in the root and nowhere else', { skip: (process.platform === 'win32' && 'no srt fence on native Windows') || reason || false }, () => {
