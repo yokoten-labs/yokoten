@@ -61,6 +61,9 @@ test('doctor: names a newer kit copy that waits behind an edit (#477)', async ()
   assert.equal(found?.id, 'edited-kit');
   assert.match(found?.what ?? '', /^a newer kit copy is waiting for the skill yokoten \(~\/\.claude\/skills\/yokoten\/SKILL\.md\) you edited/);
   assert.match(found?.fix ?? '', /diff ~\/\.claude\/skills\/yokoten\/SKILL\.md .*kit\/user\/entry\/SKILL\.md/);
+  const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: () => { throw new Error('no network in this test'); } });
+  // The line words the command as this machine runs it, so only its start is compared.
+  assert.ok(full.lines.some((line) => line.startsWith(`  note    edited-kit: ${found?.what}; `)), full.lines.join('\n'));
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a newer kit copy is waiting for the skill yokoten/);
 });
 
@@ -172,6 +175,9 @@ test('doctor: the plugin and install both on is a note that says to uninstall (#
   writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), enabledPlugins: { 'yokoten@yokoten': true } }));
   const double = doubleInstallCheck(sandbox.repo, sandbox.env);
   assert.equal(double?.id, 'machine-runtime');
+  const noGh = () => { throw new Error('no network in this test'); };
+  const fullLines = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh }).lines;
+  assert.ok(fullLines.includes(`  note    plugin-and-install: ${double?.what}; ${double?.fix}`), 'full doctor prints the note');
   assert.match(`${double?.what}; ${double?.fix}`.replaceAll(sandbox.home, '~'), /^the yokoten plugin is on, and `yokoten install` put these here too: the SessionStart doctor and the command guard in ~\/\.claude\/settings\.json; the skills in ~\/\.claude\/skills and ~\/\.agents\/skills; the agents in ~\/\.claude\/agents; ~\/\.local\/share\/yokoten; remove the home copy with `yokoten uninstall`/);
   // A session start takes the copies back instead of naming them (#935).
   const session = (await sandbox.call(['doctor', '--session'])).stdout;
@@ -572,6 +578,10 @@ test('mergeTimeZones: counts merge commits not in UTC, and prints one command th
   assert.equal(found?.what, '1 merge commit(s) among the last 200 commits on the default branch carry an author or committer time zone other than UTC');
   assert.match(found?.fix ?? '', /^see them with `git log /);
   assert.doesNotMatch(`${found?.what} ${found?.fix}`, /\+0900/, 'the time zone value is never printed');
+  // Full doctor prints it as one note line, and nowhere the zone.
+  const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: () => { throw new Error('no network in this test'); } });
+  assert.ok(full.lines.includes(`  note    time-zone: ${found?.what}; ${found?.fix}`), full.lines.join('\n'));
+  assert.ok(!JSON.stringify(full).includes('+0900'), 'the time zone value is never printed');
   // The printed command shows exactly that one merge, not the older one outside the window.
   const command = /`(git log[^`]+)`/.exec(found?.fix ?? '')?.[1];
   assert.ok(command, found?.fix);

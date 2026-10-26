@@ -222,6 +222,11 @@ test('doctor: a workflow with a run line of 500,000 characters does not throw (#
   writeFileSync(join(root, '.github', 'workflows', 'ci.yml'), long);
   // The steps that read the workflows: none throws, and none is done.
   for (const { step, found } of road(root, { HOME: root }, ROAD.filter((s) => ['tests', 'ci', 'titles'].includes(s.key)))) assert.notEqual(found, true, step.key);
+  // The whole of doctor reads the file too, full and session: nothing else throws on it.
+  for (const session of [false, true]) {
+    const result = doctor(root, { env: { HOME: root }, config: DEFAULTS, session, gh: () => { throw new Error('no network in this test'); } });
+    assert.notEqual(result.report.steps?.find((s) => s.id === 'ci')?.mark ?? 'not done', 'done', `session ${session}`);
+  }
 });
 
 test('doctor: reads the server of a GitHub origin into the road; a step not done fails, a note does not (#7)', () => {
@@ -828,6 +833,7 @@ test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to i
   const noteText = JSON.stringify({ lines: noteLines, notes: [...noteOf(full), ...noteOf(session)] });
   assert.ok(noteLines.length >= 2, 'full doctor and the session each say it');
   assert.ok(!noteText.includes(body), 'the rules file is never read');
+  assert.ok(!JSON.stringify(session).includes(body), 'nothing in the session report holds the rules file');
   assert.ok(!noteText.includes(sandbox.home), 'the note names no home path');
   const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { ok: boolean; notes: { id: string }[] };
   assert.equal(json.ok, full.ok);
