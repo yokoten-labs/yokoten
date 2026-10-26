@@ -4,7 +4,7 @@
 // The hook knows nothing about any one runtime. An adapter in src/agents/ turns the
 // runtime's own call into an `Action` first.
 
-import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn, type SpawnOptions, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { appendFileSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import module from 'node:module';
@@ -593,8 +593,8 @@ export function listAnchors(folder: string): Anchor[] {
 }
 
 /** The shell that runs a done-when command: `cmd.exe` on Windows, `sh` on every other system. */
-export function doneWhenShell(): string {
-  return process.platform === 'win32' ? 'cmd.exe' : '/bin/sh';
+export function doneWhenShell(platform: string = process.platform): string {
+  return platform === 'win32' ? 'cmd.exe' : '/bin/sh';
 }
 
 /** Arguments for `taskkill` that stop `pid` and the programs it started, while that process is still alive. */
@@ -1026,37 +1026,41 @@ function killCommandTree(pid: number): void {
   killSessionMembers(pid);
 }
 
+/** How the done-when command starts: the program, its words, and spawn's options. */
+export interface DoneWhenSpawn {
+  file: string;
+  args: string[];
+  options: SpawnOptions;
+}
+
 /**
- * Start the done-when command. `powerShell` puts `cmd.exe` in a job. Null starts the
- * platform shell: a new session on POSIX, `cmd.exe` on Windows. Both Windows paths build
- * the command line with `windowsCommandTail`, so a quote is the command's own (#735).
+ * How to start the done-when command on `platform`, as plain data (#1109). `powerShell`
+ * puts `cmd.exe` in a job. Null starts the platform shell: a new session on POSIX, `cmd.exe`
+ * on Windows. Both Windows paths build the command line with `windowsCommandTail`, so a
+ * quote is the command's own (#735). On POSIX the shell reads the command as one string.
  */
-function spawnDoneWhen(command: string, cwd: string, env: Record<string, string>, powerShell: string | null): ChildProcess {
+export function planDoneWhenSpawn(command: string, cwd: string, env: Record<string, string>, powerShell: string | null, platform: string): DoneWhenSpawn {
   if (powerShell) {
-    return spawn(powerShell, windowsJobArgs(), {
-      cwd,
-      env: { ...env, [DONE_COMMAND_ENV]: windowsCommandTail(command) },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
+    return {
+      file: powerShell,
+      args: windowsJobArgs(),
+      options: { cwd, env: { ...env, [DONE_COMMAND_ENV]: windowsCommandTail(command) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true },
+    };
   }
-  if (process.platform === 'win32') {
-    return spawn(doneWhenShell(), ['/d', '/s', '/c', windowsCommandTail(command)], {
-      cwd,
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsVerbatimArguments: true,
-      windowsHide: true,
-    });
+  if (platform === 'win32') {
+    return {
+      file: doneWhenShell(platform),
+      args: ['/d', '/s', '/c', windowsCommandTail(command)],
+      options: { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsVerbatimArguments: true, windowsHide: true },
+    };
   }
-  return spawn(command, {
-    shell: doneWhenShell(),
-    cwd,
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: true,
-    windowsHide: true,
-  });
+  return { file: command, args: [], options: { shell: doneWhenShell(platform), cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true, windowsHide: true } };
+}
+
+/** Start the done-when command as `planDoneWhenSpawn` says. */
+function spawnDoneWhen(command: string, cwd: string, env: Record<string, string>, powerShell: string | null, platform: string): ChildProcess {
+  const { file, args, options } = planDoneWhenSpawn(command, cwd, env, powerShell, platform);
+  return spawn(file, args, options);
 }
 
 /** The path of the refusal marker for `key`, in the checkout's git folder, or null when there is none. */
@@ -1518,13 +1522,14 @@ export function runDoneWhen(
   timeoutMs: number = DONE_WHEN_MS,
   killTree: (pid: number) => void = killCommandTree,
   powerShellHost?: string,
+  platform: string = process.platform,
 ): Promise<{ ok: boolean; output: string }> {
   const childEnv: Record<string, string> = {};
   for (const [name, value] of Object.entries(env)) if (value !== undefined) childEnv[name] = value;
   // The hook passes no host. A test points it at a program that is not there (#735).
   const host = powerShellHost ?? windowsPowerShell(env);
   // Windows with no host has no job, and the output says why (#735).
-  const hostNote = powerShellHost === undefined && host === null && process.platform === 'win32' ? noJobHostNote(windowsSystemRoot(env)) : '';
+  const hostNote = powerShellHost === undefined && host === null && platform === 'win32' ? noJobHostNote(windowsSystemRoot(env)) : '';
   return new Promise((resolvePromise) => {
     let settled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -1540,7 +1545,7 @@ export function runDoneWhen(
     try {
       // A new session on POSIX, so a timeout or a normal exit can stop what the shell started.
       // On Windows the host puts cmd.exe in a job, so the tree still exists after cmd.exe exits.
-      child = spawnDoneWhen(command, cwd, childEnv, host);
+      child = spawnDoneWhen(command, cwd, childEnv, host, platform);
     } catch (error) {
       finish({ ok: false, output: shortenOutput((error as Error).message.split('\n')[0], env) });
       return;
@@ -1597,7 +1602,7 @@ export function runDoneWhen(
       if (timer) clearTimeout(timer);
       timer = undefined;
       try {
-        child = spawnDoneWhen(command, cwd, childEnv, null);
+        child = spawnDoneWhen(command, cwd, childEnv, null, platform);
       } catch (spawnError) {
         finish({ ok: false, output: shortenOutput((spawnError as Error).message.split('\n')[0], env) });
         return;

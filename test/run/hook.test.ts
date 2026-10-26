@@ -42,6 +42,7 @@ import {
   isWorkerType,
   judge,
   noteRefused,
+  planDoneWhenSpawn,
   pidsFromSessionTable,
   readDoneWhen,
   readStatusResult,
@@ -1059,4 +1060,26 @@ test('windowsSystemRoot: the check\'s SystemRoot, then windir, then C:\\Windows 
   assert.equal(windowsSystemRoot({ SYSTEMROOT: 'D:\\Win' }), 'D:\\Win');
   assert.equal(windowsSystemRoot({ windir: 'F:\\Windows' }), 'F:\\Windows');
   assert.equal(windowsSystemRoot({}), 'C:\\Windows', 'a trimmed env still finds the usual folder');
+});
+
+// #1109: how the done-when command starts is plain data for each system, so one machine
+// checks every row. The platform is an argument; only runDoneWhen's caller reads the process.
+test('planDoneWhenSpawn: the program, words and options for each system (#1109)', () => {
+  const command = 'npm test && echo "done"';
+  const env = { PATH: '/bin' };
+  const pipes = ['ignore', 'pipe', 'pipe'];
+  const host = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+  const posix = { file: command, args: [], options: { shell: '/bin/sh', cwd: '/w', env, stdio: pipes, detached: true, windowsHide: true } };
+  const cases: { platform: string; powerShell: string | null; spawn: object }[] = [
+    { platform: 'linux', powerShell: null, spawn: posix },
+    { platform: 'darwin', powerShell: null, spawn: posix },
+    { platform: 'win32', powerShell: null, spawn: { file: 'cmd.exe', args: ['/d', '/s', '/c', windowsCommandTail(command)], options: { cwd: '/w', env, stdio: pipes, windowsVerbatimArguments: true, windowsHide: true } } },
+    { platform: 'win32', powerShell: host, spawn: { file: host, args: windowsJobArgs(), options: { cwd: '/w', env: { ...env, YOKOTEN_DONE_COMMAND: windowsCommandTail(command) }, stdio: pipes, windowsHide: true } } },
+  ];
+  for (const { platform, powerShell, spawn } of cases) {
+    assert.deepEqual(planDoneWhenSpawn(command, '/w', env, powerShell, platform), spawn, `${platform}, ${powerShell ? 'a job' : 'the shell'}`);
+  }
+  assert.deepEqual(env, { PATH: '/bin' }, 'the env is not changed');
+  assert.equal(doneWhenShell('win32'), 'cmd.exe');
+  assert.equal(doneWhenShell('linux'), '/bin/sh');
 });
