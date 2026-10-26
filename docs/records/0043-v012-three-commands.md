@@ -137,7 +137,9 @@ The pains that came up most often:
      result on the kanban;
    - when the pull request merges or the issue closes, the desk moves itself out of the
      way, as `tidy` does (issue #708);
-   - with no issue number, `desk` lists which AI works on what, and changes nothing.
+   - with no issue number, `desk` lists which AI works on what, and changes nothing;
+   - on native Windows, `desk` says to use WSL and starts nothing. A Windows sandbox
+     needs admin rights and system security settings, so record 0033 is deferred.
 
    It folds in `worker` and `msg`. Our own dispatch scripts (`deepseek-worker.sh`,
    `dispatch-queue.sh`) already run this flow, so they are the model. OpenCode joins the
@@ -185,10 +187,11 @@ The pains that came up most often:
 
 9. **Order of work.**
    1. The three safety issues (#1042, #1046, #1045).
-   2. Hide and fold the commands.
-   3. `desk`, `kanban` and `tidy`.
-   4. The first-screen issues (#1037 to #1040, #1043, #1044).
-   5. The README (issue #1035) in all four languages.
+   2. A check that says when a change makes the rules looser (issue #697, record 0037).
+   3. Hide and fold the commands.
+   4. `desk`, `kanban` and `tidy`.
+   5. The first-screen issues (#1037 to #1040, #1043, #1044).
+   6. The README (issue #1035) in all four languages.
 
 10. **A walk-through gates the release.** Before the tag, a new user goes through yokoten
     on Windows, macOS and Linux. That user is the owner, or a weak model playing a new
