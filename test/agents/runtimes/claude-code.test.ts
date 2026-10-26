@@ -169,6 +169,12 @@ test('claude-code guard: a worker writes no lead-only file with any tool; the le
     }
   }
   cases.push({ tool: 'Write', path: 'src/x.ts', worker: true, refused: false });
+  // On Windows a folder may also have a short (8.3) name: `GITHUB~1` is `.github`, and the
+  // runner's temp folder is under `RUNNER~1`. The guard reads the long name, as git does.
+  mkdirSync(join(sandbox.repo, '.github', 'workflows'), { recursive: true });
+  if (existsSync(join(sandbox.repo, 'GITHUB~1'))) {
+    for (const tool of ['Write', 'Edit', 'NotebookEdit', 'Bash']) cases.push({ tool, path: 'GITHUB~1/workflows/x.yml', worker: true, refused: true });
+  }
   for (const hook of hooks) {
     for (const { tool, path, worker, refused } of cases) {
       const call = { cwd: sandbox.repo, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: inputOf(tool, path), ...(worker ? { agent_type: 'yokoten:worker' } : {}) };
