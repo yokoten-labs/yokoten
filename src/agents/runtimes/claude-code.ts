@@ -132,6 +132,14 @@ const projectSettings = (root: string) => join(root, '.claude', 'settings.json')
 // adding either hook, so a bad second event leaves the file as it was (#248, #254).
 const USER_EVENTS = ['SessionStart', 'PreToolUse'];
 const PROJECT_EVENTS = ['PreToolUse', 'Stop', 'SubagentStop'];
+
+/**
+ * The tools every yokoten guard hook in Claude Code runs on: the shell and each file tool.
+ * The user-level guard (and the plugin's, which matches it) takes the file tools too, so a
+ * worker's Write or Edit into a lead-only path is refused where no project hook runs, as
+ * its shell write already is (#1095).
+ */
+export const GUARDED_TOOLS = 'Bash|Edit|Write|MultiEdit|NotebookEdit';
 // Seconds Claude Code waits for the stop check, including a worker's done-when command (#614).
 const STOP_TIMEOUT = 600;
 
@@ -162,7 +170,7 @@ export function checkProjectSettings(root: string): void {
 
 /** The project's tool-call guard: every shell call and edit goes past `hook` first. */
 export const addProjectHook = (root: string, cli: string) =>
-  addHook(projectSettings(root), 'PreToolUse', 'Bash|Edit|Write|MultiEdit|NotebookEdit', guardCommand(`"$CLAUDE_PROJECT_DIR/${cli}"`, 'hook', missingProjectRuntime(cli), { isToolCall: true }));
+  addHook(projectSettings(root), 'PreToolUse', GUARDED_TOOLS, guardCommand(`"$CLAUDE_PROJECT_DIR/${cli}"`, 'hook', missingProjectRuntime(cli), { isToolCall: true }));
 export const hasProjectHook = (root: string): boolean => hasHook(projectSettings(root), 'PreToolUse', 'hook');
 
 /**
@@ -214,7 +222,7 @@ export function addUserHooks(env: Env, cli: string, missing: string): { doctor: 
     // `--agent claude-code` names the host at install time (#707): only this file is read by
     // Claude Code alone, so only this hook answers with a JSON deny on exit 0. The project
     // hook is shared with Copilot CLI and Grok CLI, so it keeps exit 2.
-    guard: addHook(path, 'PreToolUse', 'Bash', guardCommand(cli, 'hook --commands-only --agent claude-code', missing, { isToolCall: true })),
+    guard: addHook(path, 'PreToolUse', GUARDED_TOOLS, guardCommand(cli, 'hook --commands-only --agent claude-code', missing, { isToolCall: true })),
   };
 }
 // With no home folder there are no user settings to read: nothing is on (#356).
