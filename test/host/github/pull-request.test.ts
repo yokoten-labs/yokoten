@@ -3,12 +3,12 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 import { GitReadError } from '../../../src/run/check.ts';
-import { annotation, annotations, OPEN_PULL_LIMIT, readBranchFiles, readCodeOwners, readOpenPulls, stepSummary } from '../../../src/host/github/pull-request.ts';
+import { annotation, annotations, isUnreadable, OPEN_PULL_LIMIT, readBranchFiles, readCodeOwners, readEvent, readIssue, readOpenPulls, readPullRequest, stepSummary } from '../../../src/host/github/pull-request.ts';
 
 // #91: workflow commands, escaped as GitHub's runner decodes them
 // (docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands).
@@ -98,6 +98,72 @@ test('readCodeOwners: the first place the base commit has; a base git can\'t rea
   assert.equal(readCodeOwners(sandbox.repo, none, process.env), null);
   assert.deepEqual(readCodeOwners(sandbox.repo, owners, process.env), { text: '/kit/ @a\n', from: 'the base branch' });
   assert.throws(() => readCodeOwners(sandbox.repo, 'f'.repeat(40), process.env), GitReadError);
+});
+
+// #267: an event file that is missing or broken is one finding, never a crash; odd fields are skipped.
+test('readEvent, readIssue, readPullRequest: a missing or broken event file is one ci-event finding; odd fields are skipped (#267)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('README.md', 'Short.\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  const file = join(sandbox.home, 'event.json');
+  const env = { ...sandbox.env, GITHUB_EVENT_PATH: file };
+  assert.equal(readEvent({}), null, 'no GITHUB_EVENT_PATH is not a run to check');
+  const cases: [string | null, RegExp][] = [
+    [null, /can't be read/],
+    ['{ broken', /is not valid JSON/],
+    ['null', /is not a JSON object/],
+    ['[1]', /is not a JSON object/],
+  ];
+  for (const [content, what] of cases) {
+    rmSync(file, { force: true });
+    if (content !== null) writeFileSync(file, content);
+    for (const read of [readEvent(env), readIssue(env), readPullRequest(sandbox.repo, env)]) {
+      assert.ok(isUnreadable(read), `${content}`);
+      assert.equal(read.problem.id, 'ci-event');
+      assert.match(read.problem.what, what);
+      assert.doesNotMatch(JSON.stringify(read.problem), /ENOENT|SyntaxError|TypeError|Unexpected token/);
+      assert.ok(!JSON.stringify(read.problem).includes(sandbox.home), 'the path is not printed');
+    }
+  }
+  // A label that is null or has no name, and a title that is not text, are skipped, not a crash.
+  writeFileSync(file, JSON.stringify({ issue: { title: 'check: a symptom', labels: [null, 7, { name: 'incident' }, {}] } }));
+  assert.deepEqual(readIssue(env), { title: 'check: a symptom', labels: ['incident'] });
+  writeFileSync(file, JSON.stringify({ issue: { title: 42, labels: null } }));
+  assert.deepEqual(readIssue(env), { title: '', labels: [] });
+  writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body: null, labels: [null], milestone: 'M0', base: { sha: head }, head: { sha: head } } }));
+  const pr = readPullRequest(sandbox.repo, env);
+  assert.ok(!isUnreadable(pr) && pr !== null);
+  assert.deepEqual([pr.body, pr.labels, pr.milestone], ['', [], null]);
+  // An event with neither is not a run to check.
+  writeFileSync(file, JSON.stringify({ action: 'opened', pull_request: null, issue: 'x' }));
+  assert.equal(readPullRequest(sandbox.repo, env), null);
+  assert.equal(readIssue(env), null);
+});
+
+// #273: a base or head commit id that is empty, missing or not text is one finding, never an empty diff.
+test('readPullRequest: an event with no base or head commit id is one pr-commits finding (#273)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('README.md', 'Short.\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  const file = join(sandbox.home, 'event.json');
+  const env = { ...sandbox.env, GITHUB_EVENT_PATH: file };
+  const cases: [object, object, string][] = [
+    [{}, { sha: head }, 'base commit is'],
+    [{ sha: head }, { sha: 7 }, 'head commit is'],
+    [{ sha: '' }, { sha: '' }, 'base and head commits are'],
+  ];
+  for (const [base, headField, what] of cases) {
+    writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body: '', labels: [], base, head: headField } }));
+    const read = readPullRequest(sandbox.repo, env);
+    assert.ok(isUnreadable(read), what);
+    assert.equal(read.problem.id, 'pr-commits');
+    assert.equal(read.problem.what, `the pull request's ${what} missing from the event`);
+    assert.match(read.problem.fix, /pull_request/);
+  }
 });
 
 test('annotations: an ignore a pull request adds is a notice, after the problems and before the other notes (#616)', () => {

@@ -524,32 +524,21 @@ test('check --history: finds what a later commit deleted, and a personal author 
   sandbox.write('notes.md', `server ${[10, 1, 2, 3].join('.')}\ntoken ${token}\n`);
   sandbox.git('add', '.');
   sandbox.git('commit', '-qm', 'add notes');
-  sandbox.git('rm', '-q', 'notes.md');
+  const added = sandbox.git('rev-parse', 'HEAD').stdout.slice(0, 8);
+  sandbox.git('mv', 'notes.md', 'moved.md');
+  sandbox.git('commit', '-qm', 'move notes');
+  sandbox.git('rm', '-q', 'moved.md');
   sandbox.git('commit', '-qm', 'remove notes');
   sandbox.git('-c', `user.email=me${at}gmail.com`, 'commit', '-q', '--allow-empty', '-m', 'oops');
   assert.equal((await sandbox.call(['check'])).status, 0, 'the tree today is clean');
   const r = await sandbox.call(['check', '--history']);
   assert.equal(r.status, 1);
-  // Named by the commit that added the file (#208), not only by its blob.
-  const added = sandbox.git('rev-parse', 'HEAD~2').stdout.slice(0, 8);
+  // Named by the commit that added the file (#208), not only by its blob, and a move does not rename it.
   assert.ok(flat(r.stderr).includes(`notes.md @ ${added}:1 an IP address`), r.stderr);
+  assert.ok(!r.stderr.includes('moved.md @'), 'that commit has no moved.md');
   assert.ok(flat(r.stderr).includes(`notes.md @ ${added}:2 a secret (GitHub token)`), 'a secret deleted later (#8)');
   assert.ok(!r.stderr.includes(token), 'the secret is never printed');
   assert.match(flat(r.stderr), /\(author\/committer\):1 an email/);
-});
-
-test('check --history: names a moved file by its path in the commit that added it (#208)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.write('notes.md', `server ${[10, 1, 2, 3].join('.')}\n`);
-  sandbox.git('add', '.');
-  sandbox.git('commit', '-qm', 'add notes');
-  const added = sandbox.git('rev-parse', 'HEAD').stdout.slice(0, 8);
-  sandbox.git('mv', 'notes.md', 'moved.md');
-  sandbox.git('commit', '-qm', 'move notes');
-  const r = await sandbox.call(['check', '--history']);
-  assert.equal(r.status, 1);
-  assert.ok(flat(r.stderr).includes(`notes.md @ ${added}:1 an IP address`), r.stderr);
-  assert.ok(!r.stderr.includes('moved.md @'), 'that commit has no moved.md');
 });
 
 test('check --history: a shallow clone fails with one finding, never "every commit" (#266)', async () => {
@@ -560,16 +549,10 @@ test('check --history: a shallow clone fails with one finding, never "every comm
   sandbox.git('commit', '-qm', 'add notes');
   sandbox.git('rm', '-q', 'notes.md');
   sandbox.git('commit', '-qm', 'remove notes');
-  // A full clone finds the secret a later commit deleted.
-  const full = join(sandbox.home, 'full');
+  // The shallow clone (actions/checkout's default) is not scanned, and says why; a full history finds the secret (check --history: finds what a later commit deleted).
   const shallow = join(sandbox.home, 'shallow');
-  spawnSync('git', ['clone', '-q', `file://${sandbox.repo}`, full], { env: sandbox.env });
   spawnSync('git', ['clone', '-q', '--depth', '1', `file://${sandbox.repo}`, shallow], { env: sandbox.env });
-  let result = await sandbox.call(['check', '--history'], { cwd: full });
-  assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /notes\.md @ \w+:1 a secret \(GitHub token\)/);
-  // The shallow clone (actions/checkout's default) is not scanned, and says why.
-  result = await sandbox.call(['check', '--history'], { cwd: shallow });
+  let result = await sandbox.call(['check', '--history'], { cwd: shallow });
   assert.equal(result.status, 1, result.stdout);
   assert.ok(!/every commit/.test(result.stdout + result.stderr), result.stdout);
   assert.match(flat(result.stderr), /1 problem MISSING this clone is shallow, so the history check can't see old commits .+\. Use `fetch-depth: 0` in actions\/checkout, or run `git fetch --unshallow`/);
@@ -675,20 +658,17 @@ test('check --pr: a base or head commit not in the checkout is one finding, neve
   const clone = join(sandbox.home, 'clone');
   const cloned = spawnSync('git', ['clone', '-q', '--depth', '1', `file://${sandbox.repo}`, clone], { env: sandbox.env, encoding: 'utf8' });
   assert.equal(cloned.status, 0, cloned.stderr);
-  const summary = join(sandbox.home, 'summary.md');
   let result = await sandbox.call(['check', '--pr'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }) } });
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix them, then `yokoten check` More: \S+#use-it-as-a-github-action $/);
   noGitError(result.stderr);
-  result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
+  result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }) } });
   assert.equal(result.status, 1);
   assert.equal(result.stderr, '');
   let report = JSON.parse(result.stdout);
   assert.deepEqual([report.check, report.ok, report.findings.map((f: { id: string }) => f.id)], ['pr', false, ['pr-commits']]);
   assert.match(report.findings[0].what, /base commit/);
   assert.match(report.findings[0].fix, /fetch-depth: 0/);
-  const text = readFileSync(summary, 'utf8');
-  assert.match(text, /^### yokoten check --pr: 1 problem\n\n\| Place \| Rule \| What \| Why \| Fix \|\n\|[-|]+\|\n\|  \| \[pr-commits\]\(\S+\) \| the pull request's base commit is not in this checkout \| .+ \| Use `fetch-depth: 0` in actions\/checkout/);
 
   // A full clone, with a head that was never fetched.
   const missing = 'f'.repeat(40);
@@ -724,12 +704,8 @@ test('check --pr and --issue: an event file that is missing or broken is one fin
   sandbox.git('commit', '-qm', 'base');
   const file = join(sandbox.home, 'event.json');
   const summary = join(sandbox.home, 'summary.md');
-  const cases: [string | null, RegExp][] = [
-    [null, /can't be read/],
-    ['{ broken', /is not valid JSON/],
-    ['null', /is not a JSON object/],
-    ['[1]', /is not a JSON object/],
-  ];
+  // One broken file per mode keeps the wording through the command; every kind of event file is in pull-request.test.ts (readEvent, readIssue, readPullRequest).
+  const cases: [string | null, RegExp][] = [['{ broken', /is not valid JSON/]];
   for (const mode of ['--pr', '--issue']) {
     for (const [content, what] of cases) {
       rmSync(file, { force: true });
@@ -746,22 +722,7 @@ test('check --pr and --issue: an event file that is missing or broken is one fin
       assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string }) => f.id), ['ci-event']);
     }
   }
-  assert.equal(readFileSync(summary, 'utf8').split('| [ci-event](').length - 1, 8, 'each run wrote its summary');
-  // A label that is null or has no name, and a title that is not text, are skipped, not a crash.
-  writeFileSync(file, JSON.stringify({ issue: { title: 'check: a symptom', labels: [null, 7, { name: 'incident' }, {}] } }));
-  let result = await sandbox.call(['check', '--issue'], { extra: { GITHUB_EVENT_PATH: file } });
-  assert.equal(result.status, 0, result.stderr);
-  writeFileSync(file, JSON.stringify({ issue: { title: 42, labels: null } }));
-  result = await sandbox.call(['check', '--issue', '--json'], { extra: { GITHUB_EVENT_PATH: file } });
-  assert.equal(result.status, 1);
-  assert.equal(result.stderr, '');
-  assert.ok(JSON.parse(result.stdout).findings.length > 0, 'an empty title fails its rule');
-  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
-  writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body: null, labels: [null], milestone: 'M0', base: { sha: head }, head: { sha: head } } }));
-  result = await sandbox.call(['check', '--pr', '--json'], { extra: { GITHUB_EVENT_PATH: file } });
-  assert.equal(result.status, 1);
-  assert.equal(result.stderr, '');
-  assert.ok(JSON.parse(result.stdout).findings.some((f: { id: string }) => f.id === 'pr-labels'));
+  assert.equal(readFileSync(summary, 'utf8').split('| [ci-event](').length - 1, 2, 'each run wrote its summary');
   // An event with neither is not a run to check, as before.
   writeFileSync(file, JSON.stringify({ action: 'opened', pull_request: null, issue: 'x' }));
   for (const mode of ['--pr', '--issue']) assert.match((await sandbox.call(['check', mode], { extra: { GITHUB_EVENT_PATH: file } })).stdout, /in this run/);
@@ -774,12 +735,10 @@ test('check --pr: a pull request event with no base or head commit id is one fin
   sandbox.write('README.md', 'Short.\n');
   sandbox.git('add', '.');
   sandbox.git('commit', '-qm', 'base');
-  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
   const file = join(sandbox.home, 'event.json');
   const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nNo changelog: a test\n';
+  // One case keeps the wording through the command; the base-only and head-only cases are in pull-request.test.ts (readPullRequest).
   const cases: [object, object, string][] = [
-    [{}, { sha: head }, 'base commit is'],
-    [{ sha: head }, { sha: 7 }, 'head commit is'],
     [{ sha: '' }, { sha: '' }, 'base and head commits are'],
   ];
   for (const [baseField, headField, what] of cases) {
