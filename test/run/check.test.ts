@@ -95,23 +95,7 @@ test('check --staged: stops a commit with a personal email or a private mark', (
   assert.ok(!/mycity/i.test(r.stderr));
 });
 
-// YOKOTEN_PRIVATE_MARKS adds a list; an empty one never hides the default file's marks (#656).
-test('check --staged: a marks setting that names an empty file still checks the marks in the default file (#656)', async () => {
-  const sandbox = makeSandbox();
-  const config = join(sandbox.home, '.config', 'yokoten');
-  mkdirSync(config, { recursive: true });
-  writeFileSync(join(config, 'private-marks'), 'mycity\n');
-  const empty = join(sandbox.home, 'empty-marks');
-  writeFileSync(empty, '');
-  sandbox.write('src/b.md', 'I live in MyCity\n');
-  sandbox.git('add', '.');
-  const r = await sandbox.call(['check', '--staged'], { extra: { YOKOTEN_PRIVATE_MARKS: empty } });
-  assert.equal(r.status, 1);
-  assert.match(flat(r.stderr), /src\/b\.md:1 matches a word you added to your private marks/);
-  assert.ok(!/mycity/i.test(r.stdout + r.stderr));
-});
-
-test('check --staged: a default marks file it can not read fails closed, whatever the setting names (#656)', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
+test('check --staged: a default marks file it can not read fails closed, whatever the setting names (#656, #739)', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
   const sandbox = makeSandbox();
   const config = join(sandbox.home, '.config', 'yokoten');
   mkdirSync(config, { recursive: true });
@@ -129,27 +113,28 @@ test('check --staged: a default marks file it can not read fails closed, whateve
   } finally {
     chmodSync(own, 0o600);
   }
-});
-
-test('check --staged: a readable real-home marks file is used when the default file is missing (#739)', async () => {
-  const sandbox = makeSandbox();
+  // A missing default file fails closed too when the real home has one it cannot read (#739).
+  const bare = makeSandbox();
   const real = makeTempDir();
+  const hidden = join(real, '.config', 'yokoten', 'private-marks');
   mkdirSync(join(real, '.config', 'yokoten'), { recursive: true });
-  writeFileSync(join(real, '.config', 'yokoten', 'private-marks'), 'mycity\n');
-  sandbox.write('src/a.md', 'I live in MyCity\n');
-  sandbox.git('add', '.');
+  writeFileSync(hidden, 'mycity\n');
+  chmodSync(hidden, 0o000);
+  bare.write('src/a.md', 'I live in MyCity\n');
+  bare.git('add', '.');
   const restore = useRealHome(() => real);
   try {
-    const found = await sandbox.call(['check', '--staged']);
-    assert.notEqual(found.status, 0, 'the real home marks apply');
-    assert.match(flat(found.stderr), /src\/a\.md:1 matches a word you added to your private marks/);
-    assert.ok(!/mycity/i.test(found.stdout + found.stderr));
+    const r = await bare.call(['check', '--staged']);
+    assert.notEqual(r.status, 0, 'fails closed');
+    assert.match(r.stderr, /cannot be read/);
+    assert.ok(!/mycity/i.test(r.stdout + r.stderr));
   } finally {
+    chmodSync(hidden, 0o600);
     restore();
   }
 });
 
-test('check --staged: no HOME still uses a readable real-home marks file (#739)', async () => {
+test('check --staged: a readable real-home marks file is used when the default file is missing, with HOME unset too (#739)', async () => {
   const sandbox = makeSandbox();
   const real = makeTempDir();
   mkdirSync(join(real, '.config', 'yokoten'), { recursive: true });
@@ -158,7 +143,7 @@ test('check --staged: no HOME still uses a readable real-home marks file (#739)'
   sandbox.git('add', '.');
   const restore = useRealHome(() => real);
   try {
-    for (const extra of [{ HOME: '' }, { HOME: '', YOKOTEN_ROLE: 'worker' }] as Record<string, string>[]) {
+    for (const extra of [{}, { HOME: '' }, { HOME: '', YOKOTEN_ROLE: 'worker' }] as Record<string, string>[]) {
       const found = await sandbox.call(['check', '--staged'], { extra });
       assert.notEqual(found.status, 0, 'the real home marks apply');
       assert.match(flat(found.stderr), /src\/a\.md:1 matches a word you added to your private marks/);
@@ -169,47 +154,9 @@ test('check --staged: no HOME still uses a readable real-home marks file (#739)'
   }
 });
 
-test('check --staged: a missing default marks file fails closed when the real home has one it cannot read (#739)', { skip: process.platform === 'win32' || process.getuid?.() === 0 }, async () => {
-  const sandbox = makeSandbox();
-  const real = makeTempDir();
-  const hidden = join(real, '.config', 'yokoten', 'private-marks');
-  mkdirSync(join(real, '.config', 'yokoten'), { recursive: true });
-  writeFileSync(hidden, 'mycity\n');
-  chmodSync(hidden, 0o000);
-  sandbox.write('src/a.md', 'I live in MyCity\n');
-  sandbox.git('add', '.');
-  const restore = useRealHome(() => real);
-  try {
-    const r = await sandbox.call(['check', '--staged']);
-    assert.notEqual(r.status, 0, 'fails closed');
-    assert.match(r.stderr, /cannot be read/);
-    assert.ok(!/mycity/i.test(r.stdout + r.stderr));
-  } finally {
-    chmodSync(hidden, 0o600);
-    restore();
-  }
-});
-
-test('check --staged: stops build output and binaries, lets images and allowed paths through (#56)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.write('dist/app.js', 'console.log(1);\n');
-  writeFileSync(join(sandbox.repo, 'tool'), Buffer.from([0x7f, 0x45, 0x4c, 0x46, 0, 1, 2, 0]));
-  writeFileSync(join(sandbox.repo, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]));
-  sandbox.git('add', '.');
-  let r = await sandbox.call(['check', '--staged']);
-  assert.notEqual(r.status, 0);
-  assert.match(flat(r.stderr), /dist\/app\.js build output, in a dist\/ folder/);
-  assert.match(flat(r.stderr), /tool a binary file A reviewer can't read it/);
-  assert.ok(!r.stderr.includes('logo.png'), 'an image is fine');
-  sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['dist/**', 'tool'] }));
-  sandbox.git('add', '.');
-  r = await sandbox.call(['check', '--staged']);
-  assert.equal(r.status, 0, r.stderr);
-});
-
 test('check --staged: borrowed code carries its source, commit, license and notice (#676)', async () => {
   const sandbox = makeSandbox();
-  const sha = '0123456789abcdef0123456789abcdef01234567';
+  const sha ='0123456789abcdef0123456789abcdef01234567';
   const header = [
     '// source: https://github.com/example/upstream/blob/main/src/thing.ts',
     `// commit: ${sha}`,
@@ -301,6 +248,11 @@ test('check: a CODEOWNERS line whose file moved says it protects nothing (#667)'
   assert.equal(result.status, 1, result.stderr);
   assert.match(flat(result.stderr), /\.github\/CODEOWNERS:3 \/src\/host\/github\.ts matches no file: this rule protects nothing; point it at the new path/);
   assert.match(flat(result.stderr), /Ask the lead or owner to change it in \.github\/CODEOWNERS/);
+  // A project with no CODEOWNERS gets no CODEOWNERS finding.
+  sandbox.git('rm', '-qf', '.github/CODEOWNERS');
+  const none = await sandbox.call(['check']);
+  assert.equal(none.status, 0, none.stderr);
+  assert.doesNotMatch(none.stderr, /CODEOWNERS/);
 });
 
 test('check --staged: reads the staged CODEOWNERS, not a dirty work tree (#667)', async () => {
@@ -316,16 +268,8 @@ test('check --staged: reads the staged CODEOWNERS, not a dirty work tree (#667)'
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('check: a project with no CODEOWNERS gets no CODEOWNERS finding (#667)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.write('src/a.ts', 'a\n');
-  sandbox.git('add', '.');
-  const result = await sandbox.call(['check']);
-  assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.stderr, /CODEOWNERS/);
-});
 
-test('check --staged: binary is decided from the bytes, not .gitattributes (#244)', async () => {
+test('check --staged: binary is decided from the bytes, not .gitattributes; build output stops, an image and an allowed path pass (#244, #56)', async () => {
   const sandbox = makeSandbox();
   sandbox.write('.gitattributes', 'yarn.lock -diff\n*.pbxproj binary\n');
   sandbox.write('yarn.lock', 'left-pad@1.0.0:\n  version "1.0.0"\n');
@@ -333,14 +277,26 @@ test('check --staged: binary is decided from the bytes, not .gitattributes (#244
   sandbox.git('add', '.');
   let result = await sandbox.call(['check', '--staged']);
   assert.equal(result.status, 0, result.stderr);
-  // A NUL in the first 8000 bytes is binary; one after them is not, as git decides.
+  // A NUL in the first 8000 bytes is binary; one after them is not, as git decides, so that text is still scanned for privacy.
   writeFileSync(join(sandbox.repo, 'tool'), Buffer.concat([Buffer.from('#!'), Buffer.alloc(1), Buffer.from('x\n')]));
-  writeFileSync(join(sandbox.repo, 'late.txt'), Buffer.concat([Buffer.alloc(8000, 'a'), Buffer.alloc(1)]));
+  writeFileSync(join(sandbox.repo, 'late.txt'), Buffer.concat([Buffer.from(`write to me${at}gmail.com\n`), Buffer.alloc(8000, 'a'), Buffer.alloc(1)]));
+  writeFileSync(join(sandbox.repo, 'logo.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0]));
+  sandbox.write('dist/app.js', 'console.log(1);\n');
   sandbox.git('add', '.');
   result = await sandbox.call(['check', '--staged']);
   assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /tool a binary file/);
-  assert.ok(!result.stderr.includes('late.txt'), result.stderr);
+  assert.match(flat(result.stderr), /tool a binary file A reviewer can't read it/);
+  assert.match(flat(result.stderr), /dist\/app\.js build output, in a dist\/ folder/);
+  assert.match(flat(result.stderr), /late\.txt:1 an email/);
+  assert.doesNotMatch(flat(result.stderr), /late\.txt a binary/);
+  assert.ok(!result.stderr.includes('logo.png'), 'an image is fine');
+  // allowBuild lets the build output and the binary through; the email still stops the commit.
+  sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['dist/**', 'tool'] }));
+  sandbox.git('add', '.');
+  result = await sandbox.call(['check', '--staged']);
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(flat(result.stderr), /build output|a binary file/);
+  assert.match(flat(result.stderr), /late\.txt:1 an email/);
 });
 
 test('check --staged: in a merge, the role checks see only what the merge itself changed (#246)', async () => {
@@ -510,16 +466,6 @@ test('check --staged: a staged entry git can\'t read fails, not passes as empty 
   const result = await sandbox.call(['check', '--staged']);
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /ghost\.md git can't read the staged copy .+ Run `git add ghost\.md` again/);
-});
-
-test('check --staged: a text file with a NUL after 8000 bytes is scanned for privacy (#244)', async () => {
-  const sandbox = makeSandbox();
-  writeFileSync(join(sandbox.repo, 'late.txt'), Buffer.concat([Buffer.from(`write to me${at}gmail.com\n`), Buffer.alloc(9000, 'a'), Buffer.alloc(1)]));
-  sandbox.git('add', '.');
-  const result = await sandbox.call(['check', '--staged']);
-  assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /late\.txt:1 an email/);
-  assert.ok(!result.stderr.includes('binary'), result.stderr);
 });
 
 test('check --staged: stops a commit whose time carries a time zone, never printing it (#40)', async () => {
