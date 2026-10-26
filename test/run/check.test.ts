@@ -1149,31 +1149,22 @@ test('readGit: no answer is a GitReadError, whatever the reason (#403)', async (
   assert.equal(readGit(repo.root, ['rev-parse', '--is-inside-work-tree'], { env: process.env }).toString().trim(), 'true');
 });
 
-// The case from #403: a status read hidden by a user setting, or cut off by a buffer.
-test('changedFiles: reads 5,000 new files in full, past status.showUntrackedFiles=no (#403)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.git('config', 'status.showUntrackedFiles', 'no');
-  // Long names, so git's output is well over Node's default 1 MB buffer.
-  const long = 'n'.repeat(200);
-  mkdirSync(join(sandbox.repo, 'many'));
-  for (let i = 0; i < 5000; i++) writeFileSync(join(sandbox.repo, 'many', `${long}-${i}.txt`), '');
-  assert.equal(sandbox.git('status', '--porcelain').stdout, '', 'the setting hides them from a plain status');
-  const files = changedFiles(sandbox.repo, process.env);
-  assert.equal(files.length, 5000);
-  assert.ok(files.includes(`many/${long}-4999.txt`));
+// The case from #403: a read cut off by Node's 1 MB default buffer. One blob over 1 MB stands for the 5,000 long file names that once did it.
+test('readGit: an answer over 1 MB is read in full, not cut off at Node\'s default buffer (#403)', async () => {
+  const repo = makeTranslatedRepo();
+  writeFileSync(join(repo.root, 'big.txt'), Buffer.alloc((1 << 20) + 4096, 'n'));
+  const blob = repo.git('hash-object', '-w', 'big.txt');
+  assert.equal(readGit(repo.root, ['cat-file', 'blob', blob], { env: process.env }).length, (1 << 20) + 4096);
+  assert.throws(() => readGit(repo.root, ['cat-file', 'blob', blob], { env: process.env, maxBuffer: 1 << 20 }), (err: Error) => err instanceof GitReadError && /its output is over the 1 MB yokoten reads/.test(err.message));
 });
 
-test('check --staged: reads 5,000 staged files in full, past the default buffer (#403)', async () => {
+// The case from #403: a status read hidden by a user setting.
+test('changedFiles: reads a new file past status.showUntrackedFiles=no (#403)', async () => {
   const sandbox = makeSandbox();
-  const long = 'n'.repeat(200);
-  mkdirSync(join(sandbox.repo, 'many'));
-  for (let i = 0; i < 5000; i++) writeFileSync(join(sandbox.repo, 'many', `${long}-${i}.txt`), '');
-  sandbox.git('add', '.');
-  const result = await sandbox.call(['check', '--staged', '--json']);
-  const report = JSON.parse(result.stdout);
-  // All 5,000 were read: the layout rule counts every one of them.
-  assert.deepEqual(report.findings.map((f: { id: string }) => f.id), ['layout']);
-  assert.match(report.findings[0].what, /^5000 entries, over the cap of 7/);
+  sandbox.git('config', 'status.showUntrackedFiles', 'no');
+  sandbox.write('many/new.txt', 'x\n');
+  assert.equal(sandbox.git('status', '--porcelain').stdout, '', 'the setting hides it from a plain status');
+  assert.deepEqual(changedFiles(sandbox.repo, process.env), ['many/new.txt']);
 });
 
 // ---- Git answers kept for a run (#453) ----
