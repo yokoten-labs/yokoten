@@ -1555,3 +1555,54 @@ test('files: sealing the same text twice is stable, and a $ in the mark stays a 
   assert.match(sealManaged(withDollar), /updates this \$file/, 'a $ does not read as a replacement pattern');
 });
 
+// #984, a hard line: every write install makes to an agent's config file merges, and keeps the
+// user's own keys. The control plants a key of the user's in each kind of file, then runs
+// install twice and uninstall; each key is still there, as the user wrote it.
+test("install and uninstall: the user's own keys in every agent config file stay (#984)", () => {
+  const sandbox = makeSandbox();
+  const mine = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-check' }] };
+  const files: [file: string, theirs: Record<string, unknown>][] = [
+    ['.claude/settings.json', { model: 'x', permissions: { allow: ['Bash(ls)'] }, hooks: { Notification: [mine] } }],
+    ['.codex/hooks.json', { description: 'mine', hooks: { Stop: [mine] } }],
+    ['.gemini/settings.json', { theme: 'dark', hooks: { disabled: ['x'] } }],
+    ['.gemini/config/hooks.json', { lint: { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } }],
+    ['.copilot/hooks/yokoten.json', { version: 1, hooks: { PreToolUse: [mine] } }],
+    ['.grok/hooks/yokoten.json', { note: 'mine', hooks: { PreToolUse: [mine] } }],
+    ['.config/muse/settings.json', { model: 'm', hooks: { Stop: [mine] } }],
+  ];
+  for (const [file, theirs] of files) {
+    mkdirSync(dirname(join(sandbox.home, file)), { recursive: true });
+    writeFileSync(join(sandbox.home, file), JSON.stringify(theirs));
+  }
+  // OpenCode's plugin is one file: a file of the user's at that place stays whole.
+  const plugin = join(sandbox.home, '.config', 'opencode', 'plugins', 'yokoten.ts');
+  mkdirSync(dirname(plugin), { recursive: true });
+  writeFileSync(plugin, 'export const mine = 1;\n');
+  /** Whether every key the user wrote is in `found` with their value; a hook list may have yokoten's groups added. */
+  const keeps = (found: unknown, theirs: unknown): boolean => {
+    if (Array.isArray(theirs)) return Array.isArray(found) && theirs.every((item) => found.some((other) => keeps(other, item)));
+    if (theirs && typeof theirs === 'object') return !!found && typeof found === 'object' && Object.entries(theirs).every(([key, value]) => keeps((found as Record<string, unknown>)[key], value));
+    return found === theirs;
+  };
+  const check = (when: string): void => {
+    for (const [file, theirs] of files) assert.ok(keeps(JSON.parse(readFileSync(join(sandbox.home, file), 'utf8')), theirs), `${when}: ${file} lost a key of the user's`);
+    assert.equal(readFileSync(plugin, 'utf8'), 'export const mine = 1;\n', `${when}: the user's OpenCode plugin changed`);
+  };
+  const first = installIn(sandbox);
+  assert.ok(first.ok, findingsOf(first, sandbox.home));
+  // Positive control: install wrote its own hooks into each of those files.
+  for (const agent of ['Claude Code', 'Codex CLI', 'Gemini CLI', 'Antigravity CLI', 'Copilot CLI', 'Grok CLI', 'Muse Code']) assert.ok(first.changes.some((change) => change.agent === agent && change.state === 'added'), `install added no hook for ${agent}`);
+  assertRows(first, sandbox.home, 'kept hook ~/.config/opencode/plugins/yokoten.ts yours OpenCode');
+  check('after install');
+  // The user turns the Antigravity guard off: a second install keeps it off and says so.
+  const agyFile = join(sandbox.home, '.gemini', 'config', 'hooks.json');
+  const agy = JSON.parse(readFileSync(agyFile, 'utf8'));
+  agy.yokoten.enabled = false;
+  writeFileSync(agyFile, JSON.stringify(agy));
+  const second = installIn(sandbox);
+  check('after a second install');
+  assert.equal(JSON.parse(readFileSync(agyFile, 'utf8')).yokoten.enabled, false, 'the guard the user turned off stays off');
+  assertRows(second, sandbox.home, 'kept hook ~/.gemini/config/hooks.json yours Antigravity CLI');
+  assert.ok(uninstallIn(sandbox).ok);
+  check('after uninstall');
+});
