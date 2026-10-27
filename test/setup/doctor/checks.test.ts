@@ -12,8 +12,11 @@ import { DEFAULTS } from '../../../src/rules/config.ts';
 import { cleanOlderInstall, hookRunsYokoten, launcherDir, PROFILE_LINE, setUpLauncher } from '../../../src/setup/install.ts';
 import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
 import { doctor, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks } from '../../../src/setup/doctor/index.ts';
-import { mergeTimeZones } from '../../../src/setup/doctor/checks.ts';
+import { deskFenceCheck, FENCE_PROGRAMS, mergeTimeZones } from '../../../src/setup/doctor/checks.ts';
 import { road, ROAD } from '../../../src/setup/road.ts';
+
+/** A screen with each wrapped row on one line again: the rows wrap at 80 columns under their text (#1115). */
+const flat = (text: string): string => text.replace(/\n {14}/g, ' ');
 
 shareGuardMeasure();
 shareSelfTest();
@@ -42,7 +45,7 @@ test('install then doctor: the private-marks lines agree, in full doctor and a s
   // The positive control: a file with no marks is missing, in both. A shared name is never added.
   sandbox.git('config', 'user.name', 'Test');
   writeFileSync(join(sandbox.home, '.config/yokoten/private-marks'), '# only a comment\n');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ +MISSING private-marks: ~\/\.config\/yokoten\/private-marks is missing or has no marks; run `(npx )?yokoten marks add`/m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'])).stdout), /^ +MISSING +private-marks: ~\/\.config\/yokoten\/private-marks is missing or has no marks Type your name[^\n]* Fix: `(npx )?yokoten marks add`/m);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /private-marks is missing or has no marks/);
 });
 
@@ -63,7 +66,7 @@ test('doctor: names a newer kit copy that waits behind an edit (#477)', async ()
   assert.match(found?.fix ?? '', /diff ~\/\.claude\/skills\/yokoten\/SKILL\.md .*kit\/user\/entry\/SKILL\.md/);
   const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: () => { throw new Error('no network in this test'); } });
   // The line words the command as this machine runs it, so only its start is compared.
-  assert.ok(full.lines.some((line) => line.startsWith(`  note    edited-kit: ${found?.what}; `)), full.lines.join('\n'));
+  assert.ok(flat(full.lines.join('\n')).includes(`  note        edited-kit: ${found?.what}; `), full.lines.join('\n'));
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /a newer kit copy is waiting for the skill yokoten/);
 });
 
@@ -105,11 +108,12 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   // The plugin is on: install writes no guard of its own, and the plugin's guard counts.
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(!hasGuard(), 'install wrote no guard beside the plugin');
-  assert.match(String(await guardLine()), /^ {2}ok {6}user-guard$/);
+  assert.match(String(await guardLine()), /^ {2}ok {10}user-guard$/);
   // The plugin goes away: no guard is left, and that is a failure with one fix.
   writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': false } }));
   const failed = await sandbox.call(['doctor', '--all']);
-  assert.match(failed.stdout, /^ {2}MISSING user-guard: no guard for Claude Code; run `(npx )?yokoten install`$/m);
+  assert.match(failed.stdout, /^ {2}MISSING {5}user-guard: no guard for Claude Code$/m);
+  assert.match(failed.stdout, /^ {14}Fix: `(npx )?yokoten install`$/m, 'its fix, said once under the rows it fixes');
   assert.equal(failed.status, 1, 'a machine with no guard fails doctor');
   const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { ok: boolean; findings: { id: string; what: string }[] };
   assert.ok(!json.ok);
@@ -118,7 +122,7 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   // Install again writes install's own guard, and doctor passes.
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(hasGuard(), 'install wrote its own guard');
-  assert.match(String(await guardLine()), /^ {2}ok {6}user-guard$/);
+  assert.match(String(await guardLine()), /^ {2}ok {10}user-guard$/);
 });
 
 // #1100: a user who updated yokoten but not the install keeps a guard on Bash alone, so a
@@ -136,13 +140,13 @@ test('doctor: a user guard older than this yokoten is one line, and install fixe
     settings.hooks.PreToolUse.push(mine);
     writeFileSync(file, JSON.stringify(settings));
   }
-  const lines = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').filter((line) => /user-guard|grok-user-hook/.test(line));
+  const lines = async () => flat((await sandbox.call(['doctor', '--all'])).stdout).split('\n').filter((line) => /user-guard|grok-user-hook/.test(line));
   assert.deepEqual(await lines(), [
-    '  MISSING user-guard: the guard for Claude Code is out of date: it skips Edit, Write, MultiEdit, NotebookEdit; run `npx yokoten install`',
-    '  note    grok-user-hook: the command guard in ~/.grok/hooks/yokoten.json is out of date; `npx yokoten install` updates it',
+    '  MISSING     user-guard: the guard for Claude Code is out of date: it skips Edit, Write, MultiEdit, NotebookEdit Fix: `npx yokoten install`',
+    '  note        grok-user-hook: the command guard in ~/.grok/hooks/yokoten.json is out of date; `npx yokoten install` updates it',
   ]);
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
-  assert.deepEqual(await lines(), ['  ok      user-guard', '  ok      grok-user-hook']);
+  assert.deepEqual(await lines(), ['  ok          user-guard', '  ok          grok-user-hook']);
   for (const file of files) assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')).hooks.PreToolUse.at(-1), mine, "the user's own hook stays as it was");
 });
 
@@ -155,7 +159,7 @@ test('doctor: names the release channel this machine runs (#632)', async () => {
   assert.equal(releaseChannel(sandbox.repo, sandbox.env), 'stable');
   // The channel reaches the first line and the JSON.
   settings({ 'yokoten-beta@yokoten': true });
-  assert.equal((await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((line) => line.startsWith('yokoten ')), `yokoten ${version} (beta), self-test ok`);
+  assert.equal((await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((line) => line.includes(`yokoten ${version}`)), `  ok          yokoten ${version} (beta): self-test ok`);
   assert.equal(JSON.parse((await sandbox.call(['doctor', '--json'])).stdout).channel, 'beta');
   settings({ 'yokoten-dev@yokoten': true });
   assert.equal(releaseChannel(sandbox.repo, sandbox.env), 'dev');
@@ -177,7 +181,7 @@ test('doctor: the plugin and install both on is a note that says to uninstall (#
   assert.equal(double?.id, 'machine-runtime');
   const noGh = () => { throw new Error('no network in this test'); };
   const fullLines = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh }).lines;
-  assert.ok(fullLines.includes(`  note    plugin-and-install: ${double?.what}; ${double?.fix}`), 'full doctor prints the note');
+  assert.ok(flat(fullLines.join('\n')).includes(`  note        plugin-and-install: ${double?.what}; ${double?.fix}`.replaceAll(sandbox.home, '~')), 'full doctor prints the note');
   assert.match(`${double?.what}; ${double?.fix}`.replaceAll(sandbox.home, '~'), /^the yokoten plugin is on, and `yokoten install` put these here too: the SessionStart doctor and the command guard in ~\/\.claude\/settings\.json; the skills in ~\/\.claude\/skills and ~\/\.agents\/skills; the agents in ~\/\.claude\/agents; ~\/\.local\/share\/yokoten; remove the home copy with `yokoten uninstall`/);
   // A session start takes the copies back instead of naming them (#935).
   const session = (await sandbox.call(['doctor', '--session'])).stdout;
@@ -193,8 +197,8 @@ test('doctor: the plugin and install both on is a note that says to uninstall (#
   assert.equal((await sandbox.call(['uninstall'])).status, 0);
   const after = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.doesNotMatch(after, /plugin-and-install/);
-  assert.match(after, /ok {6}runtime/);
-  assert.match(after, /ok {6}session-doctor/);
+  assert.match(after, /ok {10}runtime/);
+  assert.match(after, /ok {10}session-doctor/);
 });
 
 test('doctor: a skills-only copy alone is a note that names the duplicate (#540)', async () => {
@@ -461,8 +465,8 @@ test('doctor: notes an installed plugin older than this yokoten (#198)', async (
   enable(true);
   install({ gitCommitSha: 'abc123' });
   pluginVersion('0.0.1');
-  const lines = (await sandbox.call(['doctor', '--all'])).stdout.split('\n');
-  const line = `  note    plugin: the yokoten plugin is older than this yokoten (0.0.1 < ${version}); update it: \`claude plugin update yokoten@yokoten\`; the next tool call runs the updated guard; a session which still has the old hook command needs one restart`;
+  const lines = flat((await sandbox.call(['doctor', '--all'])).stdout).split('\n');
+  const line = `  note        plugin: the yokoten plugin is older than this yokoten (0.0.1 < ${version}); update it: \`claude plugin update yokoten@yokoten\`; the next tool call runs the updated guard; a session which still has the old hook command needs one restart`;
   assert.ok(lines.includes(line), lines.join('\n'));
   assert.ok(!lines.some((l) => l.includes('MISSING plugin')));
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, olderNote);
@@ -580,7 +584,7 @@ test('mergeTimeZones: counts merge commits not in UTC, and prints one command th
   assert.doesNotMatch(`${found?.what} ${found?.fix}`, /\+0900/, 'the time zone value is never printed');
   // Full doctor prints it as one note line, and nowhere the zone.
   const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: () => { throw new Error('no network in this test'); } });
-  assert.ok(full.lines.includes(`  note    time-zone: ${found?.what}; ${found?.fix}`), full.lines.join('\n'));
+  assert.ok(flat(full.lines.join('\n')).split('\n').includes(`  note        time-zone: ${found?.what}; ${found?.fix}`), full.lines.join('\n'));
   assert.ok(!JSON.stringify(full).includes('+0900'), 'the time zone value is never printed');
   // The printed command shows exactly that one merge, not the older one outside the window.
   const command = /`(git log[^`]+)`/.exec(found?.fix ?? '')?.[1];
@@ -666,7 +670,7 @@ test('doctor: with the launcher off the PATH, every command in the text is `npx 
     assert.match(text, /`npx yokoten init`/);
     assert.doesNotMatch(text, /node [^"]*yokoten\.ts install/);
   }
-  const full = run(env).lines.join('\n');
+  const full = flat(run(env).lines.join('\n'));
   assert.match(full, /note +command: the yokoten launcher is not on your PATH.*until then, `npx yokoten` runs yokoten/);
   // The launcher is on the PATH: the messages stay as written, and there is no note.
   const onPath = run({ ...env, PATH: `${launcherDir(home)}${delimiter}${env.PATH}` }).lines.join('\n');
@@ -676,4 +680,35 @@ test('doctor: with the launcher off the PATH, every command in the text is `npx 
   const bare = makeTempDir('yokoten-npx-');
   const viaNpx = doctor(root, { env: { HOME: bare, npm_command: 'exec', PATH: env.PATH, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: () => { throw new Error('no network'); } });
   assert.match(viaNpx.lines.join('\n'), /`npx yokoten init`/);
+});
+
+// #1097: the desk fence needs bwrap, rg and socat on Linux; doctor says which are missing, and never installs.
+test('deskFenceCheck: on Linux, each missing fence program is named with the command that installs it (#1097)', () => {
+  const env = { PATH: '/usr/bin:/usr/local/bin' };
+  const onDisk = (names: string[]) => (path: string) => names.some((name) => path === `/usr/bin/${name}`);
+  const cases: [string, string[], RegExp | null][] = [
+    ['all there', ['bwrap', 'rg', 'socat'], null],
+    ['rg missing', ['bwrap', 'socat'], /^the desk fence can't start: rg is not installed$/],
+    ['socat missing', ['bwrap', 'rg'], /^the desk fence can't start: socat is not installed$/],
+    ['both missing', ['bwrap'], /^the desk fence can't start: rg and socat are not installed$/],
+  ];
+  for (const [name, present, what] of cases) {
+    const found = deskFenceCheck(env, 'linux', onDisk(present));
+    assert.equal(found?.ok, what === null, name);
+    if (what) assert.match(found?.finding.what ?? '', what, name);
+  }
+  const missing = deskFenceCheck(env, 'linux', onDisk([]));
+  assert.equal(missing?.finding.fix, 'run `sudo apt install bubblewrap ripgrep socat` on Debian or Ubuntu, or install bubblewrap, ripgrep and socat with your system\'s package manager');
+  assert.deepEqual(Object.keys(FENCE_PROGRAMS), ['bwrap', 'rg', 'socat']);
+  // macOS and Windows start the fence their own way: no row.
+  for (const platform of ['darwin', 'win32'] as const) assert.equal(deskFenceCheck(env, platform, onDisk([])), null, platform);
+  // Full doctor shows it as a note, never a failure (the positive control: a PATH with none of them).
+  const sandbox = makeSandbox();
+  const noGh = () => { throw new Error('no network in this test'); };
+  const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh, platform: 'linux', isFile: onDisk([]) });
+  const fine = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh, platform: 'linux', isFile: () => true });
+  assert.ok(flat(full.lines.join('\n')).includes("  note        desk-fence: the desk fence can't start: bwrap, rg and socat are not installed; run `sudo apt install"), full.lines.join('\n'));
+  assert.equal(full.ok, fine.ok, 'a note never fails doctor');
+  assert.ok(full.report.notes?.some((found) => found.id === 'desk-fence'));
+  assert.ok(!fine.report.notes?.some((found) => found.id === 'desk-fence'));
 });

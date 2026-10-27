@@ -23,10 +23,10 @@ import {
   prompt,
   promptProblems,
   ruleDraft,
-  table,
 } from '../../../src/setup/advice/adopt.ts';
 import { ROAD } from '../../../src/setup/road.ts';
-import { adoptScreen } from '../../../src/commands/more/advice/doctor.ts';
+import { adoptAllScreen, adoptScreen } from '../../../src/commands/more/advice/doctor.ts';
+import { screenProblems } from '../../repo/docs/screen-rules.ts';
 
 const statusOf = (rows: Fact[]) => Object.fromEntries(rows.map((r) => [r.key, r.status]));
 
@@ -44,14 +44,14 @@ test('adopt: with no key, the rule-based draft and how to set the key; it change
   // The entry, through the real binary; the rest runs in this process.
   const r = sandbox.run(['adopt', '--all']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^\| Practice \| The project today \| Draft \| Why \|/);
-  assert.match(r.stdout, /\| rules \| partial: no AGENTS\.md, but CLAUDE\.md \| lighter \|/);
-  assert.match(r.stdout, /set MODEL_API_KEY \(or LLAMA_API_KEY\)/);
+  assert.match(r.stdout, /^yokoten adopt · the whole draft, \d+ rows\n/);
+  assert.match(r.stdout, /^Add a lighter form:\n {2}rules +partial: no AGENTS\.md, but CLAUDE\.md\./m, 'a partial step is drafted lighter');
+  assert.match(r.stdout.replace(/\n/g, ' '), /set MODEL_API_KEY \(or LLAMA_API_KEY\)/);
   assert.match(r.stdout, /You decide every row/);
   const json = await sandbox.call(['adopt', '--json']);
   const rows = JSON.parse(json.stdout) as { key: string; decision: string }[];
   assert.equal(rows.find((row) => row.key === 'tests')?.decision, 'as-is');
-  assert.match(json.stderr, /drafted by rules/);
+  assert.match(json.stderr, /^note: Drafted by rules, because no model key/, "a note on stderr says who drafted it");
   assert.equal(sandbox.git('status', '--porcelain', '--ignored').stdout, before, 'adopt writes nothing');
 });
 
@@ -141,13 +141,12 @@ test('adopt draft: no key, a failed call or a bad answer fall back to the rules,
   const good = await draft(FACTS, { env, send: async () => answer(GOOD) });
   assert.equal(good.by, 'the model (muse-spark-1.3)');
   assert.deepEqual(good.rows.map((r) => r.decision), ['as-is', 'lighter', 'not-now']);
-  const out = table(good).join('\n');
-  assert.match(out, /^\| Practice \| The project today \| Draft \| Why \|/);
+  const out = adoptAllScreen(good).join('\n');
+  assert.match(out, /^yokoten adopt · the whole draft, 3 rows\n/);
+  assert.match(out, /^Keep as it is:\n {2}rules /m, 'each decision under its heading');
   assert.match(out, /You decide every row/);
-  // A backslash before a pipe would end the cell early: both are escaped, the backslash first.
-  const tricky = table({ ...good, rows: [{ ...good.rows[0], reason: 'ends in \\| x' }] }).join('\n');
-  assert.ok(tricky.includes('| ends in \\\\\\| x |'), 'a backslash and a pipe stay inside the cell');
-  for (const d of [noKey, failed, invalid, good]) assert.ok(!JSON.stringify(d).includes('test-key') && !table(d).join('\n').includes('test-key'), 'the key is never in the output');
+  assert.deepEqual(screenProblems({ text: out }), [], 'the whole draft keeps the screen rules');
+  for (const d of [noKey, failed, invalid, good]) assert.ok(!JSON.stringify(d).includes('test-key') && !adoptAllScreen(d).join('\n').includes('test-key'), 'the key is never in the output');
 });
 
 test('adopt draft: facts with an email, a secret, a private mark or a home path are never sent', async () => {

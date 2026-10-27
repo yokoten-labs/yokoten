@@ -3,8 +3,8 @@
 //
 // Copying a setup once is not enough; it drifts. So doctor runs at the start of every
 // session (`--session`, via the hook install adds). A beginner can't take in a list of
-// everything missing, so a session hears three lines: the stage, the one next step, and
-// why, and once a line about a new kit lesson that finds something here. Full `doctor`
+// everything missing, so a session hears little: the stage, the one next step and why,
+// and at most SESSION_BLOCKS_MOST blocks in all, the most important note first (#930). Full `doctor`
 // shows the whole map. A project that decided against a step says so
 // in yokoten.json "notNow", and doctor stops asking.
 //
@@ -20,8 +20,10 @@ export {
   allowedMarkCount,
   commandWording,
   coreRulesCheck,
+  deskFenceCheck,
   doubleInstallCheck,
   editedKitCheck,
+  FENCE_PROGRAMS,
   launcherCheck,
   machineChecks,
   OUTPUT_STOP,
@@ -40,6 +42,7 @@ export {
   kitLessons,
   type LessonCheck,
   lessonChecks,
+  lessonRows,
   readState,
   saveState,
   seenAfter,
@@ -78,22 +81,41 @@ export {
 } from './machine.ts';
 export {
   blocksToSay,
+  type CheckRow,
   doctor,
+  doctorNext,
   type DoctorReport,
+  doctorSummary,
+  type DoctorView,
+  fullLines,
+  type FullView,
   guardCostCheck,
   listBoardSteps,
+  nextCommand,
   NO_CI_GAPS,
   NO_HOME_NOTE,
   noCiNote,
   noteLines,
+  type NoteRank,
   OFFER,
+  oneStepEach,
   PLUGIN_COMMANDS,
+  problemRows,
+  readAtOnce,
+  reportJson,
   ROAD_DONE,
   SERVER_TIMEOUT_MS,
+  SESSION_BLOCKS_MOST,
   SESSION_UNSAVED_BUDGET,
+  sessionBlocks,
+  type SessionNote,
+  type SessionPlace,
   sessionUnsaved,
   type SessionStart,
   sessionsDir,
+  type ShortScreenParts,
+  shortLines,
+  STEP_TITLES,
   type StepState,
   STOPPED_EARLY,
   UNSAVED_OFFER,
