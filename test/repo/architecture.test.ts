@@ -1497,8 +1497,6 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/desk/start.ts', 1],
   ['agents/runtimes/small/deepseek-harness.ts', 1],
   ['commands/kanban/server.ts', 1],
-  ['commands/more/check.ts', 1],
-  ['commands/hook.ts', 1],
   ['commands/more/merge/train.ts', 1],
   ['commands/more/setup/upgrade.ts', 2],
   ['host/light.ts', 1],

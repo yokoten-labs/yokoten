@@ -56,7 +56,7 @@ export interface RenderWaiver {
 }
 
 /** How many keys RENDER_WAIVED may hold. Only the integrator changes it, and only down. */
-export const RENDER_WAIVED_MOST = 60;
+export const RENDER_WAIVED_MOST = 49;
 
 /**
  * Old screens that break a rule today, keyed by renderKey (`<command> <sorted flags>`). The
@@ -66,21 +66,15 @@ export const RENDER_WAIVED_MOST = 60;
  */
 export const RENDER_WAIVED: Record<string, RenderWaiver> = {
   '(none)': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C16 moves it onto screen.ts (#1115)' },
-  'anchor': { rules: ['spaced-items'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
   'changelog --write': { rules: ['next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'check': { rules: ['width', 'widest', 'prose', 'next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all --history': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all --pr': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all --staged': { rules: ['width', 'widest', 'label-columns', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
+  'check': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
+  'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
+  'check --all --staged': { rules: ['label-columns', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'check --history': { rules: ['widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'check --issue': { rules: ['fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'check --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'check --staged': { rules: ['next-step', 'label-columns', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'ci-health --dry-run': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'ci-health --repo': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'conflicts': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C8 moves it onto screen.ts (#1115)' },
-  'desk': { rules: ['next-step'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
   'doctor --agent --session': { rules: ['width', 'widest', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
   'doctor --all': { rules: ['width', 'widest', 'next-step', 'spaced-items', 'fix-line'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
   'doctor --session': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
@@ -106,12 +100,8 @@ export const RENDER_WAIVED: Record<string, RenderWaiver> = {
   'learn --list --upstream': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
   'learn --upstream': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
   'learn --write': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'marks': { rules: ['widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'marks --here': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'mcp': { rules: ['width', 'widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
   'msg': { rules: ['width', 'widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
-  'pr': { rules: ['width', 'widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'provenance': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'tidy': { rules: ['width', 'widest', 'label-columns', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
   'tidy --empty': { rules: ['widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
   'tidy --local': { rules: ['width', 'widest', 'next-step', 'label-columns', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
@@ -124,7 +114,6 @@ export const RENDER_WAIVED: Record<string, RenderWaiver> = {
   'update --all --write': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C2 moves it onto screen.ts (#1115)' },
   'update --write': { rules: ['next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C2 moves it onto screen.ts (#1115)' },
   'upgrade': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C16 moves it onto screen.ts (#1115)' },
-  'worker': { rules: ['width', 'widest', 'next-step', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
 };
 
 /** The key of a render: the command, then its flags sorted, values and words after `--` left out. */
