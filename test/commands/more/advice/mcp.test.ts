@@ -13,6 +13,7 @@ import {
   lintServerEntry,
   lintStdout,
   lintTools,
+  mcpJson,
   mcpNoneScreen,
   mcpScreen,
   needsWindowsShell,
@@ -257,4 +258,24 @@ test('mcpScreen: two tools and one problem, from data', () => {
   assert.deepEqual(ready.slice(0, 1), ['yokoten mcp --check · 2 tools ready']);
   assert.ok(ready.some((line) => /note +1 warning; run yokoten mcp --json/.test(line)));
   assert.deepEqual(mcpNoneScreen('.mcp.json')[0], 'yokoten mcp · no MCP server found in .mcp.json');
+});
+
+/** What printJson writes for a value: the bytes a --json reader gets. */
+const printed = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+// --json is the result the screen is built from, in the shape it always had (issue #1115).
+test('mcp --json: the result becomes the old {check, ok, servers, findings, notes} shape, byte for byte (#1115)', async () => {
+  const report = { name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] };
+  const problem = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
+  const warning = lintServerEntry('win', { command: 'demo.cmd', args: [] })[0];
+  assert.equal(printed(mcpJson({ reports: [report], problems: [problem], warnings: [warning], toolCount: 2 })), printed({ check: 'mcp', ok: false, servers: [report], findings: [problem], notes: [warning] }));
+  assert.equal(printed(mcpJson({ reports: [], problems: [], warnings: [], toolCount: 0, skipped: 'no MCP server found in .mcp.json' })), printed({ check: 'mcp', ok: true, skipped: 'no MCP server found in .mcp.json', findings: [], notes: [] }));
+  // The command prints exactly that shape: no field more, none in another order.
+  const sandbox = mcpProject('clean');
+  const run = await sandbox.call(['mcp', '--json']);
+  assert.equal(run.status, 0, run.stderr);
+  const parsed = JSON.parse(run.stdout) as { servers: unknown[]; findings: unknown[]; notes: unknown[] };
+  assert.equal(run.stdout, printed({ check: 'mcp', ok: true, servers: parsed.servers, findings: parsed.findings, notes: parsed.notes }));
+  const none = await makeSandbox().call(['mcp', '--json']);
+  assert.equal(none.stdout, printed({ check: 'mcp', ok: true, skipped: 'no MCP server found in .mcp.json, .vscode/mcp.json, mcp.json', findings: [], notes: [] }));
 });
