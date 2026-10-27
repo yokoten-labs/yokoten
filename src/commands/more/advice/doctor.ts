@@ -24,7 +24,7 @@ import { cleanOlderInstall, PROFILE_MARK } from '../../../setup/install.ts';
 import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED } from '../../../setup/doctor/index.ts';
 import { ROAD, STAGES } from '../../../setup/road.ts';
 import { READERS } from '../../hook.ts';
-import { count, fail, field, type Invocation, moreLine, noRootFinding, noRootScreen, noteLine, parse, print, printJson, requireRoot, rootOf, row, say, terminalOf, title, usage, wrap } from '../../shared.ts';
+import { count, fail, field, type Invocation, isTerminal, moreLine, noRootFinding, noRootScreen, noteLine, parse, print, printJson, requireRoot, rootOf, row, say, terminalOf, title, usage, wrap } from '../../shared.ts';
 import { writeLeadSession } from '../../kanban/feed/read/logs.ts';
 
 // The default screen and its parts moved to src/setup/doctor/report.ts, so the first run's
@@ -144,11 +144,14 @@ const STDIN_LIMIT = 1 << 20;
  * The SessionStart event Claude Code writes to stdin, or null when it gives none. It never
  * waits on a terminal, and never longer than STDIN_WAIT_MS on a pipe that stays open.
  */
-function readSessionStart({ env, stdin }: Invocation): (SessionStart & { transcriptPath?: string }) | null {
-  // Reading the process's stdin stream opens it first. For a pipe, libuv then puts the fd
-  // in non-blocking mode, so readSync below throws EAGAIN in place of waiting for a writer
-  // that never closes. A file, such as /dev/null, reads to its end at once.
-  if (!claudeCode.hasSessionInput(env, stdin.stream.isTTY === true)) return null;
+function readSessionStart(invocation: Invocation): (SessionStart & { transcriptPath?: string }) | null {
+  const { env, stdin } = invocation;
+  // terminalOf reads the process's stdin stream, which opens it first. For a pipe, libuv then
+  // puts the fd in non-blocking mode, so readSync below throws EAGAIN in place of waiting for
+  // a writer that never closes. A file, such as /dev/null, reads to its end at once. A terminal
+  // on stdin sends no event, also when stdout is a pipe, so it is never read (fail closed).
+  const terminal = terminalOf(invocation);
+  if (!claudeCode.hasSessionInput(env, terminal.isPerson || isTerminal(stdin))) return null;
   const { fd } = stdin;
   const toEvent = (text: string) => {
     try {

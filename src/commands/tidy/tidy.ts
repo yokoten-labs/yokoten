@@ -7,7 +7,7 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, spaced, title, usage } from '../shared.ts';
+import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, spaced, terminalOf, title, usage } from '../shared.ts';
 import { section } from '../../rules/text/screen.ts';
 import { scanTidy, sizeOf, tidyStateDir, type TidyItem, type TidyScan } from './find.ts';
 import { archiveItems, deleteTrash, makeTrashFolder, moveItem, readTrash, safeName, type TrashFolder, type TrashIndex, writeTrashIndex } from './put-away.ts';
@@ -155,7 +155,7 @@ async function emptyTrash(invocation: Invocation, trash: string, platform: NodeJ
     return 0;
   }
   print(invocation, head);
-  if (!invocation.stdin.stream.isTTY) return fail(invocation, '--empty asks before it deletes, and there is no terminal to ask in. Nothing was deleted', 'run it in a terminal, or add `--yes`');
+  if (!terminalOf(invocation).isPerson) return fail(invocation, '--empty asks before it deletes, and there is no terminal to ask in. Nothing was deleted', 'run it in a terminal, or add `--yes`');
   say(invocation, `${askLine(`Delete ${count(old.length, 'folder')} (${size}) for good?`)} `, invocation.stdout);
   const answer = (await readAnswer(invocation)).trim().toLowerCase();
   // Only an explicit yes deletes: Enter alone does not, whatever the question's default looks like.
