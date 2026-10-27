@@ -2,9 +2,10 @@
 // writing files without stepping on what is already there.
 
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { realPath } from '../platform/paths.ts';
 
 /**
  * The folder with package.json, kit/, bin/ and src/. This file is src/setup/files.ts in
@@ -25,20 +26,16 @@ const MANAGED_HASH = /;? sha256=([0-9a-f]{64})/;
 /** How a copy of the runtime went: written, or kept because `dest` is or holds the copy running now (#204). */
 export type CopyResult = 'wrote' | 'kept';
 
-/** `path` with symlinks resolved. A part that does not exist yet is kept as it is. */
-function resolveReal(path: string): string {
-  const full = resolve(path);
-  try {
-    return realpathSync(full);
-  } catch {
-    const parent = dirname(full);
-    return parent === full ? full : join(resolveReal(parent), basename(full));
-  }
-}
+/**
+ * `path` as the system names it on disk. Node's loader names the running copy (HOME_DIR) this
+ * way, so a short name (`C:\Users\RUNNER~1`) or a redirected folder in `dest` must read the
+ * same, or a copy into its own src/ is not seen and never ends (#1109).
+ */
+const resolveReal = (path: string): string => realPath(resolve(path));
 
-/** Whether `inner` is `outer` or inside it, after symlinks. */
-export function isSameOrInside(inner: string, outer: string): boolean {
-  const path = relative(resolveReal(outer), resolveReal(inner));
+/** Whether `inner` is `outer` or inside it, as the disk names them; `read` is there for a test to give two spellings of one folder. */
+export function isSameOrInside(inner: string, outer: string, read: (path: string) => string = resolveReal): boolean {
+  const path = relative(read(outer), read(inner));
   return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
 

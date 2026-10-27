@@ -1,5 +1,5 @@
-import { realpathSync, statSync } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { spend } from './run.ts';
 import { commandWords } from './read.ts';
 import { climbsPastDrive, fromGitBash, pathsFor, type PathPlace } from '../../../../platform/paths.ts';
@@ -130,24 +130,7 @@ export function resolvedFrom(folder: string, path: string): string | null {
   return placed === null ? null : placed !== path ? placed : resolve(folder, placed);
 }
 
-/**
- * The real path, through symlinks. git reports the repo root's real path, and a tool may
- * send a path through a symlink (on macOS, /var is /private/var). A file that does not
- * exist yet takes the real path of its nearest existing folder.
- *
- * The system's own call (`realpathSync.native`), because on Windows it also spells each
- * folder by its long name, in its own case: `C:\Users\RUNNER~1` is `C:\Users\runneradmin`,
- * and `GITHUB~1` is `.github`. git reports the long name, so a short name sent by a tool
- * would read as a file outside the repo, or as no lead-only path, and pass (#1095).
- */
-export function realPath(path: string): string {
-  try {
-    return realpathSync.native(path);
-  } catch {
-    const parent = dirname(path);
-    return parent === path ? path : resolve(realPath(parent), basename(path));
-  }
-}
+export { realPath } from '../../../../platform/paths.ts';
 
 /**
  * `ruled`: a target's path from its repo's root, and that repo's lead-only list; null when

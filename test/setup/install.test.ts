@@ -39,7 +39,7 @@ import {
   ROOT,
 } from '../repo/helpers.ts';
 import { hasHook } from '../../src/agents/hooks-file.ts';
-import { copyRuntime, isEditedManaged, sealManaged, writeManaged } from '../../src/setup/files.ts';
+import { copyRuntime, isEditedManaged, isSameOrInside, sealManaged, writeManaged } from '../../src/setup/files.ts';
 import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
 
@@ -838,6 +838,18 @@ test('install: temp folders that an earlier crash left are removed, and only tho
   for (const name of ['.yokoten-new-abc123', '.yokoten-old-def456', ...kept]) mkdirSync(join(parent, name), { recursive: true });
   assert.equal(copyRuntime(join(parent, 'yokoten'), { withKit: true }), 'wrote');
   assert.deepEqual(readdirSync(parent).sort(), [...kept, 'yokoten'].sort());
+});
+
+// #1109: Node's loader names the running copy by its long name, and a Windows runner's temp
+// folder is `C:\Users\RUNNER~1\...`. Read as written, a copy into the running src/ looked
+// outside it, and init copied src/ into itself until the path was too long (30 minutes).
+test('copy runtime: one folder by two spellings is the same folder, so a copy into its own src/ is seen (#1109)', () => {
+  const long = join(sep, 'users', 'runneradmin', 'clone');
+  const short = join(sep, 'users', 'RUNNER~1', 'clone');
+  const read = (path: string) => path.replace(short, long);
+  assert.equal(isSameOrInside(join(short, 'src', 'project'), join(long, 'src'), read), true);
+  assert.equal(isSameOrInside(join(short, 'project'), join(long, 'src'), read), false, 'next to src/ is not inside it');
+  assert.equal(isSameOrInside(join(short, 'src', 'project'), join(long, 'src'), (path) => path), false, 'the bug: read as written, the two spellings never meet');
 });
 
 // #208, #433: a clone install puts a launcher in ~/.local/bin, and with no terminal it edits no shell file.
