@@ -246,7 +246,7 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const trusted = folders.get(folder)?.trusted;
   if (trusted === true) return { state: 'same', store, changes: [] };
   // `trusted = false` is the user's choice: it stays (#984).
-  if (trusted === false) return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays trusted = false in ${store} (yokoten would set true)`, fix: untrustedFix(store) }] };
+  if (trusted === false) return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays trusted = false in ${store} (yokoten would set true)`, fix: untrustedFix(store) }] };
   const change: TrustChange = { agent: 'Grok CLI', store, file, format: 'toml', path: ['folders', folder], key: 'trusted', value: 'true', before: null, kind: 'boolean' };
   return { state: 'trusted', store, changes: [change] };
 }

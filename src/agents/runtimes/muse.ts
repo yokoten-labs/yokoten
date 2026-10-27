@@ -173,7 +173,7 @@ export function trustProject(root: string, env: Env): TrustPlan {
   if (isObject(entry) && entry.decision === 'trusted') return { state: 'same', store, changes: [] };
   // A decision the user made, other than trusted, stays (#984).
   if (isObject(entry) && typeof entry.decision === 'string') {
-    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+    return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
   }
   const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before: null };
   return { state: 'trusted', store, changes: [change], seed: { schema_version: 1, projects: {} } };
