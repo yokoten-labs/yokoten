@@ -45,6 +45,9 @@ const WRONG_KEYS: [string, Record<string, unknown>][] = [
   ['translations.fail', { translations: { fail: 'no' } }],
   ['commands', { commands: 'python3' }],
   ['commands', { commands: { block: ['python3'] } }],
+  ['worker.settings', { worker: { settings: 'SCREENS_OUT' } }],
+  ['worker.settings', { worker: { settings: ['SCREENS_OUT', 'PATH'] } }],
+  ['worker.settings', { worker: { settings: ['screens_out'] } }],
 ];
 
 test('glob: a slash anchors at the root, no slash matches in any folder', () => {
@@ -221,4 +224,44 @@ test('config: yokoten\'s own areas cover its open work', () => {
   assert.ok(own.areas.includes('doctor') && own.areas.includes('owner'));
   assert.ok(Object.hasOwn(own.commands.block, 'python') && Object.hasOwn(own.commands.block, 'python3'), 'no Python here (#192)');
   assert.deepEqual(DEFAULTS.areas, []);
+});
+
+// #1135: worker.settings names the test settings a worker may make. A name that moves a
+// folder or runs code, or that is not a setting name, drops the whole list.
+test('config: "worker.settings" reads plain names and refuses a never name or a malformed one, naming the key (#1135)', () => {
+  const dir = makeTempDir();
+  const load = (settings: unknown) => {
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings } }));
+    return loadConfig(dir, { onProblem: () => {} }).worker.settings;
+  };
+  // The control: a plain list is read as it is, and the default is none.
+  assert.deepEqual(load(['SCREENS_OUT', 'TEST_SHARD_2']), ['SCREENS_OUT', 'TEST_SHARD_2']);
+  assert.deepEqual(DEFAULTS.worker.settings, []);
+  const refusals: [unknown, RegExp][] = [
+    [['SCREENS_OUT', 'PATH'], /PATH, which moves a folder or runs other code/],
+    [['LD_PRELOAD'], /LD_PRELOAD \(one of LD_\*\), which moves a folder/],
+    [['GIT_CONFIG_GLOBAL'], /GIT_CONFIG_GLOBAL \(one of GIT_\*\)/],
+    [['NODE_OPTIONS'], /NODE_OPTIONS, which/],
+    [['YOKOTEN_ROLE'], /YOKOTEN_ROLE \(one of YOKOTEN_\*\)/],
+    [['NPM_CONFIG_SCRIPT_SHELL'], /NPM_CONFIG_SCRIPT_SHELL \(one of NPM_CONFIG_\*\)/],
+    [['screens_out'], /"screens_out" is not a setting name/],
+    [['SCREENS-OUT'], /"SCREENS-OUT" is not a setting name/],
+    [['1OUT'], /"1OUT" is not a setting name/],
+    [['A'.repeat(65)], /is not a setting name/],
+    [['SCREENS_OUT=x'], /is not a setting name/],
+    ['SCREENS_OUT', /must be a list of setting names/],
+  ];
+  for (const [settings, message] of refusals) {
+    const label = JSON.stringify(settings);
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings } }));
+    assert.throws(() => loadConfig(dir), (err: Error) => err.message.includes('"worker.settings"') && message.test(err.message), label);
+    // The hook gets no extra names, never every name; the other worker field still counts.
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings, timeLimitMinutes: 60 } }));
+    const problems: string[] = [];
+    const config = loadConfig(dir, { onProblem: (_problem, ignored) => problems.push(ignored) });
+    assert.deepEqual(config.worker, { timeLimitMinutes: 60, settings: [] }, label);
+    assert.deepEqual(problems, ['worker.settings'], label);
+  }
+  // The longest name allowed passes: the length cap is not off by one.
+  assert.deepEqual(load(['A'.repeat(64)]), ['A'.repeat(64)]);
 });

@@ -397,3 +397,42 @@ test('guard: a worker command with a part the guard cannot read, or a shell mode
   // `$OUT_DIR` no longer passes; the other variables above still do.
   assert.equal(checkCommand('rm -rf $OUT_DIR', { cwd: clean, env: worker })?.id, 'wipe-home-or-system');
 });
+
+// #1135: a project declares the test settings its workers may make, in the yokoten.json of
+// the repo the shell is in. Each pass has its control: the same command in a repo that does
+// not declare the name is refused.
+test('guard: a worker may set a name its own repo declares in worker.settings, and no other (#1135)', () => {
+  const base = makeTempDir('yokoten-box-settings-');
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const repo = (name: string, config?: unknown) => {
+    const tree = join(base, name);
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(tree, '.git'), 'gitdir: ' + join(base, `store-${name.replace(/\//g, '-')}`) + '\n');
+    if (config !== undefined) writeFileSync(join(tree, 'yokoten.json'), JSON.stringify(config));
+    return tree;
+  };
+  const declares = repo('declares', { worker: { settings: ['SCREENS_OUT'] } });
+  const plain = repo('plain');
+  // A repo inside the declaring one is its own repo: the outer yokoten.json does not count.
+  const inner = repo('declares/inner');
+  const withNever = repo('never', { worker: { settings: ['SCREENS_OUT', 'PATH'] } });
+  const malformed = repo('malformed', { worker: { settings: ['SCREENS_OUT', 'screens-out'] } });
+  const check = (command: string, cwd: string) => checkCommand(command, { cwd, env: worker });
+  for (const command of ['SCREENS_OUT=out.txt node --test test/a.test.ts', 'env SCREENS_OUT=out.txt node --test test/a.test.ts', 'export SCREENS_OUT=out.txt', 'TZ=UTC SCREENS_OUT=out.txt node --test test/a.test.ts']) {
+    assert.equal(check(command, declares), null, `declared: ${command}`);
+    for (const [label, cwd] of [['undeclared', plain], ['another repo declares it', inner], ['a never name drops the list', withNever], ['a malformed name drops the list', malformed]]) {
+      assert.equal(check(command, cwd)?.id, 'worker-mark', `${label}: ${command}`);
+    }
+  }
+  // An undeclared name stays refused where another is declared, and so does a never name.
+  for (const command of ['OTHER_OUT=x node --test test/a.test.ts', 'export OTHER_OUT=x', 'PATH=/tmp/x node --test test/a.test.ts', 'GIT_DIR=x git status']) {
+    assert.equal(check(command, declares)?.id, 'worker-mark', command);
+    assert.equal(check(command, withNever)?.id, 'worker-mark', command);
+  }
+  // The refusal says where a declared setting goes, and that the guard reads only the command line.
+  const refusal = check('OTHER_OUT=x node --test test/a.test.ts', declares);
+  assert.ok(refusal?.what.includes('OTHER_OUT') && refusal.what.includes('worker.settings'), refusal?.what);
+  assert.ok(refusal?.fix?.includes('yokoten.json worker.settings') && refusal.fix.includes('reads the command line'), refusal?.fix);
+  // The lead is not boxed at all.
+  assert.notEqual(checkCommand('OTHER_OUT=x node --test test/a.test.ts', { cwd: plain, env: { HOME: worker.HOME } })?.id, 'worker-mark');
+});

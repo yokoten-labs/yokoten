@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Finding, finding } from './text/message.ts';
+import { workerSettingProblem } from './guards/worker/box.ts';
 
 export interface Config {
   /** The code host, when the origin remote's address does not name it: `auto`, or `gitea` for a self-hosted Gitea (#505). */
@@ -16,7 +17,7 @@ export interface Config {
   areas: string[];
   translations: { fail: boolean };
   commands: { block: Record<string, string> };
-  worker: { timeLimitMinutes: number };
+  worker: { timeLimitMinutes: number; settings: string[] };
 }
 
 /** The guard's own environment (process.env, or a test's stand-in). */
@@ -55,8 +56,9 @@ export const DEFAULTS: Config = {
   // { "block": { "python3": "this project is TypeScript only" } }.
   commands: { block: {} },
   // A worker that a runner or the board starts stops after this many minutes (#711):
-  // three hours unless the project says otherwise.
-  worker: { timeLimitMinutes: 180 },
+  // three hours unless the project says otherwise. `settings`: the environment settings a
+  // worker may make besides the guard's short list, such as a test's output file (#1135).
+  worker: { timeLimitMinutes: 180, settings: [] },
 };
 
 /**
@@ -91,6 +93,19 @@ const shape = (text: string, fits: (value: unknown) => boolean): Shape => ({
 });
 const textList = (example: string) => shape(`a list of text, such as ${example}`, isTextList);
 const trueOrFalse = shape('true or false', (value) => typeof value === 'boolean');
+
+// "worker.settings": names only, and none that moves a folder or runs other code. One bad
+// name drops the whole list, so a worker gets no extra name, never every name (#1135).
+const workerSettings: Shape = {
+  problem: (value, path) => {
+    if (!isTextList(value)) return `yokoten.json: "${path}" must be a list of setting names, such as ["SCREENS_OUT"]`;
+    for (const name of value as string[]) {
+      const problem = workerSettingProblem(name);
+      if (problem !== null) return `yokoten.json: "${path}" can't hold ${problem}; take it out of the list`;
+    }
+    return null;
+  },
+};
 
 // "commands": { "block": { "<program>": "<reason>" } }. A wrong shape drops the whole
 // block list, so the guard never runs on a list it misread (#192).
@@ -133,8 +148,8 @@ const SHAPES: Record<keyof Config, Shape | Fields> = {
   translations: { example: '{ "fail": true }', fields: { fail: trueOrFalse } },
   commands: blockList,
   worker: {
-    example: '{ "timeLimitMinutes": 180 }',
-    fields: { timeLimitMinutes: shape('a whole number of minutes above 0, such as 180', (value) => Number.isInteger(value) && (value as number) > 0) },
+    example: '{ "timeLimitMinutes": 180, "settings": ["SCREENS_OUT"] }',
+    fields: { timeLimitMinutes: shape('a whole number of minutes above 0, such as 180', (value) => Number.isInteger(value) && (value as number) > 0), settings: workerSettings },
   },
 };
 

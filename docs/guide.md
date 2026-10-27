@@ -1308,6 +1308,7 @@ missing key, a key set to `null`, or a missing file gives the default.
 | `areas` | a list of words | any lowercase word |
 | `translations` | `{ "fail": true }` | `false` |
 | `commands` | `{ "block": { "<program>": "<reason>" } }` | no program blocked |
+| `worker` | `{ "timeLimitMinutes": 180, "settings": ["SCREENS_OUT"] }`: a whole number above 0, and a list of setting names | 180 minutes, no extra setting |
 
 yokoten checks each key against this table, in one place:
 
@@ -1696,6 +1697,8 @@ A list you set replaces the default list; it does not add to it.
 | `allowBuild` | none | Build output and binaries the commit check lets through |
 | `areas` | any | The areas a title may name. See [Issue titles](#issue-titles) |
 | `translations.fail` | `false` | A translation behind its source fails the check |
+| `worker.timeLimitMinutes` | `180` | A worker that a runner or the board starts stops after this many minutes |
+| `worker.settings` | none | Environment settings a worker may put before a command, such as a test's output file: `["SCREENS_OUT"]`. A name that moves a folder or runs other code (`PATH`, `HOME`, `GIT_*`, `LD_*`, `NODE_OPTIONS` and the like) is a config error, and the list then gives no extra names |
 
 #### Folders that may grow
 
@@ -2632,6 +2635,12 @@ Honest limits:
   gh, yokoten or a shell may run git with the home folder it was given: an npm script, a
   `make` target or a shell function (`HOME=/tmp/x npm run commit`). An indirect name
   (`export $name=x`) gets past too.
+- **A worker's settings are read on the command line only.** The guard stops a setting
+  that moves a folder or makes a program run other code (`PATH`, `GIT_DIR`, `LD_PRELOAD`,
+  `NODE_OPTIONS`) when it is typed in the command. A script the worker writes and then runs
+  can set any of them: that is out of the guard's reach, and the desk fence is the boundary
+  for a worker's processes.
+  A project lets its workers set its own test settings in `worker.settings`.
 - **gh's token is hidden only from plain commands.** A script written to a file and then
   run is not read. A script that reads gh's own files or the system keyring, or a
   variable name built in pieces, still gets the token. So does a program that prints the
