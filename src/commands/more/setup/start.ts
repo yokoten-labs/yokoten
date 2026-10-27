@@ -11,7 +11,7 @@ import { agentsHere, install, isMachineSetUp, isYes, launcherDir, skillNames } f
 import { VERSION } from '../../../setup/files.ts';
 import { count, type Invocation, nextLine, noRootFinding, noRootScreen, print, rootOf, row, screen, title } from '../../shared.ts';
 import { askWhenTerminal, NEEDS_HAND } from './ask.ts';
-import { guardedAgents, installScreen } from './install.ts';
+import { guardedAgents, installScreen, placeOf } from './install.ts';
 import { projectScreen } from './init.ts';
 
 /**
@@ -56,8 +56,8 @@ export async function runStart(invocation: Invocation): Promise<number> {
   if (isMachineMissing) {
     const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform: invocation.platform });
     // No label column: doctor's rows below have none, so every row's text starts in one column (#1115).
-    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done.lines).join(', ') || 'your agents'} on this computer`));
-    else failedScreens.push(installScreen(invocation, done.lines, done.ok, true));
+    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done).join(', ') || 'your agents'} on this computer`));
+    else failedScreens.push(installScreen(done, placeOf(invocation), { isFirstRun: true }));
   }
   if (isProjectMissing) {
     const done = init(root, env, undefined, { ask, platform: invocation.platform });

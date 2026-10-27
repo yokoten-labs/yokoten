@@ -321,3 +321,46 @@ export interface Place {
   hasProjectRules: boolean;
   launcherOnPath: boolean;
 }
+
+/** The kinds of thing a Change names. */
+export type ChangeKind = Change['kind'];
+
+/**
+ * A write's or a removal's ReportState as a Change, or null for `not there`: nothing happened,
+ * so there is nothing to name. A file that was right already is `kept`; a file of the user's,
+ * and a managed copy they edited, are `kept` and `yours` (0015).
+ */
+export function changeOf(state: ReportState, kind: ChangeKind, path: string, more: { agent?: string; note?: string } = {}): Change | null {
+  if (state === 'not there') return null;
+  const change: Change = { state: state === 'same' || state.startsWith('kept') ? 'kept' : (state as ChangeState), kind, path };
+  if (more.agent !== undefined) change.agent = more.agent;
+  if (state === 'kept (yours)' || state === 'kept (your edit)') change.yours = true;
+  const note = state === 'kept (your edit)' ? YOUR_EDIT : more.note;
+  if (note !== undefined) change.note = note;
+  return change;
+}
+
+/** The note on a managed copy the user edited: install keeps it, and the newer copy waits in the kit (0015). */
+export const YOUR_EDIT = 'your edit';
+
+/** What each kind of change names, before its note. */
+const SUBJECTS: Record<ChangeKind, (change: Change) => string> = {
+  file: (change) => change.path,
+  skill: (change) => `skill ${basename(change.path)} in ${dirname(change.path)}`,
+  agent: (change) => `agent ${basename(change.path).replace(/\.md$/, '')}`,
+  hook: (change) => `${change.agent ?? 'agent'} hooks in ${change.path}`,
+  launcher: (change) => `the launcher ${change.path}`,
+  runtime: (change) => `the runtime ${change.path}`,
+  profile: (change) => `the PATH line in ${change.path}`,
+  setting: (change) => `the git setting ${change.path}`,
+  'git-hook': (change) => `the git hook ${change.path}`,
+};
+
+/**
+ * One `--list` row's text for a change: what it names, whose it is, and its note. The row's
+ * mark is the change's state, so the text leaves it out. A screen draws it; nothing reads it back.
+ */
+export function describeChange(change: Change): string {
+  const yours = change.yours && change.note !== YOUR_EDIT ? " (yours, not yokoten's)" : '';
+  return `${SUBJECTS[change.kind](change)}${yours}${change.note === undefined ? '' : `: ${change.note}`}`;
+}

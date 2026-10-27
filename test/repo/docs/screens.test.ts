@@ -22,6 +22,10 @@ import { servingScreen } from '../../../src/commands/kanban/server.ts';
 import { anchorNote, anchorScreen, deskStartScreen, stopsOffScreen, stopsOnScreen, stopsScreen, workerEnvScreen, workerMarkedScreen, workerUnmarkedScreen } from '../../../src/commands/hook.ts';
 import { checkScreen, ciHealthScreen, marksScreen, prSyncScreen, provenanceScreen, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
 import { finding } from '../../../src/rules/text/message.ts';
+// C1
+import { installScreen, listScreen, uninstallScreen } from '../../../src/commands/more/setup/install.ts';
+import { type Change, type Place, type SetupResult } from '../../../src/setup/files.ts';
+// C1 end
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -279,6 +283,60 @@ const C4_SCREENS: ScreenRun[] = [
     }),
   },
 ];
+// C1: install's and uninstall's screens, built in this process from a result on each system (#1115, #1038).
+const C1_HOMES = { linux: '/home/someone', win32: 'C:\\Users\\someone', darwin: '/Users/someone' } as const;
+type C1Platform = keyof typeof C1_HOMES;
+const c1Path = (platform: C1Platform, ...parts: string[]): string => [C1_HOMES[platform], ...parts].join(platform === 'win32' ? '\\' : '/');
+const c1Place = (platform: C1Platform, more: Partial<Place> = {}): Place => ({ platform, home: C1_HOMES[platform], hasProjectRules: false, launcherOnPath: true, ...more });
+
+/** A first install's result: Claude Code and Codex guarded, two agents not installed, the launcher written. */
+function c1Install(platform: C1Platform, state: Change['state'] = 'wrote'): SetupResult {
+  const launchers = platform === 'win32' ? ['yokoten.cmd', 'yokoten.ps1'] : ['yokoten'];
+  const changes: Change[] = [
+    { state, kind: 'runtime', path: c1Path(platform, '.local', 'share', 'yokoten') },
+    { state, kind: 'skill', path: c1Path(platform, '.claude', 'skills', 'yokoten') },
+    { state: state === 'wrote' ? 'linked' : state, kind: 'skill', path: c1Path(platform, '.agents', 'skills', 'yokoten') },
+    { state, kind: 'agent', path: c1Path(platform, '.claude', 'agents', 'worker.md') },
+    { state: state === 'wrote' ? 'added' : state, kind: 'hook', path: '~/.claude/settings.json', agent: 'Claude Code', note: 'command guard' },
+    { state: state === 'wrote' ? 'added' : state, kind: 'hook', path: '~/.codex/hooks.json', agent: 'Codex CLI', note: 'command guard' },
+    { state: 'skipped', kind: 'hook', path: '~/.gemini', agent: 'Gemini CLI', note: 'not installed here' },
+    { state: 'skipped', kind: 'hook', path: '~/.grok', agent: 'Grok CLI', note: 'not installed here' },
+    { state, kind: 'file', path: c1Path(platform, '.config', 'yokoten', 'private-marks') },
+    ...launchers.map((name): Change => ({ state, kind: 'launcher', path: c1Path(platform, '.local', 'bin', name) })),
+  ];
+  return { ok: true, changes, problems: [], notes: [] };
+}
+
+/** An install that could not read one hooks file, so the guard is not on there. */
+function c1Partly(platform: C1Platform): SetupResult {
+  const result = c1Install(platform);
+  result.ok = false;
+  result.changes = result.changes.map((change) => (change.agent === 'Codex CLI' ? { ...change, state: 'skipped' } : change));
+  result.problems.push(finding('codex-user-hook', '~/.codex/hooks.json is not valid JSON', 'run `yokoten install` again', { why: 'the guard is not on for Codex CLI until you make it valid JSON' }));
+  return result;
+}
+
+/** What uninstall took back after a first install. */
+const C1_REMOVED: SetupResult = {
+  ok: true,
+  changes: [
+    ...c1Install('linux').changes.filter((change) => change.state !== 'skipped').map((change): Change => ({ ...change, state: 'removed' })),
+    { state: 'kept', kind: 'file', path: c1Path('linux', '.config', 'yokoten'), yours: true, note: 'your keys and private marks' },
+  ],
+  problems: [],
+  notes: [],
+};
+
+/** The C1 screens, as screensOf lists them. */
+const c1Screens = (): ScreenRun[] => [
+  ...(['linux', 'win32', 'darwin'] as const).map((platform): ScreenRun => ({ key: `install, fresh, ${platform}`, words: ['install'], lines: installScreen(c1Install(platform), c1Place(platform)), platform })),
+  { key: 'install, already set up', words: ['install'], lines: installScreen(c1Install('linux', 'kept'), c1Place('linux')), platform: 'linux' },
+  ...(['linux', 'win32'] as const).map((platform): ScreenRun => ({ key: `install, partly set up with a PATH note, ${platform}`, words: ['install'], lines: installScreen(c1Partly(platform), c1Place(platform, { launcherOnPath: false })), platform })),
+  { key: 'uninstall, with removals', words: ['uninstall'], lines: uninstallScreen(C1_REMOVED), platform: 'linux' },
+  { key: 'uninstall, nothing to remove', words: ['uninstall'], lines: uninstallScreen({ ok: true, changes: [], problems: [], notes: [] }), platform: 'linux' },
+  { key: 'install --list', words: ['install', '--list'], lines: listScreen('install', c1Install('linux'), c1Place('linux')), platform: 'linux' },
+];
+// C1 end
 
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
@@ -336,6 +394,9 @@ function screensOf(repo: string): ScreenRun[] {
     // C5 end.
     // C4: check and its small commands, rendered from result objects (#1115).
     ...C4_SCREENS,
+    // C1
+    ...c1Screens(),
+    // C1 end
   ];
 }
 
