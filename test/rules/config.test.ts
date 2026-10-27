@@ -258,7 +258,7 @@ test('config: "worker.settings" reads plain names and refuses a never name or a 
     // The hook gets no extra names, never every name; the other worker field still counts.
     writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings, timeLimitMinutes: 60 } }));
     const problems: string[] = [];
-    const config = loadConfig(dir, { onProblem: (_problem, ignored) => problems.push(ignored) });
+    const config = loadConfig(dir, { onProblem: (_, ignored) => problems.push(ignored) });
     assert.deepEqual(config.worker, { timeLimitMinutes: 60, settings: [] }, label);
     assert.deepEqual(problems, ['worker.settings'], label);
   }
