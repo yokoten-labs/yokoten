@@ -19,8 +19,8 @@ import { briefFile, deskRows, type DeskRecord, type IsAlive, isAlive, listScreen
 import { pickAgent } from './pick-agent.ts';
 import { isWaiting, lastActivity, watchDesk } from './stall.ts';
 
-/** The one line on native Windows: the desk runs in WSL. */
-export const DESK_USE_WSL = 'yokoten desk: on Windows, a desk runs in WSL, where it has a sandbox. Open WSL and run it there. Nothing was started.';
+/** What native Windows prints: the desk runs in WSL, and the next step. */
+export const DESK_USE_WSL = 'yokoten desk: on Windows, a desk runs in WSL, where it has a sandbox.\nNothing was started.\n\nNext: open WSL and run `yokoten desk` there.';
 
 /** What the desk does to the world, so a test can stand in for each part. */
 export interface DeskDeps {

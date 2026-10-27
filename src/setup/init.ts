@@ -138,17 +138,17 @@ function keepInstalledSteps(lines: string[], show: boolean): { lines: string[]; 
  * `ask` is the terminal question for the tests job (#550); without one, init only says
  * what it would add. Each git answer is kept for the run, until init sets core.hooksPath (#453).
  */
-export function init(root: string, env: Env, gh: Gh = ghIn(root, env, ORG_LOOKUP_MS), { noCi = false, ask }: { noCi?: boolean; ask?: Ask } = {}): { ok: boolean; lines: string[] } {
-  return withGitReads(() => initRun(root, env, gh, noCi, ask));
+export function init(root: string, env: Env, gh: Gh = ghIn(root, env, ORG_LOOKUP_MS), { noCi = false, ask, platform }: { noCi?: boolean; ask?: Ask; platform?: NodeJS.Platform } = {}): { ok: boolean; lines: string[] } {
+  return withGitReads(() => initRun(root, env, gh, noCi, ask, platform));
 }
 
-function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask): { ok: boolean; lines: string[] } {
+function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask, platform?: NodeJS.Platform): { ok: boolean; lines: string[] } {
   const report: string[] = [];
   const isOff = noCi || isCiOffIn(root);
   const cli = cliPath(root);
   const hookCli = hookCliPath(root);
   if (!isSelf(root) && root !== HOME_DIR) {
-    const copied = copyRuntime(join(root, '.yokoten'));
+    const copied = copyRuntime(join(root, '.yokoten'), { platform });
     report.push(copied === 'kept' ? 'kept .yokoten/ (the copy running now)' : 'wrote .yokoten/ (a copy of yokoten, about 90 files; committing it is the point)');
   }
   const hooks = readHookSetup(root, env);

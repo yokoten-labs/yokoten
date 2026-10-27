@@ -2,9 +2,11 @@
 // writing files without stepping on what is already there.
 
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renameRetrying } from '../platform/disk.ts';
+import { realPath } from '../platform/paths.ts';
 
 /**
  * The folder with package.json, kit/, bin/ and src/. This file is src/setup/files.ts in
@@ -25,20 +27,16 @@ const MANAGED_HASH = /;? sha256=([0-9a-f]{64})/;
 /** How a copy of the runtime went: written, or kept because `dest` is or holds the copy running now (#204). */
 export type CopyResult = 'wrote' | 'kept';
 
-/** `path` with symlinks resolved. A part that does not exist yet is kept as it is. */
-function resolveReal(path: string): string {
-  const full = resolve(path);
-  try {
-    return realpathSync(full);
-  } catch {
-    const parent = dirname(full);
-    return parent === full ? full : join(resolveReal(parent), basename(full));
-  }
-}
+/**
+ * `path` as the system names it on disk. Node's loader names the running copy (HOME_DIR) this
+ * way, so a short name (`C:\Users\RUNNER~1`) or a redirected folder in `dest` must read the
+ * same, or a copy into its own src/ is not seen and never ends (#1109).
+ */
+const resolveReal = (path: string): string => realPath(resolve(path));
 
-/** Whether `inner` is `outer` or inside it, after symlinks. */
-export function isSameOrInside(inner: string, outer: string): boolean {
-  const path = relative(resolveReal(outer), resolveReal(inner));
+/** Whether `inner` is `outer` or inside it, as the disk names them; `read` is there for a test to give two spellings of one folder. */
+export function isSameOrInside(inner: string, outer: string, read: (path: string) => string = resolveReal): boolean {
+  const path = relative(read(outer), read(inner));
   return path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path);
 }
 
@@ -68,9 +66,10 @@ function removeLeftovers(dest: string): void {
  * unless it is inside a part that is copied: that copy would hold itself, so it is refused.
  * The new copy goes into a folder next to `dest` first, then takes its place, so a failed
  * copy leaves the old one working. Temp folders that a crash left there are removed first.
+ * On Windows a rename that a virus scanner holds up is tried again for a few seconds (#1109).
  * `copy` and `rename` are there for a test to make a step fail.
  */
-export function copyRuntime(dest: string, { withKit = false, copy = cpSync, rename = renameSync }: { withKit?: boolean; copy?: typeof cpSync; rename?: typeof renameSync } = {}): CopyResult {
+export function copyRuntime(dest: string, { withKit = false, platform, copy = cpSync, rename = (from: string, to: string) => renameRetrying(from, to, platform) }: { withKit?: boolean; platform?: NodeJS.Platform; copy?: typeof cpSync; rename?: (from: string, to: string) => void } = {}): CopyResult {
   if (isSameOrInside(HOME_DIR, dest)) return 'kept';
   // A yokoten with no lessons yet has no kit/lessons: the project copy then has none either.
   const lessons = join('kit', 'lessons');

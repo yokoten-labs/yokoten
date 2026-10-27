@@ -38,7 +38,8 @@ function collect(): { stream: Writable; text: () => string } {
 
 /**
  * Run `yokoten <words>` in this process, in `cwd`, with `env` as the whole environment and
- * `stdin` as all of its standard input (none by default): never the test runner's own.
+ * `stdin` as all of its standard input (none by default): never the test runner's own. The
+ * system is this one, as bin/main.ts passes it, so a Windows-only step runs here too (#1109).
  */
 export async function invoke(words: string[], { env, cwd, stdin = '', isTTY }: { env: Env; cwd: string; stdin?: string; isTTY?: boolean }): Promise<Invoked> {
   const [command, ...args] = words;
@@ -52,7 +53,7 @@ export async function invoke(words: string[], { env, cwd, stdin = '', isTTY }: {
   }
   const exitCode = process.exitCode;
   const folder = process.cwd();
-  const code = await main({ command, args, env: { ...env }, cwd, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: stdin, stream: input }, script: SCRIPT });
+  const code = await main({ command, args, env: { ...env }, cwd, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: stdin, stream: input }, script: SCRIPT, platform: process.platform });
   assert.equal(process.exitCode, exitCode, `yokoten ${words.join(' ')} set process.exitCode; it must only return its code`);
   assert.equal(process.cwd(), folder, `yokoten ${words.join(' ')} changed the process's folder`);
   return { code, stdout: stdout.text(), stderr: stderr.text() };

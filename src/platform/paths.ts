@@ -1,4 +1,5 @@
-import nodePath, { posix, win32 } from 'node:path';
+import { realpathSync } from 'node:fs';
+import nodePath, { basename, dirname, posix, resolve, win32 } from 'node:path';
 import { tmpdir } from 'node:os';
 
 // ---- Paths on each system (record 0040) ----
@@ -24,6 +25,26 @@ export type PathPlace = { platform: NodeJS.Platform; tmp: string; realPath?: (pa
  */
 export function hostPathPlace(): PathPlace {
   return { platform: process.platform, tmp: tmpdir() };
+}
+
+/**
+ * The real path, through symlinks. git reports the repo root's real path, and a tool may
+ * send a path through a symlink (on macOS, /var is /private/var). A file that does not
+ * exist yet takes the real path of its nearest existing folder.
+ *
+ * The system's own call (`realpathSync.native`), because on Windows it also spells each
+ * folder by its long name, in its own case: `C:\Users\RUNNER~1` is `C:\Users\runneradmin`,
+ * and `GITHUB~1` is `.github`. git reports the long name, so a short name sent by a tool
+ * would read as a file outside the repo, or as no lead-only path, and pass (#1095). Node's
+ * own loader names the running copy the same way, so init compares with it too (#1109).
+ */
+export function realPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    const parent = dirname(path);
+    return parent === path ? path : resolve(realPath(parent), basename(path));
+  }
 }
 
 /** Git Bash's drive form, `/c` or `/c/...`, one letter of either case, as `C:\...`; null for any other path. */

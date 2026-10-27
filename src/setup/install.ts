@@ -357,7 +357,7 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   const plan = installPlan(env, target.runtime, plugin, needsRuntime);
   // Run from this copy, install keeps it (#204). The report shows the home folder as ~.
   if (needsRuntime) {
-    const copied = copyRuntime(target.runtime, { withKit: true });
+    const copied = copyRuntime(target.runtime, { withKit: true, platform });
     report.push(copied === 'kept' ? `kept: ${target.runtime} is the copy running now` : `wrote ${target.runtime}`);
   } else {
     const had = existsSync(target.runtime);
