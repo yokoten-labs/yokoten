@@ -68,7 +68,7 @@ Renaming them would cost four languages of docs and every kit skill for no compl
 |---|---|
 | `yokoten` | First run sets up (asks on a terminal), then shows the status screen. It is built from the results of install, init and doctor, never from printed text |
 | `help` | Shows `yokoten`, `desk`, `kanban`, `check` and `tidy`. `check` joins because every `Fix:` line and the commit hook point to it |
-| `help --all` | Groups by job: Start, Work, Guard, Merge and CI, Maintain. Replaces "Moved" and "For agents and CI" |
+| `help --all` | Groups by job: Start, Work, Guard, Merge and CI, Maintain. Replaces the two old groups, one for commands said to have moved and one for agents and CI |
 | `install`, `init`, `doctor`, `trust`, `update`, `worker`, `msg` | Same. The "moved to yokoten" note is removed: they did not move, and the note cost a line on every run |
 | `board` | Now `kanban`. The note stays, because this is a real rename |
 | `install --list`, `init --list`, `uninstall --list` | Rows under a title, from the result's changes |
