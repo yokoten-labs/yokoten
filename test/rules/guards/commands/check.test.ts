@@ -233,6 +233,13 @@ test('release: npm version is read only as the subcommand (#1123, #1034)', () =>
     ['npm --prefix=x version minor', 'release'],
     ['pnpm version 1.2.3', 'release'],
     ['pnpm -C x version 1.2.3', 'release'],
+    // A package runner that starts npm again: the inner npm version still makes a tag.
+    ['npm exec -- npm version patch', 'release'],
+    ['npm exec npm version patch', 'release'],
+    ['npm x npm version patch', 'release'],
+    ['pnpm dlx npm version patch', 'release'],
+    ['pnpm exec pnpm version 1.2.3', 'release'],
+    ['npm exec -- npm view yokoten version', null],
   ];
   for (const [command, expected] of cases) {
     assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.id ?? null, expected, command);

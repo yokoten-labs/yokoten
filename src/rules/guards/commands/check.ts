@@ -622,10 +622,14 @@ function checkPublish(words: string[], env: Env): Finding | null {
   if (target !== undefined) return release(`the make target ${target} may publish`);
   // `npm version patch` makes a commit and a tag, without `git tag` (#829). Only `version`
   // as the subcommand counts: in `npm view yokoten version` it is a field (#1123, #1034).
+  // Every npm or pnpm word starts a reading, not just the first: `npm exec -- npm version
+  // patch` runs the inner one, and so does `npm x` or `pnpm dlx`.
   if (!help) {
-    const npm = after(['npm', 'pnpm']);
-    const version = npmSubcommandAt(npm, 'version');
-    if (version !== -1) {
+    for (const [at, word] of words.entries()) {
+      if (!['npm', 'pnpm'].includes(base(word).replace(/\.(exe|cmd)$/i, ''))) continue;
+      const npm = words.slice(at + 1);
+      const version = npmSubcommandAt(npm, 'version');
+      if (version === -1) continue;
       const rest = npm.slice(version + 1);
       if (!rest.some((a) => a === '--no-git-tag-version') && rest.some((a) => !a.startsWith('-'))) return release('npm version makes a tag');
     }
