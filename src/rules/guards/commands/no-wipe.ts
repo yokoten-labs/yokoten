@@ -5,7 +5,7 @@ import { homeOf } from '../../privacy.ts';
 import { plainArgs, WRITE_REDIRECT } from '../lead-only/targets.ts';
 import { braceForms, findProgramPlaces, programName, realPath, unquotedRedirects, withoutShellRedirects } from '../bash/read/words.ts';
 import { FIND_LEAD_OPTIONS } from '../worker/mark.ts';
-import { gitBashDrive } from '../../../platform/paths.ts';
+import { gitBashDrive, isHostPaths } from '../../../platform/paths.ts';
 
 // ---- Damage outside the project (#969) ----
 //
@@ -49,7 +49,7 @@ type ProgramPlace = ReturnType<typeof findProgramPlaces>[number];
 // One walk over the programs feeds all three rules: a command that can do none of them
 // pays for a single scan (#969).
 // `platform` says how paths read: Windows folds case, takes `\` and `/`, and Git Bash's `/c/…` (#999).
-export function checkDamage(words: string[], cwd: string | null, env: Env, platform: NodeJS.Platform = process.platform): Finding | null {
+export function checkDamage(words: string[], cwd: string | null, env: Env, platform: NodeJS.Platform): Finding | null {
   const programs = findProgramPlaces(words, true);
   return checkNoRoot(programs, words) ?? checkWipe(programs, words, { cwd, env, platform }) ?? checkDisk(programs, words);
 }
@@ -92,7 +92,7 @@ const FIND_DELETES = ['-delete', '-exec', '-execdir', '-ok', '-okdir'];
 function checkWipe(programs: ProgramPlace[], words: string[], { cwd, env, platform }: { cwd: string | null; env: Env; platform: NodeJS.Platform }): Finding | null {
   const home = homeOf(env);
   // `realPath` asks this machine's disk, so a path in another platform's form is read as written.
-  const readReal = (path: string) => (platform === process.platform ? fullPath(realPath(path), platform) : path);
+  const readReal = (path: string) => (isHostPaths(platform) ? fullPath(realPath(path), platform) : path);
   const homeFull = home === null ? null : fullPath(home, platform);
   const folders: Folders = {
     cwd: cwd === null ? null : fullPath(cwd, platform),

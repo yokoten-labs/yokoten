@@ -593,7 +593,7 @@ export function listAnchors(folder: string): Anchor[] {
 }
 
 /** The shell that runs a done-when command: `cmd.exe` on Windows, `sh` on every other system. */
-export function doneWhenShell(platform: string = process.platform): string {
+export function doneWhenShell(platform: string): string {
   return platform === 'win32' ? 'cmd.exe' : '/bin/sh';
 }
 
@@ -894,8 +894,8 @@ export function windowsSystemRoot(env: Env): string {
 }
 
 /** `powershell.exe` when this is Windows and that file is there. Null means the caller runs `cmd.exe`. */
-function windowsPowerShell(env: Env): string | null {
-  if (process.platform !== 'win32') return null;
+function windowsPowerShell(env: Env, platform: string): string | null {
+  if (platform !== 'win32') return null;
   return windowsPowerShellPath(windowsSystemRoot(env));
 }
 
@@ -974,9 +974,9 @@ function pidsFromProc(session: number): number[] {
   return found;
 }
 
-function pidsWithSession(session: number): number[] {
+function pidsWithSession(session: number, platform: string): number[] {
   // Only Linux names a session here: macOS `ps` has no session column, so it cannot answer (#735).
-  if (process.platform !== 'linux') return [];
+  if (platform !== 'linux') return [];
   if (existsSync('/proc/self/stat')) return pidsFromProc(session);
   const listed = spawnSync('ps', ['-ax', '-o', 'pid=,sess='], { encoding: 'utf8', windowsHide: true });
   return listed.status === 0 && typeof listed.stdout === 'string' ? pidsFromSessionTable(listed.stdout, session) : [];
@@ -988,11 +988,11 @@ function pidsWithSession(session: number): number[] {
  * The id is the shell's pid, because the shell was started as a session leader. If that
  * start failed, the id is not a session and this stops nothing.
  */
-function killSessionMembers(session: number): void {
+function killSessionMembers(session: number, platform: string): void {
   if (session <= 1) return;
   const own = ownSessionId();
   if (own !== null && session === own) return;
-  for (const member of pidsWithSession(session)) {
+  for (const member of pidsWithSession(session, platform)) {
     if (member <= 1 || member === process.pid || member === process.ppid) continue;
     try {
       process.kill(member, 'SIGKILL');
@@ -1009,8 +1009,8 @@ function killSessionMembers(session: number): void {
  * too. A new session, such as `setsid`, is not (#735). On Windows the job host closes the
  * tree; `taskkill /T` also runs while the host is alive, which is the timeout path (#614).
  */
-function killCommandTree(pid: number): void {
-  if (process.platform === 'win32') {
+function killCommandTree(pid: number, platform: string): void {
+  if (platform === 'win32') {
     spawnSync('taskkill', windowsTreeKillArgs(pid), { stdio: 'ignore', windowsHide: true });
     return;
   }
@@ -1023,7 +1023,7 @@ function killCommandTree(pid: number): void {
       // The process is already gone.
     }
   }
-  killSessionMembers(pid);
+  killSessionMembers(pid, platform);
 }
 
 /** How the done-when command starts: the program, its words, and spawn's options. */
@@ -1520,14 +1520,16 @@ export function runDoneWhen(
   cwd: string,
   env: Env,
   timeoutMs: number = DONE_WHEN_MS,
-  killTree: (pid: number) => void = killCommandTree,
+  givenKill?: (pid: number) => void,
   powerShellHost?: string,
+  // Kept as process.platform until the hook command (group C5) passes it (issue #1000).
   platform: string = process.platform,
 ): Promise<{ ok: boolean; output: string }> {
+  const killTree = givenKill ?? ((pid: number) => killCommandTree(pid, platform));
   const childEnv: Record<string, string> = {};
   for (const [name, value] of Object.entries(env)) if (value !== undefined) childEnv[name] = value;
   // The hook passes no host. A test points it at a program that is not there (#735).
-  const host = powerShellHost ?? windowsPowerShell(env);
+  const host = powerShellHost ?? windowsPowerShell(env, platform);
   // Windows with no host has no job, and the output says why (#735).
   const hostNote = powerShellHost === undefined && host === null && platform === 'win32' ? noJobHostNote(windowsSystemRoot(env)) : '';
   return new Promise((resolvePromise) => {

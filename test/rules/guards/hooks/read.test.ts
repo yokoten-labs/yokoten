@@ -172,6 +172,11 @@ test('hooks setting: git must run the hook file as an executable shell script (#
       assert.equal(verdict('.husky/_'), 'pass');
       chmodSync(join(cwd, '.husky', '_', 'pre-commit'), 0o644);
       assert.equal(verdict('.husky/_'), 'hooks-path', 'husky\'s own hook is not executable');
+      // The platform says whether the mode matters: Windows has none, Linux and macOS read it.
+      for (const [platform, expected] of [['linux', 'hooks-path'], ['darwin', 'hooks-path'], ['win32', 'pass']] as const) {
+        const place = { platform, tmp: '/tmp' };
+        assert.equal(checkCommand('git config core.hooksPath hooks/plainmode', { env: {}, cwd, place })?.id ?? 'pass', expected, platform);
+      }
     }
     rmSync(join(cwd, '.husky', '_', 'pre-commit'));
     assert.equal(verdict('.husky/_'), 'hooks-path', 'husky\'s own hook is missing');

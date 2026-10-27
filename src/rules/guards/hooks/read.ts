@@ -88,7 +88,7 @@ export function setsFollowTags(args: string[]): boolean {
 
 // `git config`: a read passes; a change to core.hooksPath passes only to .githooks, or as
 // checkHooksFolder allows. `directory` is the folder git works in, or null when unknown.
-export function checkConfig(args: string[], directory: string | null, env: Env): Finding | null {
+export function checkConfig(args: string[], directory: string | null, env: Env, platform: NodeJS.Platform): Finding | null {
   let { options, plain } = splitConfig(args, true);
   const subcommand = CONFIG_SUBCOMMANDS.has(plain[0]) ? plain[0] : undefined;
   if (subcommand) {
@@ -136,7 +136,7 @@ export function checkConfig(args: string[], directory: string | null, env: Env):
   if (isInclude(key)) return includes(`git config ${key}`);
   if (value === HOOKS_DIR) return null;
   if (value === undefined) return hooksPath('git config set core.hooksPath with no value turns off the commit check');
-  return checkHooksFolder(value, options, directory, env);
+  return checkHooksFolder(value, options, directory, env, platform);
 }
 
 // Config that is not this repo's own: a change there reaches other repos, or none.
@@ -146,7 +146,7 @@ const OTHER_SCOPES = new Set(['--global', '--system', '-f', '--file', '--blob', 
 // A new core.hooksPath in the repo's own config passes when it is the value already set,
 // or when git runs the folder's pre-commit (an executable file whose first line names sh,
 // bash, dash or zsh) and the script runs `yokoten check` (for husky, .husky/pre-commit).
-function checkHooksFolder(value: string, options: string[], directory: string | null, env: Env): Finding | null {
+function checkHooksFolder(value: string, options: string[], directory: string | null, env: Env, platform: NodeJS.Platform): Finding | null {
   const scope = options.find((o) => OTHER_SCOPES.has(o.split('=')[0]));
   if (scope) return hooksPath(`git config ${scope} core.hooksPath changes the hooks folder outside this repo's own config, which can turn off the commit check`);
   // git expands these, and the guard does not: it cannot tell which folder they name.
@@ -160,7 +160,7 @@ function checkHooksFolder(value: string, options: string[], directory: string | 
   // `.husky/_/pre-commit` then runs `.husky/pre-commit`, with `sh -e`.
   const folder = hooksFolder(root, value);
   const runs = `${folder}/pre-commit`.replace(/^\//, '');
-  const notRun = hookNotRun(join(root, runs));
+  const notRun = hookNotRun(join(root, runs), platform);
   if (notRun) return hooksPath(`core.hooksPath ${value} turns off the commit check: git does not run ${runs}, ${notRun}`, `make ${runs} an executable shell script (\`yokoten init\` sets it up), then set core.hooksPath again`);
   const isHusky = folder === '.husky/_';
   const notHusky = isHusky ? notHuskys(root) : null;
@@ -174,13 +174,13 @@ function checkHooksFolder(value: string, options: string[], directory: string | 
 const SHEBANG = /^#!\s*(?:\/usr\/bin\/env\s+(?:-S\s*)?|\/(?:[\w.+-]+\/)*)(?:sh|bash|dash|zsh)(?:[ \t].*)?$/;
 
 // Why git would not run the hook file at `path` as a shell script, or null when it would.
-function hookNotRun(path: string): string | null {
+function hookNotRun(path: string, platform: NodeJS.Platform): string | null {
   try {
     if (!statSync(path).isFile()) return 'which is not a file';
   } catch {
     return 'which does not exist';
   }
-  if (process.platform !== 'win32') {
+  if (platform !== 'win32') {
     try {
       accessSync(path, constants.X_OK);
     } catch {

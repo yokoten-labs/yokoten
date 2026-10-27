@@ -80,13 +80,13 @@ test('guard cost: the shell times line gives user plus system CPU of the child, 
 
 test('guard cost: a real run is measured in wall time and, off Windows, CPU time (#461)', () => {
   const sandbox = makeSandbox();
-  const cost = measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i; process.stdout.write(String(n))'], '', { cwd: sandbox.repo, env: sandbox.env });
+  const cost = measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i; process.stdout.write(String(n))'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform);
   assert.ok(cost, 'it ran');
   assert.ok(cost.wallMs > 0);
   if (process.platform !== 'win32') assert.ok(cost.cpuMs !== null && cost.cpuMs > 0, 'the CPU time of the child is there');
-  assert.equal(measureRun(['/no/such/program'], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a program that is not there is not a cost');
-  assert.equal(measureRun([sandbox.repo], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a folder is found, but it is not a program');
-  const refused = measureRun([process.execPath, '-e', 'process.exit(2)'], '', { cwd: sandbox.repo, env: sandbox.env });
+  assert.equal(measureRun(['/no/such/program'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform), null, 'a program that is not there is not a cost');
+  assert.equal(measureRun([sandbox.repo], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform), null, 'a folder is found, but it is not a program');
+  const refused = measureRun([process.execPath, '-e', 'process.exit(2)'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform);
   assert.ok(refused, 'a program that exits nonzero still ran: the guard exits 2 on a refusal');
   assert.ok(refused.wallMs > 0);
 });
@@ -113,4 +113,14 @@ test('guard cost: full doctor reports it in one line, spawning the guard once; a
   assert.equal(runs, 1, 'a session must start fast: no guard run');
   assert.equal(guardCostCheck(sandbox.repo, { ...machine, measureGuard: () => null }, env), null, 'a guard that cannot run: no line');
   assert.equal(guardCostCheck(sandbox.repo, { ...machine, measureGuard: undefined }, env), null, 'a machine that cannot measure: no line');
+});
+
+test('guard cost: the platform argument picks the way to measure (issue #1000)', () => {
+  const sandbox = makeSandbox();
+  const run = (platform: string) => measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i'], '', { cwd: sandbox.repo, env: sandbox.env }, platform);
+  // Off Windows the shell's `times` gives CPU; the win32 row has the wall time alone.
+  if (process.platform !== 'win32') {
+    for (const platform of ['linux', 'darwin']) assert.ok(run(platform)?.cpuMs, `${platform}: CPU time from the shell`);
+    assert.equal(run('win32')?.cpuMs, null, 'win32: the wall time alone');
+  }
 });

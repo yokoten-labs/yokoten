@@ -452,7 +452,7 @@ test('done-when: the command comes from the env or the git-folder file; a pass, 
   writeFileSync(join(sandbox.repo, '.git', 'yokoten-done-when'), '# comment\nnode --test\n');
   assert.equal(readDoneWhen({}, sandbox.repo), 'node --test');
   assert.equal(readDoneWhen({ YOKOTEN_DONE_WHEN: 'true' }, sandbox.repo), 'true', 'the env wins');
-  assert.equal(doneWhenShell(), process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
+  assert.equal(doneWhenShell(process.platform), process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
   // `true` and `echo` are sh. On Windows the command is a node script, below.
   if (process.platform !== 'win32') {
     assert.equal((await runDoneWhen('true', sandbox.repo, sandbox.env)).ok, true);
@@ -1082,4 +1082,5 @@ test('planDoneWhenSpawn: the program, words and options for each system (#1109)'
   assert.deepEqual(env, { PATH: '/bin' }, 'the env is not changed');
   assert.equal(doneWhenShell('win32'), 'cmd.exe');
   assert.equal(doneWhenShell('linux'), '/bin/sh');
+  assert.equal(doneWhenShell('darwin'), '/bin/sh');
 });

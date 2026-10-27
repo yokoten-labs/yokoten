@@ -42,6 +42,9 @@ export interface MachineProbe {
   nodeVersion: string;
 }
 
+/** `win32` where there is no uid, else a POSIX system: the one difference the probe's readers need. */
+const platformOfUid = (uid: number | null): string => (uid === null ? 'win32' : 'linux');
+
 /** The real machine. */
 export const REAL_MACHINE: MachineProbe = {
   readDiskSpace(path) {
@@ -65,7 +68,7 @@ export const REAL_MACHINE: MachineProbe = {
   },
   writeText: writeFileAtomic,
   measureGuard: (cli, root, env) =>
-    measureRun([process.execPath, GUARD_HEAP, cli, 'hook'], JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' }, cwd: root, hook_event_name: 'PreToolUse' }), { cwd: root, env }),
+    measureRun([process.execPath, GUARD_HEAP, cli, 'hook'], JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'true' }, cwd: root, hook_event_name: 'PreToolUse' }), { cwd: root, env }, platformOfUid(process.getuid?.() ?? null)),
   uid: process.getuid?.() ?? null,
   now: () => new Date(),
   nodeVersion: process.versions.node,
@@ -318,8 +321,7 @@ export function leftoverTempCheck(env: Env, probe: MachineProbe, read: typeof re
   const oldest = probe.now().getTime() - LEFTOVER_AGE_MS;
   let count = 0;
   const dirs: string[] = [];
-  // A uid of null means Windows (see MachineProbe), so the probe carries the platform's one fact this needs.
-  for (const dir of findTempDirs(env, probe.uid === null ? 'win32' : 'linux')) {
+    for (const dir of findTempDirs(env, platformOfUid(probe.uid))) {
     try {
       const old = read(dir).filter((entry) => entry.mtimeMs < oldest).length;
       if (old) dirs.push(dir);
