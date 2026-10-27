@@ -413,14 +413,17 @@ const noteBlock = (note: SessionNote): string[] => ('finding' in note ? formatNo
 /**
  * The blocks a session start says (#405, #930), from the report: a broken self-test first,
  * then the road (where the project is, the one next step), then the notes by rank. At most
- * SESSION_BLOCKS_MOST blocks past the self-test: when more notes wait, the most important
- * ones show and one line counts the rest. The words of each block are the ones agents read.
+ * SESSION_BLOCKS_MOST blocks past the self-test: the security notes share one block and always
+ * show; when more notes wait, the most important ones show and one line counts the rest. The words of each block are the ones agents read.
  */
 export function sessionBlocks(report: DoctorReport, { isPlugin }: SessionPlace): string[][] {
   const lead = (report.view?.lead ?? []).map(noteLines);
   const road = report.stage !== null && report.next ? roadLines(report.stage, report.next, isPlugin ? `${OFFER} ${PLUGIN_COMMANDS}` : OFFER) : noteLines(ROAD_DONE);
   // A stable sort: notes of one rank keep the order doctor read them in.
-  const notes = (report.view?.session ?? []).map((note, at) => ({ note, at })).sort((a, b) => a.note.rank - b.note.rank || a.at - b.at).map(({ note }) => noteBlock(note));
+  const sorted = (report.view?.session ?? []).map((note, at) => ({ note, at })).sort((a, b) => a.note.rank - b.note.rank || a.at - b.at).map(({ note }) => note);
+  // Security notes are never folded into the count: they share one block, so the cap holds and each one is said.
+  const security = sorted.filter((note) => note.rank === SECURITY).flatMap(noteBlock);
+  const notes = [...(security.length ? [security] : []), ...sorted.filter((note) => note.rank !== SECURITY).map(noteBlock)];
   const room = SESSION_BLOCKS_MOST - 1;
   if (notes.length <= room) return [...lead, road, ...notes];
   const shown = notes.slice(0, room - 1);

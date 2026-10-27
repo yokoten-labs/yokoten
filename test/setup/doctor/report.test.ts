@@ -1217,6 +1217,19 @@ test('sessionBlocks: a session start says three blocks at most, the most importa
   // Two notes fit: both show, in rank order, and nothing is counted.
   const two = sessionBlocks(reportWith({ view: { lead: [], session: notes.slice(0, 2) } }), { isPlugin: false });
   assert.deepEqual(two.map((block) => block[0]), ['yokoten: stage 1 of 5, safety net', 'yokoten: the core rules in AGENTS.md are behind', 'yokoten: a lesson waits']);
+  // Two security notes are never folded: both are said, in one block, and only the rest is counted.
+  const unguarded = [
+    { rank: 0 as const, finding: note('private-marks', '~/.config/yokoten/private-marks is missing or has no marks', 'run `yokoten marks add`') },
+    { rank: 0 as const, finding: note('user-guard', 'no user guard, so your commands run unguarded', 'run `yokoten init --user`') },
+    { rank: 1 as const, lines: ['yokoten: . has 1 uncommitted file'] },
+  ];
+  const safe = sessionBlocks(reportWith({ view: { lead: [], session: unguarded } }), { isPlugin: false });
+  assert.equal(safe.length, SESSION_BLOCKS_MOST, safe.map((block) => block.join('\n')).join('\n\n'));
+  assert.match(safe[1]?.join('\n') ?? '', /private-marks is missing[\s\S]*no user guard/, 'every security note is said');
+  assert.deepEqual(safe[2], ['yokoten: . has 1 uncommitted file'], 'the one other note fits, so nothing is counted');
+  const more = sessionBlocks(reportWith({ view: { lead: [], session: [...unguarded, notes[0]!] } }), { isPlugin: false });
+  assert.match(more[1]?.join('\n') ?? '', /no user guard/);
+  assert.deepEqual(more[2], ['yokoten: 2 more notes; `yokoten doctor --all` lists them.']);
   // No notes: the road alone; the plugin's commands in its offer.
   const alone = sessionBlocks(reportWith({ view: { lead: [] } }), { isPlugin: true });
   assert.equal(alone.length, 1);
