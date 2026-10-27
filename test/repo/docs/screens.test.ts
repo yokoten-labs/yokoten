@@ -19,6 +19,8 @@ import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, 
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
+import { checkScreen, ciHealthScreen, marksScreen, prSyncScreen, provenanceScreen, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
+import { finding } from '../../../src/rules/text/message.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -246,6 +248,37 @@ const GUARD_CALLS: [string, string][] = [
 const BARE = ['install', 'upgrade', 'uninstall', 'init', 'trust', 'update', 'doctor', 'worker', 'msg', 'train', 'ci-health', 'tidy', 'stops', 'version'];
 const CHANGES_HOME_OR_REPO = new Set(['install', 'upgrade', 'uninstall', 'init', 'trust', 'update', 'tidy', 'stops']);
 
+// C4: the results check, ci-health, provenance, marks and pr sync render from (#1115).
+const C4_PROBLEMS = [
+  finding('email', 'an email address', 'remove it, or put it in .yokotenignore if it is meant to be public', { file: 'docs/notes/meeting.md', line: 3 }),
+  finding('change-file', 'changelog: 1 changed file has no entry', 'run `yokoten changelog --new`', { why: 'the changelog is how a reader learns what changed' }),
+];
+const C4_NOTE = finding('long-sentence', 'a sentence of 30 words', 'split it into sentences of 25 words or fewer', { file: 'README.md', line: 2 });
+const C4_RUN = { id: 1, workflow: 'CI', event: 'push', branch: 'main', status: 'completed', conclusion: 'failure', createdAt: '2026-10-22T10:00:00Z', startedAt: '2026-10-22T10:01:00Z', updatedAt: '2026-10-22T10:04:00Z', url: 'https://example.com/octo/demo/actions/runs/1' };
+const C4_HEALTH = summarizeActionsHealth([C4_RUN, { ...C4_RUN, id: 2, conclusion: 'success', branch: 'work' }, { ...C4_RUN, id: 3, workflow: 'Actions health', conclusion: 'cancelled' }], [{ number: 7, title: 'feat(desk): a desk says its fence', url: 'https://example.com/octo/demo/pull/7', isDraft: false, check: 'test (ubuntu)', conclusion: 'failure' }]);
+const C4_SCREENS: ScreenRun[] = [
+  { key: 'check, two problems and a note', words: ['check'], lines: checkScreen({ mode: 'tree', problems: C4_PROBLEMS, notes: [C4_NOTE], hints: [] }) },
+  { key: 'check, clean', words: ['check'], lines: checkScreen({ mode: 'tree', problems: [], notes: [], hints: [] }) },
+  { key: 'ci-health, the summary', words: ['ci-health'], lines: ciHealthScreen({ repo: 'octo/demo', health: C4_HEALTH }) },
+  {
+    key: 'provenance, a commit',
+    words: ['provenance', 'HEAD'],
+    lines: provenanceScreen([{ commit: 'a1b2c3d4e5f6', subject: 'feat(check): one screen per check (#1115)', writers: [{ vendor: 'Claude Code', model: 'claude-opus-5-5' }], reviewers: [{ vendor: 'Codex', model: 'gpt-5' }], approver: 'octo', tier: 'A', issues: [1115] } as unknown as Parameters<typeof provenanceScreen>[0][number]], 'HEAD'),
+  },
+  { key: 'marks, the list', words: ['marks'], lines: marksScreen({ kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'git email', count: 0, isOff: true, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] }) },
+  {
+    key: 'pr sync, a conflict',
+    words: ['pr', 'sync'],
+    lines: prSyncScreen({
+      isCut: false,
+      pulls: [
+        { number: 4, branch: 'work', base: 'main', state: 'merged' },
+        { number: 5, branch: 'fix', base: 'main', state: 'needs-agent', files: ['src/a.ts'], hunksText: ['<<<<<<< HEAD\nexport const limit = 1;\n=======\nexport const limit = 2;\n>>>>>>> main'], brief: 'Merge main into fix and keep both limits.\nRun npx tsc and the tests of src/a.ts.' },
+      ],
+    }),
+  },
+];
+
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
   return [
@@ -276,6 +309,8 @@ function screensOf(repo: string): ScreenRun[] {
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // C4: check and its small commands, rendered from result objects (#1115).
+    ...C4_SCREENS,
   ];
 }
 
