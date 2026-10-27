@@ -1,11 +1,10 @@
 import { matcher, type Config, type Env } from '../../config.ts';
 import { WORKTREES_DIR } from '../../layout.ts';
 import { finding, type Finding } from '../../text/message.ts';
-import { hostPathPlace } from '../../../platform/paths.ts';
 
 /** A file edit, by path relative to the repo root. */
 // `platform` defaults to the host's platform until run/check.ts (group C4) passes it (issue #1000).
-export function checkEdit(path: string, { config, env, platform = hostPathPlace().platform }: { config: Config; env: Env; platform?: NodeJS.Platform }): Finding | null {
+export function checkEdit(path: string, { config, env, platform = process.platform }: { config: Config; env: Env; platform?: NodeJS.Platform }): Finding | null {
   const folds = foldsCase(platform);
   // A file in a worker worktree reads from that worktree (#571); the message keeps the path as given.
   const inWorktree = stripWorktreeRoot(path);

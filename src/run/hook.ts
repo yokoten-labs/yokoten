@@ -1523,7 +1523,7 @@ export function runDoneWhen(
   givenKill?: (pid: number) => void,
   powerShellHost?: string,
   // Defaults to the host's until the hook command (group C5) passes it (issue #1000).
-  platform: string = hostPathPlace().platform,
+  platform: string = process.platform,
 ): Promise<{ ok: boolean; output: string }> {
   const killTree = givenKill ?? ((pid: number) => killCommandTree(pid, platform));
   const childEnv: Record<string, string> = {};

@@ -12,7 +12,6 @@ import type { DeskBackend, DeskPlan } from './desk.ts';
 import { type ProxyEvent, startProxy } from './network/proxy.ts';
 import { SEATBELT } from './fence/seatbelt.ts';
 import { findSrt, srtBackend, srtProblem } from './fence/srt.ts';
-import { hostPathPlace } from '../../platform/paths.ts';
 
 /**
  * The backend for a system, or the plain reason there is none. sandbox-runtime (srt.ts) by
@@ -72,7 +71,7 @@ export interface DeskResult {
  * Run the plan with `backend`: the proxy outside, the agent inside, both gone at the end.
  * A signal that ends the desk command is passed on to the agent first.
  */
-export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, onEvent, platform = hostPathPlace().platform }: DeskStreams): Promise<DeskResult> {
+export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, onEvent, platform = process.platform }: DeskStreams): Promise<DeskResult> {
   // The real path: on macOS the temp folder is a link, and Seatbelt matches real paths.
   const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-desk-')));
   mkdirSync(join(scratch, 'tmp'));

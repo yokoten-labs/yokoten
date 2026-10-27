@@ -35,7 +35,6 @@ import { FIRST_MILESTONE, lackingLabels, pickNewMilestone } from './plan.ts';
 import { nodeTestsFix } from './advice/tests-job.ts';
 import { commands, FALLBACK_RUNNERS, orList, runLines, runsTests, scriptedRuns, testLanguages } from './advice/test-commands.ts';
 import { ENTRY_SKILL, skillFiles, skillsDir } from './install.ts';
-import { hostPathPlace } from '../platform/paths.ts';
 
 /** The stage names, in order. A step's `stage` is its number here, from 1. */
 export const STAGES = ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'];
@@ -633,7 +632,7 @@ interface UncheckedHook {
 }
 
 /** The commit hooks here (pre-commit and pre-merge-commit) that do not run the check (#239); null when git runs none from this repo. */
-export const uncheckedHooks = (root: string, env: Env, platform: NodeJS.Platform = hostPathPlace().platform): UncheckedHook[] | null => {
+export const uncheckedHooks = (root: string, env: Env, platform: NodeJS.Platform = process.platform): UncheckedHook[] | null => {
   const hooksPath = gitConfig(root, 'core.hooksPath', env);
   if (!hooksPath || commitHook(root, env) === null) return null;
   // husky 9's folder (.husky/_) runs .husky/pre-commit with `sh`, so that file needs no execute bit (#256).

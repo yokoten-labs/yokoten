@@ -23,7 +23,6 @@ import { type TrustChange, type TrustPlan } from './runtimes/codex.ts';
 import { type Added, addHook, checkHooksFile, type HookState, hookState, isObject, readSettings, removeHook } from './hooks-file.ts';
 import type { RuntimeEnv } from './desk/agent-env.ts';
 import { GUARDED_TOOLS } from './runtimes/claude-code.ts';
-import { hostPathPlace } from '../platform/paths.ts';
 
 /** The one step that makes Copilot CLI run the project's hooks. */
 export const TRUST_STEP = TRUST_COMMAND;
@@ -51,7 +50,7 @@ const homeDir = (env: Env): string => {
 };
 
 /** Whether Copilot CLI trusts the project at `root`, from its config file. Read-only. */
-export function readTrust(root: string, env: Env, platform: NodeJS.Platform = hostPathPlace().platform): FolderTrust {
+export function readTrust(root: string, env: Env, platform: NodeJS.Platform = process.platform): FolderTrust {
   const store = env.COPILOT_HOME ? '$COPILOT_HOME/config.json' : '~/.copilot/config.json';
   const home = homeDir(env);
   if (!home) return { state: 'no home', store };
