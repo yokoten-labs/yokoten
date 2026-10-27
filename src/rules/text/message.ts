@@ -985,7 +985,7 @@ export const fixText = ({ command, then }: LeadingCommand): string => `\`${comma
  * that starts with a command is a `Fix` row instead of `Next`, the command first (#1115).
  */
 export const formatNote = (f: Finding): string[] => {
-  const command = leadingCommand(f.fix);
+  const command = fixCommand(f.fix);
   return spaced([
     wrap('yokoten: ', `${place(f)}${f.what}${formatFindingMarks(f)}`),
     findingRow('Why', `${sentence(f.why)}.`),

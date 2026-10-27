@@ -1190,7 +1190,7 @@ test('worker env: it names what an agent gets and counts what is dropped, and pr
   assert.match(claude.stdout, /ANTHROPIC_API_KEY, HOME, PATH/);
   const unknown = await invoke(['worker', 'env', 'nope'], { env, cwd });
   assert.equal(unknown.code, 1);
-  assert.match(unknown.stderr, /unknown runtime "nope"/);
+  assert.match(unknown.stderr, /unknown runtime nope\./);
 });
 
 // `desk` starts a worker's agent in a fenced desk (#637). The fence itself is tested in

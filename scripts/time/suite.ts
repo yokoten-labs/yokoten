@@ -52,37 +52,60 @@ export const TEST_LIMITS = [
 export const limitOf = (id: (typeof TEST_LIMITS)[number]['id']): TestLimit => TEST_LIMITS.find((row) => row.id === id)!;
 
 /** One event of node --test, as a reporter reads it. */
-type TestEvent = { type: string; data: { nesting: number; name?: string; file?: string; details?: { duration_ms?: number } } };
+type TestEvent = { type: string; data: { nesting: number; name?: string; file?: string; skip?: unknown; details?: { duration_ms?: number; error?: unknown } } };
+
+/** How many lines of a failing test's error the log shows under it. */
+const ERROR_LINES = 20;
 
 /**
- * The progress lines the windows job prints, for the other test jobs (#1125): `[n/N] <file>`
- * when a file finishes, and `still running` once a minute while a file runs past a minute.
+ * The test log of every CI test job (#1125): when a file finishes, `[n/N] <file>` and under
+ * it, indented, each of its tests, a failing one with its error under it, indented again.
+ * The whole block prints at once, so a file's tests never mix with another's. `still running`
+ * shows once a minute while a file runs past a minute.
  * node --test announces each file as a top-level test named by its path; it announces all of
  * them early, so N is whole by the time the first file finishes.
  */
 export function fileProgress() {
   const started = new Map<string, number>();
-  const failing = new Map<string, number>();
+  const results = new Map<string, { lines: string[]; fails: number }>();
   let total = 0;
   let done = 0;
   const isFile = (data: TestEvent['data']) => data.nesting === 0 && !!data.file && !!data.name && /\.test\.ts$/.test(data.name) && data.file.replace(/\\/g, '/').endsWith(data.name.replace(/\\/g, '/'));
   const seconds = (from: number, now: number) => Math.round((now - from) / 1000);
+  const errorLines = (error: unknown): string[] => {
+    const cause = (error as { cause?: unknown } | undefined)?.cause ?? error;
+    const text = cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause);
+    const lines = text.split('\n').filter((line) => line.trim() !== '');
+    return [...lines.slice(0, ERROR_LINES), ...(lines.length > ERROR_LINES ? [`… ${lines.length - ERROR_LINES} more lines in the TAP report`] : [])].map((line) => `        ${line}`);
+  };
   return {
-    /** The line this event prints, if any. */
+    /** The lines this event prints, if any. */
     see(event: TestEvent, now: number): string[] {
       const name = (event.data.name ?? '').replace(/\\/g, '/');
       if (!isFile(event.data)) {
-        if (event.type === 'test:fail' && event.data.nesting === 0 && event.data.file) for (const file of started.keys()) if (event.data.file.replace(/\\/g, '/').endsWith(file)) failing.set(file, (failing.get(file) ?? 0) + 1);
+        if ((event.type === 'test:pass' || event.type === 'test:fail') && event.data.nesting === 0 && event.data.file) {
+          const at = event.data.file.replace(/\\/g, '/');
+          const file = [...started.keys()].find((key) => at.endsWith(key));
+          if (file === undefined) return [];
+          const entry = results.get(file) ?? { lines: [], fails: 0 };
+          const isFail = event.type === 'test:fail';
+          const mark = isFail ? '✖' : event.data.skip ? '-' : '✔';
+          const ms = event.data.details?.duration_ms;
+          entry.lines.push(`    ${mark} ${name}${ms === undefined ? '' : ` (${ms.toFixed(1)} ms)`}`, ...(isFail ? errorLines(event.data.details?.error) : []));
+          if (isFail) entry.fails += 1;
+          results.set(file, entry);
+        }
         return [];
       }
       if (event.type === 'test:enqueue') total += 1;
       if (event.type === 'test:dequeue') started.set(name, now);
       if (event.type !== 'test:complete') return [];
       done += 1;
-      const fails = failing.get(name) ?? 0;
-      const line = `[${done}/${total}] ${name} ${seconds(started.get(name) ?? now, now)} s${fails ? `, ${fails} failing` : ''}`;
+      const { lines, fails } = results.get(name) ?? { lines: [], fails: 0 };
+      const head = `[${done}/${total}] ${name} ${seconds(started.get(name) ?? now, now)} s${fails ? `, ${fails} failing` : ''}`;
       started.delete(name);
-      return [line];
+      results.delete(name);
+      return [head, ...lines];
     },
     /** One line for each file running a minute or more. */
     slow(now: number): string[] {

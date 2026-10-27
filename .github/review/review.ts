@@ -59,18 +59,18 @@ export interface Review {
 
 const VERDICT_KEYS = ['findings', 'summary', 'verdict'];
 
-/** How much a finding weighs, most first. Only a low finding never blocks a merge (as Gemini's review drops below MEDIUM). */
+/** How much a finding weighs, most first. Only a high finding blocks a merge; medium and low are reported and pass (the owner, 2026-10-27: no code is perfect). */
 export const SEVERITIES = ['high', 'medium', 'low'] as const;
 /** How each severity starts its line in the review. */
-const SEVERITY_LABEL: Record<(typeof SEVERITIES)[number], string> = { high: 'high', medium: 'medium', low: 'low, does not block' };
+const SEVERITY_LABEL: Record<(typeof SEVERITIES)[number], string> = { high: 'high', medium: 'medium, does not block', low: 'low, does not block' };
 
 /**
  * The verdict in the model's answer, or null. Fail closed: the whole answer must be one
  * JSON object with exactly `verdict`, `summary` and `findings`. Prose around it, a
  * missing or extra key, or a wrong type is null. Each finding is {severity, text}; the
- * findings go most severe first. A high or medium finding needs REQUEST_CHANGES (an APPROVE
- * with one is unclear, so null); with only low findings the answer is an APPROVE, since a low
- * finding never blocks. Length is not a reason to fail: a long summary or finding is cut,
+ * findings go most severe first. A high finding needs REQUEST_CHANGES (an APPROVE
+ * with one is unclear, so null); with only medium or low findings the answer is an APPROVE, since they
+ * never block. Length is not a reason to fail: a long summary or finding is cut,
  * and findings past MAX_FINDINGS are counted in one line, the low ones first to go.
  */
 export function parseVerdict(answer: string): Verdict | null {
@@ -89,7 +89,7 @@ export function parseVerdict(answer: string): Verdict | null {
   if (!Array.isArray(findings) || !findings.every(isFinding)) return null;
   // A change request with nothing to change is not a clear answer.
   if (verdict === 'REQUEST_CHANGES' && findings.length === 0) return null;
-  const blocking = findings.some((item) => item.severity !== 'low');
+  const blocking = findings.some((item) => item.severity === 'high');
   if (verdict === 'APPROVE' && blocking) return null;
   const sorted = [...findings].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
   return {
@@ -198,7 +198,7 @@ const SYSTEM_PROMPT = [
   'Severity: high is a bug, a security hole or lost work; medium is a wrong edge case, a missing test for a new check, or a change the description does not explain; low is style, wording, naming or a small cleanup.',
   'Report each problem once, at its first place, even when it repeats. Report only a problem you can point to in the diff.',
   `At most ${MAX_FINDINGS - 2} findings, the most severe first.`,
-  'Use REQUEST_CHANGES when any finding is high or medium. Use APPROVE otherwise; a low finding never blocks a merge.',
+  'Use REQUEST_CHANGES only when a finding is high. Use APPROVE otherwise; a medium or low finding never blocks a merge.',
 ].join('\n');
 
 /** Where one part sits in a diff reviewed in parts. */

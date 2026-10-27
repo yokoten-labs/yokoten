@@ -18,7 +18,7 @@ import {
 import { invoke } from '../repo/invoke.ts';
 import { canColour, isColourTerminal, paint, problemRows, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
-import { finding, fixCommand, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
+import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
 // #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
 // dropped the backslashes, and the home mask looked only for the written path.
@@ -378,6 +378,25 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   const doctorFix = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([same]).flat().filter((line) => line.includes('Fix: '));
   assert.deepEqual(checkFix, doctorFix, 'check and doctor show the same Fix line');
   assert.deepEqual(checkFix, ['              Fix: `yokoten install`']);
+  // A fix with a follow-up says it on both screens (the check screen keeps it under the why, doctor under the row).
+  const marks = finding('time-zone', 'no marks', 'run `yokoten marks add` and type your name');
+  const doctorLines = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([marks]).flat();
+  assert.ok(problemRows([marks]).some((line) => line.includes('Type your name.')), problemRows([marks]).join('\n'));
+  assert.ok(doctorLines.some((line) => line.includes('Type your name.')), doctorLines.join('\n'));
+  assert.deepEqual(problemRows([marks]).filter((line) => line.includes('Fix: ')), doctorLines.filter((line) => line.includes('Fix: ')));
+  // Two problems with one command but different follow-ups: the fix still shows once (record 0049, same-fix-once),
+  // with both follow-ups above it, since running the command once is where both are done.
+  const other = finding('time-zone', 'no marks file', 'run `yokoten marks add` and pick a folder');
+  const pair = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([marks, other]);
+  assert.equal(pair.length, 1, pair.map((block) => block.join('\n')).join('\n---\n'));
+  const block = pair[0]!;
+  assert.deepEqual(block.filter((line) => line.includes('Fix: ')), ['              Fix: `yokoten marks add`']);
+  assert.ok(block.some((line) => line.includes('Type your name.')) && block.some((line) => line.includes('Pick a folder.')), block.join('\n'));
+  assert.ok(block.findIndex((line) => line.includes('Pick a folder.')) < block.findIndex((line) => line.includes('Fix: ')), 'follow-ups come before the Fix line');
+  // A note keeps its fix's follow-up too (formatNote uses fixCommand).
+  const note = formatNote(marks).join('\n');
+  assert.match(note, /yokoten marks add/);
+  assert.match(note, /type your name/i, note);
   const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
   const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
   assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');

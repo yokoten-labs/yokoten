@@ -2243,11 +2243,22 @@ test('suite time: each test job prints a line when a file finishes, and one a mi
   see(file('test:dequeue', 'test/b.test.ts'), 1);
   see(inner('test:fail', 'a case', 'test/b.test.ts'), 3);
   see({ type: 'test:pass', data: { nesting: 1, name: 'a step', file: '/repo/test/b.test.ts' } }, 3);
+  see({ type: 'test:pass', data: { nesting: 0, name: 'a good case', file: '/repo/test/a.test.ts', details: { duration_ms: 2.25 } } }, 3);
+  see({ type: 'test:fail', data: { nesting: 0, name: 'a bad case', file: '/repo/test/b.test.ts', details: { duration_ms: 1, error: Object.assign(new Error('test failed'), { cause: new Error('expected 1\n\nto be 2') }) } } }, 3);
   see(file('test:complete', 'test/b.test.ts'), 4);
   assert.deepEqual(progress.slow(30_000), [], 'under a minute: quiet');
   assert.deepEqual(progress.slow(75_000), ['still running test/a.test.ts: 75 s'], 'a finished file is not still running');
   see(file('test:complete', 'test/a.test.ts'), 80);
-  assert.deepEqual(lines, ['[1/2] test/b.test.ts 3 s, 1 failing', '[2/2] test/a.test.ts 80 s']);
+  // Each file's block prints at once: its line, then its tests indented, and a failure's error indented again.
+  assert.deepEqual(lines, [
+    '[1/2] test/b.test.ts 3 s, 2 failing',
+    '    ✖ a case',
+    '    ✖ a bad case (1.0 ms)',
+    '        expected 1',
+    '        to be 2',
+    '[2/2] test/a.test.ts 80 s',
+    '    ✔ a good case (2.3 ms)',
+  ]);
   assert.deepEqual(progress.slow(200_000), []);
 });
 
