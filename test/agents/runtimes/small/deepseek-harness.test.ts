@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { addProjectHooks, initLines, PATCH, profilesWithBridge, projectHooksState, readToolCall, WINDOWS_GAP } from '../../../../src/agents/runtimes/small/deepseek-harness.ts';
 import { agentHooks } from '../../../../src/setup/doctor/index.ts';
+import { init } from '../../../../src/setup/init.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
 /** A PreToolUse payload in the shape the dsh 0.2.1-rc.2 hook bridge sent it in a real run (#334). */
@@ -89,9 +90,14 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   assert.deepEqual(profilesWithBridge({ DSH_HOME: dshHome }), { found: ['tui'], all: ['tui'] });
   assert.match(await doctor(), /ok +deepseek-harness-hook: the bridge is in profile tui; .*Only a real deny proves it/);
   // The profiles directory is dsh's home, so init prints the bridge commands (#654).
-  const withDsh = await sandbox.call(['init', '--list'], { extra: { DSH_HOME: dshHome } });
-  assert.match(withDsh.stdout, /dsh plugin --profile <profile> add @deepseek-ai\/dsh-hooks-claude-code@0\.2\.1-rc\.2 && dsh plugin --profile <profile> add @deepseek-ai\/dsh-hook-protocol@0\.2\.1-rc\.2/);
-  assert.match(withDsh.stdout, /dsh <profile> --patch \.dsh\/yokoten\.patch\.yml/);
+  // Each command is a line of its own, so a copy never breaks (#1040).
+  const withDsh = init(sandbox.repo, { ...sandbox.env, DSH_HOME: dshHome }, () => '');
+  const bridge = withDsh.notes.find((note) => note.id === 'deepseek-harness-hook');
+  assert.deepEqual(bridge?.fix.split('\n'), [
+    'dsh plugin --profile <profile> add @deepseek-ai/dsh-hooks-claude-code@0.2.1-rc.2',
+    'dsh plugin --profile <profile> add @deepseek-ai/dsh-hook-protocol@0.2.1-rc.2',
+    'dsh <profile> --patch .dsh/yokoten.patch.yml',
+  ]);
   // Out of date, then a file init can't edit.
   writeFileSync(join(sandbox.repo, '.dsh', 'yokoten.patch.yml'), '[]\n');
   assert.match(await doctor(), /note +deepseek-harness-hook: \.dsh\/yokoten\.patch\.yml is out of date/);
@@ -119,10 +125,16 @@ test('deepseek-harness on Windows: dsh runs hooks in PowerShell, so doctor notes
   const linux = dshCheck('linux');
   assert.equal(linux?.ok, true, 'unchanged off Windows');
   assert.match(linux?.detail ?? '', /the bridge is in profile tui; .*Only a real deny proves it/);
-  const files = ['kept the DeepSeek Harness tool-call hook in .dsh/hooks.json', 'kept the DeepSeek Harness launch patch in .dsh/yokoten.patch.yml'];
-  const onWindows = initLines(files, 'win32');
-  assert.deepEqual(onWindows.slice(0, 2), files, 'the lines init wrote come first');
-  assert.equal(onWindows.at(-1), WINDOWS_GAP);
-  assert.ok(!onWindows.some((line) => /dsh plugin|--patch/.test(line)), 'no steps that imply a guard');
-  assert.match(initLines(files, 'linux').join('\n'), /dsh plugin --profile <profile> add .*\n.*dsh <profile> --patch \.dsh\/yokoten\.patch\.yml/);
+  const files = [{ state: 'kept', path: '.dsh/hooks.json' }, { state: 'kept', path: '.dsh/yokoten.patch.yml' }];
+  const onWindows = initLines(files, 'win32', ['tui']);
+  assert.deepEqual(onWindows.changes, files, 'the changes init made pass through');
+  assert.deepEqual(onWindows.notes.map((note) => note.what), [WINDOWS_GAP]);
+  assert.deepEqual(onWindows.steps, [], 'no steps that imply a guard');
+  // One profile without the bridge: the commands name it, so each fits a line to copy (#1040).
+  assert.deepEqual(initLines(files, 'linux', ['work']).steps.map((step) => step.fix.split('\n')), [[
+    'dsh plugin --profile work add @deepseek-ai/dsh-hooks-claude-code@0.2.1-rc.2',
+    'dsh plugin --profile work add @deepseek-ai/dsh-hook-protocol@0.2.1-rc.2',
+    'dsh work --patch .dsh/yokoten.patch.yml',
+  ]]);
+  assert.deepEqual(initLines(files, 'linux').notes, [], 'off Windows the steps are all it says');
 });

@@ -19,6 +19,8 @@ import {
   LABELS,
   MAX_AREA_LABELS,
   pickNewMilestone,
+  type PlanItem,
+  type PlanResult,
   setUpPlanning,
 } from '../../src/setup/plan.ts';
 import {
@@ -34,6 +36,15 @@ const writes = (calls: string[][]) => calls.filter((c) => c[0] === 'label' || c.
 const DRY = { apply: false, removeDefaults: false };
 
 const APPLY = { apply: true, removeDefaults: false };
+
+/** Whether the plan holds an item in this state with these words. */
+const has = (result: PlanResult, state: PlanItem['state'], what: string): boolean => result.items.some((item) => item.state === state && item.what === what);
+
+/** Whether the plan has nothing to do: no item done, failed or to do, and no command. */
+const isNothingToChange = (result: PlanResult): boolean => result.command === undefined && result.items.every((item) => item.state === 'kept' || item.state === 'note');
+
+/** The items, one line each, for a failure message. */
+const said = (result: PlanResult): string => result.items.map((item) => `${item.state}: ${item.what}`).join('\n');
 
 // A fake gh with boards too: `project` commands and the GraphQL calls. The real gh is never run.
 const SCOPE_ERROR = 'gh: Your token has not been granted the required scopes to execute this query. The \'number\' field requires one of the following scopes: [\'read:project\']';
@@ -86,12 +97,12 @@ test('planning: says what it would do, and changes nothing without --yes (#10)',
   const f = fakeGh([standardBug, 'feat', 'Enhancement', 'wontfix']);
   const r = setUpPlanning(f.gh, REMOTE, DRY);
   assert.ok(r.ok);
-  assert.ok(r.lines.includes('- 1 of the 13 standard labels are there; kept'));
-  assert.ok(r.lines.includes('- not in the standard set: Enhancement, wontfix. yokoten deletes them only with --remove-default-labels'));
-  assert.ok(r.lines.includes('- make label "hotfix" (Urgent: fix and release soon)'));
-  assert.ok(r.lines.includes('- update label "feat" to the standard colour and description'));
-  assert.ok(r.lines.includes('- make milestone "First release"'));
-  assert.equal(r.lines.at(-1), 'Nothing changed. Run `yokoten init --github --yes` to do it.');
+  assert.ok(has(r, 'kept', '1 of the 13 standard labels are there'));
+  assert.ok(has(r, 'note', 'not in the standard set: Enhancement, wontfix; yokoten deletes them only with --remove-default-labels'));
+  assert.ok(has(r, 'to do', 'make label "hotfix" (Urgent: fix and release soon)'));
+  assert.ok(has(r, 'to do', 'update label "feat" to the standard colour and description'));
+  assert.ok(has(r, 'to do', 'make milestone "First release"'));
+  assert.equal(r.command, 'yokoten init --github --yes');
   assert.deepEqual(writes(f.calls), [], 'nothing changed');
 });
 
@@ -99,10 +110,10 @@ test('planning: makes what is missing, updates what differs, and a second run ch
   const fake = fakeGh(['BUG', 'owner', 'question'], ['closed v0.0.1']);
   let result = setUpPlanning(fake.gh, REMOTE, APPLY);
   assert.equal(result.ok, false, 'one label was refused');
-  assert.ok(result.lines.includes('- could not make label "docs" (Documentation only): HTTP 403: no access'));
-  assert.ok(result.lines.includes('- done: make label "hotfix" (Urgent: fix and release soon)'), 'the refusal did not stop the rest');
-  assert.ok(result.lines.includes('- done: update label "BUG" to the standard colour and description'), 'case ignored; the name is kept');
-  assert.ok(result.lines.includes('- done: make milestone "First release"'));
+  assert.ok(has(result, 'failed', 'could not make label "docs" (Documentation only): HTTP 403: no access'));
+  assert.ok(has(result, 'done', 'make label "hotfix" (Urgent: fix and release soon)'), 'the refusal did not stop the rest');
+  assert.ok(has(result, 'done', 'update label "BUG" to the standard colour and description'), 'case ignored; the name is kept');
+  assert.ok(has(result, 'done', 'make milestone "First release"'));
   assert.equal(fake.calls.filter((c) => c[1] === 'create').length, LABELS.length - 2);
   assert.deepEqual(fake.calls.find((c) => c.includes('docs')), ['label', 'create', 'docs', '-R', 'me/repo', '--color', '0075ca', '--description', 'Documentation only']);
   assert.ok(fake.held.some((l) => l.name === 'question'), 'a label outside the set is never deleted by default');
@@ -111,7 +122,7 @@ test('planning: makes what is missing, updates what differs, and a second run ch
   const before = fake.calls.length;
   result = setUpPlanning(fake.gh, REMOTE, APPLY);
   assert.ok(result.ok);
-  assert.equal(result.lines.at(-1), 'Nothing to change.');
+  assert.ok(isNothingToChange(result), said(result));
   assert.deepEqual(writes(fake.calls.slice(before)), []);
   assert.equal(fake.held.filter((l) => l.name.toLowerCase() === 'bug').length, 1, 'no duplicate');
   assert.deepEqual(fake.milestones, ['closed v0.0.1', 'open First release']);
@@ -120,9 +131,9 @@ test('planning: makes what is missing, updates what differs, and a second run ch
 test('planning: makes the tier labels the pull request check asks for, once (#225)', () => {
   const fake = fakeGh([LABELS.find((l) => l.name === 'docs')!], ['open v1']);
   let result = setUpPlanning(fake.gh, REMOTE, APPLY);
-  assert.ok(result.ok, result.lines.join('\n'));
+  assert.ok(result.ok, said(result));
   for (const tier of ['A', 'B', 'C']) {
-    assert.ok(result.lines.some((line) => line.startsWith(`- done: make label "tier ${tier}"`)), `tier ${tier}: ${result.lines.join(' | ')}`);
+    assert.ok(result.items.some((item) => item.state === 'done' && item.what.startsWith(`make label "tier ${tier}"`)), `tier ${tier}: ${said(result)}`);
     assert.equal(fake.held.filter((l) => l.name === `tier ${tier}`).length, 1);
   }
   assert.match(fake.held.find((l) => l.name === 'tier A')!.description, /The owner approves/);
@@ -130,15 +141,15 @@ test('planning: makes the tier labels the pull request check asks for, once (#22
   assert.equal(fake.held.find((l) => l.name === 'security')!.color, 'b60205');
   const before = fake.calls.length;
   result = setUpPlanning(fake.gh, REMOTE, APPLY);
-  assert.equal(result.lines.at(-1), 'Nothing to change.');
+  assert.ok(isNothingToChange(result), said(result));
   assert.deepEqual(writes(fake.calls.slice(before)), [], 'a second run makes nothing new');
 });
 
 test('planning: deletes GitHub\'s default labels only with --remove-default-labels (#10)', () => {
   const fake = fakeGh([...LABELS, 'question', 'Wontfix', 'my-own'], ['open v1']);
   let result = setUpPlanning(fake.gh, REMOTE, { apply: false, removeDefaults: true });
-  assert.ok(result.lines.includes('- delete label "question" (the host also takes it off every issue)'));
-  assert.equal(result.lines.at(-1), 'Nothing changed. Run `yokoten init --github --yes --remove-default-labels` to do it.');
+  assert.ok(has(result, 'to do', 'delete label "question" (the host also takes it off every issue)'));
+  assert.equal(result.command, 'yokoten init --github --yes --remove-default-labels');
   assert.deepEqual(writes(fake.calls), []);
   result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: true });
   assert.ok(result.ok);
@@ -149,23 +160,24 @@ test('planning: deletes GitHub\'s default labels only with --remove-default-labe
 test('planning: no gh, signed out, or no GitHub remote is a skip that says why, not a failure (#10)', () => {
   const missing = setUpPlanning(() => { throw Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }); }, REMOTE, APPLY);
   assert.deepEqual([missing.ok, missing.skipped], [true, true], 'the caller decides: init --github --yes fails on a skip (#208)');
-  assert.match(missing.lines[0], /^GitHub: skipped, because gh is not installed\. To set up labels and a milestone, get it from https:\/\/cli\.github\.com/);
+  assert.match(missing.skip?.why ?? '', /^gh is not installed; to set up labels and a milestone, get it from https:\/\/cli\.github\.com/);
+  assert.equal(missing.skip?.fix, 'yokoten init --github --yes');
   const out = setUpPlanning(() => { throw Object.assign(new Error('exit 4'), { stderr: 'HTTP 401: Bad credentials' }); }, REMOTE, APPLY);
-  assert.deepEqual(out, { ok: true, skipped: true, lines: ['GitHub: skipped, because gh is not signed in. To set up labels and a milestone, run `gh auth login`, then run `yokoten init --github --yes`'] });
+  assert.deepEqual(out, { ok: true, skipped: true, repo: null, skip: { why: 'gh is not signed in; to set up labels and a milestone, run `gh auth login`', fix: 'yokoten init --github --yes' }, items: [] });
   const elsewhere = setUpPlanning(() => { throw new Error('gh was called'); }, 'https://gitea.example.com/me/repo.git', APPLY);
-  assert.deepEqual(elsewhere, { ok: true, skipped: true, lines: ['GitHub: skipped, because the origin remote is not on GitHub. Labels and a milestone need a GitHub repo'] });
+  assert.deepEqual(elsewhere, { ok: true, skipped: true, repo: null, skip: { why: 'the origin remote is not on GitHub; labels and a milestone need a GitHub repo', fix: '' }, items: [] });
   const none = setUpPlanning(() => { throw new Error('gh was called'); }, '', APPLY);
-  assert.deepEqual(none, { ok: true, skipped: true, lines: ['GitHub: skipped, because there is no origin remote yet. Make the repo on GitHub, add it as origin, and push; then run `yokoten init --github --yes` to set up labels and a milestone'] }, 'no remote at all (#208)');
+  assert.deepEqual(none, { ok: true, skipped: true, repo: null, skip: { why: 'there is no origin remote yet; make the repo on GitHub, add it as origin and push, then set up labels and a milestone', fix: 'yokoten init --github --yes' }, items: [] }, 'no remote at all (#208)');
 });
 
 test('planning: one neutral label per area when the list is short; kept as it is, never deleted (#156)', () => {
   const fake = fakeGh([...LABELS, { name: 'Kit', color: 'ff0000', description: 'mine' }, 'question'], ['open v1']);
   const areas = ['kit', 'agents', 'question', 'ci'];
   let result = setUpPlanning(fake.gh, REMOTE, { apply: false, removeDefaults: true, areas });
-  assert.ok(result.lines.includes('- areas that are also standard labels: ci. They keep the standard label'));
-  assert.ok(result.lines.includes('- 2 of the 3 area labels are there; kept'), 'Kit and question are there');
-  assert.ok(result.lines.includes('- make label "agents" (area: agents)'));
-  assert.ok(!result.lines.some((l) => /delete label "question"/.test(l)), 'an area label is never deleted, even with --remove-default-labels');
+  assert.ok(has(result, 'kept', 'areas that are also standard labels keep the standard label: ci'));
+  assert.ok(has(result, 'kept', '2 of the 3 area labels are there'), 'Kit and question are there');
+  assert.ok(has(result, 'to do', 'make label "agents" (area: agents)'));
+  assert.ok(!result.items.some((item) => item.what.includes('delete label "question"')), 'an area label is never deleted, even with --remove-default-labels');
   assert.deepEqual(writes(fake.calls), []);
   result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: true, areas });
   assert.ok(result.ok);
@@ -174,30 +186,32 @@ test('planning: one neutral label per area when the list is short; kept as it is
   // Positive control: a second run makes no new label.
   const before = fake.calls.length;
   result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: false, areas });
-  assert.equal(result.lines.at(-1), 'Nothing to change.');
+  assert.ok(isNothingToChange(result), said(result));
   assert.deepEqual(writes(fake.calls.slice(before)), []);
   // A long list is noise: no area label at all, and the report says why.
   const many = Array.from({ length: MAX_AREA_LABELS + 1 }, (_, i) => `area${i}`);
   result = setUpPlanning(fakeGh([...LABELS], ['open v1']).gh, REMOTE, { apply: false, removeDefaults: false, areas: many });
-  assert.deepEqual(result.lines.slice(-2), [`- area labels: none, because yokoten.json has ${MAX_AREA_LABELS + 1} areas and more than ${MAX_AREA_LABELS} labels is noise. Make the few you filter by yourself`, 'Nothing to change.']);
+  assert.ok(has(result, 'note', `no area labels: yokoten.json has ${MAX_AREA_LABELS + 1} areas, and more than ${MAX_AREA_LABELS} labels is noise; make the few you filter by yourself`));
+  assert.ok(isNothingToChange(result));
 });
 
 test('planning: --board makes one board, links it, sets Status; a second run makes none (#156)', () => {
   const fake = boardGh();
   let result = setUpPlanning(fake.gh, REMOTE, { apply: false, removeDefaults: false, board: true });
-  assert.deepEqual(result.lines.slice(-3), ['Would do:', '- make board "repo", link it to me/repo, and give its Status field Todo, In progress, In review, Done', 'Nothing changed. Run `yokoten init --github --yes --board` to do it.']);
+  assert.deepEqual(result.items.at(-1), { state: 'to do', what: 'make board "repo", link it to me/repo, and give its Status field Todo, In progress, In review, Done' });
+  assert.equal(result.command, 'yokoten init --github --yes --board');
   assert.deepEqual(boardWrites(fake.calls), []);
   result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: false, board: true });
-  assert.ok(result.ok, result.lines.join('\n'));
+  assert.ok(result.ok, said(result));
   assert.deepEqual(boardWrites(fake.calls).map((c) => c.slice(0, 2).join(' ')), ['project create', 'project link', 'api graphql']);
   assert.deepEqual(fake.linked, [{ number: 1, title: 'repo' }]);
   assert.deepEqual(fake.statuses.get(1), BOARD_STATUSES);
   // Positive control: the second run finds the linked board by its title and makes nothing.
   const before = fake.calls.length;
   result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: false, board: true });
-  assert.ok(result.lines.includes('- board "repo" is linked; kept'));
-  assert.ok(result.lines.includes('- board "repo" has the Status options; kept'));
-  assert.equal(result.lines.at(-1), 'Nothing to change.');
+  assert.ok(has(result, 'kept', 'board "repo" is linked'));
+  assert.ok(has(result, 'kept', 'board "repo" has the Status options'));
+  assert.ok(isNothingToChange(result), said(result));
   assert.deepEqual(boardWrites(fake.calls.slice(before)), []);
   // Without --board, no board call at all.
   const plain = boardGh();
@@ -209,8 +223,8 @@ test('planning: a board made but not linked is linked, and a board in use keeps 
   const fake = boardGh({ owned: [{ number: 4, title: 'repo' }] });
   const result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: false, board: true });
   assert.ok(result.ok);
-  assert.ok(result.lines.includes('- done: link board "repo" to me/repo'));
-  assert.ok(result.lines.includes('- board "repo": its Status options are Todo, In Progress, Done. yokoten never changes a board that is there; set Todo, In progress, In review, Done by hand'));
+  assert.ok(has(result, 'done', 'link board "repo" to me/repo'));
+  assert.ok(has(result, 'note', 'board "repo": its Status options are Todo, In Progress, Done; yokoten never changes a board that is there, so set Todo, In progress, In review, Done by hand'));
   assert.deepEqual(boardWrites(fake.calls).map((c) => c.slice(0, 2).join(' ')), ['project link'], 'no second board, no change to its options');
   assert.equal(fake.owned.length, 1);
 });
@@ -219,8 +233,8 @@ test('planning: no project scope skips the board with the fix; the labels still 
   const fake = boardGh({ isScopeMissing: true });
   const result = setUpPlanning(fake.gh, REMOTE, { apply: true, removeDefaults: false, board: true, areas: ['kit'] });
   assert.equal(result.ok, true, 'a skip is not a failure');
-  assert.ok(result.lines.includes('- board: skipped, because the gh token has no `project` scope. To make one, run `gh auth refresh -s project`, then run `yokoten init --github --board --yes` again'));
-  assert.ok(result.lines.includes('- done: make label "kit" (area: kit)'));
+  assert.ok(has(result, 'note', 'no board: the gh token has no `project` scope; to make one, run `gh auth refresh -s project`, then run `yokoten init --github --board --yes` again'), said(result));
+  assert.ok(has(result, 'done', 'make label "kit" (area: kit)'));
   assert.deepEqual(boardWrites(fake.calls), []);
   // A token that reads boards but can't make one: the failure carries the same fix.
   const readOnly = boardGh();
@@ -230,7 +244,8 @@ test('planning: no project scope skips the board with the fix; the labels still 
   };
   const made = setUpPlanning(failing, REMOTE, { apply: true, removeDefaults: false, board: true });
   assert.equal(made.ok, false);
-  assert.match(made.lines.at(-1) ?? '', /^- could not make board "repo".*: error: your authentication token is missing required scopes \[project\]; run `gh auth refresh -s project`$/);
+  assert.deepEqual(made.items.at(-1)?.state, 'failed');
+  assert.match(made.items.at(-1)?.what ?? '', /^could not make board "repo".*: error: your authentication token is missing required scopes \[project\]; run `gh auth refresh -s project`$/);
 });
 
 test('milestone: init and the road use one rule, an open milestone; a closed one is never kept or reopened (#178)', () => {
@@ -241,17 +256,17 @@ test('milestone: init and the road use one rule, an open milestone; a closed one
   assert.equal(planningFound(server()).milestone, false);
   assert.equal(stepFinding(milestoneStep, '.', {}, { server: server() }).fix, '`yokoten init --github --yes` makes one called "Next release"', 'doctor names what init makes');
   const planned = setUpPlanning(fake.gh, REMOTE, DRY);
-  assert.ok(planned.lines.includes('- make milestone "Next release"'), planned.lines.join('\n'));
-  assert.ok(!planned.lines.includes('- a milestone is open; kept'));
+  assert.ok(has(planned, 'to do', 'make milestone "Next release"'), said(planned));
+  assert.ok(!has(planned, 'kept', 'a milestone is open'));
   assert.equal(planningFound(server()).milestone, false, 'not done until the milestone exists');
   const applied = setUpPlanning(fake.gh, REMOTE, APPLY);
-  assert.ok(applied.lines.includes('- done: make milestone "Next release"'));
+  assert.ok(has(applied, 'done', 'make milestone "Next release"'));
   assert.deepEqual(fake.milestones, ['closed First release', 'open Next release'], 'the closed one stays closed');
   assert.equal(planningFound(server()).milestone, true);
-  assert.equal(setUpPlanning(fake.gh, REMOTE, APPLY).lines.at(-1), 'Nothing to change.');
+  assert.ok(isNothingToChange(setUpPlanning(fake.gh, REMOTE, APPLY)));
   // An open milestone: init keeps it and the road is done.
   const open = fakeGh([...LABELS], ['closed First release', 'open v2']);
-  assert.ok(setUpPlanning(open.gh, REMOTE, DRY).lines.includes('- a milestone is open; kept'));
+  assert.ok(has(setUpPlanning(open.gh, REMOTE, DRY), 'kept', 'a milestone is open'));
   assert.equal(planningFound(withPlanning(readPlanning(open.gh, 'me/repo'))).milestone, true);
   // Only other closed ones: "First release"; every name taken: the next free number.
   assert.equal(pickNewMilestone([{ title: 'v0.1', open: false }]), 'First release');

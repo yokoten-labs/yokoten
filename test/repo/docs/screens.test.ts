@@ -28,6 +28,13 @@ import { type Change, type Place, type SetupResult } from '../../../src/setup/fi
 // C1 end
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
+// C2: the pure screens of init, update and trust, from their results (#1115).
+import { initScreen } from '../../../src/commands/more/setup/init.ts';
+import { TRUST_NEEDS_A_PERSON, updateScreen } from '../../../src/commands/more/setup/update.ts';
+import { init, type UpdateResult } from '../../../src/setup/init.ts';
+import { setUpPlanning } from '../../../src/setup/plan.ts';
+import { VERSION } from '../../../src/setup/files.ts';
+import { fakeGh } from '../helpers.ts';
 
 // ---- The calibration: the owner's six verdicts (issue #1099) ----
 
@@ -397,6 +404,48 @@ function screensOf(repo: string): ScreenRun[] {
     // C1
     ...c1Screens(),
     // C1 end
+    // C2: init, update and trust, built from their results (#1115). The init screens end with
+    // the commit command, which differs on Windows, so they are rendered for both.
+    ...c2Screens(),
+  ];
+}
+
+// C2: the results the pure screens of init, update and trust are built from.
+function c2Screens(): ScreenRun[] {
+  const initOf = (setUp: (sandbox: ReturnType<typeof makeSandbox>) => void = () => {}) => {
+    const sandbox = makeSandbox();
+    setUp(sandbox);
+    return init(sandbox.repo, sandbox.env, () => '', { platform: 'linux' });
+  };
+  const fresh = initOf();
+  const partly = initOf((sandbox) => {
+    sandbox.write('AGENTS.md', '# ours\n\n## This project\n\nours\n');
+    sandbox.write('CHANGELOG.md', '# ours\n');
+  });
+  const yours = initOf((sandbox) => sandbox.write('.claude/settings.json', JSON.stringify({ env: { TZ: 'Europe/Paris' } })));
+  const plan = setUpPlanning(fakeGh(['bug'], []).gh, 'https://github.com/me/repo.git', { apply: false, removeDefaults: false });
+  const inits: [string, string[], Parameters<typeof initScreen>[0]][] = [
+    ['init fresh', ['init'], fresh],
+    ['init partly new', ['init'], partly],
+    ['init with a kept file of the user\'s', ['init'], yours],
+    ['init --github plan', ['init', '--github'], { ...fresh, plan }],
+  ];
+  const preview: UpdateResult = {
+    ok: true,
+    state: 'preview',
+    version: VERSION,
+    summary: '2 line(s) added, 1 removed',
+    changes: [
+      { kind: 'added', line: '| 9 | Nothing reaches main without a pull request | x |' },
+      { kind: 'removed', line: '| 4 | A fix task changes code | x |' },
+      { kind: 'added', line: '| 4 | A fix task changes code and tests | x |' },
+    ],
+  };
+  return [
+    ...inits.flatMap(([key, words, result]): ScreenRun[] => (['linux', 'win32'] as const).map((platform) => ({ key: `${key}, ${platform}`, words, platform, lines: initScreen(result, { platform }) }))),
+    { key: 'update preview', words: ['update'], platform: 'linux', lines: updateScreen(preview) },
+    { key: 'update --write', words: ['update', '--write'], platform: 'linux', lines: updateScreen({ ...preview, state: 'written', backup: 'AGENTS.md.before-yokoten' }) },
+    { key: 'trust not at a terminal', words: ['trust'], platform: 'linux', lines: failure('trust', TRUST_NEEDS_A_PERSON.what, TRUST_NEEDS_A_PERSON.next) },
   ];
 }
 
