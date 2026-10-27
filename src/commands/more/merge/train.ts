@@ -430,9 +430,15 @@ function hasLocalCommit(root: string, env: Env, oid: string): boolean {
 
 const text = (bytes: Buffer): string => bytes.toString('utf8').trim();
 
-/** The first non-empty line of a message, short enough to print. */
+/**
+ * The first paragraph of a message as one line, short enough to print: a screen's title
+ * wraps under itself (the bot's refusals do), so its lines up to the first blank are one.
+ */
 function firstLine(message: string): string {
-  const line = message.split('\n').map((part) => part.trim()).find(Boolean) ?? 'it needs a person';
+  const parts = message.split('\n').map((part) => part.trim());
+  const start = parts.findIndex(Boolean);
+  const end = start === -1 ? -1 : parts.indexOf('', start);
+  const line = start === -1 ? 'it needs a person' : parts.slice(start, end === -1 ? undefined : end).join(' ');
   return line.length > 200 ? `${line.slice(0, 197)}...` : line;
 }
 

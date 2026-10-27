@@ -27,8 +27,16 @@ import {
   writeNodeProgram,
 } from '../../../repo/helpers.ts';
 import { invoke } from '../../../repo/invoke.ts';
-import { botHeading, emptyPostProblems, type PostProblems, postRefusal } from '../../../../src/commands/more/merge/bot.ts';
+import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { approveScreen, botHeading, emptyPostProblems, mergeRefusal, type PostProblems, postRefusal, programRefusal, refusalScreen, runRefusal, utcRefusal } from '../../../../src/commands/more/merge/bot.ts';
 import { finding } from '../../../../src/rules/text/message.ts';
+import { noteLine, row } from '../../../../src/rules/text/screen.ts';
+
+/** A note as the bot says it on stderr: `note: <text>`, wrapped under itself (#1115). */
+const noted = (text: string): string => `${noteLine(text).join('\n')}\n`;
+
+/** A merge the Approve check stops, as the bot says it on stderr (#1115). */
+const mergeSaid = (text: string, kind: 'needsApprove' | 'unchecked' = 'needsApprove'): string => `${refusalScreen(mergeRefusal({ kind, text })).join('\n')}\n`;
 
 // #117: the bot checks a title before it sends anything, by the rules CI uses. A fake gh
 // and a local API server stand in for GitHub; the real ones are never reached.
@@ -71,8 +79,11 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
     const r = await run(command, extra);
     assert.equal(r.status, 1, command.join(' '));
     // A body or a cluster with problems of its own is named in the same answer, after the title (#1120).
-    assert.match(r.stderr, /^yokoten bot: (1 problem\(s\) in the title; nothing was sent\. Fix the title and run it again:\n- title: |\d+ problem\(s\) in the title(, [^;]+)? and [^;]+; nothing was sent\. Fix them all and run it again:\n\nIn the title \(1\):\n- title: )/, command.join(' '));
-    assert.match(r.stderr, pattern, command.join(' '));
+    // One screen (#1115): the title, the rows of each part, then one Next line; read here with its lines joined.
+    const flat = r.stderr.replace(/\s+/g, ' ');
+    assert.match(flat, /^yokoten bot · nothing was sent: (1 problem in the title MISSING title: |\d+ problems in the title(, .+?)? and .+? In the title \(1\): MISSING title: )/, command.join(' '));
+    assert.match(r.stderr, /\nNext: Fix (the title|them all), then run the same command again\.\n$/, command.join(' '));
+    assert.match(flat, pattern, command.join(' '));
     assert.doesNotMatch(r.stderr, /YOKOTEN_BOT|bot\.pem|GitHub said/, 'the title is the reason, not the bot setup');
     // A new issue in this repo still asks for the token, so the one answer can name its
     // labels too (#1120): the token only reads the label list, and nothing is sent.
@@ -85,26 +96,26 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
   };
   try {
     // Positive controls: each bad title is refused with what, why and the fix.
-    await refused(['gh', 'issue', 'create', '--title', `host: ${'a'.repeat(60)}`, '--body', 'x\n\nMade with worker (opus)\n'],/title: 66 characters, over 60\. .+\. Shorten it/);
-    await refused(['gh', 'issue', 'create', '-t', 'guard: add a step', '-l', 'feat'], /not in yokoten\.json "areas"\. .+\. Use one of: host, check\.$/m);
-    await refused(['gh', 'issue', 'edit', '5', '--title=host: add a step.'], /title: a full stop at the end\. A title is a name/);
-    await refused(['gh', 'pr', 'create', `--title=feat(host): ${'a'.repeat(62)}`, '--body', 'x'], /title: 74 characters, over 72\. .+\. Shorten it/);
-    await refused(['gh', 'pr', 'edit', '5', '-t', 'feat(host): add a step.'], /title: a full stop at the end\. A commit title has no full stop\. Remove the full stop\./);
+    await refused(['gh', 'issue', 'create', '--title', `host: ${'a'.repeat(60)}`, '--body', 'x\n\nMade with worker (opus)\n'],/title: 66 characters, over 60 .+\. Shorten it/);
+    await refused(['gh', 'issue', 'create', '-t', 'guard: add a step', '-l', 'feat'], /not in yokoten\.json "areas" .+\. Use one of: host, check\./);
+    await refused(['gh', 'issue', 'edit', '5', '--title=host: add a step.'], /title: a full stop at the end A title is a name/);
+    await refused(['gh', 'pr', 'create', `--title=feat(host): ${'a'.repeat(62)}`, '--body', 'x'], /title: 74 characters, over 72 .+\. Shorten it/);
+    await refused(['gh', 'pr', 'edit', '5', '-t', 'feat(host): add a step.'], /title: a full stop at the end A commit title has no full stop\. Remove the full stop\./);
     await refused(['gh', 'pr', 'create', '-t', 'feat(guard): add a step'], /the area `guard` is not in yokoten\.json "areas"/);
     // Every spelling gh takes (#279): `new` for `create`, and an option before the noun or the verb.
     for (const command of [['gh', 'issue', 'new', '--title', 'host: add a step.'], ['gh', 'issue', '-R', 'o/r', 'create', '--title', 'host: add a step.'], ['gh', '--repo', 'o/r', 'issue', 'edit', '5', '-t', 'host: add a step.']]) {
-      await refused(command, /title: a full stop at the end\. A title is a name/);
+      await refused(command, /title: a full stop at the end A title is a name/);
     }
     for (const command of [['gh', 'pr', 'new', '--title', 'feat(host): add a step.'], ['gh', 'pr', '-R', 'o/r', 'edit', '5', '--title', 'feat(host): add a step.'], ['gh', '--repo=o/r', 'pr', 'create', '-t', 'feat(host): add a step.']]) {
-      await refused(command, /title: a full stop at the end\. A commit title has no full stop/);
+      await refused(command, /title: a full stop at the end A commit title has no full stop/);
     }
     // Short flags run together (#290): read as gh reads them, and refused when a letter is unknown.
-    await refused(['gh', 'pr', 'create', '-dt', 'feat(host): add a step.'], /title: a full stop at the end\. A commit title has no full stop/);
-    await refused(['gh', 'issue', 'create', '-wthost: add a step.'], /title: a full stop at the end\. A title is a name/);
-    await refused(['gh', 'pr', 'create', '-dzt', 'feat(host): add a step'], /title: can't read the title: a run-together short option hides it\. .+\. Write --title on its own\.$/m);
+    await refused(['gh', 'pr', 'create', '-dt', 'feat(host): add a step.'], /title: a full stop at the end A commit title has no full stop/);
+    await refused(['gh', 'issue', 'create', '-wthost: add a step.'], /title: a full stop at the end A title is a name/);
+    await refused(['gh', 'pr', 'create', '-dzt', 'feat(host): add a step'], /title: can't read the title: a run-together short option hides it .+\. Write --title on its own\./);
     // gh api on an issue or pull request path (#295): its title= field is checked too.
     await refused(['gh', 'api', 'repos/o/r/issues', '-f', 'title=Broken'], /title: /);
-    await refused(['gh', 'api', '-X', 'PATCH', '/repos/o/r/pulls/5', '--field=title=feat(host): add a step.'], /title: a full stop at the end\. A commit title has no full stop/);
+    await refused(['gh', 'api', '-X', 'PATCH', '/repos/o/r/pulls/5', '--field=title=feat(host): add a step.'], /title: a full stop at the end A commit title has no full stop/);
     // gh by another name runs, so its title is checked (#295).
     await refused(['gh.exe', 'issue', 'create', '-t', 'Broken'], /title: /);
     await refused([join(bin, 'gh'), 'issue', 'create', '-t', 'Broken'], /title: /);
@@ -112,7 +123,7 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
     // before the token is asked for, and nothing runs.
     for (const command of [['env', 'gh', 'issue', 'create', '-t', 'Broken'], ['/usr/bin/env', 'gh', 'issue', 'create', '-t', 'Broken'], ['sh', '-c', 'gh issue create -t Broken'], ['node', 'x']]) {
       const r = await run(command);
-      assert.deepEqual([r.status, r.stderr], [1, `yokoten bot: runs gh and git only; run \`${command[0]}\` without the bot\n`], command.join(' '));
+      assert.deepEqual([r.status, r.stderr], [1, `yokoten bot · the bot runs gh and git only\n\nNext: Run \`${command[0]}\` without the bot.\n`], command.join(' '));
       assert.deepEqual(requests, [], `no token was asked for: ${command.join(' ')}`);
       assert.deepEqual(ran(), [], `nothing ran: ${command.join(' ')}`);
     }
@@ -120,7 +131,8 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
     await refused(['gh', 'pr', 'create', '--title', 'feat(host): add a step.'], /full stop/, path);
     const missing = await run(['gh', 'pr', 'create', '--title', 'feat(host): add a step'], path);
     assert.equal(missing.status, 1);
-    assert.match(missing.stderr, /^yokoten bot: YOKOTEN_BOT_APP_ID is not set/, 'a good title goes on to the bot setup');
+    assert.match(missing.stderr, /^yokoten bot · YOKOTEN_BOT_APP_ID is not set/, 'a good title goes on to the bot setup');
+    assert.match(missing.stderr, /\nNext: Set it up, then run the command again\.\n$/);
 
     // A good title, and commands with no title, take the normal bot path.
     const good: string[][] = [
@@ -168,14 +180,14 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
     const noGh = join(bin, 'none', 'gh');
     const absent = await run([noGh, 'arg']);
     assert.equal(absent.status, 1);
-    assert.match(absent.stderr, /^yokoten bot: could not run \S*\/none\/gh: ENOENT\n$/);
+    assert.match(absent.stderr.replace(/\s+/g, ' '), /^yokoten bot · could not run \S*\/none\/gh: ENOENT Next: Check that `\S*\/none\/gh` is installed and on PATH, then run the command again\. $/);
     const killedGh = join(bin, 'killed', 'gh');
     mkdirSync(dirname(killedGh));
     writeFileSync(killedGh, '#!/bin/sh\nkill -TERM $$\n');
     chmodSync(killedGh, 0o755);
     const killed = await run([killedGh]);
     assert.equal(killed.status, 1);
-    assert.match(killed.stderr, /^yokoten bot: \S*\/killed\/gh was ended by SIGTERM\n$/);
+    assert.match(killed.stderr.replace(/\s+/g, ' '), /^yokoten bot · \S*\/killed\/gh was ended by SIGTERM Next: Run the command again\. $/);
     for (const said of [absent.stderr, killed.stderr]) assert.doesNotMatch(said, /ghs_test|bot\.pem|GH_TOKEN/, 'no token or env');
   } finally {
     server.close();
@@ -273,8 +285,11 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
   const refused = async (command: string[], body: string, id: RegExp, input?: string) => {
     const r = await run(command, input);
     assert.equal(r.status, 1, command.join(' '));
-    const [head, ...lines] = r.stderr.trim().split('\n');
-    assert.equal(head, 'yokoten bot: 1 problem(s) in the body; nothing was sent. Fix the body and run it again:');
+    // The title, a blank line, the problem rows, a blank line, then the Next line (#1115).
+    const [head, , ...rest] = r.stderr.trim().split('\n');
+    const lines = rest.slice(0, rest.lastIndexOf(''));
+    assert.equal(head, 'yokoten bot · nothing was sent: 1 problem in the body');
+    assert.equal(rest.at(-1), 'Next: Fix the body, then run the same command again.');
     assert.match(lines.join(' ').replace(/\s+/g, ' ').trim(), id);
     assert.deepEqual(lines, await ciSays(body), 'the same message CI gives');
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
@@ -324,11 +339,11 @@ test('bot: a pull request body CI would refuse is refused locally, with CI\'s me
     assert.deepEqual(ran(), passes.map(([command, input, sent]) => ({ args: labelled((sent ?? command).slice(1)), input: sent ? good : input })));
     // A branch git can't fetch, or a pull request gh can't look up: the body alone is checked,
     // with a note. The labels are unknown too, so the note says an older tier label may stay (#422).
-    const unreadTier = 'yokoten bot: note: gh could not read this pull request\'s labels, so an older tier label may stay next to `tier A`; remove it with --remove-label. `check --pr` refuses two tier labels\n';
+    const unreadTier = noted('gh could not read this pull request\'s labels, so an older tier label may stay next to `tier A`; remove it with --remove-label. `check --pr` refuses two tier labels');
     for (const [n, why] of [['6', "git can't compare origin/gone with origin/main"], ['7', 'gh could not say the branches of pull request `7`']]) {
       const r = await run(['gh', 'pr', 'edit', n, '--body', good]);
       assert.equal(r.status, 0, r.stderr);
-      assert.equal(r.stderr, `yokoten bot: note: ${why}, so the body was checked without the changed files; CI checks the rest\n${unreadTier}`);
+      assert.equal(r.stderr, `${noted(`${why}, so the body was checked without the changed files; CI checks the rest`)}${unreadTier}`);
     }
     assert.equal(ran().length, passes.length + 2, 'both edits were sent');
   } finally {
@@ -371,7 +386,7 @@ test('bot: a new pull request gets its type and tier labels; a contradicting one
   const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
   const run = (command: string[], input = '') => sandbox.call(['bot', '--', ...command], { input, extra: bot });
   // The branch can't be compared with origin here, so each body check ends with this note.
-  const note = 'yokoten bot: note: git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest\n';
+  const note = noted('git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest');
   const body = (tier: string) => `tier: ${tier}\nCloses #1\n\n## Why\nx\n\n## What changed\nx\n\n## How tested\nx\n\nMade with worker (opus)\n`;
   const bodyFile = join(sandbox.home, 'body.md');
   writeFileSync(bodyFile, body('C'));
@@ -408,12 +423,13 @@ test('bot: a new pull request gets its type and tier labels; a contradicting one
     // before the token is asked for, and nothing is sent.
     const sent = read(log).length;
     const asked = requests.length;
-    for (const [labels, what] of [[['--label', 'tier A'], /^- labels: `tier A` does not match the body's `tier: B`\. .+ Change the label to `tier B`, or the first line of the body to `tier: A`\.$/m], [['-l', 'tier A', '-l', 'tier: C'], /^- labels: 2 tier labels\. .+ Keep one tier label: `tier B`\.$/m]] as const) {
+    for (const [labels, what] of [[['--label', 'tier A'], /MISSING labels: `tier A` does not match the body's `tier: B` .+ Change the label to `tier B`, or the first line of the body to `tier: A`\./], [['-l', 'tier A', '-l', 'tier: C'], /MISSING labels: 2 tier labels .+ Keep one tier label: `tier B`\./]] as const) {
       const command = ['gh', 'pr', 'create', '-t', 'feat: a', ...labels, '--body', body('B')];
       const r = await run(command);
       assert.equal(r.status, 1, command.join(' '));
-      assert.match(r.stderr, /^yokoten bot: note: .+\nyokoten bot: 1 problem\(s\) in the labels; nothing was sent\. Fix the labels and run it again:\n/);
-      assert.match(r.stderr, what);
+      assert.match(r.stderr.replace(/\s+/g, ' '), /^note: .+ yokoten bot · nothing was sent: 1 problem in the labels MISSING /);
+      assert.match(r.stderr, /\nNext: Fix the labels, then run the same command again\.\n$/);
+      assert.match(r.stderr.replace(/\s+/g, ' '), what);
     }
     assert.equal(requests.length, asked, 'no token was asked for');
     assert.equal(read(log).length, sent, 'gh did not run');
@@ -425,7 +441,7 @@ test('bot: a new pull request gets its type and tier labels; a contradicting one
     assert.deepEqual(read(log).at(-1)?.args.slice(-6, -2), ['--label', 'enhancement', '--label', 'tier: A']);
     const absent = await run(['gh', 'pr', 'create', '-t', 'perf: a', '--body', body('B')]);
     assert.equal(absent.status, 0, absent.stderr);
-    assert.match(absent.stderr, /^yokoten bot: note: the repo has no label `perf`, so the pull request gets none; create it on GitHub, or pass another with --label\. `check --pr` asks for it\nyokoten bot: note: the repo has no label `tier B`, /m);
+    assert.ok(absent.stderr.includes(`${noted('the repo has no label `perf`, so the pull request gets none; create it on GitHub, or pass another with --label. `check --pr` asks for it')}note: the repo has no label \`tier B\`, `), absent.stderr);
     assert.deepEqual(read(log).at(-1)?.args, ['pr', 'create', '-t', 'perf: a', '--body', body('B'), '--milestone', 'M0'], 'no label was created or added');
 
     // (e) Other gh commands are sent unchanged, with no label list. `gh issue create`
@@ -482,9 +498,9 @@ test('bot: an edit adds its title type and moves the tier label (#422)', async (
   writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
   const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
   const run = (command: string[]) => sandbox.call(['bot', '--', ...command], { extra: bot });
-  const note = 'yokoten bot: note: git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest\n';
-  const unread = 'yokoten bot: note: gh could not read this pull request\'s labels, so an older tier label may stay next to `tier B`; remove it with --remove-label. `check --pr` refuses two tier labels\n';
-  const absentTier = 'yokoten bot: note: the repo has no label `tier B`, so the pull request gets none; create it on GitHub, or pass another with --label. `check --pr` asks for it\n';
+  const note = noted('git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest');
+  const unread = noted('gh could not read this pull request\'s labels, so an older tier label may stay next to `tier B`; remove it with --remove-label. `check --pr` refuses two tier labels');
+  const absentTier = noted('the repo has no label `tier B`, so the pull request gets none; create it on GitHub, or pass another with --label. `check --pr` asks for it');
   const body = (tier: string) => `tier: ${tier}\nCloses #1\n\n## Why\nx\n\n## What changed\nx\n\n## How tested\nx\n\nMade with worker (opus)\n`;
   try {
     const cases: [command: string[], stderr: string, args: string[], prep?: () => void][] = [
@@ -561,7 +577,8 @@ test('bot: a new issue needs the type and tier labels its repo has; a bad one is
     for (const [command, count, missing] of refused) {
       const r = await run(command);
       assert.equal(r.status, 1, command.join(' '));
-      assert.match(r.stderr, new RegExp(`^yokoten bot: ${count} problem\\(s\\) in the labels; nothing was sent\\. Fix the labels and run it again:`), command.join(' '));
+      assert.match(r.stderr, new RegExp(`^yokoten bot · nothing was sent: ${count} problems? in the labels\\n`), command.join(' '));
+      assert.match(r.stderr, /\nNext: Fix the labels, then run the same command again\.\n$/, command.join(' '));
       assert.match(r.stderr, missing, command.join(' '));
     }
     assert.deepEqual(read(log), [], 'gh did not run the create');
@@ -623,7 +640,7 @@ test('bot --body-file -: in-process, the body comes from the given stdin and gh 
     // A body CI would refuse, given on stdin: refused before anything is sent.
     const refused = await invoke(command, { env, cwd: sandbox.repo, stdin: body.replace('## How tested\nx\n', '') });
     assert.equal(refused.code, 1);
-    assert.match(refused.stderr, /^yokoten bot: 1 problem\(s\) in the body; nothing was sent/);
+    assert.match(refused.stderr, /^yokoten bot · nothing was sent: 1 problem in the body\n/);
     assert.equal(existsSync(log), false, 'gh did not run');
     // A good one: gh gets it the same way, and what gh prints is the command's output.
     const sent = await invoke(command, { env, cwd: sandbox.repo, stdin: body });
@@ -666,7 +683,7 @@ test('bot: a new pull request takes its issue\'s milestone; none anywhere is ref
   writeFileSync(key, generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString());
   const bot = { PATH: `${bin}:${process.env.PATH}`, YOKOTEN_BOT_APP_ID: '1', YOKOTEN_BOT_KEY: key, YOKOTEN_GITHUB_API: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
   const run = (command: string[]) => sandbox.call(['bot', '--', ...command], { extra: bot });
-  const note = 'yokoten bot: note: git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest\n';
+  const note = noted('git can\'t compare HEAD with origin/main, so the body was checked without the changed files; CI checks the rest');
   const body = (links: string) => `tier: B\n${links}\n\n## Why\nx\n\n## What changed\nx\n\n## How tested\nx\n\nMade with worker (opus)\n`;
   const labels = ['--label', 'feat', '--label', 'tier B'];
   try {
@@ -687,7 +704,16 @@ test('bot: a new pull request takes its issue\'s milestone; none anywhere is ref
     const sent = read(log).length;
     const none = await run(['gh', 'pr', 'create', '-t', 'feat: a', '--body', body('Part of #2')]);
     assert.equal(none.status, 1);
-    assert.equal(none.stderr, `${note}yokoten bot: 1 problem(s) in the milestone; nothing was sent. Fix the command and run it again:\n- milestone: none given, and the linked issue #2 has none. The board and the roadmap show work by milestone. Add \`--milestone <name>\`, or set a milestone on the issue.\n  docs: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules\n`);
+    assert.equal(none.stderr, [
+      `${note}yokoten bot · nothing was sent: 1 problem in the milestone`,
+      '',
+      '  MISSING     milestone: none given, and the linked issue #2 has none',
+      '              The board and the roadmap show work by milestone. Add',
+      '              `--milestone <name>`, or set a milestone on the issue.',
+      '',
+      'Next: Fix the command, then run it again.',
+      '',
+    ].join('\n'));
     assert.equal(read(log).length, sent, 'gh pr create did not run');
 
     // (3) An explicit milestone is kept, with no gh issue view.
@@ -702,7 +728,7 @@ test('bot: a new pull request takes its issue\'s milestone; none anywhere is ref
 
     // (4) gh can't read the issue: the pull request is sent without a milestone, with a note.
     const unread = await run(['gh', 'pr', 'create', '-t', 'feat: a', '--body', body('Closes #3')]);
-    assert.deepEqual([unread.status, unread.stderr], [0, `${note}yokoten bot: note: gh could not read the milestone of issue #3, so the pull request gets none; pass --milestone. \`check --pr\` asks for it\n`]);
+    assert.deepEqual([unread.status, unread.stderr], [0, `${note}${noted('gh could not read the milestone of issue #3, so the pull request gets none; pass --milestone. `check --pr` asks for it')}`]);
     assert.deepEqual(read(log).at(-1), ['pr', 'create', '-t', 'feat: a', '--body', body('Closes #3'), ...labels]);
   } finally {
     server.close();
@@ -842,16 +868,16 @@ test('bot: gh pr merge needs the owner Approve on the head; gh pr status shows i
       const run = (command: string[]) => sandbox.call(['bot', '--', ...command], { extra: bot });
       const refused = await run(['gh', 'pr', 'merge', '21']);
       assert.equal(refused.status, 1);
-      assert.equal(refused.stderr, `yokoten bot: ${stale}. Nothing was merged\n`);
+      assert.equal(refused.stderr, mergeSaid(stale));
       assert.deepEqual([await run(['gh', 'pr', 'merge', '22']), await run(['gh', 'pr', 'merge', '23'])].map((r) => [r.status, r.stderr]), [
-        [1, 'yokoten bot: no owner Approve on this pull request. Nothing was merged\n'],
-        [1, `yokoten bot: could not check the owner's Approve (the commits of pull request 23 are not all in this checkout). Nothing was merged\n`],
+        [1, mergeSaid('no owner Approve on this pull request')],
+        [1, mergeSaid("could not check the owner's Approve (the commits of pull request 23 are not all in this checkout)", 'unchecked')],
       ]);
       assert.deepEqual(merged(), [], 'gh pr merge never ran');
       const status = await run(['gh', 'pr', 'status']);
       assert.equal(status.status, 0, status.stderr);
       assert.equal(status.stderr, '');
-      assert.equal(status.stdout, `TABLE\nyokoten bot: these need a new owner Approve before they merge:\n- #21: ${stale}\n- #22: no owner Approve on this pull request\nyokoten bot: these could not be checked:\n- #23: could not check the owner's Approve (the commits of pull request 23 are not all in this checkout)\n`);
+      assert.equal(status.stdout, `TABLE\n${approveScreen([row('to do', stale, '#21'), row('to do', 'no owner Approve on this pull request', '#22')], [row("can't check", "could not check the owner's Approve (the commits of pull request 23 are not all in this checkout)", '#23')]).join('\n')}\n`);
     } finally {
       server.close();
     }
@@ -974,7 +1000,7 @@ test('bot: gh pr merge of unowned files needs the repo owner Approve on the head
     const stale = `the Approve is on ${approved.slice(0, 7)}; 1 commit with changes came after it; ask the owner to approve again`;
     const refused = await sandbox.call(['bot', '--', 'gh', 'pr', 'merge', '27'], { extra: staleBot });
     assert.equal(refused.status, 1);
-    assert.equal(refused.stderr, `yokoten bot: ${stale}. Nothing was merged\n`);
+    assert.equal(refused.stderr, mergeSaid(stale));
     assert.deepEqual(merged(), [], 'a refused merge never reaches gh');
   } finally {
     server.close();
@@ -1057,7 +1083,7 @@ test('bot: the merge gate covers gh api merges; pr status reads tiers once (#612
     for (const method of [['--method', 'PUT'], ['--method=PUT'], ['-X', 'PUT']]) {
       const refused = await sandbox.call(['bot', '--', 'gh', 'api', 'repos/me/repo/pulls/20/merge', ...method, '-f', 'merge_method=squash'], { extra: bot });
       assert.equal(refused.status, 1, method.join(' '));
-      assert.equal(refused.stderr, `yokoten bot: ${stale}. Nothing was merged\n`, method.join(' '));
+      assert.equal(refused.stderr, mergeSaid(stale), method.join(' '));
     }
     assert.deepEqual(merged(), [], 'a refused api merge never reaches gh');
     // F1: a fresh Approve merges through the api endpoint too, as the bot.
@@ -1078,7 +1104,7 @@ test('bot: the merge gate covers gh api merges; pr status reads tiers once (#612
     ]);
     const status = await sandbox.call(['bot', '--', 'gh', 'pr', 'status'], { extra: { ...bot, GH_LIST: tiered } });
     assert.equal(status.status, 0, status.stderr);
-    assert.equal(status.stdout, `TABLE\nyokoten bot: these need a new owner Approve before they merge:\n- #20: ${stale}\n`);
+    assert.equal(status.stdout, `TABLE\n${approveScreen([row('to do', stale, '#20')], []).join('\n')}\n`);
     // F6: with no repo to check, the status stays silent instead of asking the owner.
     const silent = await sandbox.call(['bot', '--', 'gh', 'pr', 'status', '--repo', ''], { extra: { ...bot, GH_LIST: '[{"number":20}]' } });
     assert.deepEqual([silent.status, silent.stdout, silent.stderr], [0, 'TABLE\n', '']);
@@ -1117,7 +1143,7 @@ test('bot: a pull request comment needs the Made with line; one with it is sent 
   try {
     const refused = await run(['gh', 'pr', 'comment', '5', '--body', 'A note.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'pr', 'comment', '5', '--body', 'A note.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1151,7 +1177,7 @@ test('bot: an issue comment needs the Made with line, from --body or stdin (#609
   try {
     const refused = await run(['gh', 'issue', 'comment', '5', '--body', 'A note.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const good = 'A note.\n\nMade with worker (opus)\n';
     const sent = await run(['gh', 'issue', 'comment', '5', '--body-file', '-'], good);
@@ -1186,7 +1212,7 @@ test('bot: a pull request review with a body needs the Made with line (#609)', a
   try {
     const refused = await run(['gh', 'pr', 'review', '5', '--comment', '-b', 'A review.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'pr', 'review', '5', '--comment', '--body', 'A review.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1231,7 +1257,7 @@ test('bot: a new issue needs the Made with line; its labels are still checked (#
     // Good labels, so the body is the one part with a problem (#1120 names every part).
     const refused = await run(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--body', 'An issue.\n']);
     assert.equal(refused.status, 1, refused.stderr);
-    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(refused.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], 'gh did not run');
     const sent = await run(['gh', 'issue', 'create', '-t', 'host: a', '-l', 'bug,tier B', '--body', 'An issue.\n\nMade with worker (opus)\n']);
     assert.deepEqual([sent.status, sent.stderr], [0, ''], sent.stderr);
@@ -1274,7 +1300,7 @@ test('bot: a note body gh posts is always checked, whatever the spelling (#609)'
   const refused = async (command: string[]) => {
     const r = await run(command);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
   try {
@@ -1343,7 +1369,7 @@ test('bot: a note with --attach is refused, since the upload lands past the Made
   const refused = async (command: string[], input = '') => {
     const r = await run(command, input);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: `--attach` appends the upload after the `Made with` line .+ Drop `--attach`, or link an uploaded file in the body instead\./);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: `--attach` appends the upload after the `Made with` line .+ Drop `--attach`, or link an uploaded file in the body instead\./);
     assert.deepEqual(ran(), [], `gh did not run: ${command.join(' ')}`);
   };
   try {
@@ -1387,7 +1413,7 @@ test('bot: a bare -- as a value does not hide the body gh posts (#609)', async (
     const before = ran().length;
     const r = await run(command);
     assert.equal(r.status, 1, command.join(' '));
-    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot: 1 problem\(s\) in the body; nothing was sent\. Fix the body and run it again: MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
+    assert.match(r.stderr.replace(/\s+/g, ' '), /^yokoten bot · nothing was sent: 1 problem in the body MISSING body: no `Made with` line at the end .+ End the body with `🤖 Made with <agent> \(<model>\)/);
     assert.equal(ran().length, before, `gh did not run: ${command.join(' ')}`);
   };
   try {
@@ -1479,7 +1505,7 @@ test('bot: a merge URL for another repo is unsure; this checkout merges (#612)',
     // and this checkout's number 20 is never read for it.
     const refused = await sandbox.call(['bot', '--', 'gh', 'pr', 'merge', 'https://github.com/other/repo/pull/20'], { extra: bot });
     assert.equal(refused.status, 1);
-    assert.equal(refused.stderr, "yokoten bot: could not check the owner's Approve (other/repo is not this checkout, so its commits are not here); nothing was merged.\n");
+    assert.equal(refused.stderr, mergeSaid("could not check the owner's Approve (other/repo is not this checkout, so its commits are not here)", 'unchecked'));
     assert.deepEqual(merged(), [], 'a refused merge never reaches gh');
     // This checkout's own URL merges, with the Approve on the head.
     const same = await sandbox.call(['bot', '--', 'gh', 'pr', 'merge', 'https://github.com/me/repo/pull/20'], { extra: bot });
@@ -1550,7 +1576,7 @@ test('bot: an api merge with run-together short flags is still gated (#612)', as
     for (const shorts of [['-sF'], ['-Fs']]) {
       const refused = await sandbox.call(['bot', '--', 'gh', 'api', 'repos/me/repo/pulls/20/merge', ...shorts, 'merge_method=squash'], { extra: bot });
       assert.equal(refused.status, 1, shorts.join(' '));
-      assert.equal(refused.stderr, `yokoten bot: ${stale}. Nothing was merged\n`, shorts.join(' '));
+      assert.equal(refused.stderr, mergeSaid(stale), shorts.join(' '));
     }
     assert.deepEqual(merged(), [], 'a refused api merge never reaches gh');
   } finally {
@@ -1632,7 +1658,7 @@ test('bot: reads and checks the body file it sends, and sends none it cannot rea
   const folder = join(sandbox.home, 'a-folder.md');
   mkdirSync(folder);
   const missing = join(sandbox.home, 'missing.md');
-  const leak = /in what this command sends; nothing was sent/;
+  const leak = /nothing was sent: 1 problem in what this command sends/;
   const cases: { name: string; command: string[]; input?: string; sent: boolean; says?: RegExp }[] = [
     { name: 'a clean body file is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', file('clean.md', `All clean.${madeWith}`)], sent: true },
     { name: 'a clean body on standard input is sent', command: ['gh', 'issue', 'comment', '5', '--body-file', '-'], input: `From stdin.${madeWith}`, sent: true },
@@ -1725,22 +1751,29 @@ test('bot: a body file changed after the check does not change what is sent (#10
 
 // #1120: every check that can run before sending runs, and the one answer names every
 // problem, grouped by part, with the values each part may take. Nothing is sent.
-test('postRefusal: one part keeps its heading; more parts are one answer, grouped (#1120)', () => {
+test('postRefusal: one part has its rows under the title; more parts are one answer, grouped, and every one keeps the screen rules (#1120, #1115)', () => {
   const title = [finding('issue-area', 'title: the area is not in yokoten.json "areas"', 'use one of: host, check')];
   const labels = [finding('issue-labels', 'labels: no type label', 'add one type label, such as feat, bug, docs')];
   const body = [finding('pr-made-with', 'body: no `Made with` line at the end', 'end the body with it')];
   const cases: { name: string; problems: Partial<PostProblems>; heading: string; parts: string[] }[] = [
     { name: 'none', problems: {}, heading: '', parts: [] },
-    { name: 'the title alone', problems: { title }, heading: 'yokoten bot: 1 problem(s) in the title; nothing was sent. Fix the title and run it again:', parts: [] },
-    { name: 'the labels alone', problems: { labels, choices: ["  This repo's type labels: `bug`."] }, heading: 'yokoten bot: 1 problem(s) in the labels; nothing was sent. Fix the labels and run it again:', parts: [] },
-    { name: 'the title and the labels', problems: { title, labels }, heading: 'yokoten bot: 2 problem(s) in the title and the labels; nothing was sent. Fix them all and run it again:', parts: ['In the title (1):', 'In the labels (1):'] },
-    { name: 'three parts', problems: { title, body, labels: [...labels, ...labels] }, heading: 'yokoten bot: 4 problem(s) in the title, the body and the labels; nothing was sent. Fix them all and run it again:', parts: ['In the title (1):', 'In the body (1):', 'In the labels (2):'] },
+    { name: 'the title alone', problems: { title }, heading: 'yokoten bot · nothing was sent: 1 problem in the title', parts: [] },
+    { name: 'the labels alone', problems: { labels, choices: ["  This repo's type labels: `bug`."] }, heading: 'yokoten bot · nothing was sent: 1 problem in the labels', parts: [] },
+    { name: 'the title and the labels', problems: { title, labels }, heading: 'yokoten bot · nothing was sent: 2 problems in the title and the labels', parts: ['In the title (1):', 'In the labels (1):'] },
+    { name: 'three parts', problems: { title, body, labels: [...labels, ...labels] }, heading: 'yokoten bot · nothing was sent: 4 problems in the title, the body and the labels', parts: ['In the title (1):', 'In the body (1):', 'In the labels (2):'] },
   ];
   for (const { name, problems, heading, parts } of cases) {
     const lines = postRefusal({ ...emptyPostProblems(), ...problems });
     assert.equal(lines[0] ?? '', heading, name);
     assert.deepEqual(lines.filter((line) => line.startsWith('In ')), parts, name);
     if (problems.choices) assert.ok(lines.includes(problems.choices[0]), `${name}: the choices follow the labels`);
+    if (lines.length) {
+      assert.match(lines.at(-1) ?? '', /^Next: Fix (the title|the labels|them all), then run the same command again\.$/, name);
+      // The body's finding names `Made with` in its what (src/rules/pr.ts, not this layout), so
+      // its row breaks fix-line, as `check --pr` does; the rest of the screen keeps every rule.
+      const known = problems.body ? ['[fix-line]'] : [];
+      assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }).filter((problem) => !known.some((rule) => problem.endsWith(rule))), [], name);
+    }
   }
 });
 
@@ -1767,11 +1800,13 @@ test('bot: a new issue with a bad area, no type and no tier label gets one answe
     const r = await sandbox.call(['bot', '--', 'gh', 'issue', 'create', '-t', 'guard: add a step', '--body', 'An issue.\n\nMade with worker (opus)\n'], { extra: bot });
     assert.equal(r.status, 1, r.stderr);
     const [heading, ...rest] = r.stderr.split('\n');
-    assert.equal(heading, 'yokoten bot: 3 problem(s) in the title and the labels; nothing was sent. Fix them all and run it again:');
+    assert.equal(heading, 'yokoten bot · nothing was sent: 3 problems in the title and the labels');
     const text = rest.join('\n');
-    assert.match(text, /In the title \(1\):\n- title: the area is not in yokoten\.json "areas"\. .+ Use one of: host, check\./);
-    assert.match(text, /In the labels \(2\):\n- labels: no type label\.[^\n]*\n.*\n- labels: no tier label\. .+`tier A`, `tier B` or `tier C`/);
+    const flat = text.replace(/\s+/g, ' ');
+    assert.match(flat, /In the title \(1\): MISSING title: the area is not in yokoten\.json "areas" .+ Use one of: host, check\./);
+    assert.match(flat, /In the labels \(2\): MISSING labels: no type label .+ MISSING labels: no tier label .+`tier A`, `tier B` or `tier C`/);
     assert.match(text, /This repo's type labels: `bug`, `feat`\.\n {2}This repo's tier labels: `tier A`, `tier B`, `tier C`\./, 'the values to pick from');
+    assert.match(text, /\n\nNext: Fix them all, then run the same command again\.\n$/);
     assert.equal(existsSync(log), false, 'nothing was sent');
   } finally {
     server.close();
@@ -1825,10 +1860,15 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     const refused = await push('origin', 'topic');
     assert.equal(refused.status, 1, refused.stderr);
     assert.equal(refused.stderr, [
-      'yokoten bot: 1 commit(s) in this push have a time zone other than UTC; nothing was pushed. Give them UTC dates and push again:',
-      `- ${tip} zoned-tip`,
-      "  Why: a commit's time zone tells where the machine that made it is, so every pushed time is UTC.",
-      '  Fix: run `TZ=UTC git commit --amend --no-edit --date=now` on the branch, then push again.',
+      'yokoten bot · nothing was pushed: 1 commit has a time zone other than UTC',
+      '',
+      `  to do       ${tip} zoned-tip`,
+      '',
+      "A commit's time zone tells where the machine that made it is, so every pushed",
+      'time is UTC.',
+      '',
+      'Next: Run `TZ=UTC git commit --amend --no-edit --date=now` on the branch, then',
+      '      push again.',
       '',
     ].join('\n'));
     assert.doesNotMatch(refused.stderr, /0900|\+09|10:00/, 'the offset is never printed');
@@ -1838,7 +1878,7 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     for (const args of [[], ['origin'], ['origin', 'HEAD'], ['origin', 'HEAD:refs/heads/other'], ['--all', 'origin']]) {
       const again = await push(...args);
       assert.equal(again.status, 1, `${args.join(' ')}: ${again.stderr}`);
-      assert.match(again.stderr, new RegExp(`^- ${tip} zoned-tip$`, 'm'), args.join(' '));
+      assert.match(again.stderr, new RegExp(`^ {2}to do {7}${tip} zoned-tip$`, 'm'), args.join(' '));
     }
     // The advice works: the amend gives the tip UTC dates, and the push goes through.
     sandbox.git('commit', '--amend', '-q', '--no-edit', '--date=now');
@@ -1850,8 +1890,8 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     const second = commit('zoned-author', { GIT_AUTHOR_DATE: '2026-10-27T10:00:00-0700' });
     const two = await push('origin', 'topic');
     assert.equal(two.status, 1, two.stderr);
-    assert.match(two.stderr, new RegExp(`^- ${second} zoned-author\\n- ${first} zoned-committer\\n`, 'm'));
-    assert.match(two.stderr, new RegExp(`Fix: run \`TZ=UTC git rebase --ignore-date ${first}\\^\` on the branch`));
+    assert.match(two.stderr, new RegExp(`^ {2}to do {7}${second} zoned-author\\n {2}to do {7}${first} zoned-committer\\n`, 'm'));
+    assert.match(two.stderr, new RegExp(`Next: Run \`TZ=UTC git rebase --ignore-date ${first}\\^\` on the branch`));
     assert.doesNotMatch(two.stderr, /0530|0700|\+05|-07/, 'no offset is printed');
     sandbox.git('rebase', '-q', '--ignore-date', `${first}^`);
     assert.ok(dates().every((line) => /\+0000 .* \+0000$/.test(line)), dates().join('\n'));
@@ -1867,5 +1907,56 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     assert.equal(remoteHas('topic'), '', 'the delete went through');
   } finally {
     server.close();
+  }
+});
+
+// #1115: every refusal the bot says is data (the rule, what, the fix) through one layout.
+test('bot: every refusal is a screen from its data, with one Next line, and keeps the screen rules (#1115)', () => {
+  const failed = (lines: string[]) => screenProblems({ text: lines.join('\n'), isFailure: true });
+  const program = programRefusal('env');
+  assert.deepEqual(program, { rule: 'program', what: 'the bot runs gh and git only', fix: 'Run `env` without the bot.' });
+  assert.deepEqual(refusalScreen(program), ['yokoten bot · the bot runs gh and git only', '', 'Next: Run `env` without the bot.']);
+  const missing = Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' });
+  assert.deepEqual(runRefusal('gh', { error: missing })?.what, 'could not run gh: ENOENT');
+  assert.deepEqual(runRefusal('gh', { signal: 'SIGTERM' })?.what, 'gh was ended by SIGTERM');
+  assert.equal(runRefusal('gh', { signal: null }), null, 'a command that ran and ended is no refusal');
+  const commits = [{ hash: 'a'.repeat(40), short: 'aaaaaaa', subject: 'feat: one', isRoot: false }, { hash: 'b'.repeat(40), short: 'bbbbbbbbbbbb', subject: 'fix: two', isRoot: false }];
+  const utc = utcRefusal(commits, null);
+  assert.equal(utc.rule, 'push');
+  assert.equal(utc.fix, 'Run `TZ=UTC git rebase --ignore-date bbbbbbbbbbbb^` on the branch, then push again.');
+  const merges = [mergeRefusal({ kind: 'needsApprove', text: 'no owner Approve on this pull request' }), mergeRefusal({ kind: 'unchecked', text: "could not check the owner's Approve (gh said no)" })];
+  assert.deepEqual(merges.map((refusal) => refusal.fix), ['Merge again once the owner has approved the head on GitHub.', 'Fix what stopped the check, then merge again.']);
+  for (const refusal of [program, runRefusal('gh', { error: missing }), runRefusal('gh', { signal: 'SIGTERM' }), utc, ...merges]) {
+    assert.ok(refusal);
+    assert.deepEqual(failed(refusalScreen(refusal)), [], refusal.what);
+    assert.match(refusalScreen(refusal).at(-1) ?? '', /^Next: |^ {6}/, `${refusal.what}: the Next line is last`);
+  }
+  // The hash leads the row's text, so a long one keeps every row in one column.
+  assert.ok(refusalScreen(utc).includes('  to do       bbbbbbbbbbbb fix: two'));
+});
+
+test('bot: gh pr status adds one screen for the pull requests that cannot merge yet, or nothing (#612, #1115)', () => {
+  assert.deepEqual(approveScreen([], []), [], 'no pull request to name: nothing is added under the table');
+  const lines = approveScreen([row('to do', 'no owner Approve on this pull request', '#21')], [row("can't check", "could not check the owner's Approve (gh said no)", '#23')]);
+  assert.deepEqual(lines, [
+    "yokoten bot · 2 open pull requests can't merge yet",
+    '',
+    'Need a new owner Approve:',
+    '  to do       #21         no owner Approve on this pull request',
+    '',
+    'Could not be checked:',
+    "  can't check #23         could not check the owner's Approve (gh said no)",
+  ]);
+  assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
+});
+
+test('bot: bare, it only reads: it says how to name a command, and runs nothing (#1044, #1115)', async () => {
+  const sandbox = makeSandbox();
+  for (const words of [['bot'], ['bot', '--']]) {
+    const bare = await sandbox.call(words);
+    assert.equal(bare.status, 1, words.join(' '));
+    assert.equal(bare.stdout, '', words.join(' '));
+    assert.match(bare.stderr, /^yokoten bot · no command to run; name one after `--`, as in\n {14}`yokoten bot -- gh pr create --fill`\n/, words.join(' '));
+    assert.match(bare.stderr, /\nNext: `yokoten bot --help`\n$/, words.join(' '));
   }
 });

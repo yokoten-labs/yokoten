@@ -9,8 +9,9 @@ import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/conf
 import { finding, type Finding } from '../../../rules/text/message.ts';
 import { checkPost, readsStdinBody, readSentBody } from '../../../rules/privacy.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, COMMIT_FORMAT, issueLabelChoices, madeWithFindings, noMilestoneFinding, nonUtcCommits, prTier, type PushedCommit, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier, readPushPlan, utcFix } from '../../../rules/pr.ts';
+import { section } from '../../../rules/text/screen.ts';
 import { runGit } from '../../../run/check.ts';
-import { bullets, type Invocation, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, title, usage } from '../../shared.ts';
+import { count, failure, type Invocation, noteLine, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, row, screen, show, spaced, summaryLine, terminalOf, title, usage, wrap } from '../../shared.ts';
 
 /** The bot's name: the App's own name when the project sets one, else the default (#1027). */
 export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bot';
@@ -18,14 +19,49 @@ export const botName = (env: Env): string => env.YOKOTEN_BOT_NAME || 'yokoten-bo
 /** The one line before the command's own output: `yokoten bot · as yokoten-bot · gh pr create`. */
 export const botHeading = (env: Env, command: string[]): string[] => title('bot', `as ${botName(env)} · ${command.join(' ')}`);
 
+// ---- What a person reads: refusals and notes, as data, then one layout (#1115) ----
+
+/** The check that stopped a command: which part of the bot said no. */
+export type BotRule = 'program' | 'post' | 'push' | 'setup' | 'remote' | 'run' | 'merge';
+
+/**
+ * A refusal as data (#1115): the rule that stopped the command, what is wrong (the title),
+ * the fix as one sentence (the Next line), and the blocks of rows between them.
+ */
+export interface BotRefusal {
+  rule: BotRule;
+  what: string;
+  fix: string;
+  blocks?: readonly (readonly string[])[];
+}
+
+/** The screen of a refusal: the title says what is wrong, then its rows, then one Next line. */
+export const refusalScreen = ({ what, fix, blocks = [] }: BotRefusal): string[] => screen(failure('bot', what), ...blocks, wrap('Next: ', fix));
+
+/** Says a refusal on stderr and gives the exit code. */
+function refuse(invocation: Invocation, refusal: BotRefusal): 1 {
+  print(invocation, refusalScreen(refusal), invocation.stderr);
+  return 1;
+}
+
+/** Says a note on stderr: `note: <text>`, wrapped under itself. The command goes on. */
+const sayNote = (invocation: Invocation, text: string): void => print(invocation, noteLine(text), invocation.stderr);
+
+/** The refusal of a program the bot does not run (#295). */
+export const programRefusal = (program: string): BotRefusal => ({ rule: 'program', what: 'the bot runs gh and git only', fix: `Run \`${program}\` without the bot.` });
+
+/** The refusal of a command that never ran, or that a signal ended (#282): only the file and the code or signal, never the token. */
+export function runRefusal(file: string, ran: { error?: Error; signal?: NodeJS.Signals | null }): BotRefusal | null {
+  if (ran.error) return { rule: 'run', what: `could not run ${file}: ${(ran.error as NodeJS.ErrnoException).code ?? ran.error.message.split('\n')[0]}`, fix: `Check that \`${file}\` is installed and on PATH, then run the command again.` };
+  if (ran.signal) return { rule: 'run', what: `${file} was ended by ${ran.signal}`, fix: 'Run the command again.' };
+  return null;
+}
+
 async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const { env, cwd } = invocation;
   let command = written;
   // gh and git only (#295): a wrapper such as `env gh` or `sh -c` would run a title unchecked.
-  if (command.length && !botProgram(command[0])) {
-    print(invocation, [`yokoten bot: runs gh and git only; run \`${command[0]}\` without the bot`], invocation.stderr);
-    return 1;
-  }
+  if (command.length && !botProgram(command[0])) return refuse(invocation, programRefusal(command[0]));
   const root = rootOf(cwd, env);
   const projectConfig = root ? loadConfig(root) : DEFAULTS;
   // Standard input is read once, for the checks, and gh then gets the same text.
@@ -55,7 +91,7 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   if (body && !isLookup(body)) {
     const checked = checkBody(body, localBranch(body), env);
     problems.body.push(...checked.problems);
-    if (checked.note && !checked.problems.length) print(invocation, [`yokoten bot: note: ${checked.note}`], invocation.stderr);
+    if (checked.note && !checked.problems.length) sayNote(invocation, checked.note);
   }
   // A comment, a review with a body and a new issue carry the same `Made with` line as a
   // pull request body (#609), so a reader can tell which AI wrote them. Only that line is
@@ -82,20 +118,14 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const config = botConfig(env);
   if (typeof config === 'string') {
     if (found()) return refusePost();
-    print(invocation, [`yokoten bot: ${config}`], invocation.stderr);
-    return 1;
-  }
-  if (!command.length) {
-    print(invocation, ['yokoten bot: no command. Example: yokoten bot -- gh pr create --fill'], invocation.stderr);
-    return 1;
+    return refuse(invocation, { rule: 'setup', what: config, fix: 'Set it up, then run the command again.' });
   }
   if (!requireRoot(invocation, cwd)) return 1;
   const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, env, encoding: 'utf8' });
   const repo = repoOf(remote);
   if (!repo) {
     if (found()) return refusePost();
-    print(invocation, ['yokoten bot: the origin remote is not a GitHub repo'], invocation.stderr);
-    return 1;
+    return refuse(invocation, { rule: 'remote', what: 'the origin remote is not a GitHub repo, so nothing was sent', fix: 'Point `origin` at the GitHub repo, or run the command without the bot.' });
   }
   let token: string;
   try {
@@ -108,7 +138,8 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const [file, ...given] = command;
   // One line before the command's own output, on a terminal only: a pipe keeps the command's
   // bytes exactly, so `yokoten bot -- gh pr view --json … | jq` still reads JSON (#1027).
-  if (invocation.stdout.isTTY === true) print(invocation, [...botHeading(env, command), '']);
+  // The title is a block of its own, so a blank line goes under it (spaced).
+  if (terminalOf(invocation).isPerson) show(invocation, spaced([botHeading(env, command), []]));
   const ghEnv = botEnv(env, token);
   // A new pull request with no milestone takes its linked issue's (#512): one `gh issue view`.
   const wanted = body && !isLookup(body) ? readCommandMilestone(command, body.text) : null;
@@ -138,7 +169,7 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   // A read that failed leaves the old tier label where it is, so the note says so: two tier
   // labels fail `check --pr`, and the caller can remove the old one itself (#422).
   if (wantedTier !== null && current === null) {
-    print(invocation, [`yokoten bot: note: gh could not read this pull request's labels, so an older tier label may stay next to \`tier ${wantedTier}\`; remove it with --remove-label. \`check --pr\` refuses two tier labels`], invocation.stderr);
+    sayNote(invocation, `gh could not read this pull request's labels, so an older tier label may stay next to \`tier ${wantedTier}\`; remove it with --remove-label. \`check --pr\` refuses two tier labels`);
   }
   const chosen = labels?.missing.length ? chooseLabels(invocation, labels, file, ghEnv) : [];
   const addLabel = labels?.edit ? '--add-label' : '--label';
@@ -183,14 +214,8 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   if (result.stderr) stderr.write(result.stderr);
   // A command that never ran, or that a signal ended, says so (#282). Only the file and the
   // code or signal are named: never the token or the environment.
-  if (result.error) {
-    print(invocation, [`yokoten bot: could not run ${file}: ${(result.error as NodeJS.ErrnoException).code ?? result.error.message.split('\n')[0]}`], invocation.stderr);
-    return 1;
-  }
-  if (result.signal) {
-    print(invocation, [`yokoten bot: ${file} was ended by ${result.signal}`], invocation.stderr);
-    return 1;
-  }
+  const stopped = runRefusal(file, result);
+  if (stopped) return refuse(invocation, stopped);
   return result.status ?? 1;
 }
 
@@ -217,44 +242,60 @@ export const countPostProblems = (problems: PostProblems): number => problems.ti
 
 type PostPart = 'title' | 'sent' | 'body' | 'labels';
 
-/** Each part in the order a reader fixes it: its name, the word the fix line uses, and how its rows read. */
-const POST_PARTS: { part: PostPart; name: string; fix: string; rows: (findings: Finding[]) => string[] }[] = [
-  { part: 'title', name: 'the title', fix: 'the title', rows: bullets },
-  { part: 'sent', name: 'what this command sends', fix: 'it', rows: problemRows },
-  { part: 'body', name: 'the body', fix: 'the body', rows: problemRows },
-  { part: 'labels', name: 'the labels', fix: 'the labels', rows: bullets },
+/** Each part in the order a reader fixes it: its name, and the word the fix line uses. */
+const POST_PARTS: { part: PostPart; name: string; fix: string }[] = [
+  { part: 'title', name: 'the title', fix: 'the title' },
+  { part: 'sent', name: 'what this command sends', fix: 'it' },
+  { part: 'body', name: 'the body', fix: 'the body' },
+  { part: 'labels', name: 'the labels', fix: 'the labels' },
 ];
 
 /**
- * The one answer for every problem a post has, grouped by part (#1120); empty when there
- * is none. One part keeps the heading it always had; more parts get one heading and a
- * short heading of their own each, so the caller fixes them all in one try.
+ * The one refusal for every problem a post has, grouped by part (#1120); null when there is
+ * none. One part keeps its rows under the title; more parts get a heading each, so the
+ * caller fixes them all in one try.
  */
-export function postRefusal(problems: PostProblems): string[] {
+export function postRefusalOf(problems: PostProblems): BotRefusal | null {
   const parts = POST_PARTS.filter(({ part }) => problems[part].length);
-  if (!parts.length) return [];
-  const total = countPostProblems(problems);
-  const rowsOf = ({ part, rows }: (typeof POST_PARTS)[number]): string[] => [...rows(problems[part]), ...(part === 'labels' ? problems.choices : [])];
+  if (!parts.length) return null;
+  const total = count(countPostProblems(problems), 'problem');
+  // The label values the repo has are lines of their own under the labels' rows.
+  const blocksOf = ({ part }: (typeof POST_PARTS)[number]): string[][] => [problemRows(problems[part]), part === 'labels' ? spaced(problems.choices.map((choice) => wrap('  ', choice.trim()))) : []];
   if (parts.length === 1) {
     const [only] = parts;
-    return [`yokoten bot: ${total} problem(s) in ${only.name}; nothing was sent. Fix ${only.fix} and run it again:`, ...rowsOf(only)];
+    return { rule: 'post', what: `nothing was sent: ${total} in ${only.name}`, fix: `Fix ${only.fix}, then run the same command again.`, blocks: blocksOf(only) };
   }
   const names = parts.map(({ name }) => name);
   const joined = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  return [
-    `yokoten bot: ${total} problem(s) in ${joined}; nothing was sent. Fix them all and run it again:`,
-    ...parts.flatMap((part) => ['', `In ${part.name} (${problems[part.part].length}):`, ...rowsOf(part)]),
-  ];
+  return {
+    rule: 'post',
+    what: `nothing was sent: ${total} in ${joined}`,
+    fix: 'Fix them all, then run the same command again.',
+    blocks: parts.flatMap((part) => {
+      const [rows, choices] = blocksOf(part);
+      return [section(`In ${part.name} (${problems[part.part].length})`, rows), choices];
+    }),
+  };
 }
 
-/** The answer for a push with commits not in UTC: each commit by short hash and subject, never its offset, and the one fix. */
-export function utcRefusal(commits: PushedCommit[], head: string | null): string[] {
-  return [
-    `yokoten bot: ${commits.length} commit(s) in this push have a time zone other than UTC; nothing was pushed. Give them UTC dates and push again:`,
-    ...commits.map(({ short, subject }) => `- ${short} ${subject}`),
-    "  Why: a commit's time zone tells where the machine that made it is, so every pushed time is UTC.",
-    `  Fix: run \`${utcFix(commits, head)}\` on the branch, then push again.`,
-  ];
+/** The screen of postRefusalOf, or no lines when the post has no problem. */
+export function postRefusal(problems: PostProblems): string[] {
+  const refusal = postRefusalOf(problems);
+  return refusal ? refusalScreen(refusal) : [];
+}
+
+/** The refusal of a push with commits not in UTC: each commit by short hash and subject, never its offset, and the one fix. */
+export function utcRefusal(commits: PushedCommit[], head: string | null): BotRefusal {
+  return {
+    rule: 'push',
+    what: `nothing was pushed: ${count(commits.length, 'commit')} ${commits.length === 1 ? 'has' : 'have'} a time zone other than UTC`,
+    fix: `Run \`${utcFix(commits, head)}\` on the branch, then push again.`,
+    blocks: [
+      // The hash leads the text, not a label: a long hash would push the subject to a column of its own.
+      spaced(commits.map(({ short, subject }) => row('to do', `${short} ${subject}`))),
+      summaryLine("A commit's time zone tells where the machine that made it is, so every pushed time is UTC."),
+    ],
+  };
 }
 
 /**
@@ -285,9 +326,9 @@ function refuseNonUtcPush(invocation: Invocation, command: string[]): boolean {
     const commits = nonUtcCommits(lines);
     if (!commits.length) return false;
     const head = git(['rev-parse', '--verify', '--quiet', 'HEAD'], [0, 1]).text.trim() || null;
-    print(invocation, utcRefusal(commits, head), invocation.stderr);
+    refuse(invocation, utcRefusal(commits, head));
   } catch {
-    print(invocation, ["yokoten bot: git could not say which commits this push sends, so their time zones were not checked; nothing was pushed. Check that each branch you push exists, then push again"], invocation.stderr);
+    refuse(invocation, { rule: 'push', what: 'nothing was pushed: git could not say which commits this push sends, so their time zones were not checked', fix: 'Check that each branch you push exists, then push again.' });
   }
   return true;
 }
@@ -301,7 +342,7 @@ function refuseLeak(invocation: Invocation, config: Config, args: string[], read
   // Standard input only for an option value the bot rewrites, never a title such as `x=-` (#1104).
   const leak = checkPost({ args, stdinText: readsStdinBody(args) ? readStdin() : undefined }, { env, privacy: config.privacy, cwd, command: '', isSender: true });
   if (!leak) return false;
-  print(invocation, ['yokoten bot: 1 problem(s) in what this command sends; nothing was sent. Fix it and run it again:', ...problemRows([leak])], invocation.stderr);
+  print(invocation, postRefusal({ ...emptyPostProblems(), sent: [leak] }), invocation.stderr);
   return true;
 }
 
@@ -309,8 +350,7 @@ function refuseLeak(invocation: Invocation, config: Config, args: string[], read
 const UNREADABLE = 'unreadable';
 
 function refuseUnreadable(invocation: Invocation): number {
-  print(invocation, ['yokoten bot: the body file could not be read; nothing was sent. Write the file, then run it again'], invocation.stderr);
-  return 1;
+  return refuse(invocation, { rule: 'post', what: 'nothing was sent: the body file could not be read', fix: 'Write the file, then run the same command again.' });
 }
 
 /** A pull request body a command is about to set, read and not yet checked. */
@@ -540,7 +580,7 @@ function chooseLabels(invocation: Invocation, labels: CommandLabels, gh: string,
   for (const wanted of labels.missing) {
     const found = wanted.map((name) => known.get(name.toLowerCase())).find((name) => name !== undefined);
     if (found !== undefined) chosen.push(found);
-    else print(invocation, [`yokoten bot: note: the repo has no label \`${wanted[0]}\`, so the pull request gets none; create it on GitHub, or pass another with --label. \`check --pr\` asks for it`], invocation.stderr);
+    else sayNote(invocation, `the repo has no label \`${wanted[0]}\`, so the pull request gets none; create it on GitHub, or pass another with --label. \`check --pr\` asks for it`);
   }
   return chosen;
 }
@@ -592,10 +632,10 @@ function chooseMilestone(invocation: Invocation, wanted: CommandMilestone, gh: G
   }
   if (unread.length) {
     const named = unread.map((issue) => `#${issue}`).join(', ');
-    print(invocation, [`yokoten bot: note: gh could not read the milestone of issue ${named}, so the pull request gets none; pass --milestone. \`check --pr\` asks for it`], invocation.stderr);
+    sayNote(invocation, `gh could not read the milestone of issue ${named}, so the pull request gets none; pass --milestone. \`check --pr\` asks for it`);
     return null;
   }
-  print(invocation, ['yokoten bot: 1 problem(s) in the milestone; nothing was sent. Fix the command and run it again:', ...bullets([noMilestoneFinding(wanted.issues)])], invocation.stderr);
+  refuse(invocation, { rule: 'post', what: 'nothing was sent: 1 problem in the milestone', fix: 'Fix the command, then run it again.', blocks: [problemRows([noMilestoneFinding(wanted.issues)])] });
   return false;
 }
 
@@ -655,10 +695,10 @@ function checkBody(body: PendingBody, branch: Branch, env: Env): { problems: Fin
 /** Prints the problems with a body the way the title check does, or its note. True when it refuses. */
 function refuseBody(invocation: Invocation, { problems, note }: { problems: Finding[]; note?: string }): boolean {
   if (problems.length) {
-    print(invocation, [`yokoten bot: ${problems.length} problem(s) in the body; nothing was sent. Fix the body and run it again:`, ...problemRows(problems)], invocation.stderr);
+    print(invocation, postRefusal({ ...emptyPostProblems(), body: problems }), invocation.stderr);
     return true;
   }
-  if (note) print(invocation, [`yokoten bot: note: ${note}`], invocation.stderr);
+  if (note) sayNote(invocation, note);
   return false;
 }
 
@@ -794,12 +834,12 @@ function refuseApiMerge(invocation: Invocation, gh: Gh, cwd: string, env: Env, o
   const merge = apiMerge(args);
   if (!merge) return false;
   if (origin && normalizeRepoName(merge.repo) !== normalizeRepoName(origin)) {
-    print(invocation, [`yokoten bot: could not check the owner's Approve (${merge.repo} is not this checkout, so its commits are not here). Nothing was merged`], invocation.stderr);
+    refuse(invocation, mergeRefusal({ kind: 'unchecked', text: `could not check the owner's Approve (${merge.repo} is not this checkout, so its commits are not here)` }));
     return true;
   }
   const refusal = approvalRefusal(gh, cwd, env, merge.number, merge.repo);
   if (!refusal) return false;
-  print(invocation, [`yokoten bot: ${refusal.text}. Nothing was merged`], invocation.stderr);
+  refuse(invocation, mergeRefusal(refusal));
   return true;
 }
 
@@ -808,6 +848,13 @@ interface MergeStop {
   kind: 'unchecked' | 'needsApprove';
   text: string;
 }
+
+/** The refusal of a merge the Approve check stops: what stopped it, and the fix its kind has. */
+export const mergeRefusal = (stop: MergeStop): BotRefusal => ({
+  rule: 'merge',
+  what: `nothing was merged: ${stop.text}`,
+  fix: stop.kind === 'needsApprove' ? 'Merge again once the owner has approved the head on GitHub.' : 'Fix what stopped the check, then merge again.',
+});
 
 /**
  * Why pull request `number` must not merge yet, or null when it may: not tier A, or the
@@ -828,12 +875,12 @@ function approvalRefusal(gh: Gh, root: string, env: Env, number: number, repo: s
 function refuseStaleMerge(invocation: Invocation, gh: Gh, cwd: string, env: Env, origin: string | null, args: string[]): boolean {
   const found = mergeRequest(gh, args, origin);
   if ('unsure' in found) {
-    print(invocation, [`yokoten bot: could not check the owner's Approve (${found.unsure}); nothing was merged.`], invocation.stderr);
+    refuse(invocation, mergeRefusal({ kind: 'unchecked', text: `could not check the owner's Approve (${found.unsure})` }));
     return true;
   }
   const refusal = approvalRefusal(gh, cwd, env, found.number, found.repo);
   if (!refusal) return false;
-  print(invocation, [`yokoten bot: ${refusal.text}. Nothing was merged`], invocation.stderr);
+  refuse(invocation, mergeRefusal(refusal));
   return true;
 }
 
@@ -863,14 +910,8 @@ function runPrStatus(invocation: Invocation, file: string, args: string[], run: 
   const shown = spawnSync(file, args, { cwd: run.cwd, stdio: [run.piped === undefined ? (invocation.stdin.fd ?? 'pipe') : 'pipe', 'pipe', 'pipe'], input: run.piped, env, maxBuffer: 1 << 30 });
   if (shown.stdout) stdout.write(shown.stdout);
   if (shown.stderr) stderr.write(shown.stderr);
-  if (shown.error) {
-    print(invocation, [`yokoten bot: could not run ${file}: ${(shown.error as NodeJS.ErrnoException).code ?? shown.error.message.split('\n')[0]}`], invocation.stderr);
-    return 1;
-  }
-  if (shown.signal) {
-    print(invocation, [`yokoten bot: ${file} was ended by ${shown.signal}`], invocation.stderr);
-    return 1;
-  }
+  const stopped = runRefusal(file, shown);
+  if (stopped) return refuse(invocation, stopped);
   if (shown.status !== 0) return shown.status ?? 1;
   const flag = repoFlag(args);
   const repo = flag ?? run.origin;
@@ -883,8 +924,8 @@ function runPrStatus(invocation: Invocation, file: string, args: string[], run: 
     return 0;
   }
   if (!Array.isArray(listed)) return 0;
-  const needsApprove: string[] = [];
-  const unchecked: string[] = [];
+  const needsApprove: string[][] = [];
+  const unchecked: string[][] = [];
   for (const entry of listed) {
     if (typeof entry !== 'object' || entry === null) continue;
     const number = (entry as { number?: unknown }).number;
@@ -893,14 +934,27 @@ function runPrStatus(invocation: Invocation, file: string, args: string[], run: 
     if (tier !== null && tier !== 'A') continue;
     const refusal = approvalRefusal(gh, run.cwd, invocation.env, number, repo);
     if (!refusal) continue;
-    const row = `- #${number}: ${refusal.text}`;
     // A check that could not be read is not a missing Approve.
-    if (refusal.kind === 'unchecked') unchecked.push(row);
-    else needsApprove.push(row);
+    if (refusal.kind === 'unchecked') unchecked.push(row("can't check", refusal.text, `#${number}`));
+    else needsApprove.push(row('to do', refusal.text, `#${number}`));
   }
-  if (needsApprove.length) print(invocation, ['yokoten bot: these need a new owner Approve before they merge:', ...needsApprove]);
-  if (unchecked.length) print(invocation, ['yokoten bot: these could not be checked:', ...unchecked]);
+  show(invocation, approveScreen(needsApprove, unchecked));
   return 0;
+}
+
+/**
+ * What `gh pr status` adds under gh's table (#612): a title that says how many open pull
+ * requests can't merge yet, then one section for a missing or stale Approve and one for a
+ * check that could not be read. No lines when every one may merge.
+ */
+export function approveScreen(needsApprove: readonly (readonly string[])[], unchecked: readonly (readonly string[])[]): string[] {
+  const total = needsApprove.length + unchecked.length;
+  if (!total) return [];
+  return screen(
+    title('bot', `${count(total, 'open pull request')} can't merge yet`),
+    section('Need a new owner Approve', spaced(needsApprove)),
+    section('Could not be checked', spaced(unchecked)),
+  );
 }
 
 export function runBot(invocation: Invocation): number | Promise<number> {
@@ -909,5 +963,8 @@ export function runBot(invocation: Invocation): number | Promise<number> {
   const end = args.indexOf('--');
   const options = parse('bot', end === -1 ? args : args.slice(0, end));
   if (typeof options === 'string') return usage(invocation, options);
-  return bot(invocation, end === -1 ? [] : args.slice(end + 1));
+  const command = end === -1 ? [] : args.slice(end + 1);
+  // A bare `yokoten bot` only reads (#1044): it says how to name a command, and runs nothing.
+  if (!command.length) return usage(invocation, 'no command to run; name one after `--`, as in `yokoten bot -- gh pr create --fill`');
+  return bot(invocation, command);
 }
