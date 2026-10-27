@@ -18,7 +18,7 @@ import {
 } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { errorLabel } from '../../bin/main.ts';
+import { crashNext, helpLines, unknownCommandLines, versionLines } from '../../bin/main.ts';
 import {
   at,
   CLI,
@@ -31,10 +31,11 @@ import {
   makeTempDir,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
+import { screenProblems } from '../repo/docs/screen-rules.ts';
 import {
   closestWord,
   commandHelp,
-  ALL_GROUPS,
+  COMMAND_GROUPS,
   commandList,
   COMMANDS,
   editDistance,
@@ -64,7 +65,7 @@ test('hooks: a missing runtime says one plain line with no path, never a stack t
   mkdirSync(join(sandbox.home, '.codex'));
   mkdirSync(join(sandbox.home, '.gemini'));
   writeFileSync(join(sandbox.home, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: old }] }] } }));
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^updated the SessionStart doctor$/m);
+  assert.match((await sandbox.call(['install', '--list'])).stdout, /^ {2}updated +Claude Code hooks in \S+: SessionStart doctor$/m);
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   rmSync(join(sandbox.home, '.local', 'share', 'yokoten'), { recursive: true });
   rmSync(join(sandbox.repo, '.yokoten'), { recursive: true });
@@ -167,7 +168,8 @@ test('exit codes: 0 ok, 1 problems or a usage error, 2 the hook blocked (#42)', 
   assert.equal(crashed.code, 1);
   assert.deepEqual({ ...JSON.parse(crashed.stdout), error: 'x' }, { command: 'check', ok: false, error: 'x' });
   assert.match(JSON.parse(crashed.stdout).error, /^yokoten\.json: [^\n]+$/);
-  assert.match(crashed.stderr, /^yokoten check: yokoten\.json: /);
+  // On stderr it is a failure: the title, then the one step (#1115).
+  assert.match(crashed.stderr, /^yokoten check · yokoten\.json: [\s\S]+\n\nNext: `yokoten doctor`\n$/);
 });
 
 test('help: every command has --help, -h and `help <command>`; each exits 0 and writes nothing (#207)', async () => {
@@ -317,7 +319,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
     [['docter'], 'yokoten · unknown command docter\n\nNext: `yokoten doctor`, if you meant it; `yokoten help` lists every command\n'],
     [['help', 'chek'], 'yokoten · unknown command chek\n\nNext: `yokoten check`, if you meant it; `yokoten help` lists every command\n'],
     [['check', '--stagd'], 'yokoten check · unknown option --stagd. Did you mean --staged?\n\n  check       layout, privacy and lead-only files, and a PR or issue\n\nNext: `yokoten check --help`\n'],
-    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\n\nyokoten doctor · unknown option --hepl. Did you mean --help?\n\n  doctor      the road: where this project is and its next step\n\nNext: `yokoten doctor --help`\n'],
+    [['doctor', '--hepl'], 'yokoten doctor · unknown option --hepl. Did you mean --help?\n\n  doctor      the road: where this project is and its next step\n\nNext: `yokoten doctor --help`\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -766,11 +768,11 @@ test('demo: scripts/demo/loop.ts walks the loop from an incident to a doctor not
   const result = spawnSync('node', [join(dirname(CLI), '..', 'scripts', 'demo', 'loop.ts')], { env: { PATH: process.env.PATH, HOME: join(temp, 'home'), TMPDIR: temp }, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /\n\$ yokoten learn https:\/\/github\.com\/octo-org\/project-a\/issues\/12\nyokoten learn · a check draft from issue #12/);
-  assert.match(result.stdout, /\nWrote:\n- lessons\/incident-12\/lesson\.ts\n/);
-  assert.match(result.stdout, /\nyokoten learn --ship: 2 problem\(s\); nothing was moved:\n- lessons\/incident-12\/lesson\.ts still has 1 TODO\(reviewer\)/);
+  assert.match(result.stdout, /\n {2}done +wrote +lessons\/incident-12\/lesson\.ts\n/);
+  assert.match(result.stdout, /\nyokoten learn --ship · 2 problems; nothing was moved\n\n {2}MISSING +lessons\/incident-12\/lesson\.ts still has 1 TODO\(reviewer\)/);
   assert.match(result.stdout, /\n\+ {2}what: 'a test calls a server on this machine and does not set NO_PROXY',\n/);
   // The lesson lands in the kit in its own folder, flat or under a group folder (#171).
-  assert.match(result.stdout, /\nyokoten learn --ship: incident-12 is in kit\/lessons\/(?:[^/\s]+\/)?incident-12\//);
+  assert.match(result.stdout, /\nyokoten learn --ship · incident-12 is in kit\/lessons\/(?:[^/\s]+\/)?incident-12\//);
   assert.match(result.stdout, /\n {2}note {4}lesson incident-12: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY/);
   assert.match(result.stdout, /\nDone in \d+\.\ds: /);
   assert.deepEqual(readdirSync(temp), [], 'the demo folder is gone');
@@ -787,17 +789,26 @@ test('sandbox: call runs a command in this process with the same result as run (
   }
 });
 
-test('main: an error names its command, and bare yokoten when there is none (#548)', () => {
-  assert.equal(errorLabel(undefined), 'yokoten', 'the one-command start has no name: never "undefined"');
-  assert.equal(errorLabel('doctor'), 'yokoten doctor');
+test('main: an error nothing caught is a failure with one next step; doctor\'s own points at help (#548, #1115)', () => {
+  assert.equal(crashNext(undefined), 'yokoten doctor', 'the one-command start');
+  assert.equal(crashNext('check'), 'yokoten doctor');
+  assert.equal(crashNext('doctor'), 'yokoten help', 'never doctor again when doctor failed');
 });
 
-// Issue #1054: `help` lists the always rows of the table, and nothing else; `help --all`
-// adds the two groups, each from the table's `shown`. The rows come from the table, so a
-// command that joins or leaves the short list needs no change here.
-test('help: lists exactly the always rows; help --all lists the rest in two groups (#944, #1054)', async () => {
-  const always = COMMANDS.filter((command) => command.shown === 'always').map((command) => command.name);
-  assert.ok(always.length > 0 && always.length < COMMANDS.length, 'some rows are up front, not all');
+test('main: the version and unknown-command screens are pure, and keep the screen rules (#1115)', () => {
+  assert.deepEqual(versionLines('9.9.9'), ['9.9.9']);
+  assert.deepEqual(unknownCommandLines('docter', 'doctor'), ['yokoten · unknown command docter', '', 'Next: `yokoten doctor`, if you meant it; `yokoten help` lists every command']);
+  assert.deepEqual(unknownCommandLines('zzz', undefined), ['yokoten · unknown command zzz', '', 'Next: `yokoten help` lists every command']);
+  for (const lines of [unknownCommandLines('docter', 'doctor'), unknownCommandLines('zzz', undefined)]) assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), []);
+  for (const all of [false, true]) assert.deepEqual(screenProblems({ text: helpLines(all).join('\n'), isHelp: true }), [], `help${all ? ' --all' : ''}`);
+});
+
+// Issue #1054, #1115: `help` lists the always rows of the table, and nothing else;
+// `help --all` lists every command once, under the heading of its job. The rows come from the
+// table, so a command that joins or leaves the short list needs no change here.
+test('help: lists the always rows; help --all lists every command under its job (#944, #1054, #1115)', async () => {
+  const always = COMMAND_GROUPS.flatMap((group) => COMMANDS.filter((command) => command.group === group && command.shown === 'always')).map((command) => command.name);
+  assert.deepEqual(always, ['desk', 'kanban', 'check', 'tidy'], 'the four to start with, after `yokoten` (record 0052)');
   const listed = (text: string) => [...text.matchAll(/^ {2}([a-z][\w-]*) /gm)].map((m) => m[1]);
   const sandbox = makeSandbox();
   for (const words of [['help'], ['--help'], ['-h']]) {
@@ -806,14 +817,23 @@ test('help: lists exactly the always rows; help --all lists the rest in two grou
     assert.deepEqual(listed(short.stdout), always, `${words.join(' ')}: only the always rows`);
     assert.ok(short.stdout.indexOf('Start here:') < short.stdout.indexOf('Usage:'), 'the first step comes before the list');
     assert.match(short.stdout, /yokoten help --all/, 'it says how to see the rest');
+    assert.ok(short.stdout.split('\n').every((line) => line.length <= 80), 'each line fits 80 columns');
   }
   const all = (await sandbox.call(['help', '--all'])).stdout;
-  for (const { title, shown } of ALL_GROUPS) {
-    assert.match(all, new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:$`, 'm'), `${title} has a heading`);
-    const block = all.slice(all.indexOf(`${title}:`)).split('\n\n')[0];
-    assert.deepEqual(listed(block), COMMANDS.filter((command) => command.shown === shown).map((command) => command.name), `${title}: its rows`);
+  assert.deepEqual(COMMAND_GROUPS, ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain', 'Help'], 'the jobs, in order (plan section 4)');
+  const headings = all.split('\n').filter((line) => /^[A-Z][\w ]*:$/.test(line));
+  assert.deepEqual(headings, COMMAND_GROUPS.map((group) => `${group}:`), 'one heading per job, in order, and no old groups');
+  for (const group of COMMAND_GROUPS) {
+    const block = all.slice(all.indexOf(`\n${group}:\n`) + 1).split('\n\n')[0];
+    const members = COMMANDS.filter((command) => command.group === group);
+    const first = members.filter((command) => command.shown === 'always');
+    assert.deepEqual(listed(block), [...first, ...members.filter((command) => !first.includes(command))].map((command) => command.name), `${group}: its rows, the ones to start with first`);
   }
+  assert.deepEqual(listed(all.slice(all.indexOf('\nHelp:\n'))), ['help', 'version'], 'help and version come last');
   assert.deepEqual([...listed(all)].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once with --all');
+  // One text column in both lists, from table(): every row's text starts where the others' do.
+  const starts = new Set([...short(all), ...short((await sandbox.call(['help'])).stdout)]);
+  assert.equal(starts.size, 1, 'one text column');
   // The positive control: a table with one more always row lists it.
   const extra = { ...COMMANDS[0], shown: 'always' as const };
   COMMANDS.push({ ...extra, name: 'zz-extra' });
@@ -824,27 +844,26 @@ test('help: lists exactly the always rows; help --all lists the rest in two grou
   }
 });
 
-// Issue #1054: a folded command and an old name still run, after a first line on stderr
-// that says where they moved. `board` and `kanban` run the same code.
-test('help: a moved command still runs, and its first line says where it went (#1054)', async () => {
-  const folded = COMMANDS.filter((command) => command.shown === 'folded');
-  assert.ok(folded.length > 0, 'some rows are folded');
-  for (const command of folded) assert.ok(command.into, `${command.name} says where it went`);
-  assert.equal(movedNote('init'), 'note: yokoten init moved to yokoten. It runs as before this time.');
-  assert.equal(movedNote('worker'), 'note: yokoten worker moved to yokoten desk. It runs as before this time.');
-  assert.equal(movedNote('board'), 'note: yokoten board moved to yokoten kanban. It runs as before this time.');
-  for (const name of ['kanban', 'desk', 'check', 'nope']) assert.equal(movedNote(name), undefined, `${name} did not move`);
+/** Where the text of each command row starts, in a help list. */
+function short(text: string): number[] {
+  return [...text.matchAll(/^ {2}[a-z][\w-]* +(?=\S)/gm)].map((m) => m[0].length);
+}
+
+// Issue #1054, #1115: an old name still runs, after a first line on stderr that names the new
+// one. A command that kept its name says nothing: install, init, trust, update, doctor, worker
+// and msg did not move. `board` and `kanban` run the same code.
+test('help: only board says it moved; a command that kept its name says nothing (#1054, #1115)', async () => {
+  assert.equal(movedNote('board'), 'yokoten board moved to yokoten kanban. It runs as before this time.');
+  for (const name of ['install', 'init', 'trust', 'update', 'doctor', 'worker', 'msg', 'kanban', 'desk', 'check', 'nope']) assert.equal(movedNote(name), undefined, `${name} did not move`);
   assert.equal(findCommand('board'), findCommand('kanban'), 'board is the kanban row');
   const sandbox = makeSandbox();
   const old = await sandbox.call(['board', '--text', '--nope']);
   const now = await sandbox.call(['kanban', '--text', '--nope']);
-  assert.equal(old.stderr.split('\n')[0], movedNote('board'));
+  assert.equal(old.stderr.split('\n')[0], `note: ${movedNote('board')}`, 'drawn by noteLine');
   assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(2).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
-  const worker = await sandbox.call(['worker']);
-  assert.equal(worker.stderr.split('\n')[0], movedNote('worker'), 'a folded command says it first');
-  assert.match(worker.stderr, /yokoten worker · say what to do/, 'and then runs as before');
-  // The line is for a person: the session-start hook and JSON for a script go without it.
-  for (const words of [['doctor', '--session'], ['doctor', '--json']]) assert.doesNotMatch((await sandbox.call(words)).stderr, /^note: /m, words.join(' '));
+  for (const words of [['worker'], ['msg'], ['doctor'], ['install', '--nope']]) assert.doesNotMatch((await sandbox.call(words)).output, /moved to/, words.join(' '));
+  // The line is for a person: JSON for a script goes without it.
+  assert.doesNotMatch((await sandbox.call(['board', '--json', '--nope'])).stderr, /^note: /m, 'board --json');
 });
 
 // #1053: --help or -h anywhere in the words only prints help. Nothing is written, and no

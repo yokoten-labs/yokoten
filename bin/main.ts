@@ -7,35 +7,42 @@
 // invocation from the process; a test calls `main` with its own, in-process (#475).
 
 import { withHome } from '../src/rules/privacy.ts';
-import { type Invocation, isTerminal, parse, print, printJsonError, say, usage } from '../src/commands/shared.ts';
+import { fail, type Invocation, isTerminal, parse, print, usage } from '../src/commands/shared.ts';
 import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
-import { wrap } from '../src/rules/text/screen.ts';
+import { failure, moreLine, noteLine, screen, wrap } from '../src/rules/text/screen.ts';
 import { VERSION } from '../src/setup/files.ts';
 
-// The help comes from one table, the same one the parser reads (#207).
-// The first step comes first, then the three commands, then the details (#944, #1054).
-// With --all, the commands that moved and the ones agents and CI use follow.
-const help = (all: boolean): string => [
-  `yokoten ${VERSION}`,
-  '',
-  'Start here: run `yokoten` in your project.',
-  '',
-  'Usage: yokoten <command> [options]',
-  '',
-  ...commandList(all),
-  '',
-  all ? 'More: `yokoten <command> --help`' : 'More: `yokoten help --all` lists every command; `yokoten <command> --help` explains one',
-].join('\n');
+/**
+ * `yokoten help` (#207, #944, #1054, #1115): the version, the first step, the usage, then the
+ * commands to start with; with --all, every command under the heading of its job. The list
+ * comes from the table the parser reads.
+ */
+export const helpLines = (all: boolean, version = VERSION): string[] =>
+  screen(
+    [`yokoten ${version}`],
+    ['Start here: run `yokoten` in your project.'],
+    wrap('Usage: ', 'yokoten <command> [options]'),
+    commandList(all),
+    moreLine(all ? '`yokoten <command> --help`' : '`yokoten help --all` for every command, `yokoten <command> --help` for one'),
+  );
+
+/** `yokoten version`, `--version` and `-v`: the version alone, for a person or a script. */
+export const versionLines = (version = VERSION): string[] => [version];
+
+/**
+ * An unknown command (#1115): the word as typed (`shown`, already escaped), then the one step:
+ * the near command when there is one, or the help that lists them all.
+ */
+export function unknownCommandLines(shown: string, near: string | undefined): string[] {
+  const next = near ? `\`yokoten ${near}\`, if you meant it; \`yokoten help\` lists every command` : '`yokoten help` lists every command';
+  return failure(undefined, `unknown command ${shown}`, next);
+}
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
 async function unknownCommand(invocation: Invocation, name: string): Promise<number> {
   // The word is anyone's text: a plain word shows as typed; any other is quoted with control and bidi characters escaped.
   const { shownValue } = await import('../src/rules/text/terminal.ts');
-  const shown = shownValue(name);
-  const near = closestWord(name, COMMANDS.map((command) => command.name));
-  // A title with the word typed, then the one step last: the near command, or the help that lists them all (#1115).
-  const next = near ? `\`yokoten ${near}\`, if you meant it; \`yokoten help\` lists every command` : '`yokoten help` lists every command';
-  print(invocation, [...wrap('yokoten · ', `unknown command ${shown}`), '', ...wrap('Next: ', next)], invocation.stderr);
+  print(invocation, unknownCommandLines(shownValue(name), closestWord(name, COMMANDS.map((command) => command.name))), invocation.stderr);
   return 1;
 }
 
@@ -67,11 +74,11 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     print(invocation, [line]);
     return 0;
   }
-  // A folded command or an old name says where it moved, then runs as before (#1054). The
-  // line is for a person: the session-start hook (`doctor --session`) and JSON for a script go without it.
-  const moved = cmd === undefined || args.includes('--session') || args.includes('--json') ? undefined : movedNote(cmd);
+  // An old name says it was renamed, then runs as before (#1054); a command that kept its name
+  // says nothing (#1115). The line is for a person: JSON for a script goes without it.
+  const moved = cmd === undefined || args.includes('--json') ? undefined : movedNote(cmd);
   // A blank line follows the note, so a wrapped screen under it never reads as part of it (issue #1115).
-  if (moved) print(invocation, [...wrap('note: ', moved.replace(/^note: /, '')), ''], invocation.stderr);
+  if (moved) print(invocation, [...noteLine(moved), ''], invocation.stderr);
   switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).
@@ -141,19 +148,19 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'version': {
       const options = parse('version', args);
       if (typeof options === 'string') return usage(invocation, options);
-      print(invocation, [VERSION]);
+      print(invocation, versionLines());
       return 0;
     }
     case '--version':
     case '-v':
-      print(invocation, [VERSION]);
+      print(invocation, versionLines());
       return 0;
     case 'help': {
       const options = parse('help', args);
       if (typeof options === 'string') return usage(invocation, options);
       const [name] = options.positional;
       if (name === undefined) {
-        print(invocation, [help(options.flags.has('--all'))]);
+        print(invocation, helpLines(options.flags.has('--all')));
         return 0;
       }
       const named = findCommand(name);
@@ -170,22 +177,25 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     default:
       return unknownCommand(invocation, cmd ?? '');
   }
-  print(invocation, [help(false)]);
+  print(invocation, helpLines(false));
   return 0;
 }
 
-/** Where an error line starts: the command, or `yokoten` alone when there is none (#548). */
-export const errorLabel = (command: string | undefined): string => `yokoten${command ? ` ${command}` : ''}`;
+/**
+ * The step after an error nothing caught (#1115): doctor finds what is wrong with this project
+ * or machine; when doctor itself failed, the help.
+ */
+export const crashNext = (command: string | undefined): string => (command === 'doctor' ? 'yokoten help' : 'yokoten doctor');
 
 /** Run one command line, and give its exit code. Exit 1, not 2, on an error: a broken guard should be seen, not block every tool call. */
 export function main(invocation: Invocation): Promise<number> {
   return Promise.resolve(invocation)
     .then(dispatch)
     .catch((err: Error) => {
-      printJsonError(invocation, String(err?.message ?? err).split('\n')[0]);
-      // No command (the one-command start, #548) has no name to print: never "yokoten undefined".
-      say(invocation, `${errorLabel(invocation.command)}: ${err.message}\n`, invocation.stderr);
-      return 1;
+      // One line, as data with --json and as the failure title (#1115). No command (the
+      // one-command start, #548) has no name to print: failure() says `yokoten ·`, never "yokoten undefined".
+      const what = String(err?.message ?? err).split('\n').map((line) => line.trim()).filter(Boolean).join(' ');
+      return fail(invocation, what || 'an unexpected error', crashNext(invocation.command));
     });
 }
 
