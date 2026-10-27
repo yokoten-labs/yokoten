@@ -41,27 +41,38 @@ a release.
    examples, options, and sections of rows. `commandHelp` builds every page from the
    `COMMANDS` table: every entry has a `help` field, and there is no other way to write a
    help page.
-4. **The limits, measured by `screenProblems`:**
+4. **The limits are one data table, a development tool.** `SCREEN_RULES` in
+   `test/repo/docs/screen-rules.ts` holds each rule as a row: what it counts, its limit, why,
+   and its source. `screenProblems` there measures every row. It is not in `src/`, because
+   only the tests use it. Issue #1115 grew the table from 7 rules to 12, after the owner's
+   review of 72 screens, checked against clig.dev and Google's error-message course:
 
-   | Limit | Value | Why |
-   |---|---|---|
-   | Line width | 80 columns | A common terminal width. Our choice: clig.dev sets no number |
-   | Lines over 80 | at most 1 per screen | A long link cannot break |
-   | Widest line | 100 columns | Even a link line stays readable |
-   | Prose in a row | at most 4 lines at the left edge | More is a wall; use a heading or rows |
-   | Help summary | at most 2 lines | The rest goes in rows, examples or the docs |
-   | A failed command | the last line (or the line before `More`) says what to do next | clig: the important line last |
-   | Colour codes | none in a pipe | clig: no colour when not a terminal |
+   | Rule | Limit |
+   |---|---|
+   | `width`, `widest` | at most 1 line over 80 columns; none over 100 |
+   | `prose` | at most 4 lines of prose in a row at the left edge |
+   | `help-summary` | at most 2 lines |
+   | `next-step` | a failed screen ends with what to do next |
+   | `colour` | no colour codes when not on a terminal |
+   | `label-columns` | one text column for the two-column rows of a screen |
+   | `wrapped-example` | an example's text stays beside its command |
+   | `spaced-items` | a blank line between items when one wraps |
+   | `fix-line` | a problem's command is on its own last line, `Fix: <command>` |
+   | `same-fix-once` | one Fix line shows once per screen |
+   | `no-internal-path` | no absolute path outside `~`, and no machine path |
 
-5. **The limits are calibrated on the owner's verdicts.** The six captured screens are in
-   `test/repo/docs/captured-screens.ts`. The test fails when a limit passes S007, S057, S061
-   or S069, or fails S002 or S071. The one-line allowance is what lets S002 pass: its last
-   line is 87 columns of prose. S061 has two lines past 80, so it fails.
+   The table is the source: a rule changes in its row, and this record does not repeat the
+   numbers.
+
+5. **The limits are calibrated on the owner's verdicts.** The captured screens are in
+   `test/repo/docs/captured-screens.ts`. The test fails when a limit passes a screen he judged
+   too much, or fails S002, the one he judged OK. S071 is overruled with a reason: its row is
+   the one he flagged in S072.
 6. **A screen test** (`test/repo/docs/screens.test.ts`) renders, in this process, every
    command's help page and usage error from `COMMANDS`, so a new command joins by itself.
    It adds the screens of a state: the start, the unknown command, the not-a-repo errors,
    six guard calls, three session starts, and the commit check. Today's offenders are on
-   `WAIVED`, each with its reason and #1099. The list only shrinks: a waived screen that
+   `WAIVED`, each with its rule and #1115. The list only shrinks: a waived screen that
    passes fails the test, and `WAIVED_MOST` is the cap.
 
 ## Options not taken

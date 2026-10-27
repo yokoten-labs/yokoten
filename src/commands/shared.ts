@@ -316,7 +316,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // (record 0049, issue #1099): every screen, the guard's refusals in src/rules/ too, builds on it,
 // so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
-export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, title, wrap } from '../rules/text/screen.ts';
+export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, spaced, title, wrap } from '../rules/text/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
 function textColumn(where: string | undefined): number {
