@@ -35,6 +35,12 @@ import { renderBoardScreen } from '../../../src/commands/kanban/page/text.ts';
 import type { KanbanSession, KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { type DoctorReport, fullLines, shortLines } from '../../../src/setup/doctor/index.ts';
 import { adoptAllScreen } from '../../../src/commands/more/advice/doctor.ts';
+// C9
+import { learnScreen } from '../../../src/commands/more/learn.ts';
+import { mcpScreen } from '../../../src/commands/more/advice/mcp.ts';
+import { changelogScreen } from '../../../src/run/changelog.ts';
+import { draftLesson } from '../../../src/run/learn.ts';
+// C9 end
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 // C2: the pure screens of init, update and trust, from their results (#1115).
@@ -495,6 +501,20 @@ function screensOf(repo: string): ScreenRun[] {
         { key: 'adopt --all, the whole draft', words: ['adopt', '--all'], lines: adoptAllScreen({ rows, by: 'rules', note: 'no model key; set MODEL_API_KEY' }) },
       ];
     })(),
+    // C9: learn, changelog and mcp, built from data.
+    { key: 'learn, a check draft', words: ['learn', '7'], lines: learnScreen({ number: 7 }, draftLesson({ number: 7, title: 'repo: a test fails behind a proxy', body: '## What happened\n\nA test failed.\n\n## Fix\n\nThe test sets NO_PROXY.\n', url: 'https://example.com/issues/7', labels: ['incident'] }), '7') },
+    { key: 'changelog, a preview', words: ['changelog'], lines: changelogScreen([{ file: 'changes/1-a.md', section: 'Added', lines: ['- A thing.'] }, { file: 'changes/2-b.md', section: 'Fixed', lines: ['- A fix.'] }], false) },
+    {
+      key: 'mcp, two tools and one problem',
+      words: ['mcp'],
+      lines: mcpScreen({
+        reports: [{ name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] }],
+        problems: [finding('mcp-schema', 'tool "read" inputSchema has a root anyOf', 'put the branches under one property of a root object')],
+        warnings: [],
+        toolCount: 2,
+      }),
+    },
+    // C9 end
   ];
 }
 

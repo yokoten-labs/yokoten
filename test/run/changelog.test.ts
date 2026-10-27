@@ -13,6 +13,8 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeTempDir } from '../repo/helpers.ts';
 import {
+  changelogProblemsScreen,
+  changelogScreen,
   formatChanges,
   mergeChanges,
   parseChange,
@@ -20,6 +22,7 @@ import {
   writeChanges,
   releaseNotes,
 } from '../../src/run/changelog.ts';
+import { finding } from '../../src/rules/text/message.ts';
 
 // ---- Change files (#132) ----
 
@@ -141,4 +144,13 @@ test('changelog --notes: the opening of a version section, and a link to all of 
   assert.match(releaseNotes(log, '1.2.0', null) ?? '', /\]\(CHANGELOG\.md#120---2026-01-02\)/, 'off GitHub the link is the file');
   assert.equal(releaseNotes(log, '9.9.9', null), null, 'a version with no section');
   assert.match(releaseNotes(log, '1.1.0', null) ?? '', /^Old\.\n/, 'the last section ends at the end of the file');
+});
+
+test('changelogScreen: rows through table(), the problems screen ends with a Next line', () => {
+  const lines = changelogScreen([{ file: 'changes/1-a.md', section: 'Added', lines: ['- A thing.', '  over two lines'] }], false);
+  assert.deepEqual(lines, ['yokoten changelog · 1 entry for the next release', '', '  Added  A thing. over two lines', '', 'More: before a release: `yokoten changelog --write`']);
+  assert.deepEqual(changelogScreen([], true), ['yokoten changelog · no change files in changes/, nothing to add']);
+  const problems = changelogProblemsScreen([finding('change-file', 'no entry after the section', 'write the entry', { file: 'changes/3-c.md', line: 1 })]);
+  assert.equal(problems.at(-1), 'Next: `yokoten changelog`');
+  assert.match(problems.join('\n'), /1 problem; nothing was written/);
 });
