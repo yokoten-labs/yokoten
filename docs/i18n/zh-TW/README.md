@@ -80,16 +80,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 ## 常用指令
 
-開始只要一條指令。同時用好幾個 AI 時，再多三條。
+開始只要一條指令。用起來之後，再多四條。
 
 | 指令 | 它做什麼 |
 |---|---|
 | `npx yokoten` | 補上缺的東西，再給出一屏：你在哪裡，下一步做什麼 |
+| `yokoten check` | 提交之前找出密鑰和被破壞的規則；提交檢查也會執行它 |
 | `yokoten desk` | 把一個任務交給一個 AI，在它自己的圍欄工位裡做 |
 | `yokoten kanban` | 一眼看到整個團隊，即時，唯讀（預覽版） |
 | `yokoten tidy` | 列出舊分支、worktree 和工位；加 `--local` 先存一份，再移進 yokoten 的回收資料夾 |
 
-`yokoten help --all` 列出其餘的指令。舊指令照樣能用，並會告訴你它搬到了哪裡。
+`yokoten help --all` 按用途分組列出其餘的指令：開始、工作、守衛、合併與 CI、維護。
 
 ## 支援範圍
 

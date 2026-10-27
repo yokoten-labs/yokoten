@@ -79,16 +79,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 ## The commands
 
-You need one command to start. Three more help when you run several AIs.
+You need one command to start. Four more help along the way.
 
 | Command | What it does |
 |---|---|
 | `npx yokoten` | sets up what is missing, then shows where you are and the next step |
+| `yokoten check` | looks for secrets and broken rules before you commit; the commit check runs it too |
 | `yokoten desk` | gives one task to one AI, in its own fenced desk |
 | `yokoten kanban` | shows the team at a glance, live and read only (preview) |
 | `yokoten tidy` | lists old branches, worktrees and desks; `--local` saves them, then moves them to its trash folder |
 
-`yokoten help --all` lists the rest. The older commands still run, and each says where it went.
+`yokoten help --all` lists the rest, in groups by job: Start, Work, Guard, Merge and CI, Maintain.
 
 ## Works with
 

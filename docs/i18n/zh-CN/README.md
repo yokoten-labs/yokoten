@@ -80,16 +80,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 ## 常用命令
 
-开始只要一条命令。同时用好几个 AI 时，再多三条。
+开始只要一条命令。用起来之后，再多四条。
 
 | 命令 | 它做什么 |
 |---|---|
 | `npx yokoten` | 补上缺的东西，再给出一屏：你在哪里，下一步做什么 |
+| `yokoten check` | 提交之前找出密钥和被破坏的规则；提交检查也会运行它 |
 | `yokoten desk` | 把一个任务交给一个 AI，在它自己的围栏工位里做 |
 | `yokoten kanban` | 一眼看到整个团队，实时，只读（预览版） |
 | `yokoten tidy` | 列出旧分支、worktree 和工位；加 `--local` 先存一份，再挪进 yokoten 自己的回收文件夹 |
 
-`yokoten help --all` 列出其余的命令。旧命令照样能用，并会告诉你它搬到了哪里。
+`yokoten help --all` 按用途分组列出其余的命令：开始、工作、守卫、合并与 CI、维护。
 
 ## 支持哪些工具
 
