@@ -431,7 +431,7 @@ test('doctor: a missing, out-of-date or unreadable Codex or Gemini CLI user hook
       s.hooks[guardEvent][0].matcher = 'other';
     });
     assert.equal(noteOf(), `note the command guard in ~/${dir}/${file} is out of date; \`yokoten install\` updates it`);
-    assert.match((await sandbox.call(['install', '--list'])).stdout, /^updated the .* command guard in /m);
+    assert.match((await sandbox.call(['install', '--list'])).stdout, /^ {2}updated +.*: command guard$/m);
     assert.match(noteOf() ?? '', /^ok /);
     // A file that won't parse: can't read it, never "missing".
     writeFileSync(path, '{ not json');
@@ -442,7 +442,7 @@ test('doctor: a missing, out-of-date or unreadable Codex or Gemini CLI user hook
     assert.equal(noteOf(), null);
     const install = await sandbox.call(['install', '--list']);
     assert.equal(install.status, 0, install.stderr);
-    assert.match(install.stdout, new RegExp(`^skipped .*: ~/\\${dir} not found`, 'm'));
+    assert.match(install.stdout, new RegExp(`^ {2}skipped +.* in ~/\\${dir}: not installed here$`, 'm'));
     assert.equal(readFileSync(join(sandbox.home, dir), 'utf8'), 'a file');
   }
 });

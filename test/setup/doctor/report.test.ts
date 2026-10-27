@@ -514,7 +514,7 @@ test('doctor: shows check\'s notes, worded as check words them, and they never c
   // An unknown yokoten.json key.
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   const unknownKey = /^ {2}note +yokoten\.json: "colour" is not a key this version of yokoten knows/m;
-  assert.match((await sandbox.call(['check', '--all'])).stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  assert.match((await sandbox.call(['check', '--all'])).stdout, unknownKey);
   let result = await sandbox.call(['doctor', '--all']);
   assert.match(result.stdout, unknownKey);
   assert.equal(result.status, before.status, 'a note never changes the exit code');
@@ -547,7 +547,7 @@ test('doctor: a hook in the project\'s folder that is not executable is not chec
   assert.match(doctor, /commit-check \(OSPS-BR-07\.01\): merge commits are not checked: tools\/hooks\/pre-merge-commit is not executable, so git skips it/);
   assert.match(doctor, /run `chmod \+x tools\/hooks\/pre-merge-commit`, or `yokoten init`/);
   const result = await sandbox.call(['init', '--list']);
-  assert.match(result.stdout, /made executable tools\/hooks\/pre-merge-commit/);
+  assert.match(result.stdout.replace(/\s+/g, ' '), /updated tools\/hooks\/pre-merge-commit: the commit check [^]*?still run\) \(made executable\)/);
   assert.ok(statSync(mergeHook).mode & 0o100, 'executable');
   assert.equal(await stepMark(sandbox, 'commit-check'), 'done');
   // A pre-commit without the check and without the execute bit: add the line, and chmod.
