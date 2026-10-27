@@ -2,6 +2,7 @@
 name: reviewer
 description: Reads a diff and reports findings by the inspect skill's passes and grades. Use before the owner is asked to approve. Reads only.
 tools: Bash, Read, Grep, Glob
+effort: medium
 ---
 <!-- managed by yokoten; `yokoten install` updates this file, and keeps your edits -->
 
