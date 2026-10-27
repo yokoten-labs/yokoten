@@ -525,5 +525,7 @@ test('platform: the machine readers answer per platform (issue #1000)', () => {
     if (!hasProc) assert.equal(readProcMounts(platform), null, `${platform}: no /proc/mounts`);
     else assert.ok(readProcMounts(platform) === null || typeof readProcMounts(platform) === 'string');
   }
-  assert.ok(Array.isArray(listGitProcesses('linux')), 'linux: read from /proc');
+  // The linux reader needs /proc: on Linux it lists; anywhere else it answers null, never a throw.
+  if (process.platform === 'linux') assert.ok(Array.isArray(listGitProcesses('linux')), 'linux: read from /proc');
+  else assert.equal(listGitProcesses('linux'), null, 'no /proc on this system: the reader says so');
 });

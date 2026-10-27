@@ -134,8 +134,10 @@ export function makeEventLog(times: string[]): { text: string; lines: string[]; 
   return { text: lines.join('\n') + '\n', lines, hashes };
 }
 
+// The parent is the real path: on macOS tmpdir() is /var/..., a link to /private/var/..., and a
+// command prints the real form, which hideHome must find as the sandbox home (#1115).
 export function makeTempDir(prefix = 'yokoten-'): string {
-  if (!tempParent) tempParent = mkdtempSync(join(tmpdir(), 'yokoten-test-'));
+  if (!tempParent) tempParent = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-test-')));
   const path = mkdtempSync(join(tempParent, prefix));
   testFolders.at(-1)?.push(path);
   return path;
@@ -158,7 +160,7 @@ export function makeGitFolder(top: string): void {
 
 /** A new empty folder that outlives the test that made it, removed when the file ends: for a template (#475). */
 function makeFileTempDir(prefix = 'yokoten-template-'): string {
-  if (!tempParent) tempParent = mkdtempSync(join(tmpdir(), 'yokoten-test-'));
+  if (!tempParent) tempParent = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-test-')));
   return mkdtempSync(join(tempParent, prefix));
 }
 
