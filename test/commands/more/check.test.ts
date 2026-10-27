@@ -355,7 +355,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n(?:[^\n]+\n){5,9}\nNext: fix them, then `yokoten check`\nMore: \S+#privacy\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n(?:[^\n]+\n){5,9}\nNext: fix it, then `yokoten check`\nMore: \S+#privacy\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -657,10 +657,10 @@ test('redact: keeps line ends, a last line with no end, and text that names nobo
 test('redact: in-process, the given stdin comes out hidden, a long one streamed whole (#475)', async () => {
   const { sandbox } = ownerSandbox();
   const run = (stdin: string) => invoke(['redact'], { env: sandbox.env, cwd: sandbox.repo, stdin });
-  assert.deepEqual(await run(`by ${OWNER} at ${HOST}\nlast`), { code: 0, stdout: 'by <owner> at <host>\nlast', stderr: '' });
+  assert.deepEqual(await run(`by ${OWNER} at ${HOST}\nlast`), { code: 0, stdout: 'by <owner> at <host>\nlast', stderr: '', output: 'by <owner> at <host>\nlast' });
   const long = `${'line one\n'.repeat(50_000)}${EMAIL}\n`;
   assert.equal((await run(long)).stdout, `${'line one\n'.repeat(50_000)}<email>\n`);
-  assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '' });
+  assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '', output: '' });
 });
 
 // #1006: redact fails closed. A marks file it cannot read, or a piece it cannot redact,
@@ -1209,6 +1209,23 @@ test('ci-health with no flag prints the report, writes no issue and names --writ
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
 });
 
+test('ci-health: a repo that is not owner/name says which value was wrong (#1115)', async () => {
+  const sandbox = makeSandbox();
+  const flag = await sandbox.call(['ci-health', '--repo', 'nonsense']);
+  assert.equal(flag.status, 1);
+  assert.match(flag.stderr, /no GitHub repo to read: --repo nonsense is not owner\/name/);
+  const env = await sandbox.call(['ci-health'], { extra: { GITHUB_REPOSITORY: 'also-bad' } });
+  assert.equal(env.status, 1);
+  assert.match(env.stderr, /no GitHub repo to read: GITHUB_REPOSITORY is also-bad, not\s+owner\/name/);
+  // A value with control characters is quoted and escaped, never sent raw (it is anyone's text).
+  const odd = 'bad\u001b[2J\nnext\u202e';
+  const shown = (text: string) => assert.ok(!/[\u001b\u202e]/.test(text) && text.includes('\\u001b[2J\\nnext\\u202e'), JSON.stringify(text));
+  const oddFlag = await sandbox.call(['ci-health', '--repo', odd]);
+  shown(oddFlag.stderr);
+  const oddEnv = await sandbox.call(['ci-health'], { extra: { GITHUB_REPOSITORY: odd } });
+  shown(oddEnv.stderr);
+});
+
 test('ci-health refuses --write with --dry-run before it reads anything', async () => {
   const sandbox = makeSandbox();
   const extra = healthGh(sandbox, {});
@@ -1472,7 +1489,7 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   assert.equal(lines[1], '');
   assert.match(lines[2] ?? '', /^ {2}MISSING {5}a\.md:1 {6}an email address$/);
   assert.match(lines[3] ?? '', /^ {26}An email address points at a person, and git keeps it$/);
-  assert.equal(lines[lines.length - 3], 'Next: fix them, then `yokoten check`');
+  assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`');
   assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
 });

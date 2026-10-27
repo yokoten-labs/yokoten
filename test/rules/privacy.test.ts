@@ -51,6 +51,7 @@ import {
   timeZoneFix,
   useRealHome,
   withHome,
+  timeZoneCommandFix,
 } from '../../src/rules/privacy.ts';
 
 // Samples are built from pieces so this file passes its own check.
@@ -2681,4 +2682,9 @@ test('machineAllowFile: with no home folder there is no allow file, never one be
   assert.throws(() => machineAllowFile(env), /no home folder/);
   assert.deepEqual(readMachineAllow(env), { entries: [] });
   assert.deepEqual(loadMarks(env), ['quietvale'], 'the setting\'s marks are still read');
+});
+
+test('timeZoneCommandFix: the command leads; cmd types its own, bash keeps it in a profile (#1115)', () => {
+  assert.equal(timeZoneCommandFix({ SHELL: '/bin/bash' }), 'run `export TZ=UTC`, then keep the command in ~/.bashrc; yokoten init sets it for agent sessions');
+  assert.equal(timeZoneCommandFix({ SHELL: 'C:\\Windows\\System32\\cmd.exe' }), 'run `set TZ=UTC`, then type setx TZ UTC once to keep it in new windows; yokoten init sets it for agent sessions');
 });

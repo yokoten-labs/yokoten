@@ -4,9 +4,9 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { row, screen, wrap } from '../rules/text/screen.ts';
+import { row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
-import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/text/message.ts';
+import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
 import { gitRoot } from '../run/check.ts';
 import { closestWord, findCommand, HELP_OPTIONS } from '../run/cli.ts';
@@ -108,8 +108,15 @@ export function printJsonError(invocation: Invocation, error: string): void {
 export function usage(invocation: Invocation, error: string): number {
   const { command } = invocation;
   printJsonError(invocation, error);
-  // One sentence wrapped at the screen width; the command to run comes last (record 0049).
-  print(invocation, wrap(`yokoten ${command}: `, `${error}${/[.?]$/.test(error) ? '' : '.'} Run \`yokoten ${command} --help\`.`), invocation.stderr);
+  // The error with the word typed, what the command does in one line, then the command to run last (record 0049, #1115).
+  const name = command ?? '';
+  const entry = name ? findCommand(name) : undefined;
+  const said = screen(
+    wrap(name ? `yokoten ${name} · ` : 'yokoten · ', error.replace(/\.$/, '')),
+    entry ? wrap(`  ${entry.name.padEnd(12)}`, entry.summary) : [],
+    wrap('Next: ', name ? `\`yokoten ${name} --help\`` : '`yokoten help`'),
+  );
+  print(invocation, said, invocation.stderr);
   return 1;
 }
 
@@ -316,7 +323,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // (record 0049, issue #1099): every screen, the guard's refusals in src/rules/ too, builds on it,
 // so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
-export { field, moreLine, nextLine, row, type RowMark, SCREEN_WIDTH, spaced, title, wrap } from '../rules/text/screen.ts';
+export { field, moreLine, nextLine, row, type RowMark, screen, SCREEN_WIDTH, spaced, title, wrap } from '../rules/text/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
 function textColumn(where: string | undefined): number {
@@ -332,12 +339,27 @@ function locationOf(problem: Finding): string | undefined {
   return `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
 }
 
-/** One MISSING row per problem, with its why and fix under it: check's screen and bot's refusal (#1027). */
+/**
+ * One MISSING row per problem, with its why and fix under it: check's screen and bot's refusal
+ * (#1027). A fix that starts with a command ends the row on its own line, `Fix: \`<command>\``,
+ * said once under the last problem it fixes (#1115). A blank line goes between rows that wrap.
+ */
 export function problemRows(problems: Finding[]): string[] {
-  return problems.flatMap((problem) => {
-    const where = locationOf(problem);
-    return [...row('MISSING', problem.what, where), ...wrap(' '.repeat(textColumn(where)), `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
-  });
+  const commands = problems.map((problem) => fixCommand(problem.fix));
+  return spaced(
+    problems.map((problem, at) => {
+      const where = locationOf(problem);
+      const indent = ' '.repeat(textColumn(where));
+      const command = commands[at];
+      if (!command) return [...row('MISSING', problem.what, where), ...wrap(indent, `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
+      const isLast = commands.findLastIndex((other) => other?.command === command.command) === at;
+      return [
+        ...row('MISSING', problem.what, where),
+        ...wrap(indent, command.then ? `${asSentence(problem.why)} ${asSentence(command.then)}` : asSentence(problem.why)),
+        ...(isLast ? [`${indent}Fix: \`${command.command}\``] : []),
+      ];
+    }),
+  );
 }
 
 /** "1 file", "3 files": a count with its noun in the right number. */

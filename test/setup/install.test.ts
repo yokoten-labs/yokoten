@@ -68,7 +68,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   // An unknown option is refused, and nothing is written (#203).
   const homeBefore = readdirSync(sandbox.home, { recursive: true }).sort();
   let result: { status: number | null; stdout: string; stderr: string } = await sandbox.call(['install', '--dry-run']);
-  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten install moved to yokoten. It runs as before this time.\nyokoten install: unknown option --dry-run. Run `yokoten install --help`.\n']);
+  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten install moved to yokoten. It runs as before this time.\n\nyokoten install · unknown option --dry-run\n\n  install     skills, agents and user-level hooks for this machine\n\nNext: `yokoten install --help`\n']);
   assert.deepEqual(readdirSync(sandbox.home, { recursive: true }).sort(), homeBefore, 'install --dry-run writes nothing');
   // A real child, for the entry: the exit code and output through bin/yokoten.ts.
   result = sandbox.run(['install', '--list']);
@@ -649,7 +649,7 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
       const what = `${bad.name}, ${JSON.stringify(content)}`;
       assert.equal(result.status, 1, what);
       assert.ok(result.stdout.split('\n').includes(`skipped ${bad.cli}: ${skip}`), `${what}: ${result.stdout}${result.stderr}`);
-      assert.equal(result.stderr, 'note: yokoten install moved to yokoten. It runs as before this time.\n', what);
+      assert.equal(result.stderr, 'note: yokoten install moved to yokoten. It runs as before this time.\n\n', what);
       assert.doesNotMatch(result.stdout, new RegExp(`the ${bad.name} (SessionStart doctor|command guard)`), what);
       assert.ok(!result.stdout.includes(sandbox.home) && !result.stderr.includes(sandbox.home), `${what}: the home path is shown`);
       assert.equal(readFileSync(badPath, 'utf8'), content, `${what}: the file changed`);
@@ -676,7 +676,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   writeFileSync(file, before);
   const result = await sandbox.call(['install', '--list']);
   assert.equal(result.status, 1, result.stdout + result.stderr);
-  assert.equal(result.stderr, 'note: yokoten install moved to yokoten. It runs as before this time.\n');
+  assert.equal(result.stderr, 'note: yokoten install moved to yokoten. It runs as before this time.\n\n');
   assert.doesNotMatch(result.stdout, /can't read|unexpected shape/);
   assert.ok(!result.stdout.includes(sandbox.home), 'the home path is shown');
   assert.equal(readFileSync(file, 'utf8'), before, 'the file changed');

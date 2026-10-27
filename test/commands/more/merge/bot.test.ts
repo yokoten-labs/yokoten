@@ -148,7 +148,7 @@ test('bot: a bad title is refused before the token is asked for; a good one runs
 
     // bot has no options of its own (#203): one before `--` is refused, and nothing runs.
     const unknown = await viaChild(['echo'], bot, ['--x']);
-    assert.deepEqual([unknown.status, unknown.stderr], [1, 'yokoten bot: unknown option --x. Run `yokoten bot --help`.\n']);
+    assert.deepEqual([unknown.status, unknown.stderr], [1, 'yokoten bot · unknown option --x\n\n  bot         run one command as the bot account\n\nNext: `yokoten bot --help`\n']);
     assert.equal(ran().length, good.length, 'gh did not run');
     assert.equal(requests.length, good.length * 2, 'no token was asked for');
     // Everything after `--` is the command's, passed on unchanged.

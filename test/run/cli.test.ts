@@ -158,7 +158,7 @@ test('exit codes: 0 ok, 1 problems or a usage error, 2 the hook blocked (#42)', 
     assert.equal(out.command, args[0]);
     assert.equal(out.ok, false);
     assert.match(out.error, /^[^\n]+$/, `${args.join(' ')}: one line`);
-    assert.match(r.stderr, new RegExp(`^yokoten ${args[0]}: [\\s\\S]+ Run\\s+\`yokoten ${args[0]} --help\`\\.\\n$`), args.join(' '));
+    assert.match(r.stderr, new RegExp(`^yokoten ${args[0]} · [\\s\\S]+\\n\\nNext: \`yokoten ${args[0]} --help\`\\n$`), args.join(' '));
   }
   // An error past the parser, caught at the top, is JSON too. A broken yokoten.json is
   // such an error: the config is read before any check runs.
@@ -300,10 +300,10 @@ test('help: a typo in a command or an option names the closest one; a far one li
   const sandbox = makeSandbox();
   const run = (words: string[]) => invoke(words, { env: sandbox.env, cwd: sandbox.repo });
   const cases: [string[], string][] = [
-    [['docter'], 'yokoten: unknown command "docter"\nDid you mean `yokoten doctor`?\n'],
-    [['help', 'chek'], 'yokoten: unknown command "chek"\nDid you mean `yokoten check`?\n'],
-    [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run\n               `yokoten check --help`.\n'],
-    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\nyokoten doctor: unknown option --hepl. Did you mean --help? Run\n                `yokoten doctor --help`.\n'],
+    [['docter'], 'yokoten · unknown command docter\n\nNext: `yokoten doctor`, if you meant it; `yokoten help` lists every command\n'],
+    [['help', 'chek'], 'yokoten · unknown command chek\n\nNext: `yokoten check`, if you meant it; `yokoten help` lists every command\n'],
+    [['check', '--stagd'], 'yokoten check · unknown option --stagd. Did you mean --staged?\n\n  check       layout, privacy and lead-only files, and a PR or issue\n\nNext: `yokoten check --help`\n'],
+    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\n\nyokoten doctor · unknown option --hepl. Did you mean --help?\n\n  doctor      the road: where this project is and its next step\n\nNext: `yokoten doctor --help`\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -311,7 +311,10 @@ test('help: a typo in a command or an option names the closest one; a far one li
   }
   const far = await run(['zzzzzz']);
   assert.deepEqual([far.code, far.stdout], [1, '']);
-  assert.equal(far.stderr, 'yokoten: unknown command "zzzzzz"\nNext: `yokoten help`\n', 'a far word does not list every command');
+  assert.equal(far.stderr, 'yokoten · unknown command zzzzzz\n\nNext: `yokoten help` lists every command\n', 'a far word does not list every command');
+  const odd = await run(['bad\u001b[2Jword\nnext\u202e']);
+  assert.equal(odd.stderr.split('\n')[0], 'yokoten · unknown command "bad\\u001b[2Jword\\nnext\\u202e"', 'quoted, control and bidi characters escaped');
+  assert.doesNotMatch(odd.stderr, /[\u001b\u202e]/);
   assert.equal(editDistance('docter', 'doctor'), 1);
   assert.equal(closestWord('xyz', ['doctor', 'check']), undefined, 'more than two edits: no guess');
 });
@@ -822,10 +825,10 @@ test('help: a moved command still runs, and its first line says where it went (#
   const old = await sandbox.call(['board', '--text', '--nope']);
   const now = await sandbox.call(['kanban', '--text', '--nope']);
   assert.equal(old.stderr.split('\n')[0], movedNote('board'));
-  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(1).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
+  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(2).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
   const worker = await sandbox.call(['worker']);
   assert.equal(worker.stderr.split('\n')[0], movedNote('worker'), 'a folded command says it first');
-  assert.match(worker.stderr, /yokoten worker: say what to do/, 'and then runs as before');
+  assert.match(worker.stderr, /yokoten worker · say what to do/, 'and then runs as before');
   // The line is for a person: the session-start hook and JSON for a script go without it.
   for (const words of [['doctor', '--session'], ['doctor', '--json']]) assert.doesNotMatch((await sandbox.call(words)).stderr, /^note: /m, words.join(' '));
 });

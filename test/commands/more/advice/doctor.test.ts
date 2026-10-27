@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
-import { runDoctor } from '../../../../src/commands/more/advice/doctor.ts';
+import { problemRows, runDoctor } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 
 // What Codex and Gemini CLI hear at a session start: they don't filter command output (#390), as a note (#1099).
@@ -163,6 +163,24 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.match(all.stdout, /OpenSSF/, '--all keeps the standards');
   assert.match(all.stdout, /^machine:$/m);
   assert.equal(short.status, all.status, 'the same exit code');
+});
+
+// Issue #1115: a problem's fix is its last line, and a fix several problems share shows once.
+test('doctor: each problem ends with its Fix line, one per command (#1115)', () => {
+  const problem = (id: string, what: string, fix: string) => ({ id, what, why: '', fix, docs: '' });
+  const rows = problemRows([
+    problem('a', 'no guard for Claude Code', 'run `yokoten install`'),
+    problem('b', 'no runtime installed', 'run `yokoten install` from this copy of yokoten'),
+    problem('c', '~/.config/yokoten/private-marks has no marks', 'run `yokoten marks add` and type your name'),
+    problem('d', 'the settings file is not JSON', 'make it valid JSON'),
+    problem('e', 'yokoten.json is broken', 'make `yokoten.json` valid JSON'),
+  ]);
+  assert.deepEqual(rows, [
+    ['  MISSING     no guard for Claude Code; no runtime installed', '              Fix: `yokoten install`'],
+    ['  MISSING     ~/.config/yokoten/private-marks has no marks', '              Fix: `yokoten marks add`'],
+    ['  MISSING     the settings file is not JSON; make it valid JSON'],
+    ['  MISSING     yokoten.json is broken; make `yokoten.json` valid JSON'],
+  ]);
 });
 
 test('every road step has a plain task title (#1027)', async () => {

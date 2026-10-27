@@ -14,6 +14,7 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSy
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { Env } from '../rules/config.ts';
+import { BIDI, CONTROL, terminalText, unicodeEscape } from '../rules/text/terminal.ts';
 import { type Finding, finding, formatFinding } from '../rules/text/message.ts';
 import { homeOf, loadMarks, makeRedactor, NO_HOME, PLACEHOLDERS, scanText } from '../rules/privacy.ts';
 
@@ -128,10 +129,6 @@ function readSymptom(title: string): string {
 // no place in a draft either. Bidi controls (LRM, RLM, ALM, the embeddings, overrides and
 // isolates) can reorder what a reviewer sees ("trojan source"), so they are shown as `\uXXXX`.
 const LINE_END = /\r\n|[\n\r\u2028\u2029]/;
-const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
-const BIDI = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
-/** A character as a `\uXXXX` escape, which TypeScript reads back and a terminal shows as text. */
-const unicodeEscape = (character: string) => `\\u${character.charCodeAt(0).toString(16).padStart(4, '0')}`;
 /**
  * Issue text as one line that is safe in a `//` comment: each line end or control character
  * is a space, and each bidi control is shown as `\uXXXX` text.
@@ -145,12 +142,6 @@ const quote = (text: string) =>
     .replace(/\r\n|[\n\r]/g, ' ')
     .replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029]/g, unicodeEscape)
     .replace(BIDI, unicodeEscape)}'`;
-/**
- * Issue text that is safe to print: each control character but tab and newline (so ESC,
- * CR, DEL and C1, which start ANSI and OSC codes) and each bidi control is shown as `\uXXXX`,
- * never sent raw.
- */
-export const terminalText = (text: string) => text.replace(CONTROL, unicodeEscape).replace(BIDI, unicodeEscape);
 /** Text as `//` comment lines, indented under a label. */
 const commentLines = (text: string) => text.split(LINE_END).map((line) => commentText(line)).map((line) => (line.trim() ? `//   ${line.trimEnd()}` : '//'));
 
@@ -935,3 +926,5 @@ export function removeNote(env: Env, id: string): boolean {
 /** The line the session start and doctor give in yokoten's own repo, or null with no note. */
 export const waitingLine = (count: number): string | null =>
   count ? `${count} ${count === 1 ? 'lesson' : 'lessons'} from other projects ${count === 1 ? 'waits' : 'wait'} to become ${count === 1 ? 'an issue' : 'issues'}: yokoten learn --upstream --list` : null;
+
+export { terminalText };

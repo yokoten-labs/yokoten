@@ -98,7 +98,7 @@ test('train --next refuses plainly when the map is missing', () => {
   const sandbox = makeSandbox();
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /no conflict map at yokoten\/conflicts\.json in this clone; run `yokoten conflicts` first/);
+  assert.match(result.stderr, /no conflict map at yokoten\/conflicts\.json in this clone;\s+build\s+it,\s+then\s+start\s+the\s+train\s+again\n\nFix: `yokoten conflicts`\n$/);
 });
 
 test('train refuses a map more than an hour old: it names changes that merged since', () => {
@@ -107,7 +107,7 @@ test('train refuses a map more than an hour old: it names changes that merged si
   sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...mapOf([change('pr:12')]), builtAt: old }));
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /more than an hour old; run `yokoten conflicts` again/);
+  assert.match(result.stderr, /more than an hour\s+old; build it again\n\nFix: `yokoten conflicts`\n$/);
 });
 
 /** A gh on PATH that logs each call and answers none, so any read or merge shows in the log. */

@@ -285,7 +285,7 @@ test('tidy: the words it does not take are refused, and outside a repo it says s
   const sandbox = makeSandbox();
   const bad = await sandbox.call(['tidy', '--everything']);
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /^yokoten tidy: unknown option --everything/);
+  assert.match(bad.stderr, /^yokoten tidy · unknown option --everything\n/);
   assert.match((await sandbox.call(['tidy', '--local', '--empty'])).stderr, /--local and --empty run one at a time/);
   assert.match((await sandbox.call(['tidy', '--yes'])).stderr, /--yes goes with --empty/);
   const outside = makeTempDir('yokoten-no-repo-');

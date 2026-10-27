@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import { field, helpScreen, moreLine, nextLine, row, screen, SCREEN_WIDTH, section, table, title, wrap } from '../../../src/rules/text/screen.ts';
 import { limitOf, SCREEN_RULES, screenProblems } from './screen-rules.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
-import { makeSandbox } from '../helpers.ts';
+import { makeSandbox, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
 // ---- The calibration: the owner's six verdicts (issue #1099) ----
@@ -141,6 +141,16 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
   assert.match(caught('yokoten desk · /var/tmp/work/plain is not in a repo'), /1 paths on this machine show/);
   assert.match(caught('yokoten x · C:\\Users\\someone\\work is gone'), /1 paths on this machine show/, 'a Windows path too');
   assert.equal(caught('yokoten x · ~/work and https://example.com/a/b and GET /api/state'), '', 'a home path, a link and an API path are not machine paths');
+  // Stage 2 (#1115, review of stage 1, L1 to L3): what the rules missed.
+  assert.match(caught('  ok          main        pushed\n  MISSING     no bot'), /start their text in 2 columns \(14, 26\)/, 'a row with a mark and a label starts its text past the label');
+  assert.equal(caught('  ok          pushed\n  MISSING     no bot'), '', 'rows with a mark and no label share one column');
+  assert.match(caught('yokoten x · C:/Users/someone/work is gone'), /1 paths on this machine show/, 'a Windows path with forward slashes');
+  assert.match(caught('yokoten x · /c/Users/someone/work is gone'), /1 paths on this machine show/, "Git Bash's form of a Windows path");
+  assert.match(caught('  MISSING     gh is not signed in; run gh auth login'), /1 problems keep their fix inside the text/, 'a command to run, named without backticks');
+  assert.equal(caught('  MISSING     the tests did not run\n              Fix: `npm test`'), '', '"did not run" names no command');
+  assert.equal(caught('  MISSING     a run of tests failed\n              Fix: `npm test`'), '', '"a run of" is English, not a command');
+  assert.equal(caught('  MISSING     nothing to see\n              Fix: `npm test`\n\n  MISSING     run a check by hand'), '', '"run a" is English, not a command');
+  assert.match(caught('  MISSING     gh is not signed in; run yokoten doctor'), /1 problems keep their fix inside the text/, 'run and a known command word');
   assert.deepEqual(SCREEN_RULES.map((rule) => rule.id).filter((id) => !seen.has(id)), [], 'every rule has a control that breaks it');
 });
 
@@ -150,8 +160,8 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
 interface ScreenRun {
   key: string;
   words: string[];
-  /** The demo repo (the default), a folder outside any repo, a repo with unsaved work, or a new repo of its own. */
-  place?: 'repo' | 'plain' | 'dirty' | 'fresh';
+  /** The demo repo (the default), a folder outside any repo, a repo with unsaved work, a GitHub repo where gh is not signed in, a home with a DeepSeek Harness profile, a commit with a time zone, or a new repo of its own. */
+  place?: 'repo' | 'plain' | 'dirty' | 'signed-out' | 'deepseek' | 'zoned' | 'fresh';
   stdin?: string;
   /** A guard refusal: the person reads stderr, and stdout is JSON for the agent. */
   isStderrOnly?: boolean;
@@ -188,11 +198,18 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'start, outside a repo', words: [], place: 'plain' },
     { key: 'desk, outside a repo', words: ['desk'], place: 'plain' },
     { key: 'kanban --text, outside a repo', words: ['kanban', '--text'], place: 'plain' },
+    // S004: each list gh could not read, the cause said once, then one Fix line (#1115).
+    { key: 'kanban --text, gh not signed in', words: ['kanban', '--text'], place: 'signed-out' },
     ...GUARD_CALLS.map(([name, command]): ScreenRun => ({ key: `guard, ${name}`, words: ['hook'], stdin: toolCall(repo, command), isStderrOnly: true })),
     { key: 'session start', words: ['doctor', '--session'] },
     { key: 'session start, unsaved work', words: ['doctor', '--session'], place: 'dirty' },
     { key: 'session start, codex', words: ['doctor', '--session', '--agent', 'codex'] },
     { key: 'commit check', words: ['check', '--staged'] },
+    // S072: a commit whose time carries a time zone; its row ends with the Fix line (#1115).
+    { key: 'commit check, a time zone', words: ['check', '--staged'], place: 'zoned' },
+    // init's notes, which a sandbox with no DeepSeek Harness profile never shows; then init again (#1115).
+    { key: 'init, a DeepSeek Harness profile', words: ['init'], place: 'deepseek' },
+    { key: 'init, run twice', words: ['init'], place: 'deepseek' },
     // Each command with no words, as a newcomer types it: the captured screens S040 to S049 (#1115).
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_REPO.has(word) ? 'fresh' : 'repo' })),
   ];
@@ -204,13 +221,8 @@ function screensOf(repo: string): ScreenRun[] {
  * screen that passes fails the test until its line is removed, and a new screen is never waived.
  */
 /** How many screens WAIVED may hold. Lower it in the same change that takes a screen off. */
-const WAIVED_MOST = 5;
+const WAIVED_MOST = 0;
 const WAIVED: Record<string, string> = {
-  'doctor, bare': 'fix-line: each MISSING row says its fix inside the sentence; the texts are rewritten in stage 2 of #1115',
-  'worker, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
-  'msg, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
-  'train, bare': 'widest: the missing conflict map is one 120-column line; stage 2 of #1115',
-  'ci-health, bare': 'widest, next-step: the missing repo is one long line with no command; stage 2 of #1115',
 };
 
 test('screens: every screen the command list reaches keeps the limits of record 0049; WAIVED only shrinks (#1099)', async () => {
@@ -221,16 +233,33 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const dirty = makeSandbox();
   dirty.write('notes.md', 'draft\n');
   dirty.write('todo.txt', 'todo\n');
+  // A GitHub remote, and a gh that answers as gh does when nobody is signed in.
+  const signedOut = makeSandbox();
+  signedOut.git('remote', 'add', 'origin', 'https://github.com/octo/demo.git');
+  const noLogin = writeNodeProgram(join(signedOut.home, 'bin'), 'gh', `process.stderr.write('To get started with GitHub CLI, please run:  gh auth login\\n'); process.exitCode = 4;`, process.platform, signedOut.env);
+  // A DeepSeek Harness profile, so init prints its notes (#1115).
+  const deepseek = makeSandbox();
+  mkdirSync(join(deepseek.home, '.dsh', 'profiles', 'work'), { recursive: true });
   sandbox.write('notes.txt', 'hello\n');
   sandbox.git('add', 'notes.txt');
   const runs = screensOf(sandbox.repo);
   const broken: string[] = [];
   const healed: string[] = [];
+  const boxOf = (place: ScreenRun['place']) => (place === 'dirty' ? dirty : place === 'signed-out' ? signedOut : place === 'deepseek' ? deepseek : place === 'fresh' ? makeSandbox() : sandbox);
   for (const run of runs) {
-    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : {};
-    const box = run.place === 'dirty' ? dirty : run.place === 'fresh' ? makeSandbox() : sandbox;
-    const result = await box.call(run.words, { input: run.stdin ?? '', ...where });
-    const text = run.isStderrOnly ? result.stderr : `${result.stdout}${result.stderr}`;
+    const where =
+      run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } }
+      : run.place === 'dirty' ? { cwd: dirty.repo }
+      : run.place === 'signed-out' ? { cwd: signedOut.repo, extra: noLogin }
+      : run.place === 'deepseek' ? { cwd: deepseek.repo }
+      : run.place === 'zoned' ? { extra: { GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700', SHELL: '/bin/bash' } }
+      : {};
+    const result = await boxOf(run.place).call(run.words, { input: run.stdin ?? '', ...where });
+    // Both streams in the order written, as a terminal shows them: a moved note comes first.
+    const text = run.isStderrOnly ? result.stderr : result.output;
+    if (run.key === 'init, a DeepSeek Harness profile') assert.match(text, /note {8}DeepSeek Harness/, `init shows the DeepSeek Harness note: ${text}`);
+    if (run.place === 'zoned') assert.match(text, /Fix: `export TZ=UTC`/, `the commit check stops on the time zone: ${text}`);
+    if (run.place === 'signed-out') assert.match(text, /\n- the pull requests and the Actions runs: gh is not signed in\n {2}Fix: `gh auth login`\n/, `the fake gh answered: ${text}`);
     const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: result.status !== 0, isHelp: run.isHelp });
     const isWaived = run.key in WAIVED;
     if (problems.length && !isWaived) broken.push(`${run.key} (yokoten ${run.words.join(' ')}): ${problems.join('; ')}`);

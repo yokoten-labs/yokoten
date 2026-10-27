@@ -25,6 +25,7 @@ import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/curr
 import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/text/message.ts';
+import { shownValue } from '../../rules/text/terminal.ts';
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
 import { parseChange } from '../../run/changelog.ts';
@@ -123,7 +124,7 @@ function problemScreen(command: string, problems: Finding[], hints: string[]): s
     lines.push('');
     for (const hint of hints) lines.push(...row('note', hint));
   }
-  lines.push('', ...wrap('Next: ', 'fix them, then `yokoten check`'));
+  lines.push('', ...wrap('Next: ', `fix ${problems.length === 1 ? 'it' : 'them'}, then \`yokoten check\``));
   if (links.length === 1) lines.push(...moreLine(links[0] ?? ''));
   return lines;
 }
@@ -1382,10 +1383,17 @@ export function runCiHealth(invocation: Invocation): number {
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;
   const { env } = invocation;
-  const stated = options.values['--repo'] || env.GITHUB_REPOSITORY || '';
-  const repo = stated || repoOf(readOriginUrl(root, env)) || '';
+  const given = options.values['--repo'];
+  const stated = given || env.GITHUB_REPOSITORY || '';
+  const origin = readOriginUrl(root, env);
+  const repo = stated || repoOf(origin) || '';
   if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) {
-    print(invocation, ['yokoten ci-health: no GitHub repo. Pass --repo owner/name, set GITHUB_REPOSITORY, or add an origin remote.'], invocation.stderr);
+    // Say which value was wrong, and show what the person typed (#1115); the remote's URL may name a machine path, so it is not shown.
+    const why = given ? `--repo ${shownValue(given)} is not owner/name`
+      : env.GITHUB_REPOSITORY ? `GITHUB_REPOSITORY is ${shownValue(env.GITHUB_REPOSITORY)}, not owner/name`
+      : origin ? 'the origin remote is not a GitHub repo, and no --repo was given'
+      : 'no --repo, no GITHUB_REPOSITORY and no origin remote';
+    print(invocation, [...title('ci-health', `no GitHub repo to read: ${why}`), '', 'Fix: `yokoten ci-health --repo owner/name`'], invocation.stderr);
     return 1;
   }
   const gh = ghIn(root, env, CI_HEALTH_TIMEOUT);

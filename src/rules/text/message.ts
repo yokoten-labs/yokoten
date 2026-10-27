@@ -937,17 +937,62 @@ export const formatRefusal = (f: Finding): string => {
   return [...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...spaced([findingRow('Why', parts.why), findingRow('Instead', parts.fix), findingRow('More', parts.docs)])].join('\n');
 };
 
+/** A fix that starts with the command to type: the command, and what to do after it ('' for nothing). */
+export interface LeadingCommand {
+  command: string;
+  then: string;
+}
+
+/**
+ * The command a fix starts with (issue #1115), so a screen can show it on a line of its own:
+ * "`yokoten init` adds one", "run `yokoten marks add` and type ...". Null when the fix starts
+ * with words, or names a file in backticks: then it stays a sentence. What follows the
+ * command is kept only when it is a further step ("and type ...", ", then keep ...").
+ */
+export function leadingCommand(fix: string): LeadingCommand | null {
+  const found = /^(run )?`([^`]+)`(.*)$/i.exec(fix.trim());
+  if (!found) return null;
+  const [, run, command = '', rest = ''] = found;
+  if (!run && !/^(?:npx )?(?:yokoten|git|gh) /.test(command)) return null;
+  const tail = rest.trim().replace(/[.;]$/, '');
+  // A second command after it: the fix is a sentence about both, so it stays one.
+  if (tail.includes('`')) return null;
+  if (/^(?:,|and |then )/.test(tail)) return { command, then: tail.replace(/^,?\s*(?:and\s+)?(?:then\s+)?/, '') };
+  // A few words that only say what the command does ("adds one", "again") go; a longer tail is more advice, so the fix stays a sentence.
+  return tail.split(/\s+/).filter(Boolean).length <= 3 && !tail.includes(',') ? { command, then: '' } : null;
+}
+
+/**
+ * The one rule for "this fix's command" on every screen (issue #1115): what `leadingCommand`
+ * finds, or else the command of a fix that starts with run `<command>` and then goes on
+ * with more words ("run `yokoten install` from this copy of yokoten"); those words stay as
+ * `then`. A fix with a second command in backticks stays a sentence.
+ */
+export function fixCommand(fix: string): LeadingCommand | null {
+  const direct = leadingCommand(fix);
+  if (direct) return direct;
+  const found = /^run `([^`]+)`(.*)$/i.exec(fix.trim());
+  if (!found || found[2]?.includes('`')) return null;
+  return { command: found[1] ?? '', then: (found[2] ?? '').trim().replace(/[.;]$/, '') };
+}
+
+/** A fix's command as its own line: `Fix: \`<command>\``, and the further step after it. */
+export const fixText = ({ command, then }: LeadingCommand): string => `\`${command}\`${then ? `, then ${then}.` : ''}`;
+
 /**
  * A finding as a note a person reads at a session start (issue #1099): what happened on
- * the first line, then the aligned `Why`, `Next` and `More` rows a refusal has too.
+ * the first line, then the aligned `Why`, `Next` and `More` rows a refusal has too. A fix
+ * that starts with a command is a `Fix` row instead of `Next`, the command first (#1115).
  */
-export const formatNote = (f: Finding): string[] =>
-  spaced([
+export const formatNote = (f: Finding): string[] => {
+  const command = leadingCommand(f.fix);
+  return spaced([
     wrap('yokoten: ', `${place(f)}${f.what}${formatFindingMarks(f)}`),
     findingRow('Why', `${sentence(f.why)}.`),
-    findingRow('Next', `${sentence(f.fix)}.`),
+    command ? findingRow('Fix', fixText(command)) : findingRow('Next', `${sentence(f.fix)}.`),
     ...(f.docs === undefined ? [] : [findingRow('More', f.docs)]),
   ]);
+};
 
 /**
  * The four parts back from text, or null when the text is not a refusal in this shape.

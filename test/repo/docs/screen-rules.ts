@@ -53,13 +53,18 @@ const ESCAPE = /\u001b\[/;
 const CONTINUED = /^ {3,}\S/;
 // A two-column row: two spaces, a label, two or more spaces, then its text.
 const TWO_COLUMNS = /^ {2}(\S(?:.*?\S)?) {2,}(?=\S)/;
+// A row with a mark and then a label (`row('ok', text, 'main')`): its text starts after the label.
+const MARK_LABEL = /^ {2}(?:ok|done|next|to do|MISSING|note|can't check|skipped) +\S+(?: \S+)* {2,}(?=\S)/;
 // The mark words a problem row starts with (RowMark), and a list item under a `Not read:` heading.
 const PROBLEM_ROW = /^ {2}(?:MISSING|can't check) /;
 const PROBLEM_HEADINGS = new Set(['Not read:', 'Problems:']);
 // The fix of a problem: its own line, `Fix: ` and the command.
 const FIX_LINE = /^\s*Fix: `[^`]+`/;
 // An absolute path on this machine: a root folder of Linux, macOS or Windows, not a link or ~.
-const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|[A-Za-z]:\\[^\s`'")]*)/g;
+// Windows paths count with either slash, and in Git Bash's form, /c/Users/... (#1115).
+const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|\/[a-zA-Z]\/(?:Users|Windows|ProgramData|Program Files)\/[^\s`'")]*|[A-Za-z]:[\\/][^\s`'")]*)/g;
+// A command to run named without backticks, as in `run gh auth login` (#1115).
+const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
 
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {
@@ -120,7 +125,8 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
     if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next [next-step]');
   }
-  const columns = new Set(lines.map((line) => TWO_COLUMNS.exec(line)?.[0].length).filter((column) => column !== undefined));
+  // Where a row's text starts: past the label of a row with a mark and a label, else past its first label (#1115).
+  const columns = new Set(lines.map((line) => (MARK_LABEL.exec(line) ?? TWO_COLUMNS.exec(line))?.[0].length).filter((column) => column !== undefined));
   if (columns.size > limitOf('label-columns')) problems.push(`its rows start their text in ${columns.size} columns (${[...columns].sort((a, b) => a - b).join(', ')}); the most is ${limitOf('label-columns')} [label-columns]`);
   let wrappedExamples = 0;
   let spaced = 0;
@@ -135,7 +141,7 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     if (body.length > 1 && body.some((item) => item.length > 1)) spaced += body.length - 1;
     for (const item of body) {
       const isProblem = PROBLEM_ROW.test(item[0]) || (PROBLEM_HEADINGS.has(heading) && /^(?:- | {2}\S)/.test(item[0]));
-      if (isProblem && item.some((line) => /`[^`]+`/.test(line) && !FIX_LINE.test(line))) fixes += 1;
+      if (isProblem && item.some((line) => (/`[^`]+`/.test(line) || RUN_WORD.test(line)) && !FIX_LINE.test(line))) fixes += 1;
       if (isProblem && item.length > 1 && item.slice(0, -1).some((line) => FIX_LINE.test(line))) fixes += 1;
     }
     for (const line of block.filter((each) => FIX_LINE.test(each))) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);

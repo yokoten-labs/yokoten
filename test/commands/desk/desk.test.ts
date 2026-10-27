@@ -85,7 +85,7 @@ test('desk: bare desk lists the desks and writes nothing (#1054)', async () => {
   const before = [sandbox.git('status', '--porcelain', '--ignored').stdout, snapshot(dirname(sandbox.repo))];
   const bare = await call([]);
   assert.equal(bare.status, 0);
-  assert.match(bare.stdout, /^yokoten desk · no desks yet\n\nNext: `yokoten desk <issue>`\n$/);
+  assert.match(bare.stdout, /^yokoten desk · no desks yet\n\nA desk gives one task to one AI, in its own fenced clone\.\n\nNext: `yokoten desk <issue>`\n$/);
   assert.deepEqual([sandbox.git('status', '--porcelain', '--ignored').stdout, snapshot(dirname(sandbox.repo))], before, 'bare desk writes nothing');
   assert.ok(!existsSync(home));
   // The positive control: the old form still runs, and names what is missing.

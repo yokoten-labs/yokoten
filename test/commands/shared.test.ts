@@ -16,9 +16,9 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { canColour, isColourTerminal, paint, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
+import { canColour, isColourTerminal, paint, problemRows, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
-import { finding, formatRefusal } from '../../src/rules/text/message.ts';
+import { finding, fixCommand, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
 // #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
 // dropped the backslashes, and the home mask looked only for the written path.
@@ -60,7 +60,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
     assert.equal(result.status, 1, args.join(' '));
     assert.equal(result.stdout, '', `${args.join(' ')}: nothing on stdout`);
     // A moved command says so first (#1054); the error is the rest.
-    assert.match(result.stderr.replace(/^note: .*\n/, ''), said(command), args.join(' '));
+    assert.match(result.stderr.replace(/^note: .*\n\n/, ''), said(command), args.join(' '));
     assert.deepEqual(readdirSync(away), [], `${args.join(' ')}: nothing written`);
   }
   // --json: the same finding, as data.
@@ -75,7 +75,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
   const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
+  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\n\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
   // A session in a non-repo folder gets no noise, and starts.
   const session = await sandbox.call(['doctor', '--session'], { cwd: away });
@@ -93,7 +93,7 @@ test('git not installed: a command that needs a repo says git is missing, not "n
   for (const command of ['check', 'doctor']) {
     const result = await sandbox.call([command], { extra: { PATH: noGit } });
     assert.equal(result.status, 1, command);
-    assert.match(result.stderr.replace(/^note: .*\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
+    assert.match(result.stderr.replace(/^note: .*\n\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
     // The next step names both causes: git may be installed but not on PATH (#1115 review).
     if (command === 'doctor') assert.match(result.stderr, /\n\nNext: install git, or add it to PATH, then run `yokoten doctor` again\n$/);
   }
@@ -121,10 +121,11 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['check', '--staged'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
-  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences.
+  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences, or
+  // the fix's command on its own last line (#1115).
   const problems = result.stderr.replace(/\s+/g, ' ').split(' MISSING ').slice(1).map((one) => one.split(' Next: ')[0] ?? one);
   assert.ok(problems.length >= 7, result.stderr);
-  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. .+\.\s*$/, one);
+  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. (?:.+\.|Fix: `[^`]+`)\s*$/, one);
   clean(result.stderr);
   result = await sandbox.call(['check', '--staged', '--json'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
@@ -357,4 +358,33 @@ test('screen helpers: 80 columns, the label column, plural counts, the old conso
   assert.equal(isUnicodeTerminal({ TERM: 'linux' }, 'linux'), false);
   assert.match(styleLine('  ok          guard', true, false), /√ ok/);
   assert.match(styleLine('  ok          guard', true, true), /✔ ok/);
+});
+
+// Issue #1115: a fix that starts with a command ends its row on a Fix line, said once.
+test('problem rows: a fix that starts with a command is its own last line, said once under the problems it fixes (#1115)', async () => {
+  assert.deepEqual(leadingCommand('`yokoten init` adds one'), { command: 'yokoten init', then: '' });
+  assert.deepEqual(leadingCommand('run `yokoten marks add` and type your name'), { command: 'yokoten marks add', then: 'type your name' });
+  assert.deepEqual(leadingCommand('run `export TZ=UTC`, then keep the command in ~/.bashrc'), { command: 'export TZ=UTC', then: 'keep the command in ~/.bashrc' });
+  assert.equal(leadingCommand('Run `git fetch origin` and `git fetch origin pull/1/head`'), null, 'two commands stay one sentence');
+  assert.equal(leadingCommand('`AGENTS.md` names no owner'), null, 'a file in backticks is no command');
+  assert.equal(leadingCommand('run `yokoten install` again, or report it in an issue'), null, 'more advice after it stays a sentence');
+  // One rule for every screen: a command followed by more words is still the fix's command.
+  assert.deepEqual(fixCommand('run `yokoten install` from this copy of yokoten'), { command: 'yokoten install', then: 'from this copy of yokoten' });
+  assert.deepEqual(fixCommand('run `yokoten install` again, or report it in an issue'), { command: 'yokoten install', then: 'again, or report it in an issue' });
+  assert.equal(fixCommand('Run `git fetch origin` and `git fetch origin pull/1/head`'), null, 'two commands stay one sentence');
+  assert.equal(fixCommand('make `yokoten.json` valid JSON'), null);
+  const same = finding('time-zone', 'no runtime installed', 'run `yokoten install` from this copy of yokoten');
+  const checkFix = problemRows([same]).filter((line) => line.includes('Fix: '));
+  const doctorFix = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([same]).flat().filter((line) => line.includes('Fix: '));
+  assert.deepEqual(checkFix, doctorFix, 'check and doctor show the same Fix line');
+  assert.deepEqual(checkFix, ['              Fix: `yokoten install`']);
+  const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
+  const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
+  assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');
+  assert.equal(lines.at(-1), '              Fix: `export TZ=UTC`', 'under the last problem it fixes');
+  assert.ok(lines.includes(''), 'a blank line between the rows');
+  // A positive control: a fix with no leading command keeps its sentence, and no Fix line.
+  const plain = problemRows([finding('time-zone', 'one', 'leave history as it is')]);
+  assert.ok(!plain.some((line) => line.includes('Fix: ')), plain.join('\n'));
+  assert.ok(plain.join(' ').includes('Leave history as it is.'), plain.join('\n'));
 });

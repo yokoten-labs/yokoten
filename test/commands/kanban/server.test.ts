@@ -364,7 +364,7 @@ test('kanban --text: the sessions, pull requests and Actions, and the usage erro
   const sandbox = makeSandbox();
   const started = sandbox.run(['kanban', '--text']);
   assert.equal(started.status, 0, started.stderr);
-  assert.match(started.stdout, /^yokoten kanban: this repo \(preview: read only\)\n\nSessions:\n- none yet\. [^\n]+\n\nPull requests:\n- none waits on you\.\n\nActions: main unknown\n\nNot read:\n- this repo has no GitHub remote, so the board shows no pull requests\n$/);
+  assert.match(started.stdout, /^yokoten kanban · this repo: sessions, pull requests and Actions, read only\n\nSessions:\n- none yet\. [^\n]+\n\nPull requests:\n- none waits on you\.\n\nActions: main unknown\n\nNot read:\n- this repo has no GitHub remote, so the board shows no pull requests\n$/);
   writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'w', vendor: 'claude', model: 'opus', task: 'issue 601 board', updated: new Date().toISOString() }));
   const joined = await sandbox.call(['board', '--text']);
   assert.equal(joined.status, 0, joined.stderr);
@@ -388,7 +388,7 @@ test('kanban --text: pull requests and Actions from gh', async () => {
   chmodSync(join(bin, 'gh'), 0o755);
   const result = await sandbox.call(['kanban', '--text'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten kanban: repo \(preview: read only\)\n/);
+  assert.match(result.stdout, /^yokoten kanban · repo: sessions, pull requests and Actions, read only\n/);
   assert.match(result.stdout, /\nPull requests:\n- #7 team page: checks failing\n/);
   assert.match(result.stdout, /\nActions: main fail since 2026-10-26T10:00:00Z\n/);
 });

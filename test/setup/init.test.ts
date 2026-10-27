@@ -1206,13 +1206,13 @@ test('update: doctor says when the core rules are behind; update previews, and -
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /core rules/);
   result = await sandbox.call(['update', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr.replace(/^note: .*\n/, '').replace(/\s+/g, ' '), /^yokoten update · nothing changed MISSING can't compare AGENTS\.md with the kit: .*Nothing was written/);
+  assert.match(result.stderr.replace(/^note: .*\n\n/, '').replace(/\s+/g, ' '), /^yokoten update · nothing changed MISSING can't compare AGENTS\.md with the kit: .*Nothing was written/);
   assert.equal(readFileSync(path, 'utf8'), '# our own rules\n');
 
   rmSync(path);
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /core-rules/, 'the road asks for AGENTS.md');
   result = await sandbox.call(['update']);
-  assert.deepEqual([result.status, result.stderr], [1, 'note: yokoten update moved to yokoten. It runs as before this time.\nyokoten update · nothing changed\n\n  MISSING     no AGENTS.md here; nothing was written\n              Fix: `yokoten init`\n']);
+  assert.deepEqual([result.status, result.stderr], [1, 'note: yokoten update moved to yokoten. It runs as before this time.\n\nyokoten update · nothing changed\n\n  MISSING     no AGENTS.md here; nothing was written\n              Fix: `yokoten init`\n']);
   assert.equal((await sandbox.call(['update', '--force'])).status, 1, 'an unknown option is refused');
   assert.match((await sandbox.call(['explain', 'core-rules'])).stdout.replace(/\s+/g, ' '), /^yokoten explain core-rules · .* What the core rules in AGENTS\.md/);
 });
@@ -1234,7 +1234,7 @@ test('update: init writes the kit version, and a project from a newer yokoten is
   for (const args of [['update'], ['update', '--write']]) {
     const result = await sandbox.call(args);
     assert.equal(result.status, 1);
-    assert.match(result.stderr.replace(/^note: .*\n/, '').replace(/\s+/g, ' '), new RegExp(String.raw`^yokoten update · nothing changed MISSING AGENTS\.md was written by yokoten ${newerPattern}, newer than this yokoten ${versionPattern}\. Nothing was written`));
+    assert.match(result.stderr.replace(/^note: .*\n\n/, '').replace(/\s+/g, ' '), new RegExp(String.raw`^yokoten update · nothing changed MISSING AGENTS\.md was written by yokoten ${newerPattern}, newer than this yokoten ${versionPattern}\. Nothing was written`));
   }
   assert.equal(readFileSync(path, 'utf8'), newer, 'a newer project is not downgraded');
   const doctor = await sandbox.call(['doctor', '--all']);
@@ -1463,7 +1463,7 @@ test('init: a repo inside the running copy gets its own .yokoten/, unless the co
   // Copying src/ into a folder inside src/ never ends, so init writes nothing and says why.
   const inside = join(clone, 'src', 'project');
   result = initIn(inside);
-  assert.deepEqual(pick(result), [1, '', 'note: yokoten init moved to yokoten. It runs as before this time.\nyokoten init: cannot copy the runtime to src/project/.yokoten, because it is inside src/ of the copy running now. Run yokoten from a copy outside that folder\n']);
+  assert.deepEqual(pick(result), [1, '', 'note: yokoten init moved to yokoten. It runs as before this time.\n\nyokoten init: cannot copy the runtime to src/project/.yokoten, because it is inside src/ of the copy running now. Run yokoten from a copy outside that folder\n']);
   assert.deepEqual(readdirSync(inside), ['.git'], 'nothing is written');
   assert.ok(!readdirSync(join(clone, 'src')).some((name) => name.startsWith('.')), 'no temp folder is left');
 });
@@ -2211,7 +2211,7 @@ test('trust (#661): init without a terminal writes nothing and names the command
   // A pipe is not a person: `yokoten trust` writes nothing there (#661).
   const piped = await sandbox.call(['trust']);
   assert.equal(piped.status, 1, 'no terminal is a refusal');
-  assert.match(piped.stderr, /^yokoten trust · a person runs this at a terminal$/m);
+  assert.match(piped.stderr, /^yokoten trust · a person runs this at a terminal; nothing was written$/m);
   assert.match(piped.stderr, /nothing was written/);
   assert.equal(readFileSync(config, 'utf8'), elsewhere, 'a pipe: nothing was written');
 
@@ -2439,10 +2439,10 @@ test('init: the default screen is one screen of groups, and no line passes 80 (#
   assert.equal(result.status, 0, result.stderr);
   const lines = result.stdout.split('\n');
   assert.match(result.stdout, /^yokoten init · this project is set up$/m);
-  assert.match(result.stdout, /^ {2}done +rules +AGENTS\.md, the commit check$/m);
-  assert.match(result.stdout, /^ {2}done +CI +4 workflows, Dependabot$/m);
-  assert.match(result.stdout, /^ {2}done +GitHub +issue and PR templates, CODEOWNERS, a security policy$/m);
-  assert.match(result.stdout, /^ {2}done +agents +guard for Claude Code \(\d+ more ready\)$/m);
+  assert.match(result.stdout, /^ {2}done +rules: AGENTS\.md, the commit check$/m);
+  assert.match(result.stdout, /^ {2}done +CI: 4 workflows, Dependabot$/m);
+  assert.match(result.stdout, /^ {2}done +GitHub: issue and PR templates, CODEOWNERS, a security policy$/m);
+  assert.match(result.stdout, /^ {2}done +agents: guard for Claude Code \(\d+ more ready\)$/m);
   assert.match(result.stdout, /^ {2}\d+ files written, none of yours changed$/m);
   assert.match(result.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
   assert.match(result.stdout, /^More: `yokoten init --list` shows every file$/m);
@@ -2467,7 +2467,7 @@ test('init: partly new lists only the group that changed (#1027)', async () => {
   rmSync(join(sandbox.repo, '.github', 'CODEOWNERS'));
   const result = await sandbox.call(['init']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}done +GitHub +CODEOWNERS$/m);
+  assert.match(result.stdout, /^ {2}done +GitHub: CODEOWNERS$/m);
   assert.doesNotMatch(result.stdout, /^ {2}done +rules/m, 'a group with nothing new stays folded');
   assert.match(result.stdout, /^ {2}1 file added, \d+ files already there$/m);
   assert.ok(result.stdout.split('\n').every((line) => line.length <= 80), result.stdout);

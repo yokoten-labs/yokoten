@@ -39,7 +39,7 @@ test('desk records: a working or stalled desk whose process is gone stopped mid-
 });
 
 test('desk list: none is one next step; a stopped desk is named first, with what it did (#1054, #1056)', () => {
-  assert.deepEqual(listScreen([], () => true, () => [], NOW), ['yokoten desk · no desks yet', '', 'Next: `yokoten desk <issue>`']);
+  assert.deepEqual(listScreen([], () => true, () => [], NOW), ['yokoten desk · no desks yet', '', 'A desk gives one task to one AI, in its own fenced clone.', '', 'Next: `yokoten desk <issue>`']);
   const screen = listScreen([record('3', 'kept'), record('4', 'working')], (pid) => pid !== 7, (one) => (one.name === '4' ? ['f00 fix: half'] : []), NOW).join('\n');
   assert.match(screen, /^yokoten desk · 2 desks, 1 stopped mid-task\n/);
   assert.match(screen.replace(/\s+/g, ' '), /ok desk 3 ended, work kept · claude-code · task 3 · no commits yet/);

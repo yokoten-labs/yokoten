@@ -600,7 +600,7 @@ test('check --history: a commit hidden by git replace is still scanned; a grafts
   result = await sandbox.call(['check', '--history']);
   assert.equal(result.status, 1, result.stdout);
   assert.ok(!/every commit on every branch/.test(result.stdout + result.stderr), result.stdout);
-  assert.match(flat(result.stderr), /1 problem MISSING this repo has a grafts file, so the history check can't see every commit .+\. Run `git replace --convert-graft-file`/);
+  assert.match(flat(result.stderr), /1 problem MISSING this repo has a grafts file, so the history check can't see every commit .+\. To turn .+, then run it again\. Fix: `git replace --convert-graft-file`/);
   assert.ok(!result.stderr.includes('notes.md'), 'nothing was scanned');
   result = await sandbox.call(['check', '--history', '--json']);
   assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string }) => f.id), ['shallow-history']);
@@ -663,7 +663,7 @@ test('check --pr: a base or head commit not in the checkout is one finding, neve
   assert.equal(cloned.status, 0, cloned.stderr);
   let result = await sandbox.call(['check', '--pr'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }) } });
   assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix them, then `yokoten check` More: \S+#use-it-as-a-github-action $/);
+  assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix it, then `yokoten check` More: \S+#use-it-as-a-github-action $/);
   noGitError(result.stderr);
   const summary = join(sandbox.home, 'summary.md');
   result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });

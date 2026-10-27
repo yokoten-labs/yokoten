@@ -12,7 +12,7 @@ import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skil
 import { readOriginUrl, setUpPlanning } from '../../setup/plan.ts';
 import { VERSION } from '../../setup/files.ts';
 import { enabledPlugin } from '../../setup/advice/marketplace.ts';
-import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, spaced, title, usage, wrap } from '../shared.ts';
+import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, screen, spaced, title, usage, wrap } from '../shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -55,13 +55,14 @@ export async function runStart(invocation: Invocation): Promise<number> {
   const failedScreens: string[][] = [];
   if (isMachineMissing) {
     const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform: invocation.platform });
-    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done.lines).join(', ') || 'your agents'}`, 'computer'));
+    // No label column: doctor's rows below have none, so every row's text starts in one column (#1115).
+    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done.lines).join(', ') || 'your agents'} on this computer`));
     else failedScreens.push(installScreen(invocation, done.lines, done.ok, true));
   }
   if (isProjectMissing) {
     const done = init(root, env, undefined, { ask, platform: invocation.platform });
     const wrote = done.lines.filter((line) => /^wrote /.test(line)).length;
-    if (done.ok && !done.lines.some((line) => NEEDS_HAND.test(line))) doneRows.push(...row('ok', `${count(wrote, 'file')} written, none of yours changed`, 'project'));
+    if (done.ok && !done.lines.some((line) => NEEDS_HAND.test(line))) doneRows.push(...row('ok', `${count(wrote, 'file')} written in this project, none of yours changed`));
     else failedScreens.push(projectScreen(done.lines, done.ok, true));
   }
   for (const screen of failedScreens) print(invocation, [...screen, '']);
@@ -73,16 +74,30 @@ export async function runStart(invocation: Invocation): Promise<number> {
   const held: string[] = [];
   const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
   const code = await runDoctor({ ...invocation, stdout: sink });
-  const lines = held.join('').replace(/\n$/, '').split('\n');
-  const next = lines.findIndex((line) => line.startsWith('Next: '));
-  const moreAt = lines.findIndex((line) => line.startsWith('More: '));
-  const more = moreAt === -1 ? [] : lines.slice(moreAt);
-  const body = lines.slice(0, next === -1 ? (moreAt === -1 ? lines.length : moreAt) : next);
-  while (body.length && body.at(-1) === '') body.pop();
-  // The title says this run set things up, then where the road is.
-  const head = body[0]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
-  print(invocation, [head, ...body.slice(1, 2), ...doneRows, ...body.slice(2), '', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
+  print(invocation, startScreen(held.join('').replace(/\n$/, '').split('\n'), doneRows));
   return code;
+}
+
+/**
+ * The first run's one screen (#1027) from doctor's lines and the rows of what this run did:
+ * doctor's title says it set things up, then this run's rows, then the rest of doctor's screen
+ * (its problems and the road, whatever that holds), one Next line to keep what was written, and
+ * doctor's More line last. Each block is told apart by one blank line (#1115), decided from the
+ * blocks themselves: doctor's own Next waits for that commit.
+ */
+export function startScreen(doctorLines: readonly string[], doneRows: readonly string[]): string[] {
+  const next = doctorLines.findIndex((line) => line.startsWith('Next: '));
+  const moreAt = doctorLines.findIndex((line) => line.startsWith('More: '));
+  const more = moreAt === -1 ? [] : doctorLines.slice(moreAt);
+  const body = doctorLines.slice(0, next === -1 ? (moreAt === -1 ? doctorLines.length : moreAt) : next);
+  while (body.length && body.at(-1) === '') body.pop();
+  // A broken self-test line may lead the title.
+  const titleAt = Math.max(0, body.findIndex((line) => line.startsWith('yokoten doctor · ')));
+  const lead = body.slice(0, titleAt).filter(Boolean);
+  const head = body[titleAt]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
+  const rest = body.slice(titleAt + 1);
+  while (rest[0] === '') rest.shift();
+  return screen(lead, [head], doneRows, rest, [...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
 }
 
 /** True when init has already put the rules in this project. */
@@ -208,15 +223,17 @@ function installScreen(invocation: Invocation, lines: string[], ok: boolean, isF
 
 /** The one screen `yokoten uninstall` shows: counts, then the command that puts it back (#1027). */
 function uninstallScreen(lines: string[], ok: boolean): string[] {
-  if (!lines.some((line) => /^removed /.test(line))) return title('uninstall', 'nothing to remove, nothing changed');
+  // Say why there is nothing to remove, so the screen means something to a newcomer (#1115).
+  if (!lines.some((line) => /^removed /.test(line))) return title('uninstall', 'nothing to remove: yokoten is not installed on this computer');
   const skills = new Set(lines.map((line) => /^removed skill ([\w-]+) in /.exec(line)?.[1]).filter(Boolean)).size;
   const agents = lines.filter((line) => /^removed agent /.test(line)).length;
   const hooks = lines.filter((line) => /^removed the .*(doctor|guard|hooks)/.test(line)).length;
   const removed = [skills && `${skills} skill${skills === 1 ? '' : 's'}`, agents && `${agents} agents`, hooks && `${hooks} hooks`].filter(Boolean);
   const out = title('uninstall', ok ? 'removed what install wrote' : 'removed some of what install wrote');
   out.push('');
-  if (removed.length) out.push(...row('ok', removed.join(', '), 'removed'));
-  if (ok) out.push(...row('ok', 'your own files, keys and private marks', 'kept'));
+  // No label column, so the MISSING rows below start their text in the same column (#1115).
+  if (removed.length) out.push(...row('ok', `removed ${removed.join(', ')}`));
+  if (ok) out.push(...row('ok', 'kept your own files, keys and private marks'));
   const problems = lines.filter((line) => !/^(removed|nothing to remove|not there|kept|yokoten: cleaned)/.test(line));
   if (problems.length) out.push('', ...problems.flatMap((line) => row('MISSING', line)));
   out.push('');
@@ -394,26 +411,31 @@ export function initScreen(lines: string[], plan: string[] = [], ok = true): str
   const handRows = lines.filter((line, at) => NEEDS_HAND.test(line) && lines.indexOf(line) === at).flatMap(handRow);
   const otherNotes = notes.filter((line) => !NEEDS_HAND.test(line));
   const more = moreLine('`yokoten init --list` shows every file');
-  if (written.size === 0 && !handRows.length) return [...title('init', 'already set up here, nothing changed'), ...(plan.length ? ['', ...plan] : []), ...notes.flatMap(noteLine), ...more];
+  // The notes are a block of their own, as on the first run (#1115).
+  if (written.size === 0 && !handRows.length) {
+    const said = screen(title('init', 'already set up here, nothing changed'), plan, spaced(notes.map(noteLine)));
+    return plan.length || notes.length ? [...said, '', ...more] : [...said, ...more];
+  }
   const groups = (['rules', 'CI', 'GitHub', 'agents'] as const).filter((group) => items.some((item) => initGroup(item) === group));
   // Partly new: list only the groups that got something on this run.
   const shown = groups.filter((group) => items.some((item) => initGroup(item) === group && item.isWritten));
   const isPartly = !ok || handRows.length > 0;
-  const screen = [...title('init', isPartly ? 'this project is partly set up' : 'this project is set up'), ''];
+  const out = [...title('init', isPartly ? 'this project is partly set up' : 'this project is set up'), ''];
   const isPartlyNew = kept.size > 0;
   // Partly new: a group names only what this run added, so an old file is not news.
   const listed = isPartlyNew ? items.filter((item) => item.isWritten) : items;
-  for (const group of shown) screen.push(...row('done', groupText(group, listed), group));
+  // The group in the text, not a label column: the notes and MISSING rows have none (#1115).
+  for (const group of shown) out.push(...row('done', `${group}: ${groupText(group, listed)}`));
   const summary = isPartlyNew
     ? `${count(written.size, 'file')} added, ${count(kept.size, 'file')} already there`
     : `${count(written.size, 'file')} written, ${notes.some(isYours) ? 'your own files kept' : 'none of yours changed'}`;
-  screen.push(...wrap('  ', summary));
-  screen.push(...handRows, ...plan);
+  out.push(...wrap('  ', summary));
+  out.push(...handRows, ...plan);
   // The notes are a block of their own, a blank line between them when one wraps (#1115).
   const noteRows = spaced(otherNotes.map(noteLine));
-  if (noteRows.length) screen.push('', ...noteRows);
-  screen.push('', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more);
-  return screen;
+  if (noteRows.length) out.push('', ...noteRows);
+  out.push('', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more);
+  return out;
 }
 
 /** One note of init as a row, so a queue and an agent read the same words. */
@@ -449,7 +471,7 @@ export function runTrust(invocation: Invocation): number {
   // A person turns the guard on (#661): a pipe, a hook or CI has nobody to decide, and an
   // agent that ran the command would change the trust in its user's own settings.
   if (!isAtTerminal(invocation)) {
-    print(invocation, [...title('trust', 'a person runs this at a terminal'), '', ...row('note', 'it changes the trust in your own agent settings', 'why'), ...row('note', 'nothing was written'), '', ...nextLine('yokoten trust')], invocation.stderr);
+    print(invocation, [...title('trust', 'a person runs this at a terminal; nothing was written'), '', ...row('note', 'it changes the trust in your own agent settings, so a person decides'), '', ...nextLine('yokoten trust')], invocation.stderr);
     return 1;
   }
   const dir = resolve(invocation.cwd, options.positional[0] ?? '.');

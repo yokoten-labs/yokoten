@@ -9,7 +9,9 @@ import { makeSandbox, runChild } from '../../repo/helpers.ts';
 import { sessionId } from '../../../src/commands/kanban/agents.ts';
 import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
 import { boardDataBody } from '../../../src/commands/kanban/server.ts';
-import { actionsOf, collectState, pullsOf, renderStateText, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
+import { ghFailureCause } from '../../../src/commands/kanban/ports.ts';
+import { actionsOf, collectState, notReadLines, pullsOf, renderStateText, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
+import { healthReadFailed } from '../../../src/commands/more/check.ts';
 import type { KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { type AgentView, type BoardData, vendorOf } from '../../../src/commands/kanban/view.ts';
 import type { HealthRun } from '../../../src/commands/more/check.ts';
@@ -122,8 +124,36 @@ test('kanban state: Actions health from the ci-health summary', () => {
 test('kanban state: --text prints the groups, the pull requests and Actions', () => {
   const state = stateOf(board([view({ dot: 'idle', updated: ago(20), task: 'issue 3 a', title: 'a', ref: { kind: 'issue', number: 3 } }), view({ dot: 'working', updated: ago(1), task: 'b' })]), { ...NO_GITHUB, pulls: [pull({ number: 4 })] }, new Set(), NOW);
   const text = renderStateText(state).join('\n');
-  assert.match(text, /^yokoten kanban: this repo \(preview: read only\)\n\nStuck:\n- Claude \(opus\): issue #3 a, no output for 20 min\n\nWorking:\n- Claude \(opus\): b\n\nPull requests:\n- #4 t: waits on you\n\nActions: main unknown$/);
+  assert.match(text, /^yokoten kanban · this repo: sessions, pull requests and Actions, read only\n\nStuck:\n- Claude \(opus\): issue #3 a, no output for 20 min\n\nWorking:\n- Claude \(opus\): b\n\nPull requests:\n- #4 t: waits on you\n\nActions: main unknown$/);
   assert.match(renderStateText(stateOf(board([]), NO_GITHUB, new Set(), NOW)).join('\n'), /Sessions:\n- none yet\./);
+});
+
+// Issue #1115, S004: gh's own words never show; the lists one cause kept from the board share
+// one item, and its fix is the item's last line, said once.
+test('kanban state: Not read says each cause once, in yokoten words, with one Fix line (#1115)', () => {
+  const signedOut = { stderr: 'To get started with GitHub CLI, please run:  gh auth login\n' };
+  const problems = [healthReadFailed(signedOut, 'pull requests'), healthReadFailed(signedOut, 'Actions runs'), 'no remote'];
+  assert.deepEqual(notReadLines(problems), ['- the pull requests and the Actions runs: gh is not signed in', '  Fix: `gh auth login`', '', '- no remote'], 'a blank line after the item with a Fix line');
+  const refused = healthReadFailed({ stderr: 'HTTP 404: Not Found\n' }, 'Actions runs');
+  assert.deepEqual(notReadLines([refused]), ['- the Actions runs: GitHub said no (403 or 404)'], 'no single command mends it, so no Fix line');
+  // Each cause carries its own fix as data: only a signed-out gh has one.
+  const cause = (stderr: string) => ghFailureCause(stderr);
+  assert.deepEqual(cause('HTTP 401: Bad credentials'), { text: 'gh is not signed in', fix: 'gh auth login' });
+  assert.deepEqual(cause('You are not logged in to any hosts'), { text: 'gh is not signed in', fix: 'gh auth login' });
+  assert.deepEqual(cause('HTTP 403: API rate limit exceeded'), { text: 'GitHub said no (403 or 404)' }, 'a rate limit: no Fix');
+  assert.deepEqual(cause('HTTP 404: Not Found'), { text: 'GitHub said no (403 or 404)' });
+  assert.deepEqual(cause('Upgrade to GitHub Pro to use rulesets'), { text: 'rulesets need GitHub Pro on a private repo' });
+  assert.deepEqual(cause('dial tcp: lookup api.github.com: no such host'), { text: 'gh could not reach GitHub' }, 'the network: no Fix');
+  assert.deepEqual(cause('something gh has never said'), { text: 'gh could not reach GitHub' }, 'unrecognised: no Fix');
+  const missing = healthReadFailed(Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), 'Actions runs');
+  assert.deepEqual(notReadLines([missing]), ['- gh is not installed: get it from https://cli.github.com, then sign in to it']);
+  // Unmatched gh wording (another phrase, a newline) is replaced by a fixed sentence: no path of gh's reaches the board.
+  const odd = notReadLines(["gh can't list the pull requests (fatal: /home/someone/secret/repo\nnot a repo): try later", "gh broke at /home/someone/secret/repo"]).join('\n');
+  assert.doesNotMatch(odd, /someone|secret|\/home/);
+  assert.match(odd, /gh could not read the pull requests/);
+  assert.match(odd, /gh could not read the repo/);
+  // A positive control: the old form put gh's words and the fix inside one sentence.
+  assert.match(problems[0] ?? '', /\(To get started with GitHub CLI, please run: {2}gh auth login\): run `gh auth login`/);
 });
 
 // The JSON is masked at the server boundary: a home path, an email, a token and a mark never leave.

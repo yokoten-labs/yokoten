@@ -12,7 +12,7 @@ import { checkEdit, withWorkerMark } from '../rules/guards/index.ts';
 import { checkBuildOutput, checkCodeOwners, checkLayout, CODEOWNERS_PLACES, codeOwnersPath } from '../rules/layout.ts';
 import { type Finding, finding, isFailingFinding } from '../rules/text/message.ts';
 import { isChangeFile, longSentenceNote, longSentences } from '../rules/pr.ts';
-import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneFix } from '../rules/privacy.ts';
+import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneCommandFix } from '../rules/privacy.ts';
 import { parseChange, readChanges } from './changelog.ts';
 import { isShallowNote, translationNotes } from './notes/translations.ts';
 
@@ -549,7 +549,7 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
     if (!isCommitting) notes.push(finding('time-zone', 'nothing is staged', 'stage a change with `git add`, then run it again', { why: 'with nothing staged there is no commit to check' }));
     // The commit about to be made: git var gives its author and committer, time included.
     if (isCommitting && config.privacy.utc && ['GIT_AUTHOR_IDENT', 'GIT_COMMITTER_IDENT'].some((v) => notUtc(git(root, env, ['var', v])))) {
-      problems.push(finding('time-zone', "this commit's time carries your time zone", timeZoneFix(env)));
+      problems.push(finding('time-zone', "this commit's time carries your time zone", timeZoneCommandFix(env)));
     }
     // In a merge, the role checks see only what the merge itself changed: a worker
     // bringing in main is not handing over main's edits to lead-only files or tests. A

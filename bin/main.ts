@@ -28,11 +28,14 @@ const help = (all: boolean): string => [
 ].join('\n');
 
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
-function unknownCommand(invocation: Invocation, name: string): number {
+async function unknownCommand(invocation: Invocation, name: string): Promise<number> {
+  // The word is anyone's text: a plain word shows as typed; any other is quoted with control and bidi characters escaped.
+  const { shownValue } = await import('../src/rules/text/terminal.ts');
+  const shown = shownValue(name);
   const near = closestWord(name, COMMANDS.map((command) => command.name));
-  // A title, then the one step last: the near command, or the help that lists them all.
-  const next = near ? `Did you mean \`yokoten ${near}\`?` : 'Next: `yokoten help`';
-  print(invocation, [...wrap('yokoten: ', `unknown command "${name}"`), ...wrap('', next)], invocation.stderr);
+  // A title with the word typed, then the one step last: the near command, or the help that lists them all (#1115).
+  const next = near ? `\`yokoten ${near}\`, if you meant it; \`yokoten help\` lists every command` : '`yokoten help` lists every command';
+  print(invocation, [...wrap('yokoten · ', `unknown command ${shown}`), '', ...wrap('Next: ', next)], invocation.stderr);
   return 1;
 }
 
@@ -67,7 +70,8 @@ function dispatch(invocation: Invocation): number | Promise<number> {
   // A folded command or an old name says where it moved, then runs as before (#1054). The
   // line is for a person: the session-start hook (`doctor --session`) and JSON for a script go without it.
   const moved = cmd === undefined || args.includes('--session') || args.includes('--json') ? undefined : movedNote(cmd);
-  if (moved) print(invocation, [moved], invocation.stderr);
+  // A blank line follows the note, so a wrapped screen under it never reads as part of it (issue #1115).
+  if (moved) print(invocation, [...wrap('note: ', moved.replace(/^note: /, '')), ''], invocation.stderr);
   switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).

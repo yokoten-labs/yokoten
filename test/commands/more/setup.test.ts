@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
-import { claudeCommand, previewLines, updateScreen } from '../../../src/commands/more/setup.ts';
+import { claudeCommand, previewLines, startScreen, updateScreen } from '../../../src/commands/more/setup.ts';
 import { VERSION } from '../../../src/setup/files.ts';
 import { makeSandbox } from '../../repo/helpers.ts';
 
@@ -13,7 +13,7 @@ test('update: a folder that does not exist is said plainly (#208)', () => {
   const sandbox = makeSandbox();
   // update's entry, through the real binary.
   const result = sandbox.run(['update', 'typo']);
-  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten update moved to yokoten. It runs as before this time.\nyokoten update: typo does not exist; nothing to update.\n']);
+  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten update moved to yokoten. It runs as before this time.\n\nyokoten update: typo does not exist; nothing to update.\n']);
   assert.ok(!existsSync(join(sandbox.repo, 'typo')));
 });
 
@@ -22,8 +22,8 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   const first = await sandbox.call([]);
   // One screen (#1027): the title says it set up and the stage, one row per step, one Next line, then More.
   assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · set up; stage 1 of 5, safety net$`, 'm'));
-  assert.match(first.stdout, /^ {2}ok {10}computer {4}guard on for /m);
-  assert.match(first.stdout, /^ {2}ok {10}project {5}\d+ files written, none of yours changed$/m);
+  assert.match(first.stdout, /^ {2}ok {10}guard on for .+ on this computer$/m);
+  assert.match(first.stdout, /^ {2}ok {10}\d+ files written in this project, none of yours changed$/m);
   assert.equal(first.stdout.match(/^Next: /gm)?.length, 1, 'one Next line');
   assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`\nMore: /m);
   assert.ok(first.stdout.split('\n').every((line) => line.length <= 80), 'every line fits 80 columns');
@@ -256,7 +256,7 @@ test('uninstall: one screen of counts, then how to install again (#1027)', async
   assert.doesNotMatch(result.stdout, /removed skill /, 'per-file lines are behind --list');
   fit(result.stdout);
   const again = await sandbox.call(['uninstall']);
-  assert.match(again.stdout, /^yokoten uninstall · nothing to remove, nothing changed$/m);
+  assert.match(again.stdout, /^yokoten uninstall · nothing to remove: yokoten is not installed on this computer$/m);
 });
 
 test('trust: one screen names each agent, then the way back (#1027)', async () => {
@@ -326,4 +326,28 @@ test('update: one screen per core rule change (#1027)', () => {
     updateScreen({ ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one, then run `yokoten update` again after that.'], isWrite: false }),
     updateScreen({ ok: true, lines: [`replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 1 line(s) added, 0 removed. "This project" and below are unchanged. The old file is kept as AGENTS.backup.md; delete it once the new AGENTS.md reads right`], isWrite: true }),
   ]) for (const line of one) assert.ok(line.length <= 80, `over 80: ${line}`);
+});
+
+// Issue #1115: one blank line between blocks, decided from the blocks, not from a line's place.
+test('start: one blank line between the title, this run, the problems and the road (#1115)', () => {
+  const done = ['  ok          guard on for Claude Code on this computer'];
+  const problem = ['  MISSING     no runtime installed', '              Fix: `yokoten install`'];
+  const road = ['  done        0 of 5 steps', '  next        add the rules'];
+  const doctor = (...blocks: string[][]) => blocks.flatMap((block, at) => (at ? ['', ...block] : block));
+  const text = (lines: string[]) => lines.join('\n');
+  const bar = `yokoten ${VERSION} · set up; stage 1 of 5, safety net`;
+  const title = 'yokoten doctor · stage 1 of 5, safety net';
+  // Problems first: a blank line between this run's rows and them, and one before the road.
+  assert.equal(text(startScreen(doctor([title], problem, road, ['Next: `x`'], ['More: y']), done)), text([bar, '', ...done, '', ...problem, '', ...road, '', 'Next: `git add -A && git commit -m "chore: add yokoten"`', 'More: y']));
+  // A broken self-test line leads the title: it stays first, and the problems still get their blank line.
+  const broken = '  MISSING     the self-test failed';
+  const led = startScreen(doctor([broken], [title], problem, road, ['More: y']), done);
+  assert.deepEqual(led.slice(0, 3), [broken, '', bar]);
+  assert.equal(led[led.indexOf(done[0] ?? '') + 1], '', 'a blank line between this run and the problems');
+  assert.equal(led.filter((line, at) => line === '' && led[at - 1] === '').length, 0, 'never two blank lines');
+  // A screen with no steps: only problems follow this run, still one blank line.
+  const bare = startScreen(doctor([title], problem, ['More: y']), done);
+  assert.deepEqual(bare.slice(0, 5), [bar, '', ...done, '', problem[0]]);
+  // Nothing after the title: no stray blank line.
+  assert.deepEqual(startScreen(doctor([title], ['More: y']), done).slice(0, 3), [bar, '', done[0]]);
 });
