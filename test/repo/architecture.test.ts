@@ -1495,7 +1495,6 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/copilot.ts', 1],
   ['agents/desk/desk.ts', 1],
   ['agents/desk/start.ts', 1],
-  ['commands/more/setup/upgrade.ts', 2],
   ['rules/guards/lead-only/edit.ts', 1],
   ['run/hook.ts', 1],
   ['setup/advice/unsaved.ts', 2],

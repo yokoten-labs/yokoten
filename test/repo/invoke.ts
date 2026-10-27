@@ -56,7 +56,7 @@ export interface RenderWaiver {
 }
 
 /** How many keys RENDER_WAIVED may hold. Only the integrator changes it, and only down. */
-export const RENDER_WAIVED_MOST = 35;
+export const RENDER_WAIVED_MOST = 33;
 
 /**
  * Old screens that break a rule today, keyed by renderKey (`<command> <sorted flags>`). The
@@ -65,7 +65,6 @@ export const RENDER_WAIVED_MOST = 35;
  * `RENDER_REPORT=<file> nice npm test`, then `node test/repo/invoke.ts <file>`.
  */
 export const RENDER_WAIVED: Record<string, RenderWaiver> = {
-  '(none)': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C16 moves it onto screen.ts (#1115)' },
   'changelog --write': { rules: ['next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
   'check': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
   'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
@@ -99,7 +98,6 @@ export const RENDER_WAIVED: Record<string, RenderWaiver> = {
   'tidy --empty': { rules: ['widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
   'tidy --local': { rules: ['width', 'widest', 'next-step', 'label-columns', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
   'trust': { rules: ['no-internal-path'], reason: 'the agents\' own text names a folder outside the home folder; group C2 moved the rest onto screen.ts (#1115)' },
-  'upgrade': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C16 moves it onto screen.ts (#1115)' },
 };
 
 /** The key of a render: the command, then its flags sorted, values and words after `--` left out. */
