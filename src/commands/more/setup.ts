@@ -527,8 +527,12 @@ export function updateScreen({ ok, lines, isWrite }: { ok: boolean; lines: strin
   const [first = '', ...rest] = lines;
   // Nothing to do: one line (R8).
   if (/are up to date/.test(first)) return title('update', 'the core rules are up to date, nothing changed');
-  // A refusal keeps every word of why and how to fix it, wrapped (R5).
-  if (!ok) return [...title('update', 'nothing changed'), '', ...row('MISSING', first)];
+  // A refusal says why, then its fix on a last line of its own (R5, rule fix-line of #1115).
+  if (!ok) {
+    const fix = /^(.*?)\.?\s+Run (`[^`]+`)/.exec(first);
+    if (fix === null) return [...title('update', 'nothing changed'), '', ...row('MISSING', first)];
+    return [...title('update', 'nothing changed'), '', ...row('MISSING', fix[1] ?? first), ...wrap(' '.repeat(14), `Fix: ${fix[2]}`)];
+  }
   if (isWrite) {
     const kept = /kept as (\S+?);/.exec(first)?.[1];
     return [

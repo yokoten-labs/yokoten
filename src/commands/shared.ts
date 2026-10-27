@@ -168,7 +168,7 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
 export function noRootScreen(command: string | undefined, missing: Finding): string[] {
   const words = command === undefined ? 'yokoten' : `yokoten ${command}`;
   // What happened in the reader's words, with no path: the folder is the one they are in (issue #1115).
-  if (missing.what.startsWith(GIT_MISSING)) return screen(wrap(`${words} · `, missing.what), wrap('Next: ', `install git, then run \`${words}\` again`));
+  if (missing.what.startsWith(GIT_MISSING)) return screen(wrap(`${words} · `, missing.what), wrap('Next: ', `install git, or add it to PATH, then run \`${words}\` again`));
   return screen(wrap(`${words} · `, 'this folder is not in a git repo'), wrap('Next: ', `go to your project's folder, or start one here with \`git init\``));
 }
 

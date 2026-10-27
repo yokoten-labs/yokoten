@@ -94,6 +94,8 @@ test('git not installed: a command that needs a repo says git is missing, not "n
     const result = await sandbox.call([command], { extra: { PATH: noGit } });
     assert.equal(result.status, 1, command);
     assert.match(result.stderr.replace(/^note: .*\n\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
+    // The next step names both causes: git may be installed but not on PATH (#1115 review).
+    if (command === 'doctor') assert.match(result.stderr, /\n\nNext: install git, or add it to PATH, then run `yokoten doctor` again\n$/);
   }
 });
 

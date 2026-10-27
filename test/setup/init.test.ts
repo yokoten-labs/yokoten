@@ -1212,7 +1212,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   rmSync(path);
   assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /core-rules/, 'the road asks for AGENTS.md');
   result = await sandbox.call(['update']);
-  assert.deepEqual([result.status, result.stderr], [1, 'note: yokoten update moved to yokoten. It runs as before this time.\n\nyokoten update · nothing changed\n\n  MISSING     no AGENTS.md here; nothing was written. Run `yokoten init` to add\n              one\n']);
+  assert.deepEqual([result.status, result.stderr], [1, 'note: yokoten update moved to yokoten. It runs as before this time.\n\nyokoten update · nothing changed\n\n  MISSING     no AGENTS.md here; nothing was written\n              Fix: `yokoten init`\n']);
   assert.equal((await sandbox.call(['update', '--force'])).status, 1, 'an unknown option is refused');
   assert.match((await sandbox.call(['explain', 'core-rules'])).stdout.replace(/\s+/g, ' '), /^yokoten explain core-rules · .* What the core rules in AGENTS\.md/);
 });
