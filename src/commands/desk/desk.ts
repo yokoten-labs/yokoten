@@ -11,16 +11,20 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findProgram } from '../../platform/process.ts';
 import { hasBot } from '../../host/github/bot.ts';
-import { type Invocation, nextLine, parse, print, requireRoot, row, title, usage } from '../shared.ts';
+import { fail, type Invocation, nextLine, noteLine, parse, print, printJson, requireRoot, row, screen, title, usage, wrap } from '../shared.ts';
 import { briefText, type DeskTask, readIssue, readTaskWord, textTask } from './brief.ts';
 import { deskBranch, desksHome, makeClone, type Ran, type Run, runWith } from './clone.ts';
 import { commitsSince, deskGitProblem, endingOf, endingScreen, type Fenced, gatherEvidence, moveAside, openPullRequest, refusedLine, saveWork, shownPath } from './finish.ts';
-import { briefFile, deskRows, type DeskRecord, type IsAlive, isAlive, listScreen, readRecord, readRecords, stateNow, writeRecord } from './list.ts';
+import { briefFile, deskListOf, deskRows, type DeskRecord, type IsAlive, isAlive, listScreen, readRecord, readRecords, stateNow, writeRecord } from './list.ts';
 import { pickAgent } from './pick-agent.ts';
 import { isWaiting, lastActivity, watchDesk } from './stall.ts';
 
-/** What native Windows prints: the desk runs in WSL, and the next step. */
-export const DESK_USE_WSL = 'yokoten desk: on Windows, a desk runs in WSL, where it has a sandbox.\nNothing was started.\n\nNext: open WSL and run `yokoten desk` there.';
+/** What native Windows prints: the desk runs in WSL, nothing was started, and the next step. */
+export const DESK_USE_WSL: string[] = screen(
+  wrap('yokoten desk · ', 'on Windows, a desk runs in WSL, where it has a sandbox'),
+  wrap('', 'Nothing was started.'),
+  wrap('Next: ', 'open WSL and run `yokoten desk` there.'),
+);
 
 /** What the desk does to the world, so a test can stand in for each part. */
 export interface DeskDeps {
@@ -67,7 +71,7 @@ export function runDesk(invocation: Invocation, deps?: DeskDeps): number | Promi
   if (typeof options === 'string') return usage(invocation, options);
   if (end !== -1 || options.positional.length === 2) return import('../hook.ts').then((m) => m.runDesk(invocation, options));
   if (invocation.platform === 'win32') {
-    print(invocation, [DESK_USE_WSL], invocation.stderr);
+    print(invocation, DESK_USE_WSL, invocation.stderr);
     return 1;
   }
   const root = requireRoot(invocation, invocation.cwd);
@@ -77,10 +81,12 @@ export function runDesk(invocation: Invocation, deps?: DeskDeps): number | Promi
   const [word] = options.positional;
   if (word === undefined) {
     if (options.flags.has('--pr')) return usage(invocation, 'name the desk: yokoten desk <issue> --pr');
-    const commitsOf = (record: DeskRecord) => (existsSync(join(home, record.name)) ? commitsSince(world.run, join(home, record.name), record.base) : []);
-    print(invocation, listScreen(readRecords(home), world.alive, commitsOf, world.now()));
+    const list = deskListOf(readRecords(home), world.alive, (record) => (existsSync(join(home, record.name)) ? commitsSince(world.run, join(home, record.name), record.base) : []));
+    if (options.flags.has('--json')) printJson(invocation, list);
+    else print(invocation, listScreen(list, world.now()));
     return 0;
   }
+  if (options.flags.has('--json')) return usage(invocation, '--json lists the desks: yokoten desk --json');
   const asked = readTaskWord(word);
   if (!asked) return usage(invocation, `${word} is not an issue number or a task: yokoten desk 14, or yokoten desk "fix the typo"`);
   return startOrGoOn(invocation, world, root, asked, { pr: options.flags.has('--pr'), agent: options.values['--agent'], install: !options.flags.has('--no-install') });
@@ -94,47 +100,46 @@ interface Choices {
 
 /** `desk <n>`: a new desk, the one that stopped, or --pr on one that ended. */
 async function startOrGoOn(invocation: Invocation, world: DeskDeps, root: string, asked: { number: number } | { text: string }, choices: Choices): Promise<number> {
-  const fail = (line: string) => {
-    print(invocation, [`yokoten desk: ${line}`], invocation.stderr);
-    return 1;
-  };
   const home = desksHome(root);
   const name = 'number' in asked ? String(asked.number) : textTask(asked.text).name;
   const desk = join(home, name);
   let record = readRecord(home, name);
   const now = world.now();
   if (record && (record.state === 'working' || record.state === 'stalled') && stateNow(record, world.alive) !== 'stopped') {
-    return fail(`desk ${name} is running in another terminal (${record.state}). Stop it there first.`);
+    return fail(invocation, `desk ${name} is running in another terminal (${record.state})`, `stop it there, then run \`yokoten desk ${name}\` again`);
   }
   if (choices.pr) {
-    if (!record || !existsSync(desk)) return fail(`there is no desk ${name}. Start it with \`yokoten desk ${name}\`.`);
+    if (!record || !existsSync(desk)) return fail(invocation, `there is no desk ${name}`, `yokoten desk ${name}`);
     return finish(invocation, world, root, record, true);
   }
   // The other desks that stopped or stalled: seen before anything starts (#1056).
   const others = readRecords(home).filter((one) => one.name !== name && ['stopped', 'stalled'].includes(stateNow(one, world.alive)));
   const agent = pickAgent(choices.agent ?? record?.agent, world.isInstalled);
-  if ('problem' in agent) return fail(agent.problem);
+  if ('problem' in agent) return fail(invocation, agent.problem, agent.next);
   let brief: string;
   if (record && existsSync(desk)) {
     // Go on: the saved work first, then the brief with what was done. A desk git can't read safely is refused.
     const refused = deskGitProblem(desk);
-    if (refused) return fail(`${refusedLine(refused)}.`);
+    if (refused) return fail(invocation, refusedLine(refused), `look at the desk by hand: it is kept in \`${shownPath(invocation.cwd, desk, invocation.env.HOME)}\``);
     const saved = await saveWork((command) => world.fenced(desk, agent.runtime, command, 'pipe'), world.run, desk, record.task);
-    if (typeof saved === 'object') print(invocation, [`yokoten desk: ${saved.problem}. It is still in ${shownPath(invocation.cwd, desk, invocation.env.HOME)}.`], invocation.stderr);
+    if (typeof saved === 'object') print(invocation, noteLine(`${saved.problem}. It is still in ${shownPath(invocation.cwd, desk, invocation.env.HOME)}.`), invocation.stderr);
     const first = existsSync(briefFile(home, name)) ? readFileSync(briefFile(home, name), 'utf8') : briefText({ ...textTask(record.task.title), name }, record.branch);
     brief = `${first.trimEnd()}\n\n## Done so far (you stopped; go on from here)\n\n${commitsSince(world.run, desk, record.base).map((line) => `- ${line}`).join('\n') || '- no commits yet'}\n`;
   } else {
-    if (existsSync(desk)) return fail(`${shownPath(invocation.cwd, desk, invocation.env.HOME)} is there but has no record. Move it away, then run this again.`);
+    if (existsSync(desk)) return fail(invocation, `${shownPath(invocation.cwd, desk, invocation.env.HOME)} is there but has no record`, `move it away, then run \`yokoten desk ${name}\` again`);
     const task: DeskTask | { problem: string } = 'number' in asked ? readIssue(asked.number, world.run, root) : textTask(asked.text);
-    if ('problem' in task) return fail(task.problem);
-    print(invocation, [...row('next', `making the desk ${shownPath(invocation.cwd, desk, invocation.env.HOME)}`)], invocation.stderr);
+    if ('problem' in task) return fail(invocation, task.problem, `fix that, then run \`yokoten desk ${name}\` again`);
+    print(invocation, noteLine(`making the desk ${shownPath(invocation.cwd, desk, invocation.env.HOME)}`), invocation.stderr);
     const made = makeClone({ root, name, run: world.run, install: choices.install });
-    if ('problem' in made) return fail(made.problem);
+    if ('problem' in made) return fail(invocation, made.problem, `fix that, then run \`yokoten desk ${name}\` again`);
     brief = briefText(task, deskBranch(name));
     writeFileSync(briefFile(home, name), brief);
     record = { name, task: { kind: task.kind, title: task.title, ...(task.kind === 'issue' ? { number: task.number } : {}) }, agent: agent.runtime, branch: deskBranch(name), base: made.base, pid: world.pid, startedAt: utc(now), activeAt: utc(now), state: 'working' };
   }
-  if (others.length) print(invocation, [...title('desk', `${others.length} other desk${others.length === 1 ? '' : 's'} stopped mid-task`), ...others.flatMap((one) => deskRows(one, stateNow(one, world.alive), existsSync(join(home, one.name)) ? commitsSince(world.run, join(home, one.name), one.base) : [], now)), ...nextLine(`yokoten desk ${others[0]?.name ?? ''}`), ''], invocation.stderr);
+  if (others.length) {
+    const { desks } = deskListOf(others, world.alive, (one) => (existsSync(join(home, one.name)) ? commitsSince(world.run, join(home, one.name), one.base) : []));
+    print(invocation, screen(title('desk', `${others.length} other desk${others.length === 1 ? '' : 's'} stopped mid-task`), desks.flatMap((one) => deskRows(one, now)), nextLine(`yokoten desk ${others[0]?.name ?? ''}`)), invocation.stderr);
+  }
   const running: DeskRecord = { ...record, agent: agent.runtime, pid: world.pid, activeAt: utc(now), state: 'working' };
   writeRecord(home, running);
   // While the AI runs: a stall is marked, and its work saved, since it is idle then (#1056).
@@ -155,7 +160,7 @@ async function startOrGoOn(invocation: Invocation, world: DeskDeps, root: string
   });
   if ('fail' in ran) {
     writeRecord(home, { ...running, state: 'kept' });
-    return fail(ran.fail);
+    return fail(invocation, ran.fail, 'yokoten doctor');
   }
   if (ran.stderr) invocation.stderr.write(ran.stderr);
   return finish(invocation, world, root, { ...running, activeAt: utc(world.now()) }, false);
@@ -170,8 +175,7 @@ async function finish(invocation: Invocation, world: DeskDeps, root: string, rec
   const refused = deskGitProblem(desk);
   if (refused) {
     writeRecord(home, { ...record, state: 'kept', activeAt: utc(world.now()) });
-    print(invocation, [`yokoten desk: ${refusedLine(refused)}.`], invocation.stderr);
-    return 1;
+    return fail(invocation, refusedLine(refused), `look at the desk by hand: it is kept in \`${shownPath(invocation.cwd, desk, invocation.env.HOME)}\``);
   }
   const saved = await saveWork(fenced, world.run, desk, record.task);
   const extra: string[] = typeof saved === 'object' ? row('MISSING', saved.problem, 'save') : saved === 'saved' ? row('ok', 'the work left uncommitted, in one commit', 'saved') : [];
