@@ -6,7 +6,7 @@
 // first, which is all a beginner needs before one merge.
 
 import { formatFinding } from '../../../../rules/text/message.ts';
-import { count, type Invocation, nextLine, parse, print, printJson, requireRoot, row, title, usage, wrap } from '../../../shared.ts';
+import { count, failure, type Invocation, nextLine, noteLine, parse, print, printJson, printJsonError, requireRoot, row, screen, show, spaced, summaryLine, title, underRow, usage, wrap } from '../../../shared.ts';
 import { beforeChange, buildMap, openChanges, writeMap } from './map.ts';
 import { mergeOrder } from './order.ts';
 import { rebuildPrompt } from './rebuild.ts';
@@ -71,10 +71,11 @@ export function movers(map: ConflictMap): { change: Change; others: Change[] }[]
 /**
  * The screen for `yokoten conflicts` (#1027): the counts, one row per colliding pair with
  * the file under it and which goes first, one row for the rest, then the command to type.
- * A beginner reads it top to bottom; an agent reads the same words.
+ * A beginner reads it top to bottom; an agent reads the same words. The pairs are one block
+ * and the other rows a second; rows that wrap get a blank line between them (spaced, #1115).
  */
 export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
-  if (!map.changes.length) return [...title('conflicts', 'no open change to compare with main'), '', ...row('to do', 'push a branch or open a pull request, then run `yokoten conflicts` again')];
+  if (!map.changes.length) return screen(title('conflicts', 'no open change to compare with main'), row('to do', 'push a branch or open a pull request, then run `yokoten conflicts` again'));
   const withMain = collideWithMain(map);
   const order = mergeOrder(map);
   const rank = new Map(order.map((pick, index) => [pick.id, index]));
@@ -92,45 +93,86 @@ export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
   // that collide are one row, and the row says which of them goes first.
   const colliding = new Set([...pairs.flatMap(({ pair }) => pair.map((change) => change.id)), ...withMain.map((change) => change.id)]);
   const summary = colliding.size ? `${count(map.changes.length, 'open change')}, ${colliding.size} collide` : `${count(map.changes.length, 'open change')}, none collide`;
-  const lines = [...title('conflicts', summary), ''];
-  for (const { files, first, second } of pairs) {
+  // The pairs are one block and the rest another: each is spaced only when a row in it wraps.
+  const pairRows = pairs.map(({ files, first, second }) => {
     const why = order.find((pick) => pick.id === first.id)?.why;
-    lines.push(...row('next', `${first.label} ⇄ ${second.label}`));
-    lines.push(...wrap(' '.repeat(26), `${pathsText(files)}. Merge ${first.label} first${why ? `: ${why}` : ''}.`));
-  }
-  for (const change of withMain) {
-    lines.push(...row('note', `${change.label} collides with main: ${pathsText(change.mainConflicts ?? [])}`));
-  }
+    return [...row('next', `${first.label} ⇄ ${second.label}`), ...underRow(`${pathsText(files)}. Merge ${first.label} first${why ? `: ${why}` : ''}.`)];
+  });
+  const items: string[][] = [];
+  for (const change of withMain) items.push(row('note', `${change.label} collides with main: ${pathsText(change.mainConflicts ?? [])}`));
   const rest = map.changes.length - colliding.size;
-  if (rest > 0) lines.push(...row('ok', `${count(rest, 'change')} ${rest === 1 ? 'touches' : 'touch'} no shared file`));
-  else if (!pairs.length && !withMain.length) lines.push(...row('ok', 'no open change touches a file main or another open change touches'));
-  const moving = movers(map);
-  for (const { change, others } of moving) {
-    lines.push(...row('note', `${change.label} moves ${one(change.moves.length, 'file')} that ${one(others.length, 'other change')} ${others.length === 1 ? 'touches' : 'touch'}; merge it in alone, before them`));
+  if (rest > 0) items.push(row('ok', `${count(rest, 'change')} ${rest === 1 ? 'touches' : 'touch'} no shared file`));
+  else if (!pairs.length && !withMain.length) items.push(row('ok', 'no open change touches a file main or another open change touches'));
+  for (const { change, others } of movers(map)) {
+    items.push(row('note', `${change.label} moves ${one(change.moves.length, 'file')} that ${one(others.length, 'other change')} ${others.length === 1 ? 'touches' : 'touch'}; merge it in alone, before them`));
   }
-  if (map.hot.length) lines.push(...row('note', `${count(map.hot.length, 'file')} ${map.hot.length === 1 ? 'is' : 'are'} hot: ${pathsText(map.hot)}`));
+  if (map.hot.length) items.push(row('note', `${count(map.hot.length, 'file')} ${map.hot.length === 1 ? 'is' : 'are'} hot: ${pathsText(map.hot)}`));
   const drafts = map.changes.filter((change) => change.draft && (change.mainConflicts?.length || map.collisions.some((collision) => collision.first === change.id || collision.second === change.id)));
-  for (const draft of drafts) lines.push(...row('note', `${draft.label} is a draft, so it is listed here, but not ordered`));
-  for (const note of notes) lines.push(...row('note', note));
-  lines.push('', ...nextLine('yokoten train --next'));
-  return lines;
+  for (const draft of drafts) items.push(row('note', `${draft.label} is a draft, so it is listed here, but not ordered`));
+  for (const note of notes) items.push(row('note', note));
+  return screen(title('conflicts', summary), spaced(pairRows), spaced(items), nextLine('yokoten train --next'));
+}
+
+/**
+ * The screen for `--rebuild` (#913): a title that says what it is, then the prompt, so a
+ * person copies it into their AI. The prompt's own lines are never wrapped: a wrapped git
+ * command would break when pasted. Its paragraphs stay blocks, and a step with lines under
+ * it is spaced from the next (spaced, #1115), so the steps read one by one.
+ */
+export function rebuildScreen(change: Change, prompt: string): string[] {
+  const blocks = prompt.split('\n\n').map((paragraph) => {
+    // A step is a line at the left edge and the indented lines under it.
+    const steps: string[][] = [];
+    for (const line of paragraph.split('\n')) {
+      if (line.startsWith(' ') && steps.length) steps.at(-1)?.push(line);
+      else steps.push([line]);
+    }
+    return spaced(steps);
+  });
+  return screen(title('conflicts', `a rebuild prompt for ${change.label}; paste it into your AI`), ...blocks);
+}
+
+/** A refusal of `yokoten conflicts`: what is wrong, why when it is known, and the next step as a sentence. */
+export interface ConflictsRefusal {
+  what: string;
+  why?: string;
+  next: string;
+}
+
+/** The screen of a refusal: the title says what is wrong, then why, then one Next line. */
+export const refusalScreen = ({ what, why, next }: ConflictsRefusal): string[] => screen(failure('conflicts', what), why === undefined ? [] : summaryLine(asSentence(why)), wrap('Next: ', asSentence(next)));
+
+/** A text as a sentence: a capital first, a full stop last. */
+const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
+
+/**
+ * The refusal of a rebuild prompt that can't be written: rebuild.ts says it as `What:`,
+ * `Why:` and `Fix:` lines, read here by their names. Any other error is its first line.
+ */
+export function rebuildRefusal(message: string): ConflictsRefusal {
+  const parts = new Map(message.split('\n').map((part) => [part.slice(0, part.indexOf(': ')), part.slice(part.indexOf(': ') + 2)]));
+  const what = parts.get('What') ?? message.split('\n')[0] ?? 'the rebuild prompt could not be written';
+  return { what, why: parts.get('Why'), next: parts.get('Fix') ?? 'run `yokoten conflicts` again, then choose the change from its list' };
+}
+
+/** Prints a refusal on stderr (and as data with --json) and gives the exit code. */
+function refuse(invocation: Invocation, refusal: ConflictsRefusal): number {
+  printJsonError(invocation, refusal.what);
+  print(invocation, refusalScreen(refusal), invocation.stderr);
+  return 1;
 }
 
 /** Build one change in a fresh worktree instead of merging it (#913), as a prompt to hand over. */
 function rebuild(map: ConflictMap, word: string, invocation: Invocation): number {
   const change = map.changes.find((held) => held.id === word || held.branch === word);
-  if (!change) {
-    print(invocation, [`yokoten conflicts: no open change ${word}. Run \`yokoten conflicts\` to see the ${one(map.changes.length, 'change')} this map holds.`], invocation.stderr);
-    return 1;
-  }
+  if (!change) return refuse(invocation, { what: `the conflict map has no open change ${word}`, next: `run \`yokoten conflicts\` to see the ${one(map.changes.length, 'change')} it holds` });
   let prompt: string;
   try {
     prompt = rebuildPrompt(map, change.id);
   } catch (err) {
-    print(invocation, [`yokoten conflicts: ${err instanceof Error ? err.message : String(err)}`], invocation.stderr);
-    return 1;
+    return refuse(invocation, rebuildRefusal(err instanceof Error ? err.message : String(err)));
   }
-  print(invocation, prompt.split('\n'));
+  show(invocation, rebuildScreen(change, prompt));
   return 0;
 }
 
@@ -145,9 +187,7 @@ export async function runConflicts(invocation: Invocation): Promise<number> {
   const built = buildMap(root, invocation.env, { listed: opened.listed });
   if (typeof built === 'string') {
     // With --json the answer is data, and a failure is data too: stdout holds the error alone.
-    if (json) printJson(invocation, { command: 'conflicts', ok: false, error: built });
-    print(invocation, [`yokoten conflicts: ${built}.`], invocation.stderr);
-    return 1;
+    return refuse(invocation, { what: built, next: 'bring main into this clone with `git fetch origin main`, then run `yokoten conflicts` again' });
   }
   const { map, notes } = built;
   // The guard reads this file and never runs git (record 0013), so a map kept now is cheap
@@ -159,11 +199,11 @@ export async function runConflicts(invocation: Invocation): Promise<number> {
   const allNotes = [...opened.notes, ...notes, ...(notKept === null ? [] : [notKept])];
   if (json) {
     printJson(invocation, map);
-    for (const note of allNotes) print(invocation, [`note: ${note}`], invocation.stderr);
+    for (const note of allNotes) print(invocation, noteLine(note), invocation.stderr);
   } else {
     // The notes share the last block with the drafts, so the answer is one screen, not a
     // heading followed by lines on another stream.
-    print(invocation, summaryLines(map, allNotes));
+    show(invocation, summaryLines(map, allNotes));
   }
   return 0;
 }

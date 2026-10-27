@@ -29,7 +29,7 @@ import { runGit } from '../../../run/check.ts';
 import { runBot } from './bot.ts';
 import { mergeOrder, nextPick } from './conflicts/order.ts';
 import { MAP_FILE, MAP_MAX_AGE_MS, type ConflictMap } from './conflicts/types.ts';
-import { count, type Invocation, type Output, parse, print, requireRoot, row, title, usage, wrap } from '../../shared.ts';
+import { count, fail, field, type Invocation, nextLine, type Output, parse, requireRoot, row, screen, show, spaced, summaryLine, title, usage } from '../../shared.ts';
 
 /** How long one test or check run may take, in ms. */
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -70,6 +70,16 @@ export interface TrainApi {
   verify(commit: string): Promise<string | null>;
 }
 
+/** One step the train took on a pull request: `ok` for a check that passed, `done` for a change it made. */
+export interface TrainStep {
+  number: number;
+  mark: 'ok' | 'done';
+  text: string;
+}
+
+/** A step as the row a person reads: the mark, the pull request's number as its label, then what happened. */
+export const stepRow = (step: TrainStep): string[] => row(step.mark, step.text, `#${step.number}`);
+
 /** Where the train got to: the pull requests it merged, and the first one that needed a person. */
 export interface TrainResult {
   merged: number[];
@@ -92,7 +102,7 @@ interface MergedTree {
  * Merge an approved queue in the given order. It stops at the first pull request that needs
  * a person, and says which one and why. Nothing is merged when a read or a check fails.
  */
-export async function runQueue({ root, env, prs, api, say }: { root: string; env: Env; prs: number[]; api: TrainApi; say: (line: string) => void }): Promise<TrainResult> {
+export async function runQueue({ root, env, prs, api, say }: { root: string; env: Env; prs: number[]; api: TrainApi; say: (step: TrainStep) => void }): Promise<TrainResult> {
   const merged: number[] = [];
   const readStates: PullRequest[] = [];
   for (const number of prs) {
@@ -112,14 +122,14 @@ export async function runQueue({ root, env, prs, api, say }: { root: string; env
     const state = await api.read(number);
     if (typeof state === 'string') return stopped(state);
     if (state.merged) {
-      say(`PR ${number}: already merged`);
+      say({ number, mark: 'ok', text: 'already merged' });
       merged.push(number);
       continue;
     }
     if (state.draft) return stopped('the pull request is a draft');
     if (!state.approved) return stopped('no approving review from a code owner');
     if (state.checks !== 'green') return stopped(state.checks === 'none' ? 'the pull request has no checks' : `the checks are ${state.checks}`);
-    say(`PR ${number}: approved and green on ${state.headOid.slice(0, 12)}`);
+    say({ number, mark: 'ok', text: `approved and green on ${state.headOid.slice(0, 12)}` });
 
     try {
       // Which merge base the branch really shares with the branch it lands on: the newest
@@ -135,17 +145,17 @@ export async function runQueue({ root, env, prs, api, say }: { root: string; env
           const resolved = resolveImports(root, env, tree, mergedTree.conflicts);
           if ('why' in resolved) return stopped(resolved.why);
           tree = resolved.tree;
-          say(`PR ${number}: took the union of the import lines in ${mergedTree.conflicts.join(', ')}`);
+          say({ number, mark: 'done', text: `took the union of the import lines in ${mergedTree.conflicts.join(', ')}` });
         }
         target = commitMerge(root, env, tree, state.baseOid, state.headOid, state.baseBranch, state.headBranch);
-        say(`PR ${number}: merged ${state.baseBranch} into ${state.headBranch}${base === state.baseOid ? '' : ' at the base it shares with its old branch'}`);
+        say({ number, mark: 'done', text: `merged ${state.baseBranch} into ${state.headBranch}${base === state.baseOid ? '' : ' at the base it shares with its old branch'}` });
       }
 
       // The gate: the merged tree is tested before anything is pushed, so a broken merge
       // never reaches the pull request's checks or the reviewer.
       const failed = await api.verify(target);
       if (failed) return stopped(failed);
-      say(`PR ${number}: tests and check pass on the merged tree`);
+      say({ number, mark: 'ok', text: 'tests and check pass on the merged tree' });
 
       if (!isCurrent) {
         const refused = await api.push(state, target);
@@ -153,7 +163,7 @@ export async function runQueue({ root, env, prs, api, say }: { root: string; env
         pushed = true;
         const waiting = await api.waitForChecks(state, target);
         if (waiting) return stopped(waiting);
-        say(`PR ${number}: CI is green on the pushed merge`);
+        say({ number, mark: 'ok', text: 'CI is green on the pushed merge' });
       }
 
       // Without a push the checked head is the head GitHub will squash; with one it is the
@@ -161,7 +171,7 @@ export async function runQueue({ root, env, prs, api, say }: { root: string; env
       const refused = await api.squashMerge(state);
       if (refused) return stopped(refused);
       merged.push(number);
-      say(`PR ${number}: squash-merged${pushed ? ' after the pushed merge' : ''}`);
+      say({ number, mark: 'done', text: `squash-merged${pushed ? ' after the pushed merge' : ''}` });
     } catch (err) {
       return stopped(firstLine((err as Error).message ?? String(err)));
     }
@@ -420,9 +430,15 @@ function hasLocalCommit(root: string, env: Env, oid: string): boolean {
 
 const text = (bytes: Buffer): string => bytes.toString('utf8').trim();
 
-/** The first non-empty line of a message, short enough to print. */
+/**
+ * The first paragraph of a message as one line, short enough to print: a screen's title
+ * wraps under itself (the bot's refusals do), so its lines up to the first blank are one.
+ */
 function firstLine(message: string): string {
-  const line = message.split('\n').map((part) => part.trim()).find(Boolean) ?? 'it needs a person';
+  const parts = message.split('\n').map((part) => part.trim());
+  const start = parts.findIndex(Boolean);
+  const end = start === -1 ? -1 : parts.indexOf('', start);
+  const line = start === -1 ? 'it needs a person' : parts.slice(start, end === -1 ? undefined : end).join(' ');
   return line.length > 200 ? `${line.slice(0, 197)}...` : line;
 }
 
@@ -440,9 +456,10 @@ export function npmTestSpawn(platform: NodeJS.Platform): { command: string; args
 /**
  * Run the project's tests and `check` at `commit`, in a temporary worktree. It links the
  * main checkout's node_modules when there is one, because a worktree does not have it.
- * Returns null when both pass, or the first line of what failed.
+ * Returns null when both pass, or the first line of what failed. `platform` is the system it
+ * runs on, as the invocation says it (issue #1000): it picks how npm starts.
  */
-export function verifyInWorktree({ root, commit, env, script, cwd }: { root: string; commit: string; env: Env; script: string; cwd: string }): string | null {
+export function verifyInWorktree({ root, commit, env, script, cwd, platform }: { root: string; commit: string; env: Env; script: string; cwd: string; platform: NodeJS.Platform }): string | null {
   const place = mkdtempSync(join(tmpdir(), 'yokoten-train-'));
   const tree = join(place, 'tree');
   try {
@@ -464,7 +481,7 @@ export function verifyInWorktree({ root, commit, env, script, cwd }: { root: str
       }
     })();
     if (hasTests) {
-      const npm = npmTestSpawn(process.platform);
+      const npm = npmTestSpawn(platform);
       const result = spawnSync(npm.command, npm.args, { ...npm.options, cwd: tree, env, encoding: 'utf8', timeout: VERIFY_TIMEOUT_MS });
       if (result.status !== 0) return `the project's tests fail: ${firstLine(result.stdout || result.stderr || 'npm test gave no answer')}`;
     }
@@ -578,7 +595,7 @@ function githubApi({ invocation, root, waitSeconds }: { invocation: Invocation; 
     }
     return null;
   };
-  const verify = async (commit: string): Promise<string | null> => verifyInWorktree({ root, commit, env: invocation.env, script: invocation.script, cwd: invocation.cwd });
+  const verify = async (commit: string): Promise<string | null> => verifyInWorktree({ root, commit, env: invocation.env, script: invocation.script, cwd: invocation.cwd, platform: invocation.platform ?? 'linux' });
   return { read, prepare, push, waitForChecks, squashMerge, verify };
 }
 
@@ -635,20 +652,36 @@ const PLAN_ROWS = 8;
 
 /**
  * What a bare `yokoten train` prints (issue #1042): the order the conflict map gives, why
- * each one is there, and the commands that merge them. It reads only the map.
+ * each one is there, and the command that merges the ones shown. It reads only the map.
  */
-function planLines(map: ConflictMap): string[] {
+export function planLines(map: ConflictMap): string[] {
   const picks = mergeOrder(map).filter((pick) => /^pr:\d+$/.test(pick.id));
   if (!picks.length) return title('train', 'no open pull request to merge in the conflict map; nothing merged');
   const labelOf = (id: string) => map.changes.find((change) => change.id === id)?.label ?? id;
   const numbers = picks.map((pick) => pick.id.slice(3));
-  const lines = [...title('train', `the plan for ${count(picks.length, 'pull request')}; nothing merged`), ''];
-  picks.slice(0, PLAN_ROWS).forEach((pick, index) => lines.push(...row(index === 0 ? 'next' : 'to do', `${labelOf(pick.id)}: ${pick.why}`)));
-  if (picks.length > PLAN_ROWS) lines.push(`  ${count(picks.length - PLAN_ROWS, 'more pull request')}, in the order below`);
-  lines.push('', ...wrap('Order: ', numbers.map((number) => `#${number}`).join(' → ')));
-  lines.push(`Merge: name them in this order, as in \`yokoten train ${numbers.slice(0, 2).join(' ')}\``);
-  return lines;
+  const shown = picks.slice(0, PLAN_ROWS);
+  return screen(
+    title('train', `the plan for ${count(picks.length, 'pull request')}; nothing merged`),
+    spaced(shown.map((pick, index) => row(index === 0 ? 'next' : 'to do', `${labelOf(pick.id)}: ${pick.why}`))),
+    picks.length > PLAN_ROWS ? summaryLine(`${count(picks.length - PLAN_ROWS, 'more pull request')}, in the order below`) : [],
+    field('Order', numbers.map((number) => `#${number}`).join(' → ')),
+    // The command merges the ones shown, in this order; a longer queue goes on after them.
+    nextLine(`yokoten train ${numbers.slice(0, PLAN_ROWS).join(' ')}`),
+  );
 }
+
+/**
+ * The lines one more block adds to what a running command has shown, so lines printed one
+ * at a time read as one screen: rows that wrap are spaced (spaced), and a block `isApart`
+ * gets a blank line before it (screen).
+ */
+export function linesAfter(shown: readonly string[], block: readonly string[], isApart = false): string[] {
+  if (!shown.length) return [...block];
+  return (isApart ? screen(shown, block) : spaced([shown, block])).slice(shown.length);
+}
+
+/** The pull requests from the one that stopped the train on: the command that goes on once it is fixed. */
+export const resumeCommand = (prs: readonly number[], stopped: number): string => `yokoten train ${prs.slice(Math.max(0, prs.indexOf(stopped))).join(' ')}`;
 
 /** `yokoten train <pr>...`: the command's entry, which refuses a worker and reads the queue. */
 export async function runTrain(invocation: Invocation): Promise<number> {
@@ -660,46 +693,45 @@ export async function runTrain(invocation: Invocation): Promise<number> {
   if (given.some((number) => !Number.isInteger(number) || number <= 0)) return usage(invocation, 'a pull request number is a whole number above zero, as in `yokoten train 1207 1209`');
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;
-  if (workerRole(invocation.env, [invocation.cwd, root]) !== null) {
-    print(invocation, ['yokoten train: only the lead runs the train; report to the lead instead'], invocation.stderr);
-    return 1;
-  }
+  if (workerRole(invocation.env, [invocation.cwd, root]) !== null) return fail(invocation, 'only the lead runs the train; nothing merged', 'report to the lead, who runs `yokoten train`');
   const map = isNext || !given.length ? readConflictMap(root, invocation.env) : null;
-  if (typeof map === 'string') {
-    print(invocation, [...title('train', map), '', `Fix: \`${BUILD_MAP}\``], invocation.stderr);
-    return 1;
-  }
+  if (typeof map === 'string') return fail(invocation, map, BUILD_MAP);
   if (map && isNext) {
     const pick = nextPick(map);
     if (!pick) {
-      print(invocation, title('train', 'no open change to merge in the conflict map'));
+      show(invocation, title('train', 'no open change to merge in the conflict map'));
       return 0;
     }
     const label = map.changes.find((change) => change.id === pick.id)?.label ?? pick.id;
     // One screen (issue #1027): which one goes next and why, then the command that merges it.
     // One line (#1027 keeps it): an agent reads the pick and why, as before.
-    print(invocation, [`yokoten train · next is ${label}: ${pick.why}`]);
+    show(invocation, title('train', `next is ${label}: ${pick.why}`));
     return 0;
   }
   // A bare train only reads (issue #1042): it shows the plan and merges nothing.
   if (map) {
-    print(invocation, planLines(map));
+    show(invocation, planLines(map));
     return 0;
   }
   const prs = given;
   const wait = options.values['--wait'] === undefined ? WAIT_SECONDS : Number(options.values['--wait']);
   if (!Number.isInteger(wait) || wait <= 0) return usage(invocation, '--wait takes a whole number of seconds');
   const config = botConfig(invocation.env);
-  if (typeof config === 'string') {
-    print(invocation, [`yokoten train: ${config}`], invocation.stderr);
-    return 1;
-  }
+  if (typeof config === 'string') return fail(invocation, `the bot is not set up, so nothing merged: ${config}`, `set it up, then run \`yokoten train ${prs.join(' ')}\` again`);
   const api = githubApi({ invocation, root, waitSeconds: wait });
-  const result = await runQueue({ root, env: invocation.env, prs, api, say: (line) => print(invocation, [line]) });
+  // The steps stream as one screen under the title: each is a row, spaced when one wraps.
+  let shown = title('train', `merging ${count(prs.length, 'pull request')} in this order: ${prs.map((number) => `#${number}`).join(' ')}`);
+  show(invocation, shown);
+  const showAfter = (block: string[], isApart = false) => {
+    show(invocation, linesAfter(shown, block, isApart));
+    shown = block;
+  };
+  const result = await runQueue({ root, env: invocation.env, prs, api, say: (step) => showAfter(stepRow(step)) });
   if (!result.stopped) {
-    print(invocation, [`yokoten train: merged ${result.merged.length} of ${prs.length} pull request(s)`]);
+    showAfter(summaryLine(`merged ${result.merged.length} of ${count(prs.length, 'pull request')}`), true);
     return 0;
   }
-  print(invocation, [`yokoten train: stopped at pull request ${result.stopped.number}: ${result.stopped.why}`], invocation.stderr);
-  return 1;
+  // The failure is a screen of its own on stderr, a blank line under the steps on stdout.
+  showAfter([], true);
+  return fail(invocation, `stopped at pull request ${result.stopped.number}: ${result.stopped.why}`, `once it is fixed, run \`${resumeCommand(prs, result.stopped.number)}\``);
 }
