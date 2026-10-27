@@ -243,6 +243,10 @@ test('publishing routes: mutation in a string or a comment is not a mutation (#9
     ["gh api graphql -f query='# read\nmutation { addComment(input: {body: \"x\"}) { clientMutationId } }'", true],
     ["gh api graphql -f query='query { a(x: \"mutation\") { b } } mutation { c }'", true],
     ["gh api graphql -f query='# read\rmutation { c }'", true],
+    // An escaped triple quote keeps a block string open in GraphQL, so the mutation after the
+    // string is code (#965).
+    ["gh api graphql -f query='query Q { a(x: \"\"\"\\\"\"\"\"\"\") } mutation M { c }' -f operationName=M", true],
+    ["gh api graphql -f query='query { a(x: \"\"\"\\\"\"\" mutation \"\"\") { b } }'", false],
     ["gh api graphql -f query='mutation($id: ID!) { addComment(input: {subjectId: $id, body: \"x\"}) { clientMutationId } }'", true],
     ["gh api graphql -f query='query { search(query: \"mutation\") { issueCount } }' -f other='mutation { c }'", true],
     ['gh api graphql -F query=@q.graphql', true],
@@ -251,6 +255,10 @@ test('publishing routes: mutation in a string or a comment is not a mutation (#9
   for (const [command, expected] of cases) assert.equal(publishes(command), expected, command);
   // The hook answers the same for the read from the issue.
   assert.equal(checkCommand("gh api graphql -f query='query { search(query: \"mutation\") { issueCount } }'", { cwd: process.cwd(), env: {} }), null);
+  // The settings check reads the escaped triple quote the same way: the hidden mutation is a
+  // settings write.
+  const hidden = "gh api graphql -f query='query Q { a(x: \"\"\"\\\"\"\"\"\"\") } mutation M { c }' -f operationName=M";
+  assert.equal(checkCommand(hidden, { cwd: process.cwd(), env: {} })?.id, 'repo-settings', hidden);
 });
 
 test('host samples: doctor hears a miss, and a catch is quiet (#650)', () => {

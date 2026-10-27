@@ -123,6 +123,25 @@ const SETTINGS_ROUTES = [
 ];
 
 /**
+ * Where a block string that opens at `start` ends: just past its closing `"""`, or the end
+ * of the document. GraphQL reads `\"""` as an escaped triple quote that keeps the string
+ * open, so the guard skips it too; reading it as the close would show a string as code and
+ * hide the code after it.
+ */
+function blockStringEnd(document: string, start: number): number {
+  let index = start + 3;
+  while (index < document.length) {
+    if (document.startsWith('\\"""', index)) {
+      index += 4;
+      continue;
+    }
+    if (document.startsWith('"""', index)) return index + 3;
+    index++;
+  }
+  return document.length;
+}
+
+/**
  * The document with its comments and string literals blanked, so a keyword inside one is not
  * read as an operation (#825). What is left is code.
  */
@@ -131,8 +150,7 @@ function documentCode(document: string): string {
   let index = 0;
   while (index < document.length) {
     if (document.startsWith('"""', index)) {
-      const block = document.indexOf('"""', index + 3);
-      index = block === -1 ? document.length : block + 3;
+      index = blockStringEnd(document, index);
       code += ' ';
       continue;
     }
@@ -172,8 +190,7 @@ function isCommentMutation(document: string): boolean {
     const char = document[index];
     if (char === '"') {
       if (document.startsWith('"""', index)) {
-        const block = document.indexOf('"""', index + 3);
-        index = block === -1 ? document.length : block + 3;
+        index = blockStringEnd(document, index);
         continue;
       }
       index++;
