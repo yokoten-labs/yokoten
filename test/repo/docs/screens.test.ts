@@ -150,8 +150,8 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
 interface ScreenRun {
   key: string;
   words: string[];
-  /** The demo repo (the default), or a folder outside any repo. */
-  place?: 'repo' | 'plain' | 'dirty';
+  /** The demo repo (the default), a folder outside any repo, a repo with unsaved work, or a new repo of its own. */
+  place?: 'repo' | 'plain' | 'dirty' | 'fresh';
   stdin?: string;
   /** A guard refusal: the person reads stderr, and stdout is JSON for the agent. */
   isStderrOnly?: boolean;
@@ -172,8 +172,10 @@ const GUARD_CALLS: [string, string][] = [
 ];
 
 // Commands run with no words in the screen list. install and uninstall change the home, and
-// kanban serves until it is stopped, so they stay out.
+// kanban serves until it is stopped, so they stay out. The ones that change the repo each get a
+// new repo, so no screen depends on the order they run in.
 const BARE = ['init', 'trust', 'update', 'doctor', 'worker', 'msg', 'train', 'ci-health', 'tidy', 'stops', 'version'];
+const CHANGES_REPO = new Set(['init', 'trust', 'update', 'tidy', 'stops']);
 
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
@@ -192,7 +194,7 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'session start, codex', words: ['doctor', '--session', '--agent', 'codex'] },
     { key: 'commit check', words: ['check', '--staged'] },
     // Each command with no words, as a newcomer types it: the captured screens S040 to S049 (#1115).
-    ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word] })),
+    ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_REPO.has(word) ? 'fresh' : 'repo' })),
   ];
 }
 
@@ -201,7 +203,7 @@ function screensOf(repo: string): ScreenRun[] {
  * moves it onto src/rules/text/screen.ts and takes it off. The list only shrinks: a waived
  * screen that passes fails the test until its line is removed, and a new screen is never waived.
  */
-/** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
+/** How many screens WAIVED may hold. Lower it in the same change that takes a screen off. */
 const WAIVED_MOST = 5;
 const WAIVED: Record<string, string> = {
   'doctor, bare': 'fix-line: each MISSING row says its fix inside the sentence; the texts are rewritten in stage 2 of #1115',
@@ -225,8 +227,9 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const broken: string[] = [];
   const healed: string[] = [];
   for (const run of runs) {
-    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : run.place === 'dirty' ? { cwd: dirty.repo } : {};
-    const result = await (run.place === 'dirty' ? dirty : sandbox).call(run.words, { input: run.stdin ?? '', ...where });
+    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : {};
+    const box = run.place === 'dirty' ? dirty : run.place === 'fresh' ? makeSandbox() : sandbox;
+    const result = await box.call(run.words, { input: run.stdin ?? '', ...where });
     const text = run.isStderrOnly ? result.stderr : `${result.stdout}${result.stderr}`;
     const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: result.status !== 0, isHelp: run.isHelp });
     const isWaived = run.key in WAIVED;
