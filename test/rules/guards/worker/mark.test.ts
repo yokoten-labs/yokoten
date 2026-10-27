@@ -196,7 +196,8 @@ test('worker mark: a loop into the hook is refused only for a part that names a 
       continue;
     }
     assert.equal(found?.id, 'worker-mark', command);
-    assert.match(found?.what ?? '', new RegExp(`names '${part.replace(/[.*]/g, '\\$&')}'`), command);
+    // A plain text search: the part may hold regex characters (`.*`), so no pattern is built from it.
+    assert.ok((found?.what ?? '').includes(`names '${part}'`), `${command}: ${found?.what}`);
     assert.doesNotMatch(found?.what ?? '', /\.\.\/\.\.\/etc/, 'the climb is not the cause');
   }
 });
