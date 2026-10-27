@@ -1495,7 +1495,6 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/copilot.ts', 1],
   ['agents/desk/desk.ts', 1],
   ['agents/desk/start.ts', 1],
-  ['agents/runtimes/small/deepseek-harness.ts', 1],
   ['commands/kanban/server.ts', 1],
   ['commands/more/merge/train.ts', 1],
   ['commands/more/setup/upgrade.ts', 2],
@@ -2094,7 +2093,7 @@ test('child processes: each test file starts at most CHILD_CAP, or its allowance
 // Windows. The limit is TEST_LIMITS' full-runs row; files above it are on FULL_RUN_ALLOWANCE
 // at their count, which may only go down, like CHILD_ALLOWANCE.
 const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
-  'test/setup/init.test.ts': { cap: 136, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/init.test.ts': { cap: 55, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
   'test/setup/doctor/report.test.ts': { cap: 51, reason: 'the report doctor prints: its order, its notes and the session form' },
   'test/setup/doctor/checks.test.ts': { cap: 23, reason: 'one whole run for each note that its check and doctor both print' },
   'test/commands/more/advice/doctor.test.ts': { cap: 22, reason: 'the advice doctor prints for each finding' },
