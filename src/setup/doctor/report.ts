@@ -260,8 +260,10 @@ export const NO_HOME_NOTE = "no home folder found; yokoten can't read or keep it
  * caller that reads text: the full map, or a session's blocks.
  */
 export const doctor = (root: string | null, options: Parameters<typeof doctorRun>[1]): { ok: boolean; report: DoctorReport; lines: string[]; blocks?: string[][] } => {
-  const run = withGitReads(() => doctorRun(root, options));
-  const reword = commandWording(options.env);
+  // The system is read once, here or by the caller, and passed down (record 0040).
+  const platform = options.platform ?? hostPathPlace().platform;
+  const run = withGitReads(() => doctorRun(root, { ...options, platform }));
+  const reword = commandWording(options.env, platform);
   const { ok, report: worded } = reword ? rewordStrings(run, reword) : run;
   // The screens wrap their text once, so the home folder is ~ before they do: a long path
   // shown as ~ later would leave a line cut short (core rule 11).
@@ -879,7 +881,7 @@ function doctorRun(
   const notes: Finding[] = [];
   /** A practice as a row: ok with its detail, or a note with its finding. */
   const practiceRow = (c: Practice, failMark: RowMark = 'note'): CheckRow => (c.ok ? { mark: 'ok', name: c.name, ...(c.detail ? { what: c.detail } : {}) } : { mark: failMark, name: c.name, what: c.finding.what, fix: c.finding.fix });
-  for (const c of agentHooks(root, env)) {
+  for (const c of agentHooks(root, env, platform)) {
     project.push(practiceRow(c));
     if (!c.ok) notes.push(c.finding);
   }
@@ -973,7 +975,7 @@ function doctorRun(
     ['plugin', pluginAgeCheck(root, env)],
     ['plugin-source', pluginSourceNote(env)],
     ['plugin-and-install', hasHome ? doubleInstallCheck(root, env) : null],
-    ['command', hasHome ? launcherCheck(env) : null],
+    ['command', hasHome ? launcherCheck(env, platform) : null],
     ['edited-kit', hasHome ? editedKitCheck(env) : null],
   ];
   for (const [name, note] of named) {

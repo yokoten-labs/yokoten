@@ -45,6 +45,8 @@ async function readGitHub(host: Host | undefined, root: string, env: Invocation[
 
 export async function runDoctor(invocation: Invocation): Promise<number> {
   const { env, cwd } = invocation;
+  // The system, read once in bin/main.ts; missing means a POSIX system (record 0040).
+  const platform = invocation.platform ?? 'linux';
   const options = parse('doctor', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
   const agent = options.values['--agent'] ?? 'claude-code';
@@ -67,8 +69,8 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const server = gitea ?? github?.result;
   // A plugin user updates with `claude plugin update`, which never runs install: the start
   // takes back what v0.1.0 left, with install's own rules (#935).
-  const cleanup = session ? cleanOlderInstall(env) : null;
-  const { ok, report } = doctor(root, { env, config, session, host, ...(server ? { server } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, ...(invocation.platform ? { platform: invocation.platform } : {}) });
+  const cleanup = session ? cleanOlderInstall(env, { platform }) : null;
+  const { ok, report } = doctor(root, { env, config, session, host, ...(server ? { server } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, platform });
   // Full doctor outside a repo says so (#205). A session there stays quiet: no noise in a non-repo folder.
   if (!root && !session) {
     const missing = noRootFinding(cwd, invocation.env);

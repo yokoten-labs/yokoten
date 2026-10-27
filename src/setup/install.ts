@@ -197,7 +197,7 @@ const isOurLauncher = (file: string, clis: string[]): boolean => {
  * one of them (#433). A launcher from an older install runs yokoten.ts, so it still counts.
  * A shell alias is not on the PATH, so it is not seen.
  */
-export function isOnPath(env: Env, runtime: string, platform: NodeJS.Platform = process.platform): boolean {
+export function isOnPath(env: Env, runtime: string, platform: NodeJS.Platform): boolean {
   const clis = [runtime, HOME_DIR].flatMap((dir) => [join(dir, 'bin', 'yokoten.mjs'), join(dir, 'bin', 'yokoten.ts')]);
   const ours = clis.map(realPath).filter(Boolean);
   const names = platform === 'win32' ? [...launcherNames(platform), 'yokoten'] : launcherNames(platform);
@@ -226,7 +226,7 @@ const PROFILES = ['.bashrc', '.bash_profile', '.zshrc'];
 export const launcherDir = (home: string): string => join(home, '.local', 'bin');
 
 /** The launcher file for this platform: on Windows the .cmd, the one cmd.exe and Git Bash run. */
-export const launcherFile = (home: string, platform: NodeJS.Platform = process.platform): string => join(launcherDir(home), launcherNames(platform)[0] ?? 'yokoten');
+export const launcherFile = (home: string, platform: NodeJS.Platform): string => join(launcherDir(home), launcherNames(platform)[0] ?? 'yokoten');
 
 /** Every launcher file for this platform: on Windows the .cmd and the .ps1 (#1038). */
 export const launcherFiles = (home: string, platform: NodeJS.Platform): string[] => launcherNames(platform).map((name) => join(launcherDir(home), name));
@@ -708,7 +708,7 @@ export type OlderInstallCleanup = { files: number; edits: string[]; profiles: st
  * Nothing happens without the plugin. Another tool's hook still needs the runtime, so the
  * runtime and the launcher stay then.
  */
-export function cleanOlderInstall(env: Env, { platform = process.platform }: { platform?: NodeJS.Platform } = {}): OlderInstallCleanup {
+export function cleanOlderInstall(env: Env, { platform }: { platform: NodeJS.Platform }): OlderInstallCleanup {
   const cleanup: OlderInstallCleanup = { files: 0, edits: [], profiles: [] };
   if (!hasPlugin(env) || homeOf(env) === null) return cleanup;
   const count = (what: string, outcome: ReturnType<typeof removeManaged>): void => {
