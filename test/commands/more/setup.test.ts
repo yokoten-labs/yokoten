@@ -55,7 +55,7 @@ test('start: outside a git repo it writes nothing and names git first (#548)', a
   // The test's temp folder sits inside a checkout here, so git is told to stop walking at it.
   const result = await sandbox.call([], { cwd: outside, extra: { GIT_CEILING_DIRECTORIES: dirname(outside) } });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /is not inside a\s+git repo/);
+  assert.match(result.stderr, /this folder is not in a git repo/);
   assert.match(result.stderr, /git init/);
   assert.deepEqual(existsSync(join(outside, 'AGENTS.md')), false);
 });

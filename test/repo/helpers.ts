@@ -243,7 +243,7 @@ const copySandboxRepo = makeRepoTemplate((repo) => {
  * The road at a session start, as two lines (#1099): the stage title, and the Next row with
  * its wrapped lines joined, so a test reads the step whatever the width.
  */
-export const sessionRoad = (stdout: string): string => stdout.replace(/\n {12}/g, ' ').split('\n').slice(0, 2).join('\n');
+export const sessionRoad = (stdout: string): string => stdout.replace(/\n {12}/g, ' ').split('\n').filter((line) => line !== '').slice(0, 2).join('\n');
 
 export function makeSandbox() {
   const base = makeTempDir();

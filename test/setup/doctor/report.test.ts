@@ -312,7 +312,7 @@ test("doctor: a slow server read stops in time, and each step says it can't be c
 
 // The steps that only the code host can judge (#504): on a host with no adapter, each says what it asks.
 /** A session's notes, each block as one text with its wrapped lines joined (#1099). */
-const sessionNotes = (report: ReturnType<typeof doctor>): string[] => (report.blocks ?? []).map((block) => block.join('\n').replace(/\n {9,}/g, ' '));
+const sessionNotes = (report: ReturnType<typeof doctor>): string[] => (report.blocks ?? []).map((block) => block.filter((line) => line !== '').join('\n').replace(/\n {9,}/g, ' '));
 
 const FORGE_STEPS = ['tests', 'ci', 'labels', 'milestone', 'titles', 'codeowners', 'bot', 'review', 'protection', 'merge-settings', 'security-settings', 'tag-bypass', 'release-reviewer', 'release-tag-rule'];
 // What only GitHub has: its menus, its CLI, init's GitHub flag, the GitHub App. A standard's name ("GitHub community profile") and yokoten's own docs are not instructions.
@@ -572,9 +572,12 @@ test('doctor --session: one block, about the first step of the first stage not d
   assert.equal(r.status, 0, 'a session always starts');
   assert.deepEqual(r.stdout.trimEnd().split('\n'), [
     'yokoten: stage 1 of 5, safety net',
+    '',
     '  Next      No AGENTS.md, so the agents have no written rules here;',
     '            `yokoten init` adds one.',
+    '',
     '  Why       An agent follows the rules it can read, and only those.',
+    '',
     'Tell the user in plain words, one step at a time, and offer to do it (as-is,',
     'lighter, or not now with a reason).',
   ]);
@@ -740,7 +743,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   writeFileSync(marks, 'placeholder-mark\n');
   const extra = { YOKOTEN_PRIVATE_MARKS: marks };
   // The session's blocks, one blank line between them (#1099).
-  const session = async () => (await sandbox.call(['doctor', '--session'], { extra })).stdout.trimEnd().split('\n\n');
+  const session = async () => (await sandbox.call(['doctor', '--session'], { extra })).stdout.trimEnd().split(/\n\n(?=yokoten: )/);
   // A fresh change is work going on now: the session does not hear it.
   sandbox.write('a.txt', 'a\n');
   assert.equal((await session()).length, 1, 'only the road');
