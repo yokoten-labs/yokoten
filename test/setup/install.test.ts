@@ -25,7 +25,7 @@ import {
   sep,
 } from 'node:path';
 import { test } from 'node:test';
-import { shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
+import { rowsText, shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
 import {
   at,
   COMMENTED,
@@ -92,7 +92,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   // An unknown option is refused, and nothing is written (#203).
   const homeBefore = readdirSync(sandbox.home, { recursive: true }).sort();
   let result: { status: number | null; stdout: string; stderr: string } = await sandbox.call(['install', '--dry-run']);
-  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten install moved to yokoten. It runs as before this time.\n\nyokoten install · unknown option --dry-run\n\n  install     skills, agents and user-level hooks for this machine\n\nNext: `yokoten install --help`\n']);
+  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'yokoten install · unknown option --dry-run\n\n  install     skills, agents and user-level hooks for this machine\n\nNext: `yokoten install --help`\n']);
   assert.deepEqual(readdirSync(sandbox.home, { recursive: true }).sort(), homeBefore, 'install --dry-run writes nothing');
   // A real child, for the entry: the exit code and output through bin/yokoten.ts.
   result = sandbox.run(['install', '--list']);
@@ -144,7 +144,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   assert.match(doctor.stdout, /~\/\.config\/yokoten\/private-marks/);
   // The skills check wants the one entry skill in both folders, and names what is missing.
   // Skills are a step on the road, stage 4.
-  const skillsLine = async () => (await sandbox.call(['doctor', '--all'])).stdout.split('\n').find((l) => / skills/.test(l)) ?? '';
+  const skillsLine = async () => rowsText((await sandbox.call(['doctor', '--all'])).stdout).split('\n').find((l) => / skills/.test(l)) ?? '';
   assert.match(await skillsLine(), /^\s+done\s+skills$/);
   rmSync(join(shared, 'skills', 'yokoten'), { recursive: true });
   assert.match(await skillsLine(), /^\s+(next|to do)\s+skills: the yokoten skills are not in ~\/\.agents\/skills \(yokoten\); run `npx yokoten install`, or install the Claude Code plugin$/);
@@ -303,7 +303,7 @@ test('install: the plugin replaces the global skills and agents (#904)', async (
   assert.equal(JSON.parse(readFileSync(join(claude, 'settings.json'), 'utf8')).hooks, undefined, 'the plugin brings the hooks');
   assert.deepEqual(result.changes.find((change) => change.kind === 'runtime'), { state: 'skipped', kind: 'runtime', path: paths(sandbox.env).runtime, note: 'the yokoten plugin brings its own' });
   assert.deepEqual(result.changes.filter((change) => change.kind === 'skill').map((change) => change.state), ['removed', 'removed'], 'a skill that was never there is not named');
-  assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /plugin-and-install/, 'nothing is left for the plugin to duplicate');
+  assert.doesNotMatch(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /plugin-and-install/, 'nothing is left for the plugin to duplicate');
 });
 
 // #988: Claude Code reads its user folder from CLAUDE_CONFIG_DIR. Install, uninstall and a
@@ -321,7 +321,7 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
   assert.ok(existsSync(join(config, 'skills', 'yokoten', 'SKILL.md')), 'the entry skill');
   assert.ok(existsSync(join(config, 'agents', 'worker.md')), 'the agents');
   assert.ok(!existsSync(join(sandbox.home, '.claude')), '~/.claude is not made');
-  assert.match((await sandbox.call(['doctor', '--all'], { extra })).stdout, /ok +session-doctor/, 'doctor reads the same folder');
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'], { extra })).stdout), /ok +session-doctor/, 'doctor reads the same folder');
   // A session with the plugin on takes back what install left, in the same folder.
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   writeFileSync(settingsFile, JSON.stringify(settings));
@@ -561,11 +561,11 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   writeFileSync(agyFile, JSON.stringify({ lint: { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } }));
   writeFileSync(copilotFile, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine' }] }] } }));
   const before = await sandbox.call(['doctor', '--all']);
-  assert.match(before.stdout, /note {4}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
-  assert.match(before.stdout, /note {4}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
+  assert.match(rowsText(before.stdout), /note {8}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
+  assert.match(rowsText(before.stdout), /note {8}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
   assertRows(installIn(sandbox), sandbox.home, 'added hook ~/.gemini/config/hooks.json Antigravity CLI', 'added hook ~/.copilot/hooks/yokoten.json Copilot CLI');
   assertRows(installIn(sandbox), sandbox.home, 'kept hook ~/.gemini/config/hooks.json Antigravity CLI', 'kept hook ~/.copilot/hooks/yokoten.json Copilot CLI');
-  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  ok {6}${id}$`, 'm'));
+  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {10}${id}$`, 'm'));
   const saved = JSON.parse(readFileSync(agyFile, 'utf8'));
   assert.ok(saved.lint, "another entry stays");
   assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command|write_to_file|replace_file_content|multi_replace_file_content');
@@ -663,7 +663,7 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
         const run = await sandbox.call(['install']);
         assert.equal(run.status, 1, what);
         assert.ok(!run.output.includes(sandbox.home), `${what}: the home path is shown`);
-        assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  note {4}${bad.id}: ${escape(doctor)}`, 'm'), what);
+        assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  note {8}${bad.id}: ${escape(doctor)}`, 'm'), what);
       }
     }
   }
@@ -680,7 +680,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   // The problem says why, and the Fix is doctor's screen, which shows the hooks to add by hand.
   assert.deepEqual(result.problems.map((problem) => [problem.what, problem.fix]), [[COMMENTED('~/.gemini/settings.json').replace(/; add this.*$/, ''), 'run `yokoten doctor --all`, then add the hooks it shows by hand']]);
   assert.equal(readFileSync(file, 'utf8'), before, 'the file changed');
-  const add = doctorHandAdd((await sandbox.call(['doctor', '--all'])).stdout, 'gemini-user-hook', '~/.gemini/settings.json');
+  const add = doctorHandAdd(rowsText((await sandbox.call(['doctor', '--all'])).stdout), 'gemini-user-hook', '~/.gemini/settings.json');
   assert.deepEqual(Object.keys(add), ['SessionStart', 'BeforeTool']);
   assert.deepEqual(
     Object.values(add).map((groups) => (groups as { hooks: { name: string }[] }[]).map((g) => g.hooks[0].name)),
@@ -696,7 +696,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   assert.ok(again.ok, findingsOf(again, sandbox.home));
   assert.deepEqual(again.changes.filter((change) => change.agent === 'Gemini CLI').map((change) => [change.state, change.note]), [['kept', 'SessionStart doctor'], ['kept', 'command guard']]);
   assert.equal(readFileSync(file, 'utf8'), after, 'the file changed');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {2}ok {6}gemini-user-hook$/m);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}ok {10}gemini-user-hook$/m);
 });
 
 test('install: Gemini CLI allows comments but not trailing commas, and Codex allows neither (#258)', async () => {
@@ -731,7 +731,7 @@ test('install: an unreadable ~/.claude/settings.json is skipped, the rest goes o
     // Doctor names the same problem, never that the hook is missing, and doesn't crash.
     const doctor = await sandbox.call(['doctor', '--all']);
     const said = content.startsWith('{ not') ? "can't read ~/.claude/settings.json" : '~/.claude/settings.json has an unexpected shape';
-    assert.ok(doctor.stdout.split('\n').some((line) => line.startsWith(`  MISSING session-doctor: ${said}`)), `${what}: ${doctor.stdout}${doctor.stderr}`);
+    assert.ok(rowsText(doctor.stdout).split('\n').some((line) => line.startsWith(`  MISSING     session-doctor: ${said}`)), `${what}: ${doctor.stdout}${doctor.stderr}`);
     assert.doesNotMatch(doctor.stderr, /SyntaxError|TypeError|at /, what);
     assert.equal(readFileSync(file, 'utf8'), content, `${what}: doctor changed the file`);
   }
@@ -754,7 +754,7 @@ test('install: keys in ~/.claude/settings.json that install does not edit are ke
     assert.equal(key === 'env' ? settings.env : settings.hooks.Notification, value, content);
     assert.ok(hasHook(file, 'SessionStart', 'doctor'), `${content}: no doctor hook`);
     assert.ok(hasHook(file, 'PreToolUse', 'hook'), `${content}: no guard`);
-    assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^  ok {6}session-doctor$/m, content);
+    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^  ok {10}session-doctor$/m, content);
   }
 });
 
@@ -773,7 +773,7 @@ test('install: other keys under hooks, such as Gemini CLI hooks.disabled, are ke
     assert.equal(settings.hooks.Other, 5, dir);
     assert.ok(hasHook(path, 'SessionStart', 'doctor'), `${dir}: no doctor hook`);
     assert.ok(hasHook(path, guard, 'hook'), `${dir}: no guard`);
-    assert.match((await sandbox.call(['doctor', '--all'])).stdout, new RegExp(`^  ok {6}${dir.slice(1)}-user-hook$`, 'm'), dir);
+    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {10}${dir.slice(1)}-user-hook$`, 'm'), dir);
   }
 });
 
@@ -809,7 +809,7 @@ test('install: a project copy carries the kit lessons, and doctor from it runs t
   assert.ok(!existsSync(join(dest, 'kit', 'user')), 'only the project parts of the kit');
   sandbox.write('test/api.test.js', "await fetch('http://127.0.0.1:8080/health');\n");
   const doctor = spawnSync('node', [join(dest, 'bin', 'yokoten.ts'), 'doctor', '--all'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
-  assert.match(doctor.stdout, /\n {2}note {4}lesson incident-138: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; /);
+  assert.match(rowsText(doctor.stdout), /\n {2}note {8}lesson incident-138: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; /);
 });
 
 // A temp folder left beside the copy, in a repo root, is one `git add -A` away from a commit (#204).

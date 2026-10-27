@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { enabledPlugin, pluginSourceNote, readPluginMarketplace } from '../../../src/setup/advice/marketplace.ts';
 import { formatFinding } from '../../../src/rules/text/message.ts';
-import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
+import { makeSandbox, makeTempDir, rowsText } from '../../repo/helpers.ts';
 
 /** Writes the two files Claude Code keeps the plugin in, into `home`. */
 function writePluginState(home: string, settings: unknown, known?: unknown): string {
@@ -84,5 +84,5 @@ test('doctor: the note reaches a session for an SSH source, and not for the HTTP
 });
 
 test('doctor: the full report names the note as plugin-source', () => {
-  assert.match(sandboxWith(githubSource).run(['doctor', '--all']).stdout, /^ {2}note {4}plugin-source: Claude Code fetches the yokoten marketplace over SSH; update with/m);
+  assert.match(rowsText(sandboxWith(githubSource).run(['doctor', '--all']).stdout), /^ {2}note {8}plugin-source: Claude Code fetches the yokoten marketplace over SSH; update with/m);
 });

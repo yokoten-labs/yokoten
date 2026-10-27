@@ -161,7 +161,7 @@ test('learn: --export writes one small file, and --import adds it as a draft for
   symlinkSync(outside, join(sandbox.repo, 'lessons/incident-12'));
   result = await sandbox.call(['learn', '--import', file, '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /lessons\/incident-12 is a link: a lesson writes only inside its own folder/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /lessons\/incident-12 is a link: a lesson writes only inside its own folder/);
   assert.deepEqual(readdirSync(outside), [], 'nothing was written through the link');
 });
 

@@ -4,7 +4,7 @@ import '../repo/home.ts';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { test } from 'node:test';
-import { makeSandbox } from '../repo/helpers.ts';
+import { makeSandbox, rowsText } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
 import { doctor, guardCostCheck, type MachineProbe } from '../../src/setup/doctor/index.ts';
 import { freeMemory, guardLine, isLight, measureRun, parseChildTimes, testCommand, testJobs } from '../../src/host/light.ts';
@@ -44,12 +44,17 @@ test('light: yokoten test --print shows the command and the off switch; --heavy 
   // two runs below, which check the real exit code.
   const light = await sandbox.call(['test', '--print', '--', 'a.test.ts']);
   assert.equal(light.status, 0, light.stderr);
-  assert.match(light.stdout, /^(nice -n 10 )?node --test --test-concurrency=\d+ a\.test\.ts\nlight: \d+ at once/);
-  assert.match(light.stdout, /YOKOTEN_LIGHT_TESTS=0/);
+  // One screen: the plan as the title, then the command, why, and the off switch as rows.
+  const rows = rowsText(light.stdout);
+  assert.match(rows, /^yokoten test · would run the tests you named, \d+ at once/);
+  assert.match(rows, /^ {2}command +(nice -n 10 )?node --test --test-concurrency=\d+ .*a\.test\.ts$/m);
+  assert.match(rows, /^ {2}why +\d+ at once: /m);
+  assert.match(rows, /YOKOTEN_LIGHT_TESTS=0/);
+  const uncapped = /^yokoten test · would run .*: the light run is off\n\n {2}command +node --test (?!.*--test-concurrency)/;
   const heavy = await sandbox.call(['test', '--print', '--heavy']);
-  assert.equal(heavy.stdout, 'node --test\nthe light run is off\n');
+  assert.match(heavy.stdout, uncapped);
   const off = await sandbox.call(['test', '--print'], { extra: { YOKOTEN_LIGHT_TESTS: '0' } });
-  assert.equal(off.stdout, 'node --test\nthe light run is off\n');
+  assert.match(off.stdout, uncapped);
   assert.notEqual((await sandbox.call(['test', '--nope'])).status, 0, 'an unknown option is refused');
 });
 
@@ -67,7 +72,7 @@ test('test: one screen says the plan first and ends with one row (#1027)', () =>
   sandbox.write('ok.test.mjs', "import { test } from 'node:test';\ntest('fine', () => {});\n");
   const result = sandbox.run(['test', '--', 'ok.test.mjs']);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /^yokoten test · \d+ files? at once, /);
+  assert.match(result.stdout, /^yokoten test · (?:the tests you named|\d+ test files?), \d+ at once/);
   assert.match(result.stdout, /^ {2}done +tests passed$/m);
 });
 
@@ -108,7 +113,7 @@ test('guard cost: full doctor reports it in one line, spawning the guard once; a
     measureGuard: () => { runs++; return { wallMs: 90.2, cpuMs: 60.4 }; },
   } satisfies MachineProbe;
   const full = doctor(sandbox.repo, { env, config: DEFAULTS, machine });
-  assert.ok(full.lines.includes('  ok      guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
+  assert.ok(full.lines.includes('  ok          guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
   assert.equal(runs, 1);
   doctor(sandbox.repo, { env, config: DEFAULTS, machine, session: true });
   assert.equal(runs, 1, 'a session must start fast: no guard run');

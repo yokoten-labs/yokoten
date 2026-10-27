@@ -300,8 +300,9 @@ test('plugin: /yokoten:update previews from the plugin, then writes with --write
 
   let result = run(commands[0]);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^- Plain words, close to/m);
-  assert.match(result.stdout, /^\+ Plain English, close to/m);
+  // The changed lines are rows under `Lines:`, each with its - or + mark.
+  assert.match(result.stdout, /^ {2}- Plain words, close to/m);
+  assert.match(result.stdout, /^ {2}\+ Plain English, close to/m);
   assert.equal(readFileSync(path, 'utf8'), old, 'the preview writes nothing');
   result = run(commands[1]);
   assert.equal(result.status, 0, result.stderr);

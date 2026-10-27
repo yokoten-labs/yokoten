@@ -78,7 +78,8 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
   const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\n\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
+  // init did not move, so no moved note comes first (plan 4); the failure is the whole screen.
+  assert.equal(result.stderr, 'yokoten init · typo does not exist, so nothing was written\n\nNext: `git init typo`\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
   // A session in a non-repo folder gets no noise, and starts.
   const session = await sandbox.call(['doctor', '--session'], { cwd: away });

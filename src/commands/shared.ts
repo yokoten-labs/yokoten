@@ -223,6 +223,18 @@ export function isUnicodeTerminal(env: Env, platform: NodeJS.Platform = 'linux')
 
 /** The padding after a mark, two columns shorter, so the text after it keeps its column. */
 const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
+
+/**
+ * The text after a mark, `short` columns narrower when it starts with a label and a gap of
+ * three or more spaces: the gap keeps one space at least. Any other text is left as it is.
+ */
+function keepTextColumn(rest: string, short: number): string {
+  if (short >= 0) return rest;
+  const labelled = /^(\S+(?: \S+)*)( {3,})(\S.*)$/.exec(rest);
+  if (!labelled) return rest;
+  const gap = labelled[2] ?? '';
+  return `${labelled[1] ?? ''}${gap.slice(Math.min(-short, gap.length - 1))}${labelled[3] ?? ''}`;
+}
 const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten [a-z][a-z -]* · |yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:|More:|Instead:|Why:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
 // The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
@@ -253,7 +265,10 @@ export function styleLine(line: string, isColour: boolean, isUnicode = true): st
     const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
     const said = glyph === undefined ? word : `${glyph} ${word}`;
     const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
-    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
+    // A long mark (`can't check`) has no padding to give the glyph: a label's gap gives the
+    // rest, so the row's text keeps the column of the rows above and below it (#1115).
+    const rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
+    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${rest}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;
   } else {

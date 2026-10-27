@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { addProjectHooks, initLines, PATCH, profilesWithBridge, projectHooksState, readToolCall, WINDOWS_GAP } from '../../../../src/agents/runtimes/small/deepseek-harness.ts';
 import { agentHooks } from '../../../../src/setup/doctor/index.ts';
 import { init } from '../../../../src/setup/init.ts';
-import { makeSandbox } from '../../../repo/helpers.ts';
+import { makeSandbox, rowsText } from '../../../repo/helpers.ts';
 
 /** A PreToolUse payload in the shape the dsh 0.2.1-rc.2 hook bridge sent it in a real run (#334). */
 const payload = (cwd: string, name: string, input: Record<string, unknown>) =>
@@ -59,7 +59,7 @@ test('deepseek-harness project files: init writes the guard and the launch patch
   const file = join(sandbox.repo, '.dsh', 'hooks.json');
   const cli = '.yokoten/bin/yokoten.mjs';
   const dshHome = join(sandbox.home, 'dsh-home');
-  const doctor = async () => (await sandbox.call(['doctor', '--all'], { extra: { DSH_HOME: dshHome } })).stdout;
+  const doctor = async () => rowsText((await sandbox.call(['doctor', '--all'], { extra: { DSH_HOME: dshHome } })).stdout);
   assert.match(await doctor(), /note +deepseek-harness-hook: no tool-call guard in \.dsh\/hooks\.json/, 'reported, not counted as missing');
   sandbox.write('.dsh/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
   const result = await sandbox.call(['init', '--list'], { extra: { DSH_HOME: dshHome } });

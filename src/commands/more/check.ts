@@ -23,7 +23,7 @@ import { cores, freeMemory, isLight, NICE_LEVEL, OFF_SWITCH, onPath, testCommand
 import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/current-pr.ts';
 import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
-import { finding, type Finding, isWarningFinding } from '../../rules/text/message.ts';
+import { finding, type Finding, formatFindingMarks, isWarningFinding } from '../../rules/text/message.ts';
 import { shownValue } from '../../rules/text/terminal.ts';
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
@@ -116,7 +116,8 @@ export function noteRows(notes: readonly Finding[], isAll: boolean): string[] {
   return spaced(
     notes.map((note) => {
       const where = note.file === undefined ? '' : `${note.file}${note.line === undefined ? '' : `:${note.line}`}: `;
-      const what = `${where}${isWarningFinding(note) ? 'warning: ' : ''}${note.what}`;
+      // The grade and an ignore's reason stay on the row: a reviewer reads why it was let through (#616).
+      const what = `${where}${isWarningFinding(note) ? 'warning: ' : ''}${note.what}${formatFindingMarks(note)}`;
       return [...row('note', what), ...underRow([note.why, note.fix].filter((part) => part.trim() !== '').map(asSentence).join(' '), false)];
     }),
   );

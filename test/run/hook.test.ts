@@ -420,18 +420,19 @@ test('hook: a key with the wrong shape gets its default and one line; check name
   }
   let result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten check: yokoten\.json: "leadOnly" must be a list of text/);
+  assert.match(result.stderr, /^yokoten check · yokoten\.json: "leadOnly" must be a list of text/);
   // An unknown key is a note, and check passes.
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   result = await sandbox.call(['check', '--all']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  assert.match(result.stdout, /^ {2}note {8}yokoten\.json: "colour" is not a key this version of yokoten knows/m);
   assert.equal((await call({ command: 'git status' })).stderr, '', 'the hook says nothing');
   // Every wrong key in one run.
   sandbox.write('yokoten.json', '{ "leadOnly": "x", "tests": 5, "notNow": null }');
   result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten check: yokoten\.json: 2 keys have the wrong shape:\n- "tests" must be [^\n]+\n- "leadOnly" must be /);
+  // The failure title is one line, wrapped: each key in turn, then the Next line.
+  assert.match(result.stderr.replace(/\s+/g, ' '), /^yokoten check · yokoten\.json: 2 keys have the wrong shape: - "tests" must be .+ - "leadOnly" must be .+ Next: /);
 });
 
 test('hook: a repo reached through a symlink gets the same file rules (#1)', async () => {

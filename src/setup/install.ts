@@ -40,7 +40,7 @@ import * as grok from '../agents/runtimes/grok.ts';
 import * as muse from '../agents/runtimes/muse.ts';
 import * as opencode from '../agents/runtimes/small/opencode.ts';
 import { commentedFile, type Problem, UnreadableHooksFile } from '../agents/hooks-file.ts';
-import { type Change, changeOf, copyRuntime, describeWrite, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, type ReportState, type SetupResult, writeManaged, writeNew } from './files.ts';
+import { type Change, changeOf, copyRuntime, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, type ReportState, type SetupResult, writeManaged, writeNew } from './files.ts';
 import { type Finding, finding, type RuleId } from '../rules/text/message.ts';
 import { type Gh, readLocalLogins, readLogin } from '../host/github/index.ts';
 import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
@@ -410,11 +410,13 @@ function unreadableHooks(agent: string, file: string, problem: Problem): Finding
  */
 function agentHooks(agent: string, file: string, add: () => Record<string, HookState>): Steps & { ok: boolean } {
   try {
-    const changes = Object.entries(add()).map(([hook, state]): Change =>
+    const states = Object.entries(add());
+    const changes = states.map(([hook, state]): Change =>
       // Antigravity's guard the user turned off stays off (#984): theirs, and not on.
-      state === antigravity.KEPT_OFF ? { state: 'kept', kind: 'hook', path: file, agent, yours: true, note: 'the command guard stays off, as you set it' } : (changeOf(state, 'hook', file, { agent, note: HOOK_NAMES[hook] ?? hook }) as Change),
+      state === antigravity.KEPT_OFF ? { state: 'kept', kind: 'hook', path: file, agent, yours: true, note: `the command guard stays off, as you set it; to turn it on, ${antigravity.TURN_ON_STEP}` } : (changeOf(state, 'hook', file, { agent, note: HOOK_NAMES[hook] ?? hook }) as Change),
     );
-    return { ok: true, changes, problems: [], notes: [] };
+    const notes = agent === 'OpenCode' ? states.map(([, state]) => keptPluginNote(state, file)).filter((note) => note !== null) : [];
+    return { ok: true, changes, problems: [], notes };
   } catch (err) {
     if (!(err instanceof UnreadableHooksFile)) throw err;
     return { ok: false, changes: [{ state: 'skipped', kind: 'hook', path: file, agent }], problems: [unreadableHooks(agent, file, err.problem)], notes: [] };
@@ -600,10 +602,11 @@ export function writeOpenCodePlugin(path: string, source: string): 'added' | 'up
   return state === 'wrote' ? 'added' : state;
 }
 
-/** The one line for an OpenCode plugin write; a plugin yokoten kept says how to get yokoten's (#984). */
-export function openCodePluginLine(state: ReturnType<typeof writeOpenCodePlugin>, what: string, command: 'install' | 'init'): string {
-  const line = describeWrite(state, what);
-  return state === 'kept (yours)' || state === 'kept (your edit)' ? `${line}; yokoten would write its own: to get it, move that file away and run \`yokoten ${command}\`` : line;
+/** The note on an OpenCode plugin install kept, the user's own or edited: how to get yokoten's (#984). None for any other write. */
+function keptPluginNote(state: HookState, file: string): Finding | null {
+  if (state !== 'kept (yours)' && state !== 'kept (your edit)') return null;
+  const whose = state === 'kept (yours)' ? "not yokoten's plugin" : "yokoten's plugin with your edits";
+  return finding('opencode-user-hook', `${file} is ${whose}, so yokoten leaves it`, "to get yokoten's, move that file away and run `yokoten install`");
 }
 
 /** A managed file's text: `missing` when no file is there, `yours` when the file is not ours. */

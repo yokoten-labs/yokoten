@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, symlinkSync, writeFi
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { addProjectHooks, addUserHooks, GUARDED_TOOLS, hasUserDir, isGuardOff, projectHooksState, readToolCall, readTrust, userHooksState, userSettingsFile } from '../../../src/agents/runtimes/muse.ts';
-import { CLI, makeSandbox, makeTempDir, runChild } from '../../repo/helpers.ts';
+import { CLI, makeSandbox, makeTempDir, rowsText, runChild } from '../../repo/helpers.ts';
 
 /** Write Muse's trust store in `home`, in the shape Muse Code 1.4.11 writes it (#341). */
 function trustFolder(home: string, ...folders: string[]): string {
@@ -67,7 +67,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   const sandbox = makeSandbox();
   const file = join(sandbox.repo, '.muse', 'hooks.json');
   const cli = '.yokoten/bin/yokoten.mjs';
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +muse-hook: no tool-call guard or stop check in \.muse\/hooks\.json/, 'reported, not counted as missing');
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +muse-hook: no tool-call guard or stop check in \.muse\/hooks\.json/, 'reported, not counted as missing');
   sandbox.write('.muse/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
   const result = await sandbox.call(['init', '--list']);
   assert.equal(result.status, 0, result.stderr);
@@ -75,7 +75,7 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   assert.match(result.stdout, /added the Muse Code stop check in \.muse\/hooks\.json/);
   assert.match(result.stdout, /added the Muse Code session doctor in \.muse\/hooks\.json/);
   // No Muse home: init writes the hooks and leaves the trust step out (#654).
-  assert.doesNotMatch(result.stdout, /Muse Code runs the hooks/);
+  assert.doesNotMatch(result.stdout, /guard is off in [^\n]*Muse Code/);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.equal(written.hooks.PreToolUse.length, 2, "another hook's group stays");
   assert.equal(written.hooks.PreToolUse[1].matcher, 'bash|write_file|edit_file|apply_patch', 'named tools: "*" would also match read_skill');
@@ -87,19 +87,19 @@ test('muse project hooks: init writes the guard and the stop check, keeps other 
   assert.match(written.hooks.SessionStart[0].hooks[0].command, /"\$\(git rev-parse --show-toplevel\)\/\.yokoten\/bin\/yokoten\.mjs" doctor --session --agent muse$/);
   assert.equal(written.hooks.SessionStart[0].matcher, undefined);
   // The hooks are in place, and Muse looks unused here: no trust line (#341).
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +muse-hook: \.muse\/hooks\.json is in place; trust not checked, no ~\/\.config\/muse\n/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +muse-hook: \.muse\/hooks\.json is in place; trust not checked, no ~\/\.config\/muse\n/);
   trustFolder(sandbox.home, realpathSync(sandbox.repo));
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +muse-hook/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +muse-hook/);
   const trusted = await sandbox.call(['init', '--list']);
   assert.match(trusted.stdout, /kept the Muse Code tool-call hook/);
-  assert.match(trusted.stdout, /yokoten's guard is already on in Muse Code/);
+  assert.match(rowsText(trusted.stdout), /^ {2}kept the trust in Muse Code \(yokoten's guard is already on\)/m);
   written.hooks.Stop[0].hooks[0].command = 'node old/yokoten.ts hook --stop --agent muse';
   sandbox.write('.muse/hooks.json', JSON.stringify(written));
   assert.equal(projectHooksState(sandbox.repo, cli).stop, 'updated');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +muse-hook: the hooks in \.muse\/hooks\.json are out of date/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +muse-hook: the hooks in \.muse\/hooks\.json are out of date/);
   assert.deepEqual(addProjectHooks(sandbox.repo, cli), { guard: 'same', stop: 'updated', doctor: 'same' });
   sandbox.write('.muse/hooks.json', '{ not json');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +muse-hook: can't read \.muse\/hooks\.json/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +muse-hook: can't read \.muse\/hooks\.json/);
   assert.throws(() => addProjectHooks(sandbox.repo, cli), /can't read/);
   assert.equal(readFileSync(file, 'utf8'), '{ not json', 'a file yokoten cannot read stays as it was');
 });
@@ -108,7 +108,7 @@ test('muse trust (#341): doctor says when Muse skips the hooks; ok only when tru
   const sandbox = makeSandbox();
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
-  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
+  const doctor = async () => rowsText((await sandbox.call(['doctor', '--all'])).stdout);
   // No Muse home: no trust line, and no claim that Muse trusts the folder.
   assert.doesNotMatch(await doctor(), /muse-hook: can't check|Muse Code skips/);
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'no home');
@@ -178,30 +178,30 @@ test('muse user hooks (#557): install writes the doctor and the guard in its set
   assert.equal(userSettingsFile({ HOME: sandbox.home }), '~/.config/muse/settings.json');
   assert.equal(userSettingsFile({ HOME: sandbox.home, XDG_CONFIG_HOME: join(sandbox.home, 'xdg') }), '$XDG_CONFIG_HOME/muse/settings.json');
   let result = await sandbox.call(['install', '--list']);
-  assert.match(result.stdout, /^skipped Muse Code: ~\/\.config\/muse not found \(run `yokoten install` again after installing Muse Code\)$/m);
+  assert.match(rowsText(result.stdout), /^ {2}skipped +Muse Code hooks in ~\/\.config\/muse: not installed here$/m);
   assert.ok(!existsSync(join(sandbox.home, '.config', 'muse')), 'no config folder made');
   mkdirSync(join(sandbox.home, '.config', 'muse'));
   assert.equal(hasUserDir({ HOME: sandbox.home }), true);
   // The doctor names both hooks as missing, and install adds them, twice safe. The runtime
   // is installed by now, so doctor says `npx yokoten install`, which works from anywhere.
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +muse-user-hook: no session-start doctor and no command guard in ~\/\.config\/muse\/settings\.json; `npx yokoten install` adds them/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +muse-user-hook: no session-start doctor and no command guard in ~\/\.config\/muse\/settings\.json; `npx yokoten install` adds them/);
   result = await sandbox.call(['install', '--list']);
-  assert.match(result.stdout, /^added the Muse Code SessionStart doctor in ~\/\.config\/muse\/settings\.json$/m);
-  assert.match(result.stdout, /^added the Muse Code command guard in ~\/\.config\/muse\/settings\.json$/m);
+  assert.match(rowsText(result.stdout), /^ {2}added +Muse Code hooks in ~\/\.config\/muse\/settings\.json: SessionStart doctor$/m);
+  assert.match(rowsText(result.stdout), /^ {2}added +Muse Code hooks in ~\/\.config\/muse\/settings\.json: command guard$/m);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.match(written.hooks.SessionStart[0].hooks[0].command, /doctor --session --agent muse$/);
   assert.equal(written.hooks.PreToolUse[0].matcher, GUARDED_TOOLS, 'the shell and the edit tools, as the project hook (#1100)');
   assert.match(written.hooks.PreToolUse[0].hooks[0].command, /hook --agent muse --commands-only/);
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +muse-user-hook/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +muse-user-hook/);
   const explainUser = (await sandbox.call(['explain', 'muse-user-hook'])).stdout.replace(/\s+/g, ' ');
   assert.match(explainUser, /session-start doctor and command guard/);
   assert.match(explainUser, /compares the SessionStart and PreToolUse hooks in its settings\.json/);
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^kept the Muse Code command guard in ~\/\.config\/muse\/settings\.json$/m);
+  assert.match(rowsText((await sandbox.call(['install', '--list'])).stdout), /^ {2}kept +Muse Code hooks in ~\/\.config\/muse\/settings\.json: command guard$/m);
   // The positive control: another runtime path is out of date, for both hooks.
   const env = { HOME: sandbox.home };
   assert.deepEqual(userHooksState(env, '/elsewhere/bin/yokoten.ts', 'gone'), { doctor: 'updated', guard: 'updated' });
   assert.deepEqual(addUserHooks(env, '/elsewhere/bin/yokoten.ts', 'gone'), { doctor: 'updated', guard: 'updated' });
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +muse-user-hook: the session-start doctor and the command guard in ~\/\.config\/muse\/settings\.json are out of date/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +muse-user-hook: the session-start doctor and the command guard in ~\/\.config\/muse\/settings\.json are out of date/);
 });
 
 // #672: a desk is a plain `git clone`. Muse runs its hooks with a short env (HOME, PATH, LANG,
