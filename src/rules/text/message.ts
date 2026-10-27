@@ -6,7 +6,7 @@
 // field never holds a private value (core rule 11): a hit is named by its place and its
 // kind, never by what matched.
 
-import { spaced, wrap } from './screen.ts';
+import { LABEL_COLUMN, ROW_INDENT, spaced, wrap } from './screen.ts';
 
 /** How sure a secret or privacy finding is: only `sure` fails; the others warn. */
 export type FindingGrade = 'sure' | 'likely' | 'unknown';
@@ -921,7 +921,14 @@ export const refusalParts = (f: Finding): Refusal => ({
  * wrapped once at 80 columns under itself. A command in backticks never breaks, so an
  * Instead row's command still copies whole; a link is one word, so it stays on one line.
  */
-export const findingRow = (label: string, text: string): string[] => wrap(`  ${label.padEnd(10)}`, text);
+export const findingRow = (label: string, text: string): string[] => wrap(findingHead(label), text);
+
+/**
+ * A finding row's label, padded: the row indent, then the label in a field that ends at
+ * LABEL_COLUMN, so its text starts there. The guard's refusal and the notes keep this column;
+ * parseRefusal reads it back from a session log.
+ */
+const findingHead = (label: string): string => `${' '.repeat(ROW_INDENT)}${label.padEnd(LABEL_COLUMN - ROW_INDENT)}`;
 
 /** Where the title's text starts: later title lines start under it. */
 const REFUSAL_HEAD = 'yokoten stopped this: ';
@@ -1009,7 +1016,7 @@ export function parseRefusal(text: string): Refusal | null {
   const named = /^yokoten stopped this: (.+) \[([\w-]+)\]$/.exec(title);
   // The aligned rows of #1027, or the older `Why: ...` form a session log may still hold.
   const value = (label: string, old: string): string | undefined => {
-    const head = `  ${label.padEnd(10)}`;
+    const head = findingHead(label);
     const at = lines.findIndex((line) => line.startsWith(head));
     if (at !== -1) {
       const parts = [lines[at]?.slice(head.length) ?? ''];
