@@ -737,7 +737,8 @@ function doctorRun(
           ? readOrigin(host, gh)
           : { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' };
   const where = walk(road(root, env, ROAD, server, config), config.notNow);
-  // Full doctor from the command line adds the obvious marks first (#390); a session writes nothing.
+  // Only the first run fills the marks here (#390, its question is the write); bare doctor and a
+  // session write nothing (record 0043 §3), and name `yokoten marks fill` instead.
   // With no home folder, the checks that read or keep settings there are skipped, never crash (#404).
   const hasHome = homeOf(env) !== null;
   const filled = isFilling && !session && hasHome ? trySafely('the marks from this machine', () => filledLines(fillMarks(env, machineMarks(env, { cwd: root, gh })), paths(env).marks)) : [];

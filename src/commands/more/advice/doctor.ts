@@ -68,7 +68,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   // A plugin user updates with `claude plugin update`, which never runs install: the start
   // takes back what v0.1.0 left, with install's own rules (#935).
   const cleanup = session ? cleanOlderInstall(env) : null;
-  const { ok, report } = doctor(root, { env, config, session, host, ...(server ? { server } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, fillMarks: !session, ...(invocation.platform ? { platform: invocation.platform } : {}) });
+  const { ok, report } = doctor(root, { env, config, session, host, ...(server ? { server } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, ...(invocation.platform ? { platform: invocation.platform } : {}) });
   // Full doctor outside a repo says so (#205). A session there stays quiet: no noise in a non-repo folder.
   if (!root && !session) {
     const missing = noRootFinding(cwd, invocation.env);

@@ -45,7 +45,7 @@ test('install then doctor: the private-marks lines agree, in full doctor and a s
   // The positive control: a file with no marks is missing, in both. A shared name is never added.
   sandbox.git('config', 'user.name', 'Test');
   writeFileSync(join(sandbox.home, '.config/yokoten/private-marks'), '# only a comment\n');
-  assert.match(flat((await sandbox.call(['doctor', '--all'])).stdout), /^ +MISSING +private-marks: ~\/\.config\/yokoten\/private-marks is missing or has no marks Type your name[^\n]* Fix: `(npx )?yokoten marks add`/m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'])).stdout), /^ +MISSING +private-marks: ~\/\.config\/yokoten\/private-marks is missing or has no marks It adds your git name[^\n]* Fix: `(npx )?yokoten marks fill`/m);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /private-marks is missing or has no marks/);
 });
 

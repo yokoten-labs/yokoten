@@ -3,13 +3,14 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
 import { problemRows, runDoctor } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
+import { fillMarks, machineMarks, paths } from '../../../../src/setup/install.ts';
 
 // What Codex and Gemini CLI hear at a session start: they don't filter command output (#390), as a note (#1099).
 const UNFILTERED_NOTE = [
@@ -146,6 +147,23 @@ test('doctor: one progress note on a terminal; none off it, in a session, or wit
   const json = await run(true, ['--json']);
   assert.ok(!json.stderr.includes('reading GitHub settings') && !json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
   JSON.parse(json.stdout);
+});
+
+// Record 0043 §3, plan D8: a bare command reads. Filling the marks is `yokoten marks fill`.
+test('doctor: bare doctor leaves the marks file untouched, and its MISSING row ends with the marks fill command (#1115)', async () => {
+  const sandbox = makeSandbox();
+  // A git name doctor could add: the positive control below shows there was something to fill.
+  sandbox.git('config', 'user.name', 'Annsample');
+  const marks = paths(sandbox.env).marks;
+  const before = existsSync(marks) ? readFileSync(marks, 'utf8') : null;
+  const done = await sandbox.call(['doctor', '--all']);
+  assert.equal(existsSync(marks) ? readFileSync(marks, 'utf8') : null, before, 'bare doctor wrote nothing to the marks file');
+  assert.doesNotMatch(done.stdout, /added your git name/, 'it says nothing was added');
+  const row = done.stdout.split('\n\n').find((block) => /MISSING +private-marks:/.test(block)) ?? '';
+  assert.match(row, /Fix: `yokoten marks fill`$/, row);
+  const short = await sandbox.call(['doctor']);
+  assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks fill`\n/, short.stdout);
+  assert.deepEqual(fillMarks(sandbox.env, machineMarks(sandbox.env, { cwd: sandbox.repo })), ['git name'], 'the git name was there to fill');
 });
 
 // #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.
