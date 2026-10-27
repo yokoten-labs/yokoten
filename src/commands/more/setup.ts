@@ -54,12 +54,12 @@ export async function runStart(invocation: Invocation): Promise<number> {
   const doneRows: string[] = [];
   const failedScreens: string[][] = [];
   if (isMachineMissing) {
-    const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask });
+    const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform: invocation.platform });
     if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done.lines).join(', ') || 'your agents'}`, 'computer'));
     else failedScreens.push(installScreen(invocation, done.lines, done.ok, true));
   }
   if (isProjectMissing) {
-    const done = init(root, env, undefined, { ask });
+    const done = init(root, env, undefined, { ask, platform: invocation.platform });
     const wrote = done.lines.filter((line) => /^wrote /.test(line)).length;
     if (done.ok && !done.lines.some((line) => NEEDS_HAND.test(line))) doneRows.push(...row('ok', `${count(wrote, 'file')} written, none of yours changed`, 'project'));
     else failedScreens.push(projectScreen(done.lines, done.ok, true));
@@ -292,7 +292,7 @@ export function runInit(invocation: Invocation): number {
   const { areas } = loadConfig(root);
   // The tests job is asked first (#550): only with a terminal on stdin and stdout, as install asks.
   const ask = askWhenTerminal(invocation);
-  const done = init(root, invocation.env, undefined, { noCi: options.flags.has('--no-ci'), ask });
+  const done = init(root, invocation.env, undefined, { noCi: options.flags.has('--no-ci'), ask, platform: invocation.platform });
   // The host is changed only when asked (#10): it is a remote, and other people see it.
   // Without --yes, init only reads it and says what it would do, or what it skipped.
   const planning = setUpPlanning(ghIn(root, invocation.env), readOriginUrl(root, invocation.env), {
@@ -586,7 +586,7 @@ export function runInstall(invocation: Invocation): number {
     print(invocation, ['']);
   }
   // gh may reach the network for the login: three seconds at most.
-  const done = install(invocation.env, { cwd: invocation.cwd, gh: ghIn(invocation.cwd, invocation.env, 3000), ask });
+  const done = install(invocation.env, { cwd: invocation.cwd, gh: ghIn(invocation.cwd, invocation.env, 3000), ask, platform: invocation.platform });
   print(invocation, options.flags.has('--list') ? done.lines : installScreen(invocation, done.lines, done.ok));
   return done.ok ? 0 : 1;
 }

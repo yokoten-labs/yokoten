@@ -39,6 +39,7 @@ import {
   ROOT,
 } from '../repo/helpers.ts';
 import { hasHook } from '../../src/agents/hooks-file.ts';
+import { RENAME_WAITS_MS, renameRetrying } from '../../src/platform/disk.ts';
 import { copyRuntime, isEditedManaged, isSameOrInside, sealManaged, writeManaged } from '../../src/setup/files.ts';
 import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
 import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
@@ -850,6 +851,38 @@ test('copy runtime: one folder by two spellings is the same folder, so a copy in
   assert.equal(isSameOrInside(join(short, 'src', 'project'), join(long, 'src'), read), true);
   assert.equal(isSameOrInside(join(short, 'project'), join(long, 'src'), read), false, 'next to src/ is not inside it');
   assert.equal(isSameOrInside(join(short, 'src', 'project'), join(long, 'src'), (path) => path), false, 'the bug: read as written, the two spellings never meet');
+  // The reader yokoten uses reads the disk: a folder reached through a link is the same folder.
+  const sandbox = makeSandbox();
+  const real = join(sandbox.home, 'real');
+  mkdirSync(join(real, 'src'), { recursive: true });
+  symlinkSync(real, join(sandbox.home, 'link'), 'junction');
+  assert.equal(isSameOrInside(join(sandbox.home, 'link', 'src', 'project'), join(real, 'src')), true);
+});
+
+// #1109: where Defender scans the temp folder, init's last rename failed with EPERM about
+// once in 70 runs, because the scanner still held a file it had just written.
+test('rename: on Windows a busy file is tried again after each wait; anything else fails at once (#1109)', () => {
+  const busy = (code: string) => Object.assign(new Error(code), { code });
+  const tries = (failures: string[], platform: NodeJS.Platform) => {
+    const waits: number[] = [];
+    let calls = 0;
+    const rename = () => {
+      const code = failures[calls++];
+      if (code) throw busy(code);
+    };
+    let error: unknown;
+    try {
+      renameRetrying('a', 'b', platform, { rename, wait: (ms) => waits.push(ms) });
+    } catch (caught) {
+      error = caught;
+    }
+    return { calls, waits, code: (error as NodeJS.ErrnoException | undefined)?.code };
+  };
+  assert.deepEqual(tries(['EPERM', 'EBUSY', 'EACCES'], 'win32'), { calls: 4, waits: [10, 20, 50], code: undefined });
+  assert.deepEqual(tries(['ENOENT'], 'win32'), { calls: 1, waits: [], code: 'ENOENT' }, 'a missing file is not busy');
+  assert.deepEqual(tries(['EPERM'], 'linux'), { calls: 1, waits: [], code: 'EPERM' }, 'other systems rename at once');
+  const always = tries(Array(20).fill('EPERM'), 'win32');
+  assert.deepEqual([always.calls, always.waits, always.code], [RENAME_WAITS_MS.length + 1, RENAME_WAITS_MS, 'EPERM'], 'after the last wait the error stands');
 });
 
 // #208, #433: a clone install puts a launcher in ~/.local/bin, and with no terminal it edits no shell file.

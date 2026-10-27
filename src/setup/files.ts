@@ -2,9 +2,10 @@
 // writing files without stepping on what is already there.
 
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renameRetrying } from '../platform/disk.ts';
 import { realPath } from '../platform/paths.ts';
 
 /**
@@ -65,9 +66,10 @@ function removeLeftovers(dest: string): void {
  * unless it is inside a part that is copied: that copy would hold itself, so it is refused.
  * The new copy goes into a folder next to `dest` first, then takes its place, so a failed
  * copy leaves the old one working. Temp folders that a crash left there are removed first.
+ * On Windows a rename that a virus scanner holds up is tried again for a few seconds (#1109).
  * `copy` and `rename` are there for a test to make a step fail.
  */
-export function copyRuntime(dest: string, { withKit = false, copy = cpSync, rename = renameSync }: { withKit?: boolean; copy?: typeof cpSync; rename?: typeof renameSync } = {}): CopyResult {
+export function copyRuntime(dest: string, { withKit = false, platform, copy = cpSync, rename = (from: string, to: string) => renameRetrying(from, to, platform) }: { withKit?: boolean; platform?: NodeJS.Platform; copy?: typeof cpSync; rename?: (from: string, to: string) => void } = {}): CopyResult {
   if (isSameOrInside(HOME_DIR, dest)) return 'kept';
   // A yokoten with no lessons yet has no kit/lessons: the project copy then has none either.
   const lessons = join('kit', 'lessons');
