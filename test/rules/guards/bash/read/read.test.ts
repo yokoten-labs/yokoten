@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { checkCommand, commandWords } from '../../../../../src/rules/guards/index.ts';
-import { blocked, allowed, force, hookEnvironment, refusedAs, isBlockedByList, py, shouldPass } from '../../../../../test/repo/helpers.ts';
+import { blocked, allowed, force, hookEnvironment, refusedAs, isBlockedByList, py, pythonBlocked, shouldPass } from '../../../../../test/repo/helpers.ts';
 import { invoke } from '../../../../../test/repo/invoke.ts';
+import { assertLinear, assertLinearEach } from '../../../../../scripts/linear.ts';
 
 test('bash: words in quotes or a heredoc are data, not commands (#105)', () => {
   allowed('git commit -m "docs: explain when to run npm publish"');
@@ -121,4 +122,35 @@ test('bash: xargs hands what comes in to its program (#283)', () => {
   allowed(`xargs git add <<'E'\na.ts\nE`);
   allowed('echo a.ts | xargs git add');
   allowed(`echo ${pushForce} | xargs echo`);
+});
+
+// The reader reads in linear time (#226). Moved from run.test.ts, which kept the budget
+// tests, so neither file is over the 60 s file limit on a CI runner (#1109).
+test('bash: a command of 100k words is read in linear time (#226)', () => {
+  const commands: [string, (n: number) => string][] = [
+    ['echo a', (n) => `echo ${'a '.repeat(n)}`],
+    ['then', (n) => `${'then '.repeat(n)}echo`],
+    ['env', (n) => `${'env '.repeat(n)}echo`],
+    // A launcher chain, not `sudo`: the root rule refuses sudo itself (#969), whatever
+    // it wraps. The point here is that a long chain reads in linear time.
+    ['nice', (n) => `${'nice '.repeat(n)}echo`],
+    ['GIT_CONFIG_PARAMETERS', (n) => `${'GIT_CONFIG_PARAMETERS=x '.repeat(n)}git status`],
+  ];
+  // From 3125 words to 8 times that.
+  assertLinearEach(
+    commands.map(([name, make]) => ({
+      name: `${name} words`,
+      make,
+      read: (command: string) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {}, config: pythonBlocked }), null, name),
+    })),
+    3125,
+  );
+  blocked(`echo ${'a '.repeat(100000)}; ${force}`);
+});
+
+test('bash: a heredoc pipeline is read in linear time (#226)', () => {
+  // From 1000 heredocs to 8000.
+  const pipeline = (reader: string, body: string, n: number) => `${'cat <<E | '.repeat(n)}${reader}\n${`${body}\nE\n`.repeat(n)}`;
+  assertLinear('a heredoc pipeline into cat', (n) => pipeline('cat', force, n), (command) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} }), null, 'bodies piped into cat are data'), 1000);
+  assertLinear('a heredoc pipeline into bash', (n) => pipeline('bash', force, n), (command) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.id, 'force-push', 'bodies piped into bash are commands'), 1000);
 });

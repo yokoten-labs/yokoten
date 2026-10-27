@@ -10,28 +10,6 @@ import { blocked, allowed, pythonBlocked, force } from '../../../../../test/repo
 import { assertLinear, assertLinearEach } from '../../../../../scripts/linear.ts';
 import { withoutCmdSwitches } from '../../../../../src/rules/guards/bash/read/run.ts';
 
-test('bash: a command of 100k words is read in linear time (#226)', () => {
-  const commands: [string, (n: number) => string][] = [
-    ['echo a', (n) => `echo ${'a '.repeat(n)}`],
-    ['then', (n) => `${'then '.repeat(n)}echo`],
-    ['env', (n) => `${'env '.repeat(n)}echo`],
-    // A launcher chain, not `sudo`: the root rule refuses sudo itself (#969), whatever
-    // it wraps. The point here is that a long chain reads in linear time.
-    ['nice', (n) => `${'nice '.repeat(n)}echo`],
-    ['GIT_CONFIG_PARAMETERS', (n) => `${'GIT_CONFIG_PARAMETERS=x '.repeat(n)}git status`],
-  ];
-  // From 3125 words to 8 times that.
-  assertLinearEach(
-    commands.map(([name, make]) => ({
-      name: `${name} words`,
-      make,
-      read: (command: string) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {}, config: pythonBlocked }), null, name),
-    })),
-    3125,
-  );
-  blocked(`echo ${'a '.repeat(100000)}; ${force}`);
-});
-
 test('bash: an unclosed $( is read once, not again at each level (#226)', () => {
   blocked(`${'echo $(a '.repeat(30)}; ${force}`);
   // From 1250 repeats to 10k, the work grows like the text.
@@ -41,13 +19,6 @@ test('bash: an unclosed $( is read once, not again at each level (#226)', () => 
   // What an unclosed $( holds is still read: a force push inside it blocks, a read passes.
   blocked(`echo $(${force}`);
   allowed('echo $(git status');
-});
-
-test('bash: a heredoc pipeline is read in linear time (#226)', () => {
-  // From 1000 heredocs to 8000.
-  const pipeline = (reader: string, body: string, n: number) => `${'cat <<E | '.repeat(n)}${reader}\n${`${body}\nE\n`.repeat(n)}`;
-  assertLinear('a heredoc pipeline into cat', (n) => pipeline('cat', force, n), (command) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} }), null, 'bodies piped into cat are data'), 1000);
-  assertLinear('a heredoc pipeline into bash', (n) => pipeline('bash', force, n), (command) => assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.id, 'force-push', 'bodies piped into bash are commands'), 1000);
 });
 
 test('bash: nested constructs are read in linear time and never throw (#226)', () => {
