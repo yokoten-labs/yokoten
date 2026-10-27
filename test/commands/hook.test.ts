@@ -32,7 +32,7 @@ import {
   runChild,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { chooseDenial, redactCommand } from '../../src/commands/hook.ts';
+import { chooseDenial, redactCommand, shownFolder } from '../../src/commands/hook.ts';
 import { inThreadGuard, startGuardEarly, takeGuard } from '../../src/run/hook.ts';
 import { parseRefusal } from '../../src/rules/text/message.ts';
 
@@ -248,7 +248,7 @@ test('hook --stop: sends the agent back once with the findings in changed files,
   sandbox.write('yokoten.json', '{ broken');
   result = await sandbox.call(['hook', '--stop'], { input: JSON.stringify({ cwd: sandbox.repo }) });
   assert.equal(result.status, 0);
-  assert.match(result.stderr, /^yokoten hook --stop: skipped, [^\n]+\n$/);
+  assert.match(result.stderr, /^note: the end-of-turn check was skipped: [^\n]+(?:\n {6}[^\n]+)*\n$/);
   // --stop takes a known agent only, and never with --commands-only.
   assert.equal((await sandbox.call(['hook', '--stop', '--agent', 'cursor'], { input: '{}' })).status, 1);
   assert.equal((await sandbox.call(['hook', '--stop', '--commands-only'], { input: '{}' })).status, 1);
@@ -570,12 +570,12 @@ test('hook --stop: a worker is done only when the done-when check passes (#614)'
   // A passing check lets the worker stop, and names the anchor it just saved (#711).
   let result = await stop('true');
   assert.deepEqual([result.status, result.stdout], [0, '']);
-  assert.match(result.stderr, /^yokoten: tests pass\. Anchor [0-9a-f]{12} saved; go back with: git switch -c try-2 [0-9a-f]{40}\n$/);
+  assert.match(result.stderr, /^note: tests pass\. Anchor [0-9a-f]{12} saved; go back with\s+`git switch -c try-2 [0-9a-f]{40}`\n$/);
   // The same clean HEAD is already an anchor: no second anchor, and no second commit asked
   // for (#792). A dirty tree is the one case that asks for the checkpoint commit.
   result = await stop('true');
   assert.equal(result.status, 0);
-  assert.match(result.stderr, /^yokoten: tests pass\. HEAD [0-9a-f]{12} is already your anchor; go back with: git switch -c try-2 [0-9a-f]{40}\n$/);
+  assert.match(result.stderr, /^note: tests pass\. HEAD [0-9a-f]{12} is already your anchor; go back with\s+`git switch -c try-2 [0-9a-f]{40}`\n$/);
   assert.doesNotMatch(result.stderr, /Make a checkpoint commit/);
   sandbox.write('b.md', 'changed\n');
   result = await stop('true');
@@ -584,7 +584,7 @@ test('hook --stop: a worker is done only when the done-when check passes (#614)'
   // A failing check refuses, with the reason in short.
   result = await stop('echo fail-614 >&2; exit 1');
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /the done-when check failed/);
+  assert.match(result.stderr, /^The done-when check failed\. Fix what it reports, then end the task again:$/m);
   assert.match(result.stderr, /fail-614/);
   assert.match(result.stderr, /This was try 1 of 3/);
   assert.doesNotMatch(result.stderr, /next stop is let through/);
@@ -928,8 +928,8 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   result = await sandbox.call(['worker', 'mark', join(tree, 'src')]);
   assert.equal(result.status, 0, result.stderr);
   const top = realpathSync(tree);
-  assert.match(result.stdout, /marked the worktree at/);
-  assert.ok(result.stdout.includes(top), result.stdout);
+  assert.match(result.stdout.replace(/\s+/g, ' '), /^yokoten worker · marked the worktree at \S+: every agent there is a worker /);
+  assert.ok(result.stdout.includes(shownFolder(sandbox.repo, top)), result.stdout);
   assert.ok(result.stdout.includes('git worktree remove'), result.stdout);
   // Positive controls: with the mark and no env, a lead-only edit and a push are refused.
   result = await muse({ path: join(tree, 'AGENTS.md') });
@@ -1063,24 +1063,24 @@ test("worker mark: a clone is marked only by the lead, from its own checkout, in
   mkdirSync(elsewhere);
   let result = await sandbox.call(['worker', 'mark', sandbox.repo], { cwd: elsewhere, extra: { GIT_CEILING_DIRECTORIES: outside } });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /from your own checkout, the lead's/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /go to your own checkout, the lead's/);
   assert.ok(!existsSync(leadMark));
   // A worker may not mark: by YOKOTEN_ROLE.
   result = await sandbox.call(['worker', 'mark', desk], { extra: { YOKOTEN_ROLE: 'worker' } });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /only the lead marks a worktree or a clone: this session is a worker/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /yokoten worker · only the lead marks a worktree or a clone: this session is a worker/);
   assert.ok(!existsSync(deskMark));
   // GIT_DIR and GIT_WORK_TREE that name the lead's checkout don't move the mark there.
   result = await sandbox.call(['worker', 'mark', desk], { extra: { GIT_DIR: join(sandbox.repo, '.git'), GIT_WORK_TREE: sandbox.repo, GIT_COMMON_DIR: join(sandbox.repo, '.git') } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /marked the clone at/);
+  assert.match(result.stdout.replace(/\s+/g, ' '), /^yokoten worker · marked the clone at \S+: every agent there is a worker /);
   assert.ok(existsSync(deskMark), "the mark is in the clone's own .git");
   assert.ok(!existsSync(leadMark), "the lead's .git has no mark");
   // In the marked clone every session is a worker: mark and unmark say to run them from outside.
   for (const action of ['mark', 'unmark']) {
     result = await sandbox.call(['worker', action, desk], { cwd: desk });
     assert.equal(result.status, 1, action);
-    assert.match(result.stderr, /this session is a worker\. .*The lead runs this from its own checkout, outside the marked one\./, action);
+    assert.match(result.stderr.replace(/\s+/g, ' '), new RegExp(`this session is a worker Next: a worker commits in its own checkout and reports\\. The lead runs \`yokoten worker ${action}\` from its own checkout, outside the marked one`), action);
   }
   // Negative control: the lead, from its own checkout, unmarks with GIT_DIR set too.
   result = await sandbox.call(['worker', 'unmark', desk], { extra: { GIT_DIR: join(sandbox.repo, '.git') } });
@@ -1095,7 +1095,7 @@ test('worker mark: a missing folder, a submodule and an unwritable git folder ea
   sandbox.git('commit', '-qm', 'start');
   let result = await sandbox.call(['worker', 'mark', join(sandbox.repo, 'nowhere')]);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /is not a folder\. Make the worktree first: `git worktree add/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /is not a folder Next: make the worktree first with `git worktree add/);
   // A submodule's checkout is not the main checkout, and not a worktree.
   const other = makeSandbox();
   other.write('b.md', 'b\n');
@@ -1118,8 +1118,8 @@ test('worker mark: a missing folder, a submodule and an unwritable git folder ea
     chmodSync(gitDir, 0o755);
   }
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten worker: can't write the mark in .*\(EACCES\)/m);
-  assert.equal(result.stderr.trim().split('\n').filter((line) => line !== '').length, 2, 'the moved line, a blank line, then one line');
+  assert.match(result.stderr, /^yokoten worker · can't write the mark in [^\n]*(?:\n {17}[^\n]+)*\(EACCES\)\n\nNext: check that you can write there/m);
+  assert.doesNotMatch(result.stderr, /^\s+at /m, 'no stack trace');
 });
 
 // #566: `worker mark` keeps the role on the worker list when `.git` is moved away;
@@ -1184,7 +1184,7 @@ test('worker env: it names what an agent gets and counts what is dropped, and pr
   for (const value of [token, key, url]) assert.ok(!(plain.stdout + plain.stderr).includes(value), 'worker env printed a value');
   assert.match(plain.stdout, /would get 2 names from this shell/);
   assert.match(plain.stdout, /HOME, PATH/);
-  assert.match(plain.stdout, /Dropped: 2 with a secret-looking name, 1 with a value shaped like a key or token, 0 too long to check, 1 not on the list/);
+  assert.match(plain.stdout.replace(/\s+/g, ' '), /dropped 2 with a secret-looking name, 1 with a value shaped like a key or token, 0 too long to check, 1 not on the list/);
   const claude = await invoke(['worker', 'env', 'claude-code'], { env, cwd });
   for (const value of [token, key, url]) assert.ok(!(claude.stdout + claude.stderr).includes(value), 'worker env claude-code printed a value');
   assert.match(claude.stdout, /ANTHROPIC_API_KEY, HOME, PATH/);
