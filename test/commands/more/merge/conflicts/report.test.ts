@@ -4,7 +4,9 @@
 import '../../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { firstOf, movers, pathsText, summaryLines } from '../../../../../src/commands/more/merge/conflicts/report.ts';
+import { firstOf, movers, pathsText, rebuildRefusal, rebuildScreen, refusalScreen, summaryLines } from '../../../../../src/commands/more/merge/conflicts/report.ts';
+import { rebuildPrompt } from '../../../../../src/commands/more/merge/conflicts/rebuild.ts';
+import { screenProblems } from '../../../../repo/docs/screen-rules.ts';
 import type { Change, Collision, ConflictMap } from '../../../../../src/commands/more/merge/conflicts/types.ts';
 
 /** One change, by hand: the summary is words, so it needs no repo. */
@@ -39,7 +41,7 @@ function issueExample(): ConflictMap {
   );
 }
 
-test('the summary puts the next pick first, then one headed block for each thing', () => {
+test('the summary puts the next pick first, then one block of pairs and one of the rest, spaced when a row wraps (#1115)', () => {
   assert.deepEqual(summaryLines(issueExample()), [
     'yokoten conflicts · 4 open changes, 2 collide',
     '',
@@ -47,9 +49,13 @@ test('the summary puts the next pick first, then one headed block for each thing
     '                          src/app.ts. Merge PR #12 first: it conflicts with main',
     '                          in 1 file now, so it needs a rebuild before it can',
     '                          merge.',
+    '',
     '  note        PR #12 collides with main: src/app.ts',
+    '',
     '  note        PR #15 collides with main: src/app.ts',
+    '',
     '  ok          2 changes touch no shared file',
+    '',
     '  note        PR #20 moves 1 file that 3 other changes touch; merge it in alone,',
     '              before them',
     '',
@@ -128,4 +134,28 @@ test('a change that moves a shared file is named once, with how many others touc
   const rows = movers(issueExample());
   assert.deepEqual(rows.map((row) => [row.change.label, row.others.length]), [['PR #20', 3]]);
   assert.deepEqual(movers(mapOf([change('pr:20', 'PR #20', ['src/new.ts'], ['src/old.ts'])])), []);
+});
+
+test('every screen of conflicts keeps the screen rules: the summary, the rebuild prompt and a refusal (#1115)', () => {
+  const failed = (lines: string[]) => screenProblems({ text: lines.join('\n'), isFailure: true });
+  assert.deepEqual(screenProblems({ text: summaryLines(issueExample()).join('\n') }), []);
+  const map = mapOf([{ ...change('pr:12', 'PR #12', ['src/app.ts'], [], { main: ['src/app.ts'] }), branch: 'topic', head: 'abcdef0123' }]);
+  const prompt = rebuildPrompt(map, 'pr:12');
+  const shown = rebuildScreen(map.changes[0], prompt);
+  assert.equal(shown[0], 'yokoten conflicts · a rebuild prompt for PR #12; paste it into your AI');
+  assert.deepEqual(shown.filter(Boolean).slice(-prompt.split('\n').filter(Boolean).length), prompt.split('\n').filter(Boolean), 'every line of the prompt is shown as it is, so it pastes whole');
+  assert.ok(shown.includes(`   git push --force-with-lease=topic:abcdef0123 origin topic`), 'a git command is never wrapped');
+  assert.deepEqual(screenProblems({ text: shown.join('\n') }), []);
+  const refusal = refusalScreen({ what: 'the conflict map has no open change pr:9', next: 'run `yokoten conflicts` to see the 4 changes it holds' });
+  assert.deepEqual(refusal, ['yokoten conflicts · the conflict map has no open change pr:9', '', 'Next: Run `yokoten conflicts` to see the 4 changes it holds.']);
+  assert.deepEqual(failed(refusal), []);
+});
+
+test("a rebuild that can't be written says what, why and the fix as one screen (#1115)", () => {
+  const refusal = rebuildRefusal('What: the branch name "a;b" cannot be pushed\nWhy: the prompt puts it into shell commands\nFix: rename the branch, or rebuild this change by hand');
+  assert.deepEqual(refusal, { what: 'the branch name "a;b" cannot be pushed', why: 'the prompt puts it into shell commands', next: 'rename the branch, or rebuild this change by hand' });
+  const lines = refusalScreen(refusal);
+  assert.deepEqual(lines, ['yokoten conflicts · the branch name "a;b" cannot be pushed', '', 'The prompt puts it into shell commands.', '', 'Next: Rename the branch, or rebuild this change by hand.']);
+  assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), []);
+  assert.equal(rebuildRefusal('something broke\nat line 2').what, 'something broke', 'any other error is its first line');
 });
