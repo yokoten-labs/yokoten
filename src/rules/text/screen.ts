@@ -2,11 +2,10 @@
 //
 // A screen is a title line, short sections under headings, rows, and the one command to type
 // next, wrapped once at SCREEN_WIDTH. A help page is built from a HelpSpec: usage, a summary of
-// one or two lines, examples, options, then sections of rows. `screenProblems` holds the
-// measurable limits of record 0049; the screen test (test/repo/docs/screens.test.ts) runs it on
-// every screen the command list reaches. Everything here is pure: text in, lines out. The
-// terminal is the platform a screen runs on, so this is the lowest layer, and the guard's
-// refusal text in src/rules/ can use it too.
+// one or two lines, examples, options, then sections of rows. The rules a screen keeps, and the
+// code that measures them, are a development tool: test/repo/docs/screen-rules.ts (issue #1115).
+// Everything here is pure: text in, lines out. The terminal is the platform a screen runs on,
+// so this is the lowest layer, and the guard's refusal text in src/rules/ can use it too.
 
 /** The widest line a screen prints (Heroku's CLI style guide; Claude Code's help wraps here too). */
 export const SCREEN_WIDTH = 80;
@@ -59,19 +58,32 @@ export const moreLine = (text: string): string[] => wrap('More: ', text);
 export type TableRow = readonly [label: string, text: string];
 
 /** The widest label column a table gives; a longer label takes its own line. */
-const TABLE_COLUMN = 24;
+const TABLE_COLUMN = 35;
+
+/** The label column that fits every label given, two spaces after the widest, up to TABLE_COLUMN. */
+export const columnFor = (labels: readonly string[]): number => Math.min(Math.max(0, ...labels.map((label) => label.length)) + 2, TABLE_COLUMN);
+
+/**
+ * Items one under the other. When any item wraps onto a second line, a blank line goes between
+ * every two, so a wrapped item and the next never read as one (issue #1115).
+ */
+export const spaced = (items: readonly (readonly string[])[]): string[] => {
+  const isLoose = items.length > 1 && items.some((item) => item.length > 1);
+  return items.flatMap((item, index) => (isLoose && index ? ['', ...item] : [...item]));
+};
 
 /**
  * Rows of a table under a heading: labels in one column, each text wrapped under itself. The
- * column fits the widest label up to TABLE_COLUMN; a label past it stands on its own line.
+ * column fits the widest label up to TABLE_COLUMN, or is given, so every table of one screen
+ * starts its text in the same column (issue #1115). A label past it stands on its own line.
  */
-export function table(rows: readonly TableRow[]): string[] {
-  const column = Math.min(Math.max(0, ...rows.map(([label]) => label.length)) + 2, TABLE_COLUMN);
-  return rows.flatMap(([label, text]) => {
-    const head = `  ${label}`;
-    if (head.length + 1 > 2 + column) return [head, ...wrap(' '.repeat(2 + column), text)];
-    return wrap(`  ${label.padEnd(column)}`, text);
-  });
+export function table(rows: readonly TableRow[], column = columnFor(rows.map(([label]) => label))): string[] {
+  return spaced(
+    rows.map(([label, text]) => {
+      if (label.length + 2 > column) return [`  ${label}`, ...wrap(' '.repeat(2 + column), text)];
+      return wrap(`  ${label.padEnd(column)}`, text);
+    }),
+  );
 }
 
 /** A section: its heading on a line of its own, then its lines. Empty when it has none. */
@@ -112,83 +124,16 @@ export interface HelpSpec {
 
 /** The lines of a help page: usage, summary, examples, options, sections, then More. */
 export function helpScreen(spec: HelpSpec): string[] {
+  const examples: TableRow[] = spec.examples.length > 1 ? spec.examples.map((example) => [example.command, example.text]) : [];
+  const sections = spec.sections ?? [];
+  // One text column for the whole page: examples, options and every section (issue #1115).
+  const column = columnFor([...examples, ...spec.options, ...sections.flatMap((part) => part.rows)].map(([label]) => label));
   return screen(
     wrap('Usage: ', spec.usage),
     ...spec.summary.map((paragraph) => wrap('', paragraph)),
-    section(spec.examples.length > 1 ? 'Examples' : 'Example', spec.examples.length > 1 ? table(spec.examples.map((example) => [example.command, example.text])) : spec.examples.map((example) => `  ${example.command}`)),
-    section('Options', table(spec.options)),
-    ...(spec.sections ?? []).map((part) => section(part.heading, table(part.rows))),
+    section(spec.examples.length > 1 ? 'Examples' : 'Example', spec.examples.length > 1 ? table(examples, column) : spec.examples.map((example) => `  ${example.command}`)),
+    section('Options', table(spec.options, column)),
+    ...sections.map((part) => section(part.heading, table(part.rows, column))),
     spec.more === undefined ? [] : moreLine(spec.more),
   );
-}
-
-// ---- The limits (record 0049) ----
-
-/** The measurable limits of a screen, as record 0049 sets them. */
-export const SCREEN_LIMITS = {
-  /** A line fits this many columns... */
-  width: SCREEN_WIDTH,
-  /** ...but this many lines per screen may run over, for a link that cannot break... */
-  overflowLines: 1,
-  /** ...and none past this. */
-  widest: 100,
-  /** Lines of prose in a row, at the left edge, with no heading or blank line between. */
-  prose: 4,
-  /** Lines of summary on a help page, between the usage and the first heading. */
-  helpSummary: 2,
-} as const;
-
-// A heading stands alone and ends in a colon: `Options:`, `In the fence:`.
-const HEADING = /^[A-Z][^:]*:$/;
-// The next step: a Next line, the Instead row of a refusal, or a command in backticks.
-const NEXT_STEP = /^Next: |^ {2}Instead |`[^`]+`/;
-// A More line or row: a pointer, so the next step may come just before it.
-const MORE = /^(?:More: | {2}More {6}| {2}docs: )/;
-const ESCAPE = /\u001b\[/;
-// A line wrapped under a row's or a title's text: deeper than a row's two spaces.
-const CONTINUED = /^ {3,}\S/;
-
-/** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
-export interface ScreenText {
-  text: string;
-  /** The exit code was not 0: the screen must end with the next step. */
-  isFailure?: boolean;
-  /** A help page: its summary is held to SCREEN_LIMITS.helpSummary. */
-  isHelp?: boolean;
-}
-
-/** Each limit of record 0049 the screen breaks, as a short sentence; none when it keeps them all. */
-export function screenProblems({ text, isFailure = false, isHelp = false }: ScreenText): string[] {
-  const lines = text.replace(/\n+$/, '').split('\n');
-  const problems: string[] = [];
-  const width = (line: string) => [...line].length;
-  if (ESCAPE.test(text)) problems.push('it has a colour code, but it was not shown on a terminal');
-  const wide = lines.filter((line) => width(line) > SCREEN_LIMITS.width);
-  const widest = Math.max(0, ...lines.map(width));
-  if (wide.length > SCREEN_LIMITS.overflowLines) problems.push(`${wide.length} lines are wider than ${SCREEN_LIMITS.width} columns; ${SCREEN_LIMITS.overflowLines} may be, for a link`);
-  if (widest > SCREEN_LIMITS.widest) problems.push(`a line is ${widest} columns wide; the most is ${SCREEN_LIMITS.widest}`);
-  let run = 0;
-  let longest = 0;
-  for (const line of lines) {
-    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) ? 0 : run + 1;
-    longest = Math.max(longest, run);
-  }
-  if (longest > SCREEN_LIMITS.prose) problems.push(`${longest} lines of prose in a row; the most is ${SCREEN_LIMITS.prose}, then a heading or rows`);
-  if (isHelp) {
-    const usageEnd = lines.indexOf('');
-    const firstHeading = lines.findIndex((line) => HEADING.test(line));
-    const summary = lines.slice(usageEnd + 1, firstHeading === -1 ? lines.length : firstHeading).filter((line) => line.trim() !== '');
-    if (summary.length > SCREEN_LIMITS.helpSummary) problems.push(`the help's summary is ${summary.length} lines; the most is ${SCREEN_LIMITS.helpSummary}`);
-  }
-  if (isFailure) {
-    // An item is a line and the lines wrapped under it, so a wrapped row is still one row.
-    const items: string[][] = [];
-    for (const line of lines.filter((each) => each.trim() !== '')) {
-      if (CONTINUED.test(line) && items.length) items.at(-1)?.push(line);
-      else items.push([line]);
-    }
-    const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
-    if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next');
-  }
-  return problems;
 }

@@ -455,7 +455,7 @@ export const COMMANDS: Command[] = [
       summary: 'Starts each stdio server in .mcp.json, .vscode/mcp.json or mcp.json, calls tools/list, and checks every tool.',
       examples: [
         { command: 'yokoten mcp', text: 'check the servers in the config' },
-        { command: 'yokoten mcp --command "node server.ts"', text: 'check a server that has no config entry' },
+        { command: 'yokoten mcp --command "<cmd>"', text: 'check a server that has no config entry' },
       ],
       sections: [
         {
@@ -531,7 +531,7 @@ export const COMMANDS: Command[] = [
       summary: "Runs node --test light, so tests do not starve a shared machine: under nice, with at most half the cores and one file per GB of free memory.",
       examples: [
         { command: 'yokoten test', text: 'run all the tests' },
-        { command: 'yokoten test -- test/run/cli.test.ts', text: 'run one file' },
+        { command: 'yokoten test -- <file>', text: 'run one test file' },
         { command: 'yokoten test --print', text: 'show the command; run nothing' },
       ],
       sections: [
@@ -613,7 +613,7 @@ export const COMMANDS: Command[] = [
       examples: [
         { command: 'yokoten learn 138', text: 'show the draft' },
         { command: 'yokoten learn 138 --write', text: 'put the draft in lessons/' },
-        { command: 'yokoten learn --upstream "what happened"', text: 'keep a note about a gap in yokoten' },
+        { command: 'yokoten learn --upstream "<note>"', text: 'keep a note about a gap in yokoten' },
       ],
       sections: [
         {
@@ -657,7 +657,7 @@ export const COMMANDS: Command[] = [
     help: {
       summary: 'The tool-call guard. It reads one tool call on stdin, and exits 2 with the reason on stderr when it blocks the call.',
       examples: [
-        { command: `echo '{"tool_input":{"command":"git status"}}' | yokoten hook`, text: 'ask the guard about one command' },
+        { command: 'yokoten hook < call.json', text: 'ask the guard about the tool call in call.json' },
         { command: 'yokoten hook --stop', text: 'the stop check, at the end of a turn' },
       ],
       sections: [
@@ -794,7 +794,7 @@ export const COMMANDS: Command[] = [
     help: {
       summary: 'Agents on a team send each other messages. Each agent writes only its own outbox, in the team folder next to your checkout (<repo>.team).',
       examples: [
-        { command: 'yokoten msg send lead "tests pass; ready for review"', text: 'send a message' },
+        { command: 'yokoten msg send lead "<text>"', text: 'send the lead a message' },
         { command: 'yokoten msg inbox', text: 'read yours, and mark them read' },
         { command: 'yokoten msg who', text: 'list the team' },
         { command: 'yokoten msg log', text: 'every message; only the lead runs it' },

@@ -6,7 +6,7 @@
 // field never holds a private value (core rule 11): a hit is named by its place and its
 // kind, never by what matched.
 
-import { wrap } from './screen.ts';
+import { spaced, wrap } from './screen.ts';
 
 /** How sure a secret or privacy finding is: only `sure` fails; the others warn. */
 export type FindingGrade = 'sure' | 'likely' | 'unknown';
@@ -928,24 +928,26 @@ const REFUSAL_HEAD = 'yokoten stopped this: ';
 
 /**
  * The text form of a refusal (issues #1027, #1099): a title, then aligned `Why`, `Instead`
- * and `More` rows, so a person and an agent read the same four parts. It keeps the screen
+ * and `More` rows, so a person and an agent read the same four parts, a blank line between
+ * rows when one wraps (issue #1115). It keeps the screen
  * limits of record 0049: every line but the link fits 80 columns.
  */
 export const formatRefusal = (f: Finding): string => {
   const parts = refusalParts(f);
-  return [...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...findingRow('Why', parts.why), ...findingRow('Instead', parts.fix), ...findingRow('More', parts.docs)].join('\n');
+  return [...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...spaced([findingRow('Why', parts.why), findingRow('Instead', parts.fix), findingRow('More', parts.docs)])].join('\n');
 };
 
 /**
  * A finding as a note a person reads at a session start (issue #1099): what happened on
  * the first line, then the aligned `Why`, `Next` and `More` rows a refusal has too.
  */
-export const formatNote = (f: Finding): string[] => [
-  ...wrap('yokoten: ', `${place(f)}${f.what}${formatFindingMarks(f)}`),
-  ...findingRow('Why', `${sentence(f.why)}.`),
-  ...findingRow('Next', `${sentence(f.fix)}.`),
-  ...(f.docs === undefined ? [] : findingRow('More', f.docs)),
-];
+export const formatNote = (f: Finding): string[] =>
+  spaced([
+    wrap('yokoten: ', `${place(f)}${f.what}${formatFindingMarks(f)}`),
+    findingRow('Why', `${sentence(f.why)}.`),
+    findingRow('Next', `${sentence(f.fix)}.`),
+    ...(f.docs === undefined ? [] : [findingRow('More', f.docs)]),
+  ]);
 
 /**
  * The four parts back from text, or null when the text is not a refusal in this shape.

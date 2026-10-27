@@ -12,7 +12,7 @@ import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skil
 import { readOriginUrl, setUpPlanning } from '../../setup/plan.ts';
 import { VERSION } from '../../setup/files.ts';
 import { enabledPlugin } from '../../setup/advice/marketplace.ts';
-import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, title, usage, wrap } from '../shared.ts';
+import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, spaced, title, usage, wrap } from '../shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -408,7 +408,10 @@ export function initScreen(lines: string[], plan: string[] = [], ok = true): str
     ? `${count(written.size, 'file')} added, ${count(kept.size, 'file')} already there`
     : `${count(written.size, 'file')} written, ${notes.some(isYours) ? 'your own files kept' : 'none of yours changed'}`;
   screen.push(...wrap('  ', summary));
-  screen.push(...handRows, ...plan, ...otherNotes.flatMap(noteLine));
+  screen.push(...handRows, ...plan);
+  // The notes are a block of their own, a blank line between them when one wraps (#1115).
+  const noteRows = spaced(otherNotes.map(noteLine));
+  if (noteRows.length) screen.push('', ...noteRows);
   screen.push('', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more);
   return screen;
 }
@@ -514,8 +517,12 @@ export function updateScreen({ ok, lines, isWrite }: { ok: boolean; lines: strin
   const [first = '', ...rest] = lines;
   // Nothing to do: one line (R8).
   if (/are up to date/.test(first)) return title('update', 'the core rules are up to date, nothing changed');
-  // A refusal keeps every word of why and how to fix it, wrapped (R5).
-  if (!ok) return [...title('update', 'nothing changed'), '', ...row('MISSING', first)];
+  // A refusal says why, then its fix on a last line of its own (R5, rule fix-line of #1115).
+  if (!ok) {
+    const fix = /^(.*?)\.?\s+Run (`[^`]+`)/.exec(first);
+    if (fix === null) return [...title('update', 'nothing changed'), '', ...row('MISSING', first)];
+    return [...title('update', 'nothing changed'), '', ...row('MISSING', fix[1] ?? first), ...wrap(' '.repeat(14), `Fix: ${fix[2]}`)];
+  }
   if (isWrite) {
     const kept = /kept as (\S+?);/.exec(first)?.[1];
     return [

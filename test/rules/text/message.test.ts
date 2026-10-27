@@ -425,9 +425,13 @@ test('refusal and note: long rows wrap under their text, and the parts read back
   assert.ok(lines.slice(0, -1).every((line) => line.length <= 80), text);
   assert.ok(lines.some((line) => line.startsWith(' '.repeat(22))), 'the title goes on under its text');
   assert.ok(lines.some((line) => line.includes('`git add -A && git commit -m "chore: save work"`')), 'a command in backticks is never broken');
+  // A wrapped row puts a blank line between the parts (#1115); the parser reads all four back.
+  assert.match(text, /\n\n {2}Instead {3}[\s\S]+\n\n {2}More {6}/, 'a blank line before Instead and before More');
   const parsed = parseRefusal(text);
   assert.equal(parsed?.title, `yokoten stopped this: ${what} [release]`);
+  assert.equal(parsed?.why, 'Only the owner decides when to release.');
   assert.equal(parsed?.fix, `${fix.charAt(0).toUpperCase()}${fix.slice(1)}.`);
+  assert.equal(parsed?.docs, `${DOCS_URL}#how-to-release`);
   const note = formatNote(finding('release', what, fix));
   assert.equal(note[0]?.startsWith('yokoten: a long command'), true);
   assert.ok(note.slice(0, -1).every((line) => line.length <= 80), note.join('\n'));

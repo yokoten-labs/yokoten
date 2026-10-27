@@ -1,0 +1,151 @@
+// The rules every screen keeps, and the code that measures them (record 0049, issue #1115). A
+// development tool, as TEST_LIMITS is: nothing here ships in the package. The layout that
+// builds a screen is src/rules/text/screen.ts; this file checks what it prints.
+import '../home.ts';
+import { SCREEN_WIDTH } from '../../../src/rules/text/screen.ts';
+
+// ---- The rules (record 0049, issue #1115) ----
+//
+// Each rule is a row of data: what it measures, the most it allows, why, and where it came
+// from (the TEST_LIMITS shape, scripts/time/suite.ts). screenProblems measures every row; the
+// screen test runs it on every screen the command list reaches. A rule changes here, in one
+// row, and nowhere else. Checked against clig.dev and Google's error-message course (owner,
+// 2026-10-27); what no rule can measure (plain words, the value the user typed) is a review.
+
+/** One rule of a screen: what is counted, the most allowed, and why. */
+export interface ScreenRule {
+  id: string;
+  what: string;
+  limit: number;
+  unit: string;
+  reason: string;
+  source: string;
+}
+
+export const SCREEN_RULES = [
+  { id: 'width', what: 'lines wider than SCREEN_WIDTH (80 columns)', limit: 1, unit: 'lines', reason: 'a narrow terminal breaks a wide line in the middle; one line may run over, for a link that cannot break', source: 'record 0049; Heroku CLI style guide' },
+  { id: 'widest', what: 'the widest line', limit: 100, unit: 'columns', reason: 'the one line that runs over stays short enough to read', source: 'record 0049' },
+  { id: 'prose', what: 'lines of prose in a row at the left edge, with no heading, row or blank line between', limit: 4, unit: 'lines', reason: 'a wall of text is skipped; a heading or rows break it up', source: "record 0049; Google's error-message course: long messages" },
+  { id: 'help-summary', what: "lines of a help page's summary, between the usage and the first heading", limit: 2, unit: 'lines', reason: 'a newcomer reads what the command does in one look, then the examples', source: 'record 0049; clig.dev: lead with examples' },
+  { id: 'next-step', what: 'failed screens whose last item names no next step', limit: 0, unit: 'screens', reason: 'after a failure the person knows what to type next', source: 'record 0049; clig.dev: suggest what to do when there is an error' },
+  { id: 'colour', what: 'colour codes in text that did not go to a terminal', limit: 0, unit: 'codes', reason: 'a pipe, a file or an agent reads the escape codes as noise', source: 'record 0049; clig.dev: disable colour when not a TTY' },
+  { id: 'label-columns', what: 'columns where the text of a two-column row starts, in one screen', limit: 1, unit: 'columns', reason: 'each section sizing its own label column gave one screen three or four text columns', source: 'issue #1115, owner on S008 to S044' },
+  { id: 'wrapped-example', what: 'examples whose text is pushed to the line under the command', limit: 0, unit: 'examples', reason: 'a long example gets a shorter form, or moves to the More link; its text stays beside it', source: 'issue #1115, owner on S008; clig.dev: lead with examples' },
+  { id: 'spaced-items', what: 'items in a block with a wrapped item and no blank line between them', limit: 0, unit: 'items', reason: 'a wrapped item and the next one read as one', source: "issue #1115, owner on S004, S005, S041 to S072; Google's error-message course: a wall of text is skipped" },
+  { id: 'fix-line', what: 'problem items whose command to run is not on a Fix line of its own, as the item\'s last line', limit: 0, unit: 'items', reason: 'the fix stands out instead of sitting inside a sentence or a pasted tool message', source: "issue #1115, owner on S004, S067 to S072; clig.dev: rewrite errors for humans, important information last; Google: explain the fix" },
+  { id: 'same-fix-once', what: 'times one Fix line shows in a screen', limit: 1, unit: 'times', reason: 'the same fix said twice is noise; problems with one fix go under it once', source: 'clig.dev: signal-to-noise, group errors of one type under one header' },
+  { id: 'no-internal-path', what: 'absolute paths outside the home folder (~) and links', limit: 0, unit: 'paths', reason: 'a temp folder or a machine path means nothing to the reader, and may show private names', source: "issue #1115, owner on S050 to S057; Google's error-message course: write for the audience" },
+] as const satisfies readonly ScreenRule[];
+
+export type ScreenRuleId = (typeof SCREEN_RULES)[number]['id'];
+
+/** The limit of the rule with this id. */
+export const limitOf = (id: ScreenRuleId): number => SCREEN_RULES.find((rule) => rule.id === id)!.limit;
+
+// A heading stands alone and ends in a colon: `Options:`, `In the fence:`.
+const HEADING = /^[A-Z][^:]*:$/;
+// The next step: a Next line, the Instead row of a refusal, a Fix line, or a command in backticks.
+const NEXT_STEP = /^Next: |^ {2}Instead |^\s*Fix: |`[^`]+`/;
+// A More line or row: a pointer, so the next step may come just before it.
+const MORE = /^(?:More: | {2}More {6}| {2}docs: )/;
+const ESCAPE = /\u001b\[/;
+// A line wrapped under a row's or a title's text: deeper than a row's two spaces.
+const CONTINUED = /^ {3,}\S/;
+// A two-column row: two spaces, a label, two or more spaces, then its text.
+const TWO_COLUMNS = /^ {2}(\S(?:.*?\S)?) {2,}(?=\S)/;
+// The mark words a problem row starts with (RowMark), and a list item under a `Not read:` heading.
+const PROBLEM_ROW = /^ {2}(?:MISSING|can't check) /;
+const PROBLEM_HEADINGS = new Set(['Not read:', 'Problems:']);
+// The fix of a problem: its own line, `Fix: ` and the command.
+const FIX_LINE = /^\s*Fix: `[^`]+`/;
+// An absolute path on this machine: a root folder of Linux, macOS or Windows, not a link or ~.
+const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|[A-Za-z]:\\[^\s`'")]*)/g;
+
+/** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
+export interface ScreenText {
+  text: string;
+  /** The exit code was not 0: the screen must end with the next step. */
+  isFailure?: boolean;
+  /** A help page: its summary is held to the help-summary rule. */
+  isHelp?: boolean;
+}
+
+/** A block's items: each top-level line with the lines wrapped under it. */
+function itemsOf(block: readonly string[]): string[][] {
+  const items: string[][] = [];
+  for (const line of block) {
+    if (CONTINUED.test(line) && items.length) items.at(-1)?.push(line);
+    else items.push([line]);
+  }
+  return items;
+}
+
+/** The blocks of a screen: the lines between blank lines. */
+function blocksOf(lines: readonly string[]): string[][] {
+  const blocks: string[][] = [[]];
+  for (const line of lines) {
+    if (line.trim() === '') blocks.push([]);
+    else blocks.at(-1)?.push(line);
+  }
+  return blocks.filter((block) => block.length);
+}
+
+/** Each rule of SCREEN_RULES the screen breaks, as a short sentence that names the rule; none when it keeps them all. */
+export function screenProblems({ text, isFailure = false, isHelp = false }: ScreenText): string[] {
+  const lines = text.replace(/\n+$/, '').split('\n');
+  const problems: string[] = [];
+  const width = (line: string) => [...line].length;
+  if (ESCAPE.test(text)) problems.push('it has a colour code, but it was not shown on a terminal [colour]');
+  const wide = lines.filter((line) => width(line) > SCREEN_WIDTH);
+  const widest = Math.max(0, ...lines.map(width));
+  if (wide.length > limitOf('width')) problems.push(`${wide.length} lines are wider than ${SCREEN_WIDTH} columns; ${limitOf('width')} may be, for a link [width]`);
+  if (widest > limitOf('widest')) problems.push(`a line is ${widest} columns wide; the most is ${limitOf('widest')} [widest]`);
+  let run = 0;
+  let longest = 0;
+  for (const line of lines) {
+    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) ? 0 : run + 1;
+    longest = Math.max(longest, run);
+  }
+  if (longest > limitOf('prose')) problems.push(`${longest} lines of prose in a row; the most is ${limitOf('prose')}, then a heading or rows [prose]`);
+  if (isHelp) {
+    const usageEnd = lines.indexOf('');
+    const firstHeading = lines.findIndex((line) => HEADING.test(line));
+    const summary = lines.slice(usageEnd + 1, firstHeading === -1 ? lines.length : firstHeading).filter((line) => line.trim() !== '');
+    if (summary.length > limitOf('help-summary')) problems.push(`the help's summary is ${summary.length} lines; the most is ${limitOf('help-summary')} [help-summary]`);
+  }
+  const blocks = blocksOf(lines);
+  if (isFailure) {
+    // An item is a line and the lines wrapped under it, so a wrapped row is still one row.
+    const items = blocks.flatMap(itemsOf);
+    const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
+    if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next [next-step]');
+  }
+  const columns = new Set(lines.map((line) => TWO_COLUMNS.exec(line)?.[0].length).filter((column) => column !== undefined));
+  if (columns.size > limitOf('label-columns')) problems.push(`its rows start their text in ${columns.size} columns (${[...columns].sort((a, b) => a - b).join(', ')}); the most is ${limitOf('label-columns')} [label-columns]`);
+  let wrappedExamples = 0;
+  let spaced = 0;
+  let fixes = 0;
+  let heading = '';
+  const fixLines = new Map<string, number>();
+  for (const block of blocks) {
+    const items = itemsOf(block);
+    if (HEADING.test(items[0]?.[0] ?? '')) heading = items[0][0];
+    const body = HEADING.test(items[0]?.[0] ?? '') ? items.slice(1) : items;
+    if (/^Examples?:$/.test(heading)) wrappedExamples += body.filter((item) => item.length > 1 && !TWO_COLUMNS.test(item[0])).length;
+    if (body.length > 1 && body.some((item) => item.length > 1)) spaced += body.length - 1;
+    for (const item of body) {
+      const isProblem = PROBLEM_ROW.test(item[0]) || (PROBLEM_HEADINGS.has(heading) && /^(?:- | {2}\S)/.test(item[0]));
+      if (isProblem && item.some((line) => /`[^`]+`/.test(line) && !FIX_LINE.test(line))) fixes += 1;
+      if (isProblem && item.length > 1 && item.slice(0, -1).some((line) => FIX_LINE.test(line))) fixes += 1;
+    }
+    for (const line of block.filter((each) => FIX_LINE.test(each))) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);
+  }
+  if (wrappedExamples > limitOf('wrapped-example')) problems.push(`${wrappedExamples} examples have their text on the next line; shorten them [wrapped-example]`);
+  if (spaced > limitOf('spaced-items')) problems.push(`${spaced} items touch a wrapped item; put a blank line between them [spaced-items]`);
+  if (fixes > limitOf('fix-line')) problems.push(`${fixes} problems keep their fix inside the text; give it a last line \`Fix: <command>\` [fix-line]`);
+  const repeated = [...fixLines].filter(([, count]) => count > limitOf('same-fix-once'));
+  if (repeated.length) problems.push(`${repeated.map(([line, count]) => `"${line}" ${count} times`).join(', ')}; say a fix once, under the problems it fixes [same-fix-once]`);
+  const paths = text.match(MACHINE_PATH) ?? [];
+  if (paths.length > limitOf('no-internal-path')) problems.push(`${paths.length} paths on this machine show; say what they are, or use ~ [no-internal-path]`);
+  return problems;
+}

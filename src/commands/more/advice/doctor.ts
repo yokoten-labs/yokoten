@@ -15,7 +15,7 @@ import { gitConfig } from '../../../run/check.ts';
 import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
 import { docsLink, findingRow, sentence } from '../../../rules/text/message.ts';
-import { screen } from '../../../rules/text/screen.ts';
+import { screen, spaced } from '../../../rules/text/screen.ts';
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Draft, draft, facts, table } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
@@ -83,7 +83,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const role = root && session && blocks && !options.flags.has('--json') ? workerRole(env, [cwd]) : null;
   if (role) notes.push(noteLines(`yokoten: ${role === 'mark' ? WORKER_MARKED : WORKER_SESSION}.`));
   // An agent that can't filter command output hears it at session start, with the opt-in (#390).
-  if (root && session && agent !== 'claude-code' && config.privacy.output !== 'stop') notes.push([...noteLines(`yokoten: ${UNFILTERED}`), ...findingRow('Next', `${sentence(OUTPUT_STOP)}.`)]);
+  if (root && session && agent !== 'claude-code' && config.privacy.output !== 'stop') notes.push(spaced([noteLines(`yokoten: ${UNFILTERED}`), findingRow('Next', `${sentence(OUTPUT_STOP)}.`)]));
   const lines = screen(identity ? noteLines(identity) : [], ...said, ...notes);
   if (options.flags.has('--json')) printJson(invocation, report);
   // Gemini CLI reads a SessionStart hook's context from JSON only (#211).

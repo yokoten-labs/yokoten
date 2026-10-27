@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, findingRow, formatFinding, formatNote, sentence } from '../../rules/text/message.ts';
-import { wrap } from '../../rules/text/screen.ts';
+import { spaced, wrap } from '../../rules/text/screen.ts';
 import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
@@ -308,12 +308,8 @@ export const noteLines = (line: string): string[] => (line.startsWith('yokoten: 
  * The road's block at a session start (#1099): the stage, then the next step and why as
  * aligned rows, then what the agent does with it, last.
  */
-const roadLines = (stage: number, next: Finding, offer: string): string[] => [
-  `yokoten: stage ${stage} of ${STAGES.length}, ${STAGES[stage - 1]}`,
-  ...findingRow('Next', `${sentence(stepText(next))}.`),
-  ...findingRow('Why', `${sentence(next.why)}.`),
-  ...wrap('', offer),
-];
+const roadLines = (stage: number, next: Finding, offer: string): string[] =>
+  spaced([[`yokoten: stage ${stage} of ${STAGES.length}, ${STAGES[stage - 1]}`], findingRow('Next', `${sentence(stepText(next))}.`), findingRow('Why', `${sentence(next.why)}.`), wrap('', offer)]);
 
 function doctorRun(
   root: string | null,

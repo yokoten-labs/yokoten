@@ -15,6 +15,7 @@ import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 const UNFILTERED_NOTE = [
   'yokoten: only Claude Code hides your details in command output; other agents',
   '         show it as it is',
+  '',
   '  Next      To stop those commands there instead, set "privacy": { "output":',
   '            "stop" } in yokoten.json.',
 ].join('\n');
@@ -72,7 +73,7 @@ test('doctor --session: after a compaction, Claude Code hears only what changed 
   assert.equal(await start({ session_id: 's-1', source: 'compact' }), '', 'a compaction start with nothing new prints nothing');
   sandbox.write('AGENTS.md', '# rules\n');
   const changed = await start({ session_id: 's-1', source: 'compact' });
-  assert.match(changed, /^yokoten: stage 1 of 5, safety net\n  Next      No tool-call guard/);
+  assert.match(changed, /^yokoten: stage 1 of 5, safety net\n\n  Next      No tool-call guard/);
   assert.match(changed, /^Tell the user in plain words/m, 'a changed step keeps its offer line');
   assert.doesNotMatch(changed, /private-marks/, 'a note the session heard is not repeated');
   // No session id, or no hook: as today.
