@@ -34,7 +34,7 @@ import { isCodeFile, nameNotes } from '../../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
-import { bullets, count, field, type Invocation, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from '../shared.ts';
+import { bullets, count, field, type Invocation, moreLine, nextLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from '../shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -1385,7 +1385,7 @@ export function runCiHealth(invocation: Invocation): number {
   const stated = options.values['--repo'] || env.GITHUB_REPOSITORY || '';
   const repo = stated || repoOf(readOriginUrl(root, env)) || '';
   if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) {
-    print(invocation, ['yokoten ci-health: no GitHub repo. Pass --repo owner/name, set GITHUB_REPOSITORY, or add an origin remote.'], invocation.stderr);
+    print(invocation, [...title('ci-health', 'no GitHub repo found: no --repo, no GITHUB_REPOSITORY, no origin remote'), '', ...nextLine('yokoten ci-health --repo owner/name')], invocation.stderr);
     return 1;
   }
   const gh = ghIn(root, env, CI_HEALTH_TIMEOUT);

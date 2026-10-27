@@ -119,9 +119,13 @@ Tell the user in plain words, one step at a time, and offer to do it (as-is, lig
 
 ```
 yokoten stopped this: git push --tags pushes tags [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner releases, with the steps in
+            How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 直し方はどのエージェントでも同じです。エージェントに止まってオーナーにリリースを任せるよう伝えます。
@@ -130,7 +134,7 @@ More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-rel
 Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
 Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
 
-どの拒否も同じ四つの行を持ちます。最初の行は何が起きたか（**what**）で、最後は `yokoten stopped this: <what> [<id>]` の形でルールの id が角括弧で付きます。**Why:** の行はなぜ大事かを伝えます。**Do instead:** の行は直し方（コマンドか編集）です。**More:** の行は、ルールの完全な説明へのリンクです。ファイルの問題では、場所がタイトルのすぐ後に来ます：`yokoten stopped this: file:line: <what> [<id>]`。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。
+どの拒否も同じ四つの行を持ちます。最初の行は何が起きたか（**what**）で、最後は `yokoten stopped this: <what> [<id>]` の形でルールの id が角括弧で付きます。**Why:** の行はなぜ大事かを伝えます。**Instead:** の行は直し方（コマンドか編集）です。**More:** の行は、ルールの完全な説明へのリンクです。ファイルの問題では、場所がタイトルのすぐ後に来ます：`yokoten stopped this: file:line: <what> [<id>]`。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。
 
 ルールがなぜあるかを聞くには、`yokoten explain <id>` を実行します。id はルールかステップの名前で、たとえば `secret` や `commit-check` です。id なし、または知らない id なら、すべての id を一覧します。
 

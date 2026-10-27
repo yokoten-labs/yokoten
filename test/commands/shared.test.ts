@@ -60,7 +60,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
     assert.equal(result.status, 1, args.join(' '));
     assert.equal(result.stdout, '', `${args.join(' ')}: nothing on stdout`);
     // A moved command says so first (#1054); the error is the rest.
-    assert.match(result.stderr.replace(/^note: .*\n/, ''), said(command), args.join(' '));
+    assert.match(result.stderr.replace(/^note: .*\n\n/, ''), said(command), args.join(' '));
     assert.deepEqual(readdirSync(away), [], `${args.join(' ')}: nothing written`);
   }
   // --json: the same finding, as data.
@@ -75,7 +75,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
   const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
+  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\n\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
   // A session in a non-repo folder gets no noise, and starts.
   const session = await sandbox.call(['doctor', '--session'], { cwd: away });
@@ -93,7 +93,7 @@ test('git not installed: a command that needs a repo says git is missing, not "n
   for (const command of ['check', 'doctor']) {
     const result = await sandbox.call([command], { extra: { PATH: noGit } });
     assert.equal(result.status, 1, command);
-    assert.match(result.stderr.replace(/^note: .*\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
+    assert.match(result.stderr.replace(/^note: .*\n\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
   }
 });
 

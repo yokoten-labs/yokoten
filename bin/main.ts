@@ -67,7 +67,8 @@ function dispatch(invocation: Invocation): number | Promise<number> {
   // A folded command or an old name says where it moved, then runs as before (#1054). The
   // line is for a person: the session-start hook (`doctor --session`) and JSON for a script go without it.
   const moved = cmd === undefined || args.includes('--session') || args.includes('--json') ? undefined : movedNote(cmd);
-  if (moved) print(invocation, [moved], invocation.stderr);
+  // A blank line follows the note, so a wrapped screen under it never reads as part of it (issue #1115).
+  if (moved) print(invocation, [...wrap('note: ', moved.replace(/^note: /, '')), ''], invocation.stderr);
   switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).

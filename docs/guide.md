@@ -85,13 +85,17 @@ When it stops something, it shows the same four parts:
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner creates the tag, with the
+            steps in How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 The first line names the exact tag, file or branch, and the rule. `Why` says what could go
-wrong. `Do instead` says the safe way, in words a beginner can use without reading code.
+wrong. `Instead` says the safe way, in words a beginner can use without reading code.
 `More` links the rule. Only the owner makes the changes in the fifth protection; an agent
 asks the owner.
 
@@ -208,9 +212,13 @@ And when an agent tries to push a release tag:
 
 ```
 yokoten stopped this: git push --tags pushes tags [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner releases, with the steps in
+            How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 The refusal is the same for every agent: it tells the agent to stop and let the owner release.
@@ -221,7 +229,7 @@ sanitization is on, the variable is dropped, and the owner releases outside Gemi
 
 Every refusal has the same four lines. The first line says **what** happened, and ends
 with the rule id in square brackets, as `yokoten stopped this: <what> [<id>]`. The
-**Why:** line says why it matters. The **Do instead:** line is the fix, a command or an
+**Why:** line says why it matters. The **Instead:** line is the fix, a command or an
 edit. The **More:** line links to where the rule is explained in full. For a problem in a
 file, the place comes right after the title: `yokoten stopped this: file:line: <what> [<id>]`. A hit names the kind of thing
 it found, never the thing: a secret or a private mark is never printed.
