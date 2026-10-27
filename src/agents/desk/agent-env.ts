@@ -18,6 +18,7 @@
 
 import type { Env } from '../../rules/config.ts';
 import { findSecrets } from '../../rules/privacy/secrets.ts';
+import { shownValue } from '../../rules/text/terminal.ts';
 import { AGENT_ENV as COPILOT } from '../copilot.ts';
 import { AGENT_ENV as ANTIGRAVITY } from '../runtimes/small/antigravity.ts';
 import { AGENT_ENV as CLAUDE_CODE } from '../runtimes/claude-code.ts';
@@ -143,7 +144,7 @@ const toAsciiUpper = (name: string): string => name.replace(/[a-z]+/g, (letters)
 /** The runtime's names, or an error that lists the runtimes yokoten knows. */
 export function runtimeEnv(runtime: string): RuntimeEnv {
   const names = Object.hasOwn(RUNTIME_ENVS, runtime) ? RUNTIME_ENVS[runtime] : undefined;
-  if (!names) throw new Error(`unknown runtime "${runtime}". Runtimes: ${Object.keys(RUNTIME_ENVS).join(', ')}`);
+  if (!names) throw new Error(`unknown runtime ${shownValue(runtime)}. Runtimes: ${Object.keys(RUNTIME_ENVS).join(', ')}`);
   return names;
 }
 

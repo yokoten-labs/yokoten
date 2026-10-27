@@ -296,6 +296,20 @@ test('help: the help table and the parser list the same commands and options (#2
   }
 });
 
+test('usage: a typed option is shown escaped, never raw (#1115)', async () => {
+  const sandbox = makeSandbox();
+  const typed = '--\u001b[2J\nnext\u202eevil';
+  for (const words of [['tidy', typed], ['check', typed], ['hook', '--denial', typed.slice(2)], ['hook', '--agent', typed.slice(2)], ['tidy', 'extra\u001b[2J']]) {
+    const r = await invoke(words, { env: sandbox.env, cwd: sandbox.repo });
+    assert.equal(r.code, 1, words.join(' '));
+    assert.doesNotMatch(r.stderr, /\u001b|\u202e/, `${words.join(' ')}: no raw ESC or U+202E`);
+    assert.match(r.stderr, /\\u001b/, `${words.join(' ')}: the ESC is shown escaped`);
+  }
+  const bidi = await invoke(['tidy', typed], { env: sandbox.env, cwd: sandbox.repo });
+  assert.match(bidi.stderr, /\\u202e/);
+  assert.match(bidi.stderr, /\\n/, 'the newline is shown as \\n, not a line break');
+});
+
 test('help: a typo in a command or an option names the closest one; a far one lists the commands (#207)', async () => {
   const sandbox = makeSandbox();
   const run = (words: string[]) => invoke(words, { env: sandbox.env, cwd: sandbox.repo });

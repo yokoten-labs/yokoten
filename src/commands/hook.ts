@@ -11,6 +11,7 @@ import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
+import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
 import { checkChanged, readGit } from '../run/check.ts';
 import { formatSpace, HOST_DISK_FIX, HOST_DRIVE, isLowOnSpace, readKeptHostDisk } from '../setup/doctor/host-disk.ts';
@@ -566,7 +567,7 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   const namedAgent = options.values['--agent'];
   const agent = namedAgent ?? 'claude-code';
   const denialMode = options.values['--denial'];
-  if (denialMode !== undefined && denialMode !== 'exit2') return usage(invocation, `unknown --denial ${denialMode}; use exit2`);
+  if (denialMode !== undefined && denialMode !== 'exit2') return usage(invocation, `unknown --denial ${shownValue(denialMode)}; use exit2`);
   // The guard protocol (#898): one fixed call, one fixed answer, no runtime in it.
   if (options.flags.has('--protocol')) {
     if (namedAgent !== undefined || options.flags.has('--stop') || denialMode !== undefined) {
@@ -577,11 +578,11 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   if (options.flags.has('--stop')) {
     if (options.flags.has('--commands-only')) return usage(invocation, "--stop and --commands-only can't be used together");
     const readStop = stopReaderOf(agent);
-    if (!readStop) return usage(invocation, `unknown --agent ${agent}; use one of: ${Object.values(ADAPTERS).filter((adapter) => adapter.readStop !== undefined).map((adapter) => adapter.name).join(', ')}`);
+    if (!readStop) return usage(invocation, `unknown --agent ${shownValue(agent)}; use one of: ${Object.values(ADAPTERS).filter((adapter) => adapter.readStop !== undefined).map((adapter) => adapter.name).join(', ')}`);
     return stopHook(invocation, json, readStop, agent);
   }
   const read = Object.hasOwn(READERS, agent) ? READERS[agent] : undefined;
-  if (!read) return usage(invocation, `unknown --agent ${agent}; use one of: ${Object.keys(READERS).join(', ')}`);
+  if (!read) return usage(invocation, `unknown --agent ${shownValue(agent)}; use one of: ${Object.keys(READERS).join(', ')}`);
   let input: unknown;
   try {
     input = JSON.parse(readInput(invocation.stdin));
@@ -740,7 +741,7 @@ export function runStops(invocation: Invocation): number {
     print(invocation, [...title('stops', 'on, and the log is written again'), '', ...field('log', hideHome(file, env))]);
     return 0;
   }
-  return usage(invocation, `unknown action "${action}"; use off or on`);
+  return usage(invocation, `unknown action ${shownValue(action)}; use off or on`);
 }
 
 /**

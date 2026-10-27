@@ -324,15 +324,20 @@ export function nextCommand(next: Finding): string {
  * `Fix: \`<command>\``. A fix that names no command stays in the row's text.
  */
 export function problemRows(problems: readonly Finding[]): string[][] {
-  const byFix = new Map<string, string[]>();
+  const byFix = new Map<string, { whats: string[]; thens: string[] }>();
   const plain: string[][] = [];
   for (const f of problems) {
     // A command only when the fix starts with one; "make `yokoten.json` valid JSON" is a sentence.
-    const command = fixCommand(f.fix)?.command;
-    if (command === undefined) plain.push(row('MISSING', `${f.what}; ${f.fix}`));
-    else byFix.set(command, [...(byFix.get(command) ?? []), f.what]);
+    const fix = fixCommand(f.fix);
+    if (fix === null) plain.push(row('MISSING', `${f.what}; ${f.fix}`));
+    else {
+      const seen = byFix.get(fix.command);
+      byFix.set(fix.command, { whats: [...(seen?.whats ?? []), f.what], thens: fix.then && !seen?.thens.includes(fix.then) ? [...(seen?.thens ?? []), fix.then] : seen?.thens ?? [] });
+    }
   }
-  return [...[...byFix].map(([command, whats]) => [...row('MISSING', whats.join('; ')), `${' '.repeat(14)}Fix: \`${command}\``]), ...plain];
+  // The follow-up ("and type your name") stays, as check's screen keeps it: the same finding says the same on both.
+  const indent = ' '.repeat(14);
+  return [...[...byFix].map(([command, { whats, thens }]) => [...row('MISSING', whats.join('; ')), ...thens.flatMap((then) => wrap(indent, `${sentence(then)}${/[.!?]$/.test(then) ? '' : '.'}`)), `${indent}Fix: \`${command}\``]), ...plain];
 }
 
 /** The default screen of `yokoten doctor`, from its report; a broken self-test line leads. */

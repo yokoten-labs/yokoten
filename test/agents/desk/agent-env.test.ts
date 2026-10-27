@@ -125,7 +125,7 @@ test('agent env: YOKOTEN_* names that make the guard stricter pass; the bot key 
 test('agent env: Windows names pass in any case; an unknown runtime is an error that lists the known ones', () => {
   const windows = { Path: 'C:\\Windows', SystemRoot: 'C:\\Windows', USERPROFILE: 'C:\\Users\\fake', APPDATA: 'C:\\Users\\fake\\AppData\\Roaming', PATHEXT: '.COM;.EXE', ComSpec: 'C:\\Windows\\system32\\cmd.exe' };
   assert.deepEqual(Object.keys(buildAgentEnv(windows)).sort(), Object.keys(windows).sort());
-  assert.throws(() => sortAgentEnv(SAFE, 'nope'), /unknown runtime "nope"\. Runtimes: claude-code, codex/);
+  assert.throws(() => sortAgentEnv(SAFE, 'nope'), /unknown runtime nope\. Runtimes: claude-code, codex/);
   // A long s (U+017F) upper-cases to S in JavaScript; the name must not pass as SHELL.
   const longS = sortAgentEnv({ '\u017FHELL': '/bin/bash' });
   assert.deepEqual(longS.kept, [], 'a name with a long s passed as SHELL');

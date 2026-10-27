@@ -8,6 +8,7 @@ import { row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
+import { shownValue } from '../rules/text/terminal.ts';
 import { gitRoot } from '../run/check.ts';
 import { closestWord, findCommand, HELP_OPTIONS } from '../run/cli.ts';
 
@@ -79,11 +80,11 @@ export function parse(name: string, words: string[]): Parsed | string {
     } else if (option) parsed.flags.add(a);
     else if (a.startsWith('-')) {
       const near = closestWord(a, [...known.keys(), HELP_OPTIONS[0]]);
-      return `unknown option ${a}${near ? `. Did you mean ${near}?` : ''}`;
+      return `unknown option ${shownValue(a)}${near ? `. Did you mean ${near}?` : ''}`;
     } else parsed.positional.push(a);
   }
   const allowed = command.many ? Infinity : command.arguments?.length ?? (command.argument ? 1 : 0);
-  if (parsed.positional.length > allowed) return `unexpected argument ${parsed.positional[allowed]}`;
+  if (parsed.positional.length > allowed) return `unexpected argument ${shownValue(parsed.positional[allowed] ?? '')}`;
   return parsed;
 }
 

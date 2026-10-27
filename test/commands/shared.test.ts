@@ -378,6 +378,12 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   const doctorFix = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([same]).flat().filter((line) => line.includes('Fix: '));
   assert.deepEqual(checkFix, doctorFix, 'check and doctor show the same Fix line');
   assert.deepEqual(checkFix, ['              Fix: `yokoten install`']);
+  // A fix with a follow-up says it on both screens (the check screen keeps it under the why, doctor under the row).
+  const marks = finding('time-zone', 'no marks', 'run `yokoten marks add` and type your name');
+  const doctorLines = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([marks]).flat();
+  assert.ok(problemRows([marks]).some((line) => line.includes('Type your name.')), problemRows([marks]).join('\n'));
+  assert.ok(doctorLines.some((line) => line.includes('Type your name.')), doctorLines.join('\n'));
+  assert.deepEqual(problemRows([marks]).filter((line) => line.includes('Fix: ')), doctorLines.filter((line) => line.includes('Fix: ')));
   const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
   const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
   assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');
