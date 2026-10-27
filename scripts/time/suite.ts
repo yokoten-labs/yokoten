@@ -59,7 +59,7 @@ const ERROR_LINES = 20;
 
 /**
  * The test log of every CI test job (#1125): when a file finishes, `[n/N] <file>` and under
- * it, indented, each of its tests, a failing one with its error under it, indented again.
+ * it, each of its tests lined up under the file name, a failing one with its error indented under it.
  * The whole block prints at once, so a file's tests never mix with another's. `still running`
  * shows once a minute while a file runs past a minute.
  * node --test announces each file as a top-level test named by its path; it announces all of
@@ -76,7 +76,7 @@ export function fileProgress() {
     const cause = (error as { cause?: unknown } | undefined)?.cause ?? error;
     const text = cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause);
     const lines = text.split('\n').filter((line) => line.trim() !== '');
-    return [...lines.slice(0, ERROR_LINES), ...(lines.length > ERROR_LINES ? [`… ${lines.length - ERROR_LINES} more lines in the TAP report`] : [])].map((line) => `        ${line}`);
+    return [...lines.slice(0, ERROR_LINES), ...(lines.length > ERROR_LINES ? [`… ${lines.length - ERROR_LINES} more lines in the TAP report`] : [])].map((line) => `    ${line}`);
   };
   return {
     /** The lines this event prints, if any. */
@@ -91,7 +91,7 @@ export function fileProgress() {
           const isFail = event.type === 'test:fail';
           const mark = isFail ? '✖' : event.data.skip ? '-' : '✔';
           const ms = event.data.details?.duration_ms;
-          entry.lines.push(`    ${mark} ${name}${ms === undefined ? '' : ` (${ms.toFixed(1)} ms)`}`, ...(isFail ? errorLines(event.data.details?.error) : []));
+          entry.lines.push(`${mark} ${name}${ms === undefined ? '' : ` (${ms.toFixed(1)} ms)`}`, ...(isFail ? errorLines(event.data.details?.error) : []));
           if (isFail) entry.fails += 1;
           results.set(file, entry);
         }
@@ -105,7 +105,9 @@ export function fileProgress() {
       const head = `[${done}/${total}] ${name} ${seconds(started.get(name) ?? now, now)} s${fails ? `, ${fails} failing` : ''}`;
       started.delete(name);
       results.delete(name);
-      return [head, ...lines];
+      // The tests sit under the file name, with the [n/N] column left blank.
+      const pad = ' '.repeat(`[${done}/${total}] `.length);
+      return [head, ...lines.map((line) => pad + line)];
     },
     /** One line for each file running a minute or more. */
     slow(now: number): string[] {

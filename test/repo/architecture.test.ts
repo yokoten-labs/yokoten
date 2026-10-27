@@ -2249,15 +2249,16 @@ test('suite time: each test job prints a line when a file finishes, and one a mi
   assert.deepEqual(progress.slow(30_000), [], 'under a minute: quiet');
   assert.deepEqual(progress.slow(75_000), ['still running test/a.test.ts: 75 s'], 'a finished file is not still running');
   see(file('test:complete', 'test/a.test.ts'), 80);
-  // Each file's block prints at once: its line, then its tests indented, and a failure's error indented again.
+  // Each file's block prints at once: its line, then its tests lined up under the file name
+  // (the [n/N] column left blank), and a failure's error indented under it.
   assert.deepEqual(lines, [
     '[1/2] test/b.test.ts 3 s, 2 failing',
-    '    ✖ a case',
-    '    ✖ a bad case (1.0 ms)',
-    '        expected 1',
-    '        to be 2',
+    '      ✖ a case',
+    '      ✖ a bad case (1.0 ms)',
+    '          expected 1',
+    '          to be 2',
     '[2/2] test/a.test.ts 80 s',
-    '    ✔ a good case (2.3 ms)',
+    '      ✔ a good case (2.3 ms)',
   ]);
   assert.deepEqual(progress.slow(200_000), []);
 });
