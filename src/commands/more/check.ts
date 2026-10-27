@@ -34,7 +34,7 @@ import { isCodeFile, nameNotes } from '../../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
-import { bullets, count, field, type Invocation, moreLine, nextLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from '../shared.ts';
+import { bullets, count, field, type Invocation, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, say, showOnPullRequest, title, usage, wrap } from '../shared.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -123,7 +123,7 @@ function problemScreen(command: string, problems: Finding[], hints: string[]): s
     lines.push('');
     for (const hint of hints) lines.push(...row('note', hint));
   }
-  lines.push('', ...wrap('Next: ', 'fix them, then `yokoten check`'));
+  lines.push('', ...wrap('Next: ', `fix ${problems.length === 1 ? 'it' : 'them'}, then \`yokoten check\``));
   if (links.length === 1) lines.push(...moreLine(links[0] ?? ''));
   return lines;
 }
@@ -1382,10 +1382,17 @@ export function runCiHealth(invocation: Invocation): number {
   const root = requireRoot(invocation, invocation.cwd);
   if (!root) return 1;
   const { env } = invocation;
-  const stated = options.values['--repo'] || env.GITHUB_REPOSITORY || '';
-  const repo = stated || repoOf(readOriginUrl(root, env)) || '';
+  const given = options.values['--repo'];
+  const stated = given || env.GITHUB_REPOSITORY || '';
+  const origin = readOriginUrl(root, env);
+  const repo = stated || repoOf(origin) || '';
   if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) {
-    print(invocation, [...title('ci-health', 'no GitHub repo found: no --repo, no GITHUB_REPOSITORY, no origin remote'), '', ...nextLine('yokoten ci-health --repo owner/name')], invocation.stderr);
+    // Say which value was wrong, and show what the person typed (#1115); the remote's URL may name a machine path, so it is not shown.
+    const why = given ? `--repo ${given} is not owner/name`
+      : env.GITHUB_REPOSITORY ? `GITHUB_REPOSITORY is ${env.GITHUB_REPOSITORY}, not owner/name`
+      : origin ? 'the origin remote is not a GitHub repo, and no --repo was given'
+      : 'no --repo, no GITHUB_REPOSITORY and no origin remote';
+    print(invocation, [...title('ci-health', `no GitHub repo to read: ${why}`), '', 'Fix: `yokoten ci-health --repo owner/name`'], invocation.stderr);
     return 1;
   }
   const gh = ghIn(root, env, CI_HEALTH_TIMEOUT);

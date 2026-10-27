@@ -2211,7 +2211,7 @@ test('trust (#661): init without a terminal writes nothing and names the command
   // A pipe is not a person: `yokoten trust` writes nothing there (#661).
   const piped = await sandbox.call(['trust']);
   assert.equal(piped.status, 1, 'no terminal is a refusal');
-  assert.match(piped.stderr, /^yokoten trust · a person runs this at a terminal$/m);
+  assert.match(piped.stderr, /^yokoten trust · a person runs this at a terminal; nothing was written$/m);
   assert.match(piped.stderr, /nothing was written/);
   assert.equal(readFileSync(config, 'utf8'), elsewhere, 'a pipe: nothing was written');
 
@@ -2439,10 +2439,10 @@ test('init: the default screen is one screen of groups, and no line passes 80 (#
   assert.equal(result.status, 0, result.stderr);
   const lines = result.stdout.split('\n');
   assert.match(result.stdout, /^yokoten init · this project is set up$/m);
-  assert.match(result.stdout, /^ {2}done +rules +AGENTS\.md, the commit check$/m);
-  assert.match(result.stdout, /^ {2}done +CI +4 workflows, Dependabot$/m);
-  assert.match(result.stdout, /^ {2}done +GitHub +issue and PR templates, CODEOWNERS, a security policy$/m);
-  assert.match(result.stdout, /^ {2}done +agents +guard for Claude Code \(\d+ more ready\)$/m);
+  assert.match(result.stdout, /^ {2}done +rules: AGENTS\.md, the commit check$/m);
+  assert.match(result.stdout, /^ {2}done +CI: 4 workflows, Dependabot$/m);
+  assert.match(result.stdout, /^ {2}done +GitHub: issue and PR templates, CODEOWNERS, a security policy$/m);
+  assert.match(result.stdout, /^ {2}done +agents: guard for Claude Code \(\d+ more ready\)$/m);
   assert.match(result.stdout, /^ {2}\d+ files written, none of yours changed$/m);
   assert.match(result.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
   assert.match(result.stdout, /^More: `yokoten init --list` shows every file$/m);
@@ -2467,7 +2467,7 @@ test('init: partly new lists only the group that changed (#1027)', async () => {
   rmSync(join(sandbox.repo, '.github', 'CODEOWNERS'));
   const result = await sandbox.call(['init']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}done +GitHub +CODEOWNERS$/m);
+  assert.match(result.stdout, /^ {2}done +GitHub: CODEOWNERS$/m);
   assert.doesNotMatch(result.stdout, /^ {2}done +rules/m, 'a group with nothing new stays folded');
   assert.match(result.stdout, /^ {2}1 file added, \d+ files already there$/m);
   assert.ok(result.stdout.split('\n').every((line) => line.length <= 80), result.stdout);

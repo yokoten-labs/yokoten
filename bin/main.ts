@@ -30,9 +30,9 @@ const help = (all: boolean): string => [
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
 function unknownCommand(invocation: Invocation, name: string): number {
   const near = closestWord(name, COMMANDS.map((command) => command.name));
-  // A title, then the one step last: the near command, or the help that lists them all.
-  const next = near ? `Did you mean \`yokoten ${near}\`?` : 'Next: `yokoten help`';
-  print(invocation, [...wrap('yokoten: ', `unknown command "${name}"`), ...wrap('', next)], invocation.stderr);
+  // A title with the word typed, then the one step last: the near command, or the help that lists them all (#1115).
+  const next = near ? `\`yokoten ${near}\`, if you meant it; \`yokoten help\` lists every command` : '`yokoten help` lists every command';
+  print(invocation, [...wrap('yokoten · ', `unknown command ${name}`), '', ...wrap('Next: ', next)], invocation.stderr);
   return 1;
 }
 

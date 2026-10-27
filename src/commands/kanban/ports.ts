@@ -15,7 +15,7 @@ import { machineMarks, machineUserNames } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { EMPTY_SCHEDULE, planSchedule, scheduleIssueOf, summarizeSchedule } from '../more/advice/schedule.ts';
 import { actionsRunPage, actionsRunsQuery, healthReadFailed, readActionsRuns, readDefaultBranch, summarizeActionsHealth } from '../more/check.ts';
-import { count, field, moreLine, parse, print, requireRoot, row, title, usage } from '../shared.ts';
+import { count, field, moreLine, parse, print, requireRoot, row, spaced, title, usage } from '../shared.ts';
 
 // ---- Shapes ----
 
@@ -146,6 +146,8 @@ export const titleLines = (command: string, summary: string): string[] => title(
 export const rowLines = (state: RowState, text: string, label?: string): string[] => row(state, text, label);
 export const fieldLines = (label: string, text: string): string[] => field(label, text);
 export const moreLines = (text: string): string[] => moreLine(text);
+/** Items one under the other, a blank line between them once one wraps (#1115). */
+export const spacedLines = (items: readonly (readonly string[])[]): string[] => spaced(items);
 /** "1 file", "3 files". */
 export const counted = (n: number, one: string, many?: string): string => count(n, one, many);
 /** Text with control and bidi characters escaped, safe to print on a terminal. */

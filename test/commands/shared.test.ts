@@ -16,9 +16,9 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { canColour, isColourTerminal, paint, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
+import { canColour, isColourTerminal, paint, problemRows, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
-import { finding, formatRefusal } from '../../src/rules/text/message.ts';
+import { finding, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
 // #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
 // dropped the backslashes, and the home mask looked only for the written path.
@@ -119,10 +119,11 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['check', '--staged'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
-  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences.
+  // One MISSING row per problem (#1027): what on the row, then why and fix as sentences, or
+  // the fix's command on its own last line (#1115).
   const problems = result.stderr.replace(/\s+/g, ' ').split(' MISSING ').slice(1).map((one) => one.split(' Next: ')[0] ?? one);
   assert.ok(problems.length >= 7, result.stderr);
-  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. .+\.\s*$/, one);
+  for (const one of problems) assert.match(one, /^.+ [A-Z].+\. (?:.+\.|Fix: `[^`]+`)\s*$/, one);
   clean(result.stderr);
   result = await sandbox.call(['check', '--staged', '--json'], { extra: { ...extra, GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700' } });
   assert.equal(result.status, 1);
@@ -355,4 +356,23 @@ test('screen helpers: 80 columns, the label column, plural counts, the old conso
   assert.equal(isUnicodeTerminal({ TERM: 'linux' }, 'linux'), false);
   assert.match(styleLine('  ok          guard', true, false), /√ ok/);
   assert.match(styleLine('  ok          guard', true, true), /✔ ok/);
+});
+
+// Issue #1115: a fix that starts with a command ends its row on a Fix line, said once.
+test('problem rows: a fix that starts with a command is its own last line, said once under the problems it fixes (#1115)', () => {
+  assert.deepEqual(leadingCommand('`yokoten init` adds one'), { command: 'yokoten init', then: '' });
+  assert.deepEqual(leadingCommand('run `yokoten marks add` and type your name'), { command: 'yokoten marks add', then: 'type your name' });
+  assert.deepEqual(leadingCommand('run `export TZ=UTC`, then keep the command in ~/.bashrc'), { command: 'export TZ=UTC', then: 'keep the command in ~/.bashrc' });
+  assert.equal(leadingCommand('Run `git fetch origin` and `git fetch origin pull/1/head`'), null, 'two commands stay one sentence');
+  assert.equal(leadingCommand('`AGENTS.md` names no owner'), null, 'a file in backticks is no command');
+  assert.equal(leadingCommand('run `yokoten install` again, or report it in an issue'), null, 'more advice after it stays a sentence');
+  const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
+  const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
+  assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');
+  assert.equal(lines.at(-1), '              Fix: `export TZ=UTC`', 'under the last problem it fixes');
+  assert.ok(lines.includes(''), 'a blank line between the rows');
+  // A positive control: a fix with no leading command keeps its sentence, and no Fix line.
+  const plain = problemRows([finding('time-zone', 'one', 'leave history as it is')]);
+  assert.ok(!plain.some((line) => line.includes('Fix: ')), plain.join('\n'));
+  assert.ok(plain.join(' ').includes('Leave history as it is.'), plain.join('\n'));
 });

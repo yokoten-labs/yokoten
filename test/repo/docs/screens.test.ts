@@ -141,6 +141,13 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
   assert.match(caught('yokoten desk · /var/tmp/work/plain is not in a repo'), /1 paths on this machine show/);
   assert.match(caught('yokoten x · C:\\Users\\someone\\work is gone'), /1 paths on this machine show/, 'a Windows path too');
   assert.equal(caught('yokoten x · ~/work and https://example.com/a/b and GET /api/state'), '', 'a home path, a link and an API path are not machine paths');
+  // Stage 2 (#1115, review of stage 1, L1 to L3): what the rules missed.
+  assert.match(caught('  ok          main        pushed\n  MISSING     no bot'), /start their text in 2 columns \(14, 26\)/, 'a row with a mark and a label starts its text past the label');
+  assert.equal(caught('  ok          pushed\n  MISSING     no bot'), '', 'rows with a mark and no label share one column');
+  assert.match(caught('yokoten x · C:/Users/someone/work is gone'), /1 paths on this machine show/, 'a Windows path with forward slashes');
+  assert.match(caught('yokoten x · /c/Users/someone/work is gone'), /1 paths on this machine show/, "Git Bash's form of a Windows path");
+  assert.match(caught('  MISSING     gh is not signed in; run gh auth login'), /1 problems keep their fix inside the text/, 'a command to run, named without backticks');
+  assert.equal(caught('  MISSING     the tests did not run\n              Fix: `npm test`'), '', '"did not run" names no command');
   assert.deepEqual(SCREEN_RULES.map((rule) => rule.id).filter((id) => !seen.has(id)), [], 'every rule has a control that breaks it');
 });
 
@@ -150,8 +157,8 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
 interface ScreenRun {
   key: string;
   words: string[];
-  /** The demo repo (the default), a folder outside any repo, or a GitHub repo where gh is not signed in. */
-  place?: 'repo' | 'plain' | 'dirty' | 'signed-out';
+  /** The demo repo (the default), a folder outside any repo, a GitHub repo where gh is not signed in, or a home with a DeepSeek Harness profile. */
+  place?: 'repo' | 'plain' | 'dirty' | 'signed-out' | 'deepseek' | 'zoned';
   stdin?: string;
   /** A guard refusal: the person reads stderr, and stdout is JSON for the agent. */
   isStderrOnly?: boolean;
@@ -193,6 +200,11 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'session start, unsaved work', words: ['doctor', '--session'], place: 'dirty' },
     { key: 'session start, codex', words: ['doctor', '--session', '--agent', 'codex'] },
     { key: 'commit check', words: ['check', '--staged'] },
+    // S072: a commit whose time carries a time zone; its row ends with the Fix line (#1115).
+    { key: 'commit check, a time zone', words: ['check', '--staged'], place: 'zoned' },
+    // init's notes, which a sandbox with no DeepSeek Harness profile never shows; then init again (#1115).
+    { key: 'init, a DeepSeek Harness profile', words: ['init'], place: 'deepseek' },
+    { key: 'init, run twice', words: ['init'], place: 'deepseek' },
     // Each command with no words, as a newcomer types it: the captured screens S040 to S049 (#1115).
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word] })),
   ];
@@ -204,7 +216,7 @@ function screensOf(repo: string): ScreenRun[] {
  * screen that passes fails the test until its line is removed, and a new screen is never waived.
  */
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
-const WAIVED_MOST = 5;
+const WAIVED_MOST = 0;
 const WAIVED: Record<string, string> = {
 };
 
@@ -220,16 +232,28 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const signedOut = makeSandbox();
   signedOut.git('remote', 'add', 'origin', 'https://github.com/octo/demo.git');
   const noLogin = writeNodeProgram(join(signedOut.home, 'bin'), 'gh', `process.stderr.write('To get started with GitHub CLI, please run:  gh auth login\\n'); process.exitCode = 4;`, process.platform, signedOut.env);
+  // A DeepSeek Harness profile, so init prints its notes (#1115).
+  const deepseek = makeSandbox();
+  mkdirSync(join(deepseek.home, '.dsh', 'profiles', 'work'), { recursive: true });
   sandbox.write('notes.txt', 'hello\n');
   sandbox.git('add', 'notes.txt');
   const runs = screensOf(sandbox.repo);
   const broken: string[] = [];
   const healed: string[] = [];
+  const boxOf = (place: ScreenRun['place']) => (place === 'dirty' ? dirty : place === 'signed-out' ? signedOut : place === 'deepseek' ? deepseek : sandbox);
   for (const run of runs) {
-    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : run.place === 'dirty' ? { cwd: dirty.repo } : run.place === 'signed-out' ? { cwd: signedOut.repo, extra: noLogin } : {};
-    const result = await (run.place === 'dirty' ? dirty : run.place === 'signed-out' ? signedOut : sandbox).call(run.words, { input: run.stdin ?? '', ...where });
+    const where =
+      run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } }
+      : run.place === 'dirty' ? { cwd: dirty.repo }
+      : run.place === 'signed-out' ? { cwd: signedOut.repo, extra: noLogin }
+      : run.place === 'deepseek' ? { cwd: deepseek.repo }
+      : run.place === 'zoned' ? { extra: { GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700', SHELL: '/bin/bash' } }
+      : {};
+    const result = await boxOf(run.place).call(run.words, { input: run.stdin ?? '', ...where });
     // Both streams in the order written, as a terminal shows them: a moved note comes first.
     const text = run.isStderrOnly ? result.stderr : result.output;
+    if (run.key === 'init, a DeepSeek Harness profile') assert.match(text, /note {8}DeepSeek Harness/, `init shows the DeepSeek Harness note: ${text}`);
+    if (run.place === 'zoned') assert.match(text, /Fix: `export TZ=UTC`/, `the commit check stops on the time zone: ${text}`);
     if (run.place === 'signed-out') assert.match(text, /\n- the pull requests and the Actions runs: gh is not signed in\n {2}Fix: `gh auth login`\n/, `the fake gh answered: ${text}`);
     const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: result.status !== 0, isHelp: run.isHelp });
     const isWaived = run.key in WAIVED;

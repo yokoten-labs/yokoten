@@ -1079,6 +1079,17 @@ export function timeZoneFix(env: Env): string {
 }
 
 /**
+ * The same fix with the command first, for a check's problem row (issue #1115): the row
+ * shows the command on its own `Fix:` line and says where to keep it above that line.
+ */
+export function timeZoneCommandFix(env: Env): string {
+  const { line, keep } = SHELL_TIME_ZONE[shellName(env)];
+  // "add it to X" reads as "keep the command in X"; cmd's own way stays a sentence, with no second command line.
+  const kept = keep.replace(/^add it to /, 'keep the command in ').replace(/^run `([^`]+)`/, 'type $1');
+  return `run \`${line}\`, then ${kept}; yokoten init sets it for agent sessions`;
+}
+
+/**
  * A known-bad sample, so a check can prove it still catches what it should. It is built
  * from pieces so this file does not fail its own check.
  */

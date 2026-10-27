@@ -68,7 +68,7 @@ test('install: skills, agents and hooks once, the user\'s own files untouched', 
   // An unknown option is refused, and nothing is written (#203).
   const homeBefore = readdirSync(sandbox.home, { recursive: true }).sort();
   let result: { status: number | null; stdout: string; stderr: string } = await sandbox.call(['install', '--dry-run']);
-  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten install moved to yokoten. It runs as before this time.\n\nyokoten install: unknown option --dry-run. Run `yokoten install --help`.\n']);
+  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten install moved to yokoten. It runs as before this time.\n\nyokoten install · unknown option --dry-run\n\n  install     skills, agents and user-level hooks for this machine\n\nNext: `yokoten install --help`\n']);
   assert.deepEqual(readdirSync(sandbox.home, { recursive: true }).sort(), homeBefore, 'install --dry-run writes nothing');
   // A real child, for the entry: the exit code and output through bin/yokoten.ts.
   result = sandbox.run(['install', '--list']);

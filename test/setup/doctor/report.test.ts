@@ -573,10 +573,12 @@ test('doctor --session: one block, about the first step of the first stage not d
   assert.deepEqual(r.stdout.trimEnd().split('\n'), [
     'yokoten: stage 1 of 5, safety net',
     '',
-    '  Next      No AGENTS.md, so the agents have no written rules here;',
-    '            `yokoten init` adds one.',
+    '  Next      No AGENTS.md, so the agents have no written rules here.',
     '',
     '  Why       An agent follows the rules it can read, and only those.',
+    '',
+    // The fix that starts with a command shows it on its own row (#1115).
+    '  Fix       `yokoten init`',
     '',
     'Tell the user in plain words, one step at a time, and offer to do it (as-is,',
     'lighter, or not now with a reason).',
@@ -980,7 +982,7 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   sandbox.git('add', '.');
   sandbox.git('commit', '-q', '-m', 'docs: add the rules');
   const first = async (cwd = sandbox.repo) => sessionRoad((await sandbox.call(['doctor', '--session'], { cwd })).stdout);
-  const plain = /Next {6}No AGENTS\.md, so the agents have no written rules here; `yokoten init` adds one\./;
+  const plain = /Next {6}No AGENTS\.md, so the agents have no written rules here\.$/;
   // No origin: init.defaultBranch, else main.
   assert.equal(sandbox.git('checkout', '-q', 'old').status, 0);
   assert.equal(await first(), 'yokoten: stage 1 of 5, safety net\n  Next      AGENTS.md is on main, not on this branch (old); work on a branch made from main, or merge main into this one.');

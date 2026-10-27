@@ -93,7 +93,8 @@ export function deskRows(record: DeskRecord, state: DeskRecord['state'], commits
 
 /** The bare `yokoten desk` screen. */
 export function listScreen(records: DeskRecord[], alive: IsAlive, commitsOf: CommitsOf, now: Date): string[] {
-  if (!records.length) return [...title('desk', 'no desks yet'), '', ...nextLine('yokoten desk <issue>')];
+  // What a desk is, in one line, so a newcomer knows what the command makes (#1115).
+  if (!records.length) return [...title('desk', 'no desks yet'), '', 'A desk gives one task to one AI, in its own fenced clone.', '', ...nextLine('yokoten desk <issue>')];
   const states = records.map((record) => stateNow(record, alive));
   const stopped = records.filter((_, i) => states[i] === 'stopped');
   const kept = records.filter((_, i) => states[i] === 'kept');

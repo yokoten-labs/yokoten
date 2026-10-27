@@ -22,8 +22,8 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   const first = await sandbox.call([]);
   // One screen (#1027): the title says it set up and the stage, one row per step, one Next line, then More.
   assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · set up; stage 1 of 5, safety net$`, 'm'));
-  assert.match(first.stdout, /^ {2}ok {10}computer {4}guard on for /m);
-  assert.match(first.stdout, /^ {2}ok {10}project {5}\d+ files written, none of yours changed$/m);
+  assert.match(first.stdout, /^ {2}ok {10}guard on for .+ on this computer$/m);
+  assert.match(first.stdout, /^ {2}ok {10}\d+ files written in this project, none of yours changed$/m);
   assert.equal(first.stdout.match(/^Next: /gm)?.length, 1, 'one Next line');
   assert.match(first.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`\nMore: /m);
   assert.ok(first.stdout.split('\n').every((line) => line.length <= 80), 'every line fits 80 columns');
@@ -256,7 +256,7 @@ test('uninstall: one screen of counts, then how to install again (#1027)', async
   assert.doesNotMatch(result.stdout, /removed skill /, 'per-file lines are behind --list');
   fit(result.stdout);
   const again = await sandbox.call(['uninstall']);
-  assert.match(again.stdout, /^yokoten uninstall · nothing to remove, nothing changed$/m);
+  assert.match(again.stdout, /^yokoten uninstall · nothing to remove: yokoten is not installed on this computer$/m);
 });
 
 test('trust: one screen names each agent, then the way back (#1027)', async () => {

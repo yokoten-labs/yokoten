@@ -123,7 +123,7 @@ test('kanban state: Actions health from the ci-health summary', () => {
 test('kanban state: --text prints the groups, the pull requests and Actions', () => {
   const state = stateOf(board([view({ dot: 'idle', updated: ago(20), task: 'issue 3 a', title: 'a', ref: { kind: 'issue', number: 3 } }), view({ dot: 'working', updated: ago(1), task: 'b' })]), { ...NO_GITHUB, pulls: [pull({ number: 4 })] }, new Set(), NOW);
   const text = renderStateText(state).join('\n');
-  assert.match(text, /^yokoten kanban: this repo \(preview: read only\)\n\nStuck:\n- Claude \(opus\): issue #3 a, no output for 20 min\n\nWorking:\n- Claude \(opus\): b\n\nPull requests:\n- #4 t: waits on you\n\nActions: main unknown$/);
+  assert.match(text, /^yokoten kanban · this repo: sessions, pull requests and Actions, read only\n\nStuck:\n- Claude \(opus\): issue #3 a, no output for 20 min\n\nWorking:\n- Claude \(opus\): b\n\nPull requests:\n- #4 t: waits on you\n\nActions: main unknown$/);
   assert.match(renderStateText(stateOf(board([]), NO_GITHUB, new Set(), NOW)).join('\n'), /Sessions:\n- none yet\./);
 });
 
@@ -132,7 +132,7 @@ test('kanban state: --text prints the groups, the pull requests and Actions', ()
 test('kanban state: Not read says each cause once, in yokoten words, with one Fix line (#1115)', () => {
   const signedOut = { stderr: 'To get started with GitHub CLI, please run:  gh auth login\n' };
   const problems = [healthReadFailed(signedOut, 'pull requests'), healthReadFailed(signedOut, 'Actions runs'), 'no remote'];
-  assert.deepEqual(notReadLines(problems), ['- the pull requests and the Actions runs: gh is not signed in', '  Fix: `gh auth login`', '- no remote']);
+  assert.deepEqual(notReadLines(problems), ['- the pull requests and the Actions runs: gh is not signed in', '  Fix: `gh auth login`', '', '- no remote'], 'a blank line after the item with a Fix line');
   const refused = healthReadFailed({ stderr: 'HTTP 404: Not Found\n' }, 'Actions runs');
   assert.deepEqual(notReadLines([refused]), ['- the Actions runs: GitHub said no (403 or 404)', '  Fix: `gh auth status`'], 'another cause, and the command that shows the account');
   const missing = healthReadFailed(Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), 'Actions runs');

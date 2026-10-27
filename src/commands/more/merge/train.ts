@@ -601,23 +601,27 @@ function checksOf(list: unknown): PullRequest['checks'] {
 /**
  * The conflict map this clone built, or a plain reason there is none to read. The reason
  * names the map file, never a full path, so it says nothing about the person's machine.
+ * Each reason has one fix, `yokoten conflicts`, which the screen shows on its own line (#1115).
  */
 function readConflictMap(root: string, env: Env): ConflictMap | string {
   const commonDir = text(runGit(root, ['rev-parse', '--git-common-dir'], { env }).stdout);
   const path = resolve(root, commonDir, MAP_FILE);
-  if (!existsSync(path)) return `no conflict map at ${MAP_FILE} in this clone; run \`yokoten conflicts\` first, then the train again`;
+  if (!existsSync(path)) return `no conflict map at ${MAP_FILE} in this clone; build it, then start the train again`;
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
   } catch {
-    return `the conflict map at ${MAP_FILE} is not readable JSON; run \`yokoten conflicts\` again`;
+    return `the conflict map at ${MAP_FILE} is not readable JSON; build it again`;
   }
-  if (!isConflictMap(parsed)) return `the conflict map at ${MAP_FILE} has a shape this version cannot read; run \`yokoten conflicts\` again with this version of yokoten`;
+  if (!isConflictMap(parsed)) return `the conflict map at ${MAP_FILE} has a shape this version cannot read; build it again with this version of yokoten`;
   // An old map names changes that merged since and misses new ones: order nothing from it.
   const age = Date.now() - Date.parse(parsed.builtAt);
-  if (!Number.isFinite(age) || age > MAP_MAX_AGE_MS) return `the conflict map at ${MAP_FILE} is more than an hour old; run \`yokoten conflicts\` again`;
+  if (!Number.isFinite(age) || age > MAP_MAX_AGE_MS) return `the conflict map at ${MAP_FILE} is more than an hour old; build it again`;
   return parsed;
 }
+
+/** The command that builds the conflict map: the fix for every reason readConflictMap gives. */
+const BUILD_MAP = 'yokoten conflicts';
 
 /** Whether the parsed file is a map this version reads. A version it does not know counts as missing. */
 function isConflictMap(value: unknown): value is ConflictMap {
@@ -662,7 +666,7 @@ export async function runTrain(invocation: Invocation): Promise<number> {
   }
   const map = isNext || !given.length ? readConflictMap(root, invocation.env) : null;
   if (typeof map === 'string') {
-    print(invocation, wrap('yokoten train: ', map), invocation.stderr);
+    print(invocation, [...title('train', map), '', `Fix: \`${BUILD_MAP}\``], invocation.stderr);
     return 1;
   }
   if (map && isNext) {

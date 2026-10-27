@@ -3,7 +3,7 @@
 // files and the session logs on this machine, and takes what GitHub said from the caller,
 // so the server never waits for gh. Read only: nothing here starts, stops or changes work.
 
-import { type ActionsRun, branchHealth, ghFailureCause, hideHomeIn, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
+import { type ActionsRun, branchHealth, ghFailureCause, hideHomeIn, spacedLines, titleLines, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
 import { readBoardDesks, sessionId } from './agents.ts';
 import { totalOf, type UsageCell } from './feed/read/usage.ts';
 import type { KanbanActions, KanbanCost, KanbanPull, KanbanSession, KanbanState } from './page/browser/types.ts';
@@ -182,7 +182,8 @@ const GROUPS: [KanbanSession['state'], string][] = [
 
 /** `kanban --text`: the same snapshot as the page, as plain lines. */
 export function renderStateText(state: KanbanState): string[] {
-  const lines = [`yokoten kanban: ${state.repo?.name ?? 'this repo'} (preview: read only)`, ''];
+  // The repo, then what the board is, in one line (#1115).
+  const lines = [...titleLines('kanban', `${state.repo?.name ?? 'this repo'}: sessions, pull requests and Actions, read only`), ''];
   for (const [group, heading] of GROUPS) {
     const sessions = state.sessions.filter((session) => session.state === group);
     if (!sessions.length) continue;
@@ -238,9 +239,10 @@ export function notReadLines(problems: readonly string[]): string[] {
     if (group && 'whats' in group) group.whats.push(`the ${failed[1]}`);
     else items.push({ cause, whats: [`the ${failed[1]}`] });
   }
-  return items.flatMap((item) => {
+  // A blank line between items once one has a Fix line under it (#1115).
+  return spacedLines(items.map((item) => {
     if ('text' in item) return [`- ${item.text}`, ...(item.fix ? [`  Fix: \`${item.fix}\``] : [])];
     const fix = item.cause === 'gh is not signed in' ? 'gh auth login' : 'gh auth status';
     return [`- ${item.whats.join(' and ')}: ${item.cause}`, `  Fix: \`${fix}\``];
-  });
+  }));
 }
