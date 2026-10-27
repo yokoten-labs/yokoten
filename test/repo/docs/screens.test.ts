@@ -34,7 +34,7 @@ import { planLines } from '../../../src/commands/more/merge/train.ts';
 import { renderBoardScreen } from '../../../src/commands/kanban/page/text.ts';
 import type { KanbanSession, KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { type DoctorReport, fullLines, shortLines } from '../../../src/setup/doctor/index.ts';
-import { adoptAllScreen } from '../../../src/commands/more/advice/doctor.ts';
+import { adoptAllScreen, sessionScreen } from '../../../src/commands/more/advice/doctor.ts';
 // C9
 import { learnScreen } from '../../../src/commands/more/learn.ts';
 import { mcpScreen } from '../../../src/commands/more/advice/mcp.ts';
@@ -42,11 +42,12 @@ import { changelogScreen } from '../../../src/run/changelog.ts';
 import { draftLesson } from '../../../src/run/learn.ts';
 // C9 end
 // C7
-import { DESK_USE_WSL } from '../../../src/commands/desk/desk.ts';
+import { DESK_USE_WSL, stoppedDesksScreen } from '../../../src/commands/desk/desk.ts';
+import { identityLine } from '../../../src/agents/desk/team/who.ts';
 import { type Evidence, endingScreen } from '../../../src/commands/desk/finish.ts';
 import { deskListOf, listScreen as deskListScreen } from '../../../src/commands/desk/list.ts';
 import { inboxScreen, logScreen, whoScreen } from '../../../src/commands/more/advice/messages.ts';
-import { listScreen as tidyListScreen } from '../../../src/commands/tidy/tidy.ts';
+import { listScreen as tidyListScreen, tidyScreen } from '../../../src/commands/tidy/tidy.ts';
 import type { TidyItem, TidyScan } from '../../../src/commands/tidy/find.ts';
 // C7 end
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
@@ -575,8 +576,36 @@ function screensOf(repo: string): ScreenRun[] {
       }),
     },
     // C9 end
+    // F1: tidy --local and --empty, the desks that stopped before a start, and a session start's notes, each from data (#1115).
+    ...f1Screens(),
+    // F1 end
   ];
 }
+
+// F1: the results the tidy, desk and session-start screens are built from (#1115).
+function f1Screens(): ScreenRun[] {
+  const [old, , , busy] = C7_TIDY.items as [TidyItem, TidyItem, TidyItem, TidyItem];
+  const desk = C7_TIDY.items[1] as TidyItem;
+  const trash = '/state/trash';
+  const folders = [
+    { path: '/state/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true },
+    { path: '/state/trash/2026-10-25T000000Z', created: Date.parse('2026-10-25T00:00:00Z'), size: 4_300_000, isOld: false },
+  ];
+  const stopped = deskListOf([c7Desk('15', 'stopped', 2), c7Desk('16', 'stopped', 3)], () => false, (one) => (one.name === '15' ? ['f00ba12 fix: say hello'] : [])).desks;
+  const said = [['yokoten: stage 2 of 5, issues and pull requests']];
+  return [
+    { key: 'tidy --local, two put away', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '/state/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'moved' }, { item: desk, outcome: 'moved' }] }) },
+    { key: 'tidy --local, one changed and one failed', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '/state/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'failed', problem: 'the folder is in use' }, { item: desk, outcome: 'after-failure' }, { item: busy, outcome: 'changed' }] }) },
+    { key: 'tidy --local, nothing to put away', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: null, moves: [] }) },
+    { key: 'tidy --empty, the question', words: ['tidy', '--empty'], lines: tidyScreen({ kind: 'empty', trash, folders }) },
+    { key: 'tidy --empty --yes, deleted', words: ['tidy', '--empty', '--yes'], lines: tidyScreen({ kind: 'empty', trash, folders, deleted: [folders[0]!.path] }) },
+    { key: 'tidy --empty, nothing old', words: ['tidy', '--empty'], lines: tidyScreen({ kind: 'empty', trash, folders: [folders[1]!] }) },
+    { key: 'desk, other desks stopped before a start', words: ['desk', '17'], lines: stoppedDesksScreen(stopped, C7_NOW) },
+    { key: 'session start, a worker after an older install', words: ['doctor', '--session'], lines: sessionScreen(said, { identity: '', cleanup: { files: 3, edits: ['skill yokoten'], profiles: ['~/.bashrc'] }, role: 'mark', isUnfiltered: false }) },
+    { key: 'session start, codex as a worker', words: ['doctor', '--session', '--agent', 'codex'], lines: sessionScreen(said, { identity: identityLine('codex', { YOKOTEN_VENDOR: 'xAI', YOKOTEN_MODEL: 'grok-4.7' }), cleanup: null, role: 'env', isUnfiltered: true }) },
+  ];
+}
+// F1 end
 
 // C16: the first run and upgrade, built from their results (#1115). The first run ends with
 // init's commit command, which differs on Windows, so it is rendered for each system.

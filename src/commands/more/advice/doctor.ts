@@ -20,7 +20,7 @@ import { columnFor, screen, section, spaced, table, type TableRow } from '../../
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Decision, type Draft, draft, facts, type Row, YOU_DECIDE } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
-import { cleanOlderInstall, PROFILE_MARK } from '../../../setup/install.ts';
+import { cleanOlderInstall, type OlderInstallCleanup, PROFILE_MARK } from '../../../setup/install.ts';
 import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED } from '../../../setup/doctor/index.ts';
 import { ROAD, STAGES } from '../../../setup/road.ts';
 import { READERS } from '../../hook.ts';
@@ -90,27 +90,14 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const said = root && session
     ? blocksToSay(env, start, sessionBlocks(report, { isPlugin: Boolean(env.CLAUDE_PLUGIN_ROOT) }))
     : [session || options.flags.has('--all') ? fullLines(report) : shortLines(report)];
-  const notes: string[][] = [];
-  // One block, and only when an older install's copies were there (#935). The edit that
-  // stays is named on that first start; a later start finds nothing and says nothing.
-  if (cleanup?.files) {
-    notes.push([
-      ...noteLines(`yokoten: cleaned ${cleanup.files} ${cleanup.files === 1 ? 'file' : 'files'} an older install left; the plugin brings them now`),
-      ...(cleanup.edits.length ? noteLines(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`) : []),
-      ...cleanup.profiles.flatMap((profile) => noteLines(`yokoten: ${profile} still has the PATH line an older install added; delete the line that ends with "${PROFILE_MARK}"`)),
-    ]);
-  }
-  // A desk that named a vendor other than the harness's (#748) speaks first: the agent
-  // learns who it is before the harness's prompt tells it about its own maker.
-  const identity = root && session ? identityLine(agent, env) : '';
-  // A worker, by YOKOTEN_ROLE or by the mark on its worktree (#555), hears that the guard sees
-  // it as one (#402), on every start, a compaction too: its role is safety, never news to
-  // drop. The lead hears nothing.
-  const role = root && session ? workerRole(env, [cwd]) : null;
-  if (role) notes.push(noteLines(`yokoten: ${role === 'mark' ? WORKER_MARKED : WORKER_SESSION}.`));
-  // An agent that can't filter command output hears it at session start, with the opt-in (#390).
-  if (root && session && agent !== 'claude-code' && config.privacy.output !== 'stop') notes.push(spaced([noteLines(`yokoten: ${UNFILTERED}`), findingRow('Next', `${sentence(OUTPUT_STOP)}.`)]));
-  const lines = screen(identity ? noteLines(identity) : [], ...said, ...notes);
+  const lines = sessionScreen(said, {
+    // A desk that named a vendor other than the harness's (#748) speaks first.
+    identity: root && session ? identityLine(agent, env) : '',
+    cleanup,
+    role: root && session ? workerRole(env, [cwd]) : null,
+    // An agent that can't filter command output hears it at session start, with the opt-in (#390).
+    isUnfiltered: Boolean(root) && session && agent !== 'claude-code' && config.privacy.output !== 'stop',
+  });
   // Gemini CLI reads a SessionStart hook's context from JSON only (#211).
   if (session && agent === 'gemini') {
     if (lines.length) say(invocation, `${gemini.formatSessionContext(hideHome(lines.join('\n'), env))}\n`, invocation.stdout);
@@ -133,6 +120,49 @@ function noteSessionStart(cwd: string, env: Invocation['env'], agent: string, mo
   const fields = startFields(agent, isWorker, checkout, model || (env.YOKOTEN_MODEL ?? '').trim().slice(0, 64));
   changeAgentStatus(checkout, { ...fields, set: { ...fields.set, doing: 'started', blocked: null } });
 }
+
+/**
+ * What a session start says past the report's blocks, as data (plan D1): who the agent is, what
+ * an older install left, the worker's role, and whether the agent sees command output unfiltered.
+ */
+export interface SessionNotes {
+  /** The desk's line naming the real model and vendor, or ''. */
+  identity: string;
+  /** What the start took back from an older install (#935), or null when it looked at none. */
+  cleanup: OlderInstallCleanup | null;
+  /** How the guard knows this session is a worker (#402, #555), or null for the lead. */
+  role: 'env' | 'mark' | null;
+  /** True for an agent that can't filter command output (#390). */
+  isUnfiltered: boolean;
+}
+
+/**
+ * The note blocks of a session start (#935, #402, #390): pure, the same notes give the same
+ * lines. The cleanup is one block, only when an older install's copies were there; the edit
+ * that stays is named on that first start. A worker hears its role on every start, a
+ * compaction too: its role is safety, never news to drop. The lead hears nothing.
+ */
+export function sessionNoteBlocks({ cleanup, role, isUnfiltered }: SessionNotes): string[][] {
+  const notes: string[][] = [];
+  if (cleanup?.files) {
+    // One block of notes, a blank line between them once one wraps.
+    notes.push(spaced([
+      noteLines(`yokoten: cleaned ${count(cleanup.files, 'file')} an older install left; the plugin brings them now`),
+      ...(cleanup.edits.length ? [noteLines(`yokoten: kept your edit to ${cleanup.edits.join(', ')}: an older install left it`)] : []),
+      ...cleanup.profiles.map((profile) => noteLines(`yokoten: ${profile} still has the PATH line an older install added; delete the line that ends with "${PROFILE_MARK}"`)),
+    ]));
+  }
+  if (role) notes.push(noteLines(`yokoten: ${role === 'mark' ? WORKER_MARKED : WORKER_SESSION}.`));
+  if (isUnfiltered) notes.push(spaced([noteLines(`yokoten: ${UNFILTERED}`), findingRow('Next', `${sentence(OUTPUT_STOP)}.`)]));
+  return notes;
+}
+
+/**
+ * A session start's whole text: the desk's identity first, so the agent learns who it is before
+ * the harness's prompt tells it about its own maker (#748), then the report's blocks it says,
+ * then the notes. Pure.
+ */
+export const sessionScreen = (said: readonly (readonly string[])[], notes: SessionNotes): string[] => screen(notes.identity ? noteLines(notes.identity) : [], ...said, ...sessionNoteBlocks(notes));
 
 const WORKER_SESSION = 'this session is a worker: lead-only files are guarded';
 const WORKER_MARKED = 'this session is a worker, because its worktree or clone carries the worker mark: lead-only files are guarded, and the lead pushes after review';

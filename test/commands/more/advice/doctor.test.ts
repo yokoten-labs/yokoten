@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
-import { problemRows, runDoctor } from '../../../../src/commands/more/advice/doctor.ts';
+import { problemRows, runDoctor, sessionNoteBlocks, sessionScreen } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 import { fillMarks, machineMarks, paths } from '../../../../src/setup/install.ts';
 
@@ -149,27 +149,18 @@ test('doctor: one progress note on a terminal; none off it, in a session, or wit
   JSON.parse(json.stdout);
 });
 
-// Record 0043 §3, plan D8: a bare command reads. Filling the marks is `yokoten marks fill`.
-test('doctor: bare doctor leaves the marks file untouched, and its MISSING row ends with the marks fill command (#1115)', async () => {
+// #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.
+// Record 0043 §3, plan D8: a bare command reads; filling the marks is `yokoten marks fill` (#1115).
+test('doctor shows one screen: where, what is left, the next command; --all keeps the map; neither writes the marks (#1027, #1115)', async () => {
   const sandbox = makeSandbox();
-  // A git name doctor could add: the positive control below shows there was something to fill.
+  // A git name doctor could add: the positive control at the end shows there was something to fill.
   sandbox.git('config', 'user.name', 'Annsample');
   const marks = paths(sandbox.env).marks;
-  const before = existsSync(marks) ? readFileSync(marks, 'utf8') : null;
-  const done = await sandbox.call(['doctor', '--all']);
-  assert.equal(existsSync(marks) ? readFileSync(marks, 'utf8') : null, before, 'bare doctor wrote nothing to the marks file');
-  assert.doesNotMatch(done.stdout, /added your git name/, 'it says nothing was added');
-  const row = done.stdout.split('\n\n').find((block) => /MISSING +private-marks:/.test(block)) ?? '';
-  assert.match(row, /Fix: `yokoten marks fill`$/, row);
+  const marksNow = () => (existsSync(marks) ? readFileSync(marks, 'utf8') : null);
+  const before = marksNow();
   const short = await sandbox.call(['doctor']);
+  assert.equal(marksNow(), before, 'bare doctor wrote nothing to the marks file');
   assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks fill`\n/, short.stdout);
-  assert.deepEqual(fillMarks(sandbox.env, machineMarks(sandbox.env, { cwd: sandbox.repo })), ['git name'], 'the git name was there to fill');
-});
-
-// #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.
-test('doctor shows one screen: where, what is left, the next command; --all keeps the map (#1027)', async () => {
-  const sandbox = makeSandbox();
-  const short = await sandbox.call(['doctor']);
   const lines = short.stdout.trimEnd().split('\n');
   assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
   assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines`);
@@ -183,6 +174,11 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.match(all.stdout, /OpenSSF/, '--all keeps the standards');
   assert.match(all.stdout, /^Machine:$/m);
   assert.equal(short.status, all.status, 'the same exit code');
+  assert.equal(marksNow(), before, 'doctor --all wrote nothing to the marks file');
+  assert.doesNotMatch(all.stdout, /added your git name/, 'it says nothing was added');
+  const row = all.stdout.split('\n\n').find((block) => /MISSING +private-marks:/.test(block)) ?? '';
+  assert.match(row, /Fix: `yokoten marks fill`$/, row);
+  assert.deepEqual(fillMarks(sandbox.env, machineMarks(sandbox.env, { cwd: sandbox.repo })), ['git name'], 'the git name was there to fill');
 });
 
 // Issue #1115: a problem's fix is its last line, and a fix several problems share shows once.
@@ -208,4 +204,24 @@ test('every road step has a plain task title (#1027)', async () => {
   const { ROAD: road } = await import('../../../../src/setup/road.ts');
   assert.deepEqual(road.map((s) => s.key).filter((key) => !stepTitles[key]), []);
   for (const t of Object.values(stepTitles)) assert.ok(t.length <= 60, t);
+});
+
+// Plan D1: what a session start says past the report is data; its screen is a pure function (#1115).
+test('sessionScreen: identity first, then the blocks said, then the cleanup, the role and the unfiltered note (#935, #402, #390, #1115)', () => {
+  const notes = { identity: 'yokoten: you are xAI (grok-4.7), served through codex', cleanup: { files: 1, edits: ['skill yokoten'], profiles: [] }, role: 'env' as const, isUnfiltered: true };
+  const lines = sessionScreen([['yokoten: stage 1 of 5, safety net']], notes);
+  assert.deepEqual(lines.slice(0, 7), [
+    'yokoten: you are xAI (grok-4.7), served through codex',
+    '',
+    'yokoten: stage 1 of 5, safety net',
+    '',
+    'yokoten: cleaned 1 file an older install left; the plugin brings them now',
+    'yokoten: kept your edit to skill yokoten: an older install left it',
+    '',
+  ]);
+  assert.equal(lines[7], 'yokoten: this session is a worker: lead-only files are guarded.');
+  assert.equal(lines.slice(9).join('\n'), UNFILTERED_NOTE);
+  // The lead, Claude Code, after a start with nothing to clean: only the blocks said.
+  assert.deepEqual(sessionScreen([['a']], { identity: '', cleanup: { files: 0, edits: [], profiles: [] }, role: null, isUnfiltered: false }), ['a']);
+  assert.deepEqual(sessionNoteBlocks({ ...notes, identity: 'x' }), sessionNoteBlocks(notes), 'the identity is not a note block');
 });

@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { test } from 'node:test';
 import { makeSandbox, runChild } from '../../repo/helpers.ts';
-import { DESK_USE_WSL, type DeskDeps, runDesk } from '../../../src/commands/desk/desk.ts';
+import { DESK_USE_WSL, type DeskDeps, runDesk, stoppedDesksScreen } from '../../../src/commands/desk/desk.ts';
 import { runWith } from '../../../src/commands/desk/clone.ts';
 import { readRecord, writeRecord } from '../../../src/commands/desk/list.ts';
 import type { Look } from '../../../src/commands/desk/stall.ts';
@@ -281,4 +281,23 @@ test('desk: the guard\'s module never loads the desk statically (#1054)', () => 
   // The positive control: the pattern catches a static import.
   assert.match("import { runDesk } from './desk/desk.ts';", STATIC_DESK_IMPORT);
   assert.doesNotMatch(readFileSync(join(import.meta.dirname, '..', '..', '..', 'src', 'commands', 'hook.ts'), 'utf8'), STATIC_DESK_IMPORT);
+});
+
+// Plan D1: the desks that stopped, shown before a start, are a pure screen of the list (#1115).
+test('stoppedDesksScreen: one row each, then the first one to go on with; Windows is one failure (#1056, #1115)', () => {
+  const desk = (name: string, commits: string[]) => ({ name, task: { kind: 'text' as const, title: `task ${name}` }, agent: 'claude-code', branch: `desk/${name}`, startedAt: '2026-10-26T10:00:00Z', activeAt: '2026-10-26T11:00:00Z', state: 'stopped' as const, commits });
+  const now = new Date('2026-10-26T12:00:00Z');
+  assert.deepEqual(stoppedDesksScreen([desk('7', ['f00ba12 fix: a']), desk('8', [])], now), [
+    'yokoten desk · 2 other desks stopped mid-task',
+    '',
+    '  note        desk 7      stopped 1 h ago · claude-code · task 7 · 1 commit,',
+    '                          last: f00ba12 fix: a',
+    '',
+    '  note        desk 8      stopped 1 h ago · claude-code · task 8 · no commits',
+    '                          yet',
+    '',
+    'Next: `yokoten desk 7`',
+  ]);
+  assert.match(stoppedDesksScreen([desk('9', [])], now)[0] ?? '', /· 1 other desk stopped mid-task$/);
+  assert.deepEqual(DESK_USE_WSL, ['yokoten desk · on Windows, a desk runs in WSL, where it has a sandbox; nothing', '               was started', '', 'Next: open WSL and run `yokoten desk` there']);
 });
