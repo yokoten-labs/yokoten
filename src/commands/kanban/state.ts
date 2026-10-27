@@ -211,7 +211,7 @@ export function renderStateText(state: KanbanState): string[] {
 }
 
 // A gh read that failed, as the board's readers word it: what was not read, and what gh said.
-const GH_READ_FAILED = /^gh can't (?:list|read) the (.+?)(?: \((.*)\))?: run `gh auth login`, and check the repo$/;
+const GH_READ_FAILED = /^gh can't (?:list|read) the (.+?)(?: \(([\s\S]*)\))?: run `gh auth login`, and check the repo$/;
 // No gh on this machine: the same words from every reader.
 const GH_MISSING = /^gh is not installed: get it from (\S+), then run `gh auth login`$/;
 
@@ -227,11 +227,14 @@ export function notReadLines(problems: readonly string[]): string[] {
     const failed = GH_READ_FAILED.exec(problem);
     const missing = GH_MISSING.exec(problem);
     if (missing) {
-      items.push({ text: `gh is not installed: get it from ${missing[1]}`, fix: 'gh auth login' });
+      // Nothing to run yet: gh must be installed before it can sign in.
+      items.push({ text: `gh is not installed: get it from ${missing[1]}, then sign in to it` });
       continue;
     }
     if (!failed) {
-      items.push({ text: problem });
+      // Fail closed: gh's own words, and any path in them, never reach the board.
+      const what = /^gh can't (?:list|read) the ([^(:\n]+)/.exec(problem)?.[1]?.trim();
+      items.push({ text: /^gh\b/i.test(problem) ? `gh could not read ${what ? `the ${what}` : 'the repo'}` : problem });
       continue;
     }
     const cause = ghFailureCause(failed[2] ?? '');

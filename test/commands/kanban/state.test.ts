@@ -136,7 +136,12 @@ test('kanban state: Not read says each cause once, in yokoten words, with one Fi
   const refused = healthReadFailed({ stderr: 'HTTP 404: Not Found\n' }, 'Actions runs');
   assert.deepEqual(notReadLines([refused]), ['- the Actions runs: GitHub said no (403 or 404)', '  Fix: `gh auth status`'], 'another cause, and the command that shows the account');
   const missing = healthReadFailed(Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), 'Actions runs');
-  assert.deepEqual(notReadLines([missing]), ['- gh is not installed: get it from https://cli.github.com', '  Fix: `gh auth login`']);
+  assert.deepEqual(notReadLines([missing]), ['- gh is not installed: get it from https://cli.github.com, then sign in to it']);
+  // Unmatched gh wording (another phrase, a newline) is replaced by a fixed sentence: no path of gh's reaches the board.
+  const odd = notReadLines(["gh can't list the pull requests (fatal: /home/someone/secret/repo\nnot a repo): try later", "gh broke at /home/someone/secret/repo"]).join('\n');
+  assert.doesNotMatch(odd, /someone|secret|\/home/);
+  assert.match(odd, /gh could not read the pull requests/);
+  assert.match(odd, /gh could not read the repo/);
   // A positive control: the old form put gh's words and the fix inside one sentence.
   assert.match(problems[0] ?? '', /\(To get started with GitHub CLI, please run: {2}gh auth login\): run `gh auth login`/);
 });

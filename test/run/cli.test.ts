@@ -312,6 +312,9 @@ test('help: a typo in a command or an option names the closest one; a far one li
   const far = await run(['zzzzzz']);
   assert.deepEqual([far.code, far.stdout], [1, '']);
   assert.equal(far.stderr, 'yokoten · unknown command zzzzzz\n\nNext: `yokoten help` lists every command\n', 'a far word does not list every command');
+  const odd = await run(['bad\u001b[2Jword\nnext\u202e']);
+  assert.equal(odd.stderr.split('\n')[0], 'yokoten · unknown command "bad\\u001b[2Jword\\nnext\\u202e"', 'quoted, control and bidi characters escaped');
+  assert.doesNotMatch(odd.stderr, /[\u001b\u202e]/);
   assert.equal(editDistance('docter', 'doctor'), 1);
   assert.equal(closestWord('xyz', ['doctor', 'check']), undefined, 'more than two edits: no guess');
 });

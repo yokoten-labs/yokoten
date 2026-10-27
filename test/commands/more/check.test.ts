@@ -1209,6 +1209,16 @@ test('ci-health with no flag prints the report, writes no issue and names --writ
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
 });
 
+test('ci-health: a repo that is not owner/name says which value was wrong (#1115)', async () => {
+  const sandbox = makeSandbox();
+  const flag = await sandbox.call(['ci-health', '--repo', 'nonsense']);
+  assert.equal(flag.status, 1);
+  assert.match(flag.stderr, /no GitHub repo to read: --repo nonsense is not owner\/name/);
+  const env = await sandbox.call(['ci-health'], { extra: { GITHUB_REPOSITORY: 'also-bad' } });
+  assert.equal(env.status, 1);
+  assert.match(env.stderr, /no GitHub repo to read: GITHUB_REPOSITORY is also-bad, not\s+owner\/name/);
+});
+
 test('ci-health refuses --write with --dry-run before it reads anything', async () => {
   const sandbox = makeSandbox();
   const extra = healthGh(sandbox, {});
