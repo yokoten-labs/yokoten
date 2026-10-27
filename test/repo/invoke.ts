@@ -21,15 +21,18 @@ export interface Invoked {
   code: number;
   stdout: string;
   stderr: string;
+  /** Both streams in the order they were written, as a terminal shows them (#1115). */
+  output: string;
 }
 
-/** A stream that keeps what is written to it. */
-function collect(): { stream: Writable; text: () => string } {
+/** A stream that keeps what is written to it, and adds it to `both` too. */
+function collect(both: string[]): { stream: Writable; text: () => string } {
   const chunks: string[] = [];
   const stream = new Writable({
     decodeStrings: false,
     write(chunk: string | Buffer, _, done) {
       chunks.push(String(chunk));
+      both.push(String(chunk));
       done();
     },
   });
@@ -43,8 +46,9 @@ function collect(): { stream: Writable; text: () => string } {
  */
 export async function invoke(words: string[], { env, cwd, stdin = '', isTTY }: { env: Env; cwd: string; stdin?: string; isTTY?: boolean }): Promise<Invoked> {
   const [command, ...args] = words;
-  const stdout = collect();
-  const stderr = collect();
+  const both: string[] = [];
+  const stdout = collect(both);
+  const stderr = collect(both);
   const input = Readable.from([stdin], { objectMode: false });
   if (isTTY !== undefined) {
     (stdout.stream as typeof stdout.stream & { isTTY?: boolean }).isTTY = isTTY;
@@ -56,5 +60,5 @@ export async function invoke(words: string[], { env, cwd, stdin = '', isTTY }: {
   const code = await main({ command, args, env: { ...env }, cwd, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: stdin, stream: input }, script: SCRIPT, platform: process.platform });
   assert.equal(process.exitCode, exitCode, `yokoten ${words.join(' ')} set process.exitCode; it must only return its code`);
   assert.equal(process.cwd(), folder, `yokoten ${words.join(' ')} changed the process's folder`);
-  return { code, stdout: stdout.text(), stderr: stderr.text() };
+  return { code, stdout: stdout.text(), stderr: stderr.text(), output: both.join('') };
 }

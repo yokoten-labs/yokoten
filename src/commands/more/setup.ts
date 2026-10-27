@@ -81,7 +81,9 @@ export async function runStart(invocation: Invocation): Promise<number> {
   while (body.length && body.at(-1) === '') body.pop();
   // The title says this run set things up, then where the road is.
   const head = body[0]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
-  print(invocation, [head, ...body.slice(1, 2), ...doneRows, ...body.slice(2), '', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
+  // Doctor's problems come first, as their own block (#1115): this run's rows stand apart from them.
+  const isProblemNext = doneRows.length > 0 && /^ {2}MISSING /.test(body[2] ?? '');
+  print(invocation, [head, ...body.slice(1, 2), ...doneRows, ...(isProblemNext ? [''] : []), ...body.slice(2), '', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
   return code;
 }
 

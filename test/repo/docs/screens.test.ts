@@ -13,7 +13,7 @@ import { test } from 'node:test';
 import { field, helpScreen, moreLine, nextLine, row, screen, SCREEN_WIDTH, section, table, title, wrap } from '../../../src/rules/text/screen.ts';
 import { limitOf, SCREEN_RULES, screenProblems } from './screen-rules.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
-import { makeSandbox } from '../helpers.ts';
+import { makeSandbox, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
 // ---- The calibration: the owner's six verdicts (issue #1099) ----
@@ -150,8 +150,8 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
 interface ScreenRun {
   key: string;
   words: string[];
-  /** The demo repo (the default), or a folder outside any repo. */
-  place?: 'repo' | 'plain' | 'dirty';
+  /** The demo repo (the default), a folder outside any repo, or a GitHub repo where gh is not signed in. */
+  place?: 'repo' | 'plain' | 'dirty' | 'signed-out';
   stdin?: string;
   /** A guard refusal: the person reads stderr, and stdout is JSON for the agent. */
   isStderrOnly?: boolean;
@@ -186,6 +186,8 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'start, outside a repo', words: [], place: 'plain' },
     { key: 'desk, outside a repo', words: ['desk'], place: 'plain' },
     { key: 'kanban --text, outside a repo', words: ['kanban', '--text'], place: 'plain' },
+    // S004: each list gh could not read, the cause said once, then one Fix line (#1115).
+    { key: 'kanban --text, gh not signed in', words: ['kanban', '--text'], place: 'signed-out' },
     ...GUARD_CALLS.map(([name, command]): ScreenRun => ({ key: `guard, ${name}`, words: ['hook'], stdin: toolCall(repo, command), isStderrOnly: true })),
     { key: 'session start', words: ['doctor', '--session'] },
     { key: 'session start, unsaved work', words: ['doctor', '--session'], place: 'dirty' },
@@ -204,7 +206,6 @@ function screensOf(repo: string): ScreenRun[] {
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
 const WAIVED_MOST = 5;
 const WAIVED: Record<string, string> = {
-  'doctor, bare': 'fix-line: each MISSING row says its fix inside the sentence; the texts are rewritten in stage 2 of #1115',
   'worker, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
   'msg, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
   'train, bare': 'widest: the missing conflict map is one 120-column line; stage 2 of #1115',
@@ -219,15 +220,21 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const dirty = makeSandbox();
   dirty.write('notes.md', 'draft\n');
   dirty.write('todo.txt', 'todo\n');
+  // A GitHub remote, and a gh that answers as gh does when nobody is signed in.
+  const signedOut = makeSandbox();
+  signedOut.git('remote', 'add', 'origin', 'https://github.com/octo/demo.git');
+  const noLogin = writeNodeProgram(join(signedOut.home, 'bin'), 'gh', `process.stderr.write('To get started with GitHub CLI, please run:  gh auth login\\n'); process.exitCode = 4;`, process.platform, signedOut.env);
   sandbox.write('notes.txt', 'hello\n');
   sandbox.git('add', 'notes.txt');
   const runs = screensOf(sandbox.repo);
   const broken: string[] = [];
   const healed: string[] = [];
   for (const run of runs) {
-    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : run.place === 'dirty' ? { cwd: dirty.repo } : {};
-    const result = await (run.place === 'dirty' ? dirty : sandbox).call(run.words, { input: run.stdin ?? '', ...where });
-    const text = run.isStderrOnly ? result.stderr : `${result.stdout}${result.stderr}`;
+    const where = run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } } : run.place === 'dirty' ? { cwd: dirty.repo } : run.place === 'signed-out' ? { cwd: signedOut.repo, extra: noLogin } : {};
+    const result = await (run.place === 'dirty' ? dirty : run.place === 'signed-out' ? signedOut : sandbox).call(run.words, { input: run.stdin ?? '', ...where });
+    // Both streams in the order written, as a terminal shows them: a moved note comes first.
+    const text = run.isStderrOnly ? result.stderr : result.output;
+    if (run.place === 'signed-out') assert.match(text, /\n- the pull requests and the Actions runs: gh is not signed in\n {2}Fix: `gh auth login`\n/, `the fake gh answered: ${text}`);
     const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: result.status !== 0, isHelp: run.isHelp });
     const isWaived = run.key in WAIVED;
     if (problems.length && !isWaived) broken.push(`${run.key} (yokoten ${run.words.join(' ')}): ${problems.join('; ')}`);

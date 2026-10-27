@@ -5,7 +5,7 @@
 // port is replaced, its import and its line go, so that list is the replacement to-do list.
 // Nothing is re-exported: a port is a function or a type written here.
 
-import { ghIn, ghLaterIn, readBoardPulls, readBoardPullsLater, repoOf, repoPageOf } from '../../host/github/index.ts';
+import { ghIn, ghLaterIn, readBoardPulls, readBoardPullsLater, repoOf, repoPageOf, unread } from '../../host/github/index.ts';
 import { parseRefusal } from '../../rules/text/message.ts';
 import { hideHome, homeOf, loadMarks, makeRedactor } from '../../rules/privacy.ts';
 import { commonGitDir, DESK_LIST_FILE, readStatusText } from '../../run/hook.ts';
@@ -214,6 +214,8 @@ export const runsQuery = (repo: string, page?: number): string[] => actionsRunsQ
 export const runsPage = (text: string): { runs: ActionsRun[]; rows: number } | string => actionsRunPage(text);
 /** Why a read of `what` failed, as one sentence. */
 export const readFailedText = (err: unknown, what: string): string => healthReadFailed(err, what);
+/** Why gh failed, in yokoten's words, from what gh printed: such as "gh is not signed in". */
+export const ghFailureCause = (said: string): string => unread({ stderr: said }).unread;
 
 /** The failing runs and the unstable workflows, from the same summary as `yokoten ci-health`. */
 export function branchHealth(runs: ActionsRun[], defaultBranch: string): BranchHealth {

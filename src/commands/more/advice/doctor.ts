@@ -318,29 +318,49 @@ export function nextCommand(next: Finding): string {
   return named ?? `yokoten explain ${next.id}`;
 }
 
+/**
+ * The problems of the default screen, each fix said once (issue #1115): problems whose fix
+ * names the same command share one row, and the command is the row's last line,
+ * `Fix: \`<command>\``. A fix that names no command stays in the row's text.
+ */
+export function problemRows(problems: readonly Finding[]): string[][] {
+  const byFix = new Map<string, string[]>();
+  const plain: string[][] = [];
+  for (const f of problems) {
+    const command = /`([^`]+)`/.exec(f.fix)?.[1];
+    if (command === undefined) plain.push(row('MISSING', `${f.what}; ${f.fix}`));
+    else byFix.set(command, [...(byFix.get(command) ?? []), f.what]);
+  }
+  return [...[...byFix].map(([command, whats]) => [...row('MISSING', whats.join('; ')), `${' '.repeat(14)}Fix: \`${command}\``]), ...plain];
+}
+
 /** The default screen of `yokoten doctor`, from its report; a broken self-test line leads. */
 export function shortLines(report: DoctorReport, brokenLine?: string): string[] {
-  const lines: string[] = brokenLine ? [brokenLine, ''] : [];
+  const lead: string[] = brokenLine ? [brokenLine] : [];
   const steps = report.steps ?? [];
   const stepIds = new Set(steps.map((s) => s.id));
   const left = steps.filter((s) => s.mark === 'next' || s.mark === 'to do').sort((a, b) => (a.mark === 'next' ? -1 : b.mark === 'next' ? 1 : 0));
   const problems = report.findings.filter((x) => !stepIds.has(x.id));
-  if (report.stage === null && !problems.length) return [...lines, ...title('doctor', `all ${STAGES.length} stages done, nothing to do`)];
-  lines.push(...title('doctor', report.stage === null ? `all ${STAGES.length} stages done` : `stage ${report.stage} of ${STAGES.length}, ${STAGES[report.stage - 1]}`), '');
+  if (report.stage === null && !problems.length) return screen(lead, title('doctor', `all ${STAGES.length} stages done, nothing to do`));
+  const heading = title('doctor', report.stage === null ? `all ${STAGES.length} stages done` : `stage ${report.stage} of ${STAGES.length}, ${STAGES[report.stage - 1]}`);
+  const road: string[][] = [];
   const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
-  if (steps.length) lines.push(...row('done', `${done} of ${count(steps.length, 'step')}`));
-  // A problem fails doctor, so it is never folded: each one with its fix.
-  for (const f of problems) lines.push(...row('MISSING', `${f.what}; ${f.fix}`));
+  if (steps.length) road.push(row('done', `${done} of ${count(steps.length, 'step')}`));
   // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
-  for (const s of left.slice(0, 5)) lines.push(...row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
-  if (left.length > 5) lines.push(...row('to do', `${count(left.length - 5, 'more step')}, listed by \`yokoten doctor --all\``));
+  for (const s of left.slice(0, 5)) road.push(row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  if (left.length > 5) road.push(row('to do', `${count(left.length - 5, 'more step')}, listed by \`yokoten doctor --all\``));
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
-  if (unchecked) lines.push(...row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
-  // Work only on this machine can be lost, so it shows too, one line each.
-  for (const f of (report.notes ?? []).filter((n) => n.id === 'uncommitted-changes' || n.id === 'unpushed-commits')) lines.push(...row('note', f.what.split(';')[0]?.replace(/^\. has /, 'this project has ') ?? f.what));
-  lines.push('');
-  if (report.next) lines.push(...nextLine(nextCommand(report.next)));
+  if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
+  // Work only on this machine can be lost, so it shows too, one row each.
+  const kept = (report.notes ?? []).filter((n) => n.id === 'uncommitted-changes' || n.id === 'unpushed-commits').map((f) => row('note', f.what.split(';')[0]?.replace(/^\. has /, 'this project has ') ?? f.what));
   const notes = (report.notes ?? []).length;
-  lines.push(...moreLine(`\`yokoten doctor --all\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`));
-  return lines;
+  // A problem fails doctor, so it is never folded; it comes first, each block spaced when an item wraps (#1115).
+  return screen(
+    lead,
+    heading,
+    spaced(problemRows(problems)),
+    spaced(road),
+    spaced(kept),
+    [...(report.next ? nextLine(nextCommand(report.next)) : []), ...moreLine(`\`yokoten doctor --all\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+  );
 }
