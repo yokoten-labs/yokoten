@@ -22,7 +22,7 @@ import { TRUST_COMMAND, type FolderTrust } from '../../agents/folder-trust.ts';
 import { commentedFile, HAND_ADD, handAddJson, type HookState, mergeHandAdds } from '../../agents/hooks-file.ts';
 import { managedState, runtimeVersion, VERSION } from '../files.ts';
 import { compareVersions, hookCliPath, isSelf, readCoreRules, summarizeUpdate } from '../init.ts';
-import { FILL_MARKS_FIX, editedKitCopies, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, OFFER_MARKS_FIX, offerMarkKinds, launcherFile, PROFILE_LINE, installedPieces, installedSkillDirs, projectSkillDirs, isOnPath, launcherDir, machineMarks, mailmapState, MAILMAP_SETTING, missingMarkKinds, paths, USER_CLI, USER_MISSING } from '../install.ts';
+import { EMPTY_MARKS_FIX, editedKitCopies, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, OFFER_MARKS_FIX, offerMarkKinds, launcherFile, PROFILE_LINE, installedPieces, installedSkillDirs, projectSkillDirs, isOnPath, launcherDir, machineMarks, mailmapState, MAILMAP_SETTING, missingMarkKinds, paths, USER_CLI, USER_MISSING } from '../install.ts';
 
 export interface Practice {
   name: string;
@@ -233,7 +233,7 @@ export function machineChecks(env: Env): Practice[] {
     // Any mark counts, the ones install found too: only a file with none is missing (#522).
     marksNow === 'unreadable'
       ? practice('private-marks', 'private-marks', false, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX)
-      : practice('private-marks', 'private-marks', marksNow === 'some', `${hideHome(target.marks, env)} is missing or has no marks`, FILL_MARKS_FIX),
+      : practice('private-marks', 'private-marks', marksNow === 'some', `${hideHome(target.marks, env)} is missing or has no marks`, EMPTY_MARKS_FIX),
   ];
 }
 

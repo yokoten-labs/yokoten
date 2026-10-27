@@ -1344,12 +1344,6 @@ export const UNREADABLE_MARKS_FIX = 'make ~/.config/yokoten/private-marks readab
 /** What doctor and install say to do when the private-marks file has no mark. */
 export const EMPTY_MARKS_FIX = 'run `yokoten marks add` and type your name, your city or a domain; it is not shown';
 
-/**
- * What doctor says to do when the private-marks file has no mark: the explicit action that
- * fills it from this machine (record 0043 §3: bare doctor writes nothing).
- */
-export const FILL_MARKS_FIX = 'run `yokoten marks fill`, and it adds your git name, git email and GitHub login from this machine (never shown)';
-
 /** The offer of the kinds yokoten can't find, when the file has marks: optional, never missing (#522). */
 export const offerMarkKinds = (missing: string[]): string => `optional: add ${missing.join(' or ')} too; yokoten can't find them on its own`;
 export const OFFER_MARKS_FIX = 'run `yokoten marks add` and type one; it is not shown';

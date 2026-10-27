@@ -150,7 +150,7 @@ test('doctor: one progress note on a terminal; none off it, in a session, or wit
 });
 
 // #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.
-// Record 0043 §3, plan D8: a bare command reads; filling the marks is `yokoten marks fill` (#1115).
+// Record 0043 §3, plan D8: a bare command reads; the marks Fix is `yokoten marks add`, which runs (#1115).
 test('doctor shows one screen: where, what is left, the next command; --all keeps the map; neither writes the marks (#1027, #1115)', async () => {
   const sandbox = makeSandbox();
   // A git name doctor could add: the positive control at the end shows there was something to fill.
@@ -160,7 +160,7 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   const before = marksNow();
   const short = await sandbox.call(['doctor']);
   assert.equal(marksNow(), before, 'bare doctor wrote nothing to the marks file');
-  assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks fill`\n/, short.stdout);
+  assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks add`\n/, short.stdout);
   const lines = short.stdout.trimEnd().split('\n');
   assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
   assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines`);
@@ -177,7 +177,11 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.equal(marksNow(), before, 'doctor --all wrote nothing to the marks file');
   assert.doesNotMatch(all.stdout, /added your git name/, 'it says nothing was added');
   const row = all.stdout.split('\n\n').find((block) => /MISSING +private-marks:/.test(block)) ?? '';
-  assert.match(row, /Fix: `yokoten marks fill`$/, row);
+  assert.match(row, /Fix: `yokoten marks add`$/, row);
+  // The Fix is a command that runs: a newcomer who follows it gets the row healed, not a refusal.
+  const followed = await sandbox.call(['marks', 'add'], { input: 'nowhere-town\n' });
+  assert.equal(followed.status, 0, followed.stderr);
+  assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /MISSING +private-marks:/, 'the Fix healed the row');
   assert.deepEqual(fillMarks(sandbox.env, machineMarks(sandbox.env, { cwd: sandbox.repo })), ['git name'], 'the git name was there to fill');
 });
 
