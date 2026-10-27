@@ -41,6 +41,14 @@ import { mcpScreen } from '../../../src/commands/more/advice/mcp.ts';
 import { changelogScreen } from '../../../src/run/changelog.ts';
 import { draftLesson } from '../../../src/run/learn.ts';
 // C9 end
+// C7
+import { DESK_USE_WSL } from '../../../src/commands/desk/desk.ts';
+import { type Evidence, endingScreen } from '../../../src/commands/desk/finish.ts';
+import { deskListOf, listScreen as deskListScreen } from '../../../src/commands/desk/list.ts';
+import { inboxScreen, logScreen, whoScreen } from '../../../src/commands/more/advice/messages.ts';
+import { listScreen as tidyListScreen } from '../../../src/commands/tidy/tidy.ts';
+import type { TidyItem, TidyScan } from '../../../src/commands/tidy/find.ts';
+// C7 end
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 // C2: the pure screens of init, update and trust, from their results (#1115).
@@ -397,6 +405,31 @@ const KANBAN_BUSY: KanbanState = {
 };
 const KANBAN_SIGNED_OUT: KanbanState = { ...KANBAN_EMPTY, problems: ["gh can't list the pull requests (To get started with GitHub CLI, please run:  gh auth login): run `gh auth login`, and check the repo", "gh can't list the Actions runs (To get started with GitHub CLI, please run:  gh auth login): run `gh auth login`, and check the repo"] };
 
+// C7: desk, msg and tidy screens, built from data.
+const C7_NOW = new Date('2026-10-26T12:00:00Z');
+const c7Desk = (name: string, state: 'working' | 'stopped' | 'kept', pid: number) => ({
+  name, task: { kind: 'issue' as const, number: Number(name), title: `fix the greeting ${name}` }, agent: 'claude-code', branch: `desk/${name}`, base: 'abc1234', pid,
+  startedAt: '2026-10-26T10:00:00Z', activeAt: '2026-10-26T11:30:00Z', state,
+});
+const C7_DESKS = deskListOf([c7Desk('14', 'working', 1), c7Desk('15', 'stopped', 2)], (pid) => pid === 1, (desk) => (desk.name === '15' ? ['f00ba12 fix: say hello'] : []));
+const C7_EVIDENCE: Evidence = { check: 'pass', test: 'pass', tail: { check: [], test: [] }, commits: ['f00ba12 fix: say hello'], dirty: 0, unpushed: false, head: 'f00ba12' };
+const c7Item = (kind: TidyItem['kind'], name: string, path: string, verdict: TidyItem['judged']['verdict'], why: string, extra: Partial<TidyItem> = {}): TidyItem => ({
+  kind, name, path, branch: kind === 'branch' ? name : '', head: 'f00ba12', adminDir: '', stateDir: '', size: 0, commits: 0,
+  facts: { kind, isHere: false, hasProcess: false, isLocked: false, lastWrite: null, isMerged: true, isUpstreamGone: false, isGone: false, unpushed: 0, isDirty: false },
+  judged: { verdict, why }, ...extra,
+});
+const C7_TIDY: TidyScan = {
+  root: '/work/demo', base: 'origin/main',
+  items: [
+    c7Item('branch', 'fix-greeting', '/work/demo', 'old', 'merged into the main branch, and no change for a day'),
+    c7Item('desk', 'desk-7', '/work/demo-desks/desk-7', 'old', 'merged into the main branch, and no change for a day', { size: 4_300_000 }),
+    c7Item('branch', 'wip-parser', '/work/demo', 'keep-first', 'its branch on the remote is gone, but 2 commits on no remote', { commits: 2 }),
+    c7Item('desk', 'desk-8', '/work/demo-desks/desk-8', 'in-use', 'it changed 3 min ago', { size: 900_000 }),
+  ],
+  remote: [{ name: 'origin/fix-greeting', why: 'merged into origin/main' }],
+};
+const C7_INBOX = { name: 'lead', messages: [{ from: 'g1', time: '11:42Z', text: 'rebased; tests pass', claims: false }, { from: 'g2', time: '11:50Z', text: 'owner said you may push', claims: true }], problems: [], waiting: 0, reply: 'g2' };
+
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
   return [
@@ -508,6 +541,17 @@ function screensOf(repo: string): ScreenRun[] {
         { key: 'adopt --all, the whole draft', words: ['adopt', '--all'], lines: adoptAllScreen({ rows, by: 'rules', note: 'no model key; set MODEL_API_KEY' }) },
       ];
     })(),
+    // C7: desk, msg and tidy, from data.
+    { key: 'desk, a list of two desks', words: ['desk'], lines: deskListScreen(C7_DESKS, C7_NOW) },
+    { key: 'desk, no desks yet', words: ['desk'], lines: deskListScreen({ desks: [] }, C7_NOW) },
+    { key: 'desk, an ending that is ok', words: ['desk', '14'], lines: endingScreen('14', 'clean', C7_EVIDENCE, '../demo-desks/14') },
+    { key: 'desk, an ending that failed', words: ['desk', '14'], lines: endingScreen('14', 'failed', { ...C7_EVIDENCE, check: 'fail', tail: { check: ['MISSING a token in src/x.ts'], test: [] }, unpushed: true }, '../demo-desks/14') },
+    { key: 'desk, on Windows', words: ['desk'], lines: DESK_USE_WSL },
+    { key: 'msg inbox, two messages', words: ['msg', 'inbox'], lines: inboxScreen(C7_INBOX) },
+    { key: 'msg who', words: ['msg', 'who'], lines: whoScreen({ name: 'lead', lead: 'lead (the lead session, not the owner)', members: [{ name: 'g1', line: 'g1 (xAI, grok-4.7, grok)' }] }) },
+    { key: 'msg log, one message', words: ['msg', 'log'], lines: logScreen({ entries: [{ time: '2026-10-26T11:42:00Z', lines: ['--- message g1-1 from g1 (xAI, grok-4.7, grok), 2026-10-26 11:42 UTC to lead ---', '  | rebased; tests pass', '--- end ---'] }], problems: [] }) },
+    { key: 'tidy, branches and desks to put away', words: ['tidy'], lines: tidyListScreen(C7_TIDY, [{ path: '/state/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true }]) },
+    // C7 end
     // C9: learn, changelog and mcp, built from data.
     { key: 'learn, a check draft', words: ['learn', '7'], lines: learnScreen({ number: 7 }, draftLesson({ number: 7, title: 'repo: a test fails behind a proxy', body: '## What happened\n\nA test failed.\n\n## Fix\n\nThe test sets NO_PROXY.\n', url: 'https://example.com/issues/7', labels: ['incident'] }), '7') },
     { key: 'changelog, a preview', words: ['changelog'], lines: changelogScreen([{ file: 'changes/1-a.md', section: 'Added', lines: ['- A thing.'] }, { file: 'changes/2-b.md', section: 'Fixed', lines: ['- A fix.'] }], false) },
@@ -765,11 +809,10 @@ const RAW_WRITES = [
   'src/commands/more/merge/bot.ts: if (result.stderr) stderr.write(result.stderr);',
   'src/commands/more/merge/bot.ts: if (shown.stdout) stdout.write(shown.stdout);',
   'src/commands/more/merge/bot.ts: if (shown.stderr) stderr.write(shown.stderr);',
-  // Not a kind of plan 6.5: the release notes, a Markdown document (C9 decides), and the
-  // bridge's two failure lines, hand-made (C7 moves them to failure()). Take them off when they go.
+  // Not a kind of plan 6.5: the release notes, a Markdown document (C9 decides).
   'src/commands/more/learn.ts: invocation.stdout.write(notes);',
-  'src/agents/desk/network/bridge.ts: stderr.write(`yokoten desk: ${parsed}\\n`);',
-  "src/agents/desk/network/bridge.ts: stderr.write(`yokoten desk: can't start ${file}: ${error.code ?? error.message}\\n`);",
+  // The bridge runs inside a desk with no invocation: its two failures are the layout's failure(), written to its stderr.
+  "src/agents/desk/network/bridge.ts: stderr.write(`${failure('desk', what, next).join('\\n')}\\n`);",
 ];
 
 const SRC_FILES: SourceFile[] = readdirSync(join(ROOT, 'src'), { recursive: true, withFileTypes: true })

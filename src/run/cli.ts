@@ -807,6 +807,7 @@ export const COMMANDS: Command[] = [
       { name: '--read', value: 'paths', text: 'more paths to show read-only, joined by commas' },
       { name: '--host', value: 'hosts', text: "more API hosts the agent may reach, joined by commas" },
       { name: '--marks', text: 'show your private-marks file, read-only (not available yet)' },
+      { name: '--json', text: 'with no task: the desks as JSON on stdout' },
     ],
     arguments: ['agent', 'folder'],
   },
@@ -1004,6 +1005,7 @@ export const COMMANDS: Command[] = [
       { name: '--local', text: 'save the old things on this machine, then move them into the trash' },
       { name: '--empty', text: 'delete what has been in the trash over 7 days, after one question' },
       { name: '--yes', text: 'with --empty: answer the question yes, for a run with no terminal' },
+      { name: '--json', text: 'the list as JSON on stdout' },
     ],
   },
   {

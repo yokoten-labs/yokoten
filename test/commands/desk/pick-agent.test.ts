@@ -12,9 +12,9 @@ test('desk agent: Claude Code first, else the one installed; --agent picks; none
   assert.equal(runtimeOf(pickAgent(undefined, only('claude', 'codex'))), 'claude-code');
   assert.equal(runtimeOf(pickAgent(undefined, only('codex'))), 'codex');
   assert.equal(runtimeOf(pickAgent('codex', only('claude', 'codex'))), 'codex');
-  assert.equal(runtimeOf(pickAgent('codex', only('claude'))), 'Codex is not installed here: `codex` is not on PATH.');
-  assert.equal(runtimeOf(pickAgent('grok', only('claude'))), '--agent grok: a desk starts claude-code or codex.');
-  assert.equal(runtimeOf(pickAgent(undefined, only())), 'no AI to start: install Claude Code (`npm install -g @anthropic-ai/claude-code`), then run this again.');
+  assert.equal(runtimeOf(pickAgent('codex', only('claude'))), 'Codex is not installed here: `codex` is not on PATH');
+  assert.equal(runtimeOf(pickAgent('grok', only('claude'))), '--agent grok: a desk starts claude-code or codex');
+  assert.equal(runtimeOf(pickAgent(undefined, only())), 'no AI to start: neither Claude Code nor Codex is installed');
 });
 
 test('desk agent: the brief is the first prompt, interactive or headless (#1054)', () => {

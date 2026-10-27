@@ -39,5 +39,5 @@ test('startBridge: a connection to the port reaches the socket, both ways', { sk
 test('runBridge: a bad command line is refused with the usage, and nothing starts', async () => {
   let said = '';
   assert.equal(await runBridge(['/s.sock', '3128'], { write: (text: string) => (said += text) }), 1);
-  assert.match(said, /^yokoten desk: usage: /);
+  assert.match(said, /^yokoten desk · usage: /);
 });

@@ -10,7 +10,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { showPath } from '../../setup/advice/unsaved.ts';
-import { count, field, nextLine, row, SCREEN_WIDTH, title } from '../shared.ts';
+import { count, nextLine, ROW_TEXT_COLUMN, row, SCREEN_WIDTH, screen, spaced, title, underRow } from '../shared.ts';
 import type { DeskTask } from './brief.ts';
 import { type Ran, type Run } from './clone.ts';
 import { briefFile, type DeskRecord, recordFile } from './list.ts';
@@ -66,8 +66,8 @@ export function deskGitProblem(desk: string): string | null {
   return null;
 }
 
-/** The words for a refused desk: one line, and the desk is kept as it is. */
-export const refusedLine = (problem: string): string => `git does not run in this desk outside the fence: ${problem}. The desk is kept; look at it by hand`;
+/** What is wrong with a refused desk. The desk is kept as it is, and `fail` adds the step. */
+export const refusedLine = (problem: string): string => `git does not run in this desk outside the fence: ${problem}`;
 
 /**
  * Run git in the desk, outside the fence, only when deskGitProblem finds nothing. git's
@@ -140,27 +140,25 @@ export async function gatherEvidence(fenced: Fenced, run: Run, desk: string, rec
 const fit = (line: string, indent: number): string => (line.length + indent > SCREEN_WIDTH ? `${line.slice(0, SCREEN_WIDTH - indent - 1)}…` : line);
 
 /** The last lines of what failed, under its row's text. */
-const under = (tail: string[]): string[] => tail.slice(-5).map((line) => `${' '.repeat(26)}${fit(line, 26)}`);
+const under = (tail: string[]): string[] => tail.slice(-5).flatMap((line) => underRow(fit(line, ROW_TEXT_COLUMN)));
 
 const RESULT = { pass: 'passed', fail: 'failed', none: 'none here' } as const;
 
 /** The one screen for an ending. `shown` is the desk's folder as the person sees it. */
-export function endingScreen(name: string, ending: Ending, e: Evidence, shown: string, extra: string[] = []): string[] {
+export function endingScreen(name: string, ending: Ending, e: Evidence, shown: string, extra: string[][] = []): string[] {
   const summary = ending === 'clean' ? `desk ${name} is clean: nothing left to push` : ending === 'unpushed' ? `desk ${name} has work that is not pushed` : `desk ${name} failed its checks`;
   const work = e.commits.length ? `${count(e.commits.length, 'commit')}, last: ${e.commits[0]?.replace(/^\S+ /, '')}` : 'no commits';
-  return [
-    ...title('desk', summary),
-    '',
-    ...row(e.check === 'fail' ? 'MISSING' : e.check === 'pass' ? 'ok' : 'skipped', RESULT[e.check], 'check'),
-    ...under(e.tail.check),
-    ...row(e.test === 'fail' ? 'MISSING' : e.test === 'pass' ? 'ok' : 'skipped', RESULT[e.test], 'tests'),
-    ...under(e.tail.test),
-    ...row(ending === 'unpushed' ? 'next' : 'ok', `${work}${e.dirty ? `; ${count(e.dirty, 'file')} not committed` : ''}${ending === 'unpushed' ? '; not pushed' : ''}`, 'work'),
-    ...extra,
-    ...(ending === 'clean' ? [] : field('kept', shown)),
-    '',
-    ...nextLine(ending === 'unpushed' ? `yokoten desk ${name} --pr` : ending === 'failed' ? `yokoten desk ${name}` : 'yokoten desk'),
-  ];
+  return screen(
+    title('desk', summary),
+    spaced([
+      [...row(e.check === 'fail' ? 'MISSING' : e.check === 'pass' ? 'ok' : 'skipped', RESULT[e.check], 'check'), ...under(e.tail.check)],
+      [...row(e.test === 'fail' ? 'MISSING' : e.test === 'pass' ? 'ok' : 'skipped', RESULT[e.test], 'tests'), ...under(e.tail.test)],
+      row(ending === 'unpushed' ? 'next' : 'ok', `${work}${e.dirty ? `; ${count(e.dirty, 'file')} not committed` : ''}${ending === 'unpushed' ? '; not pushed' : ''}`, 'work'),
+      ...extra,
+      ...(ending === 'clean' ? [] : [row('note', shown, 'kept')]),
+    ]),
+    nextLine(ending === 'unpushed' ? `yokoten desk ${name} --pr` : ending === 'failed' ? `yokoten desk ${name}` : 'yokoten desk'),
+  );
 }
 
 /**
