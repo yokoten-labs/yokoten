@@ -215,16 +215,16 @@ test('lessons: learn, write the check, ship, then doctor in a second repo shows 
   // The project's own .yokoten/ copy is from before the ship: it has no incident-9 until init runs again (#77).
   assert.ok(!/lesson incident-9/.test(vendored(['doctor', '--all']).stdout), 'the old copy has no incident-9');
   assert.equal(runCopy(['init'], sandbox.repo).status, 0);
-  assert.match(vendored(['doctor', '--all']).stdout, /\n {2}note {4}new lesson: incident-9 [^\n]*\n {2}note {4}lesson incident-9: \.env is in the repo; /);
+  assert.match(vendored(['doctor', '--all']).stdout, /\n {2}note {8}new lesson: incident-9 [^\n]*(?:\n {14}[^\n]*)*\n\n {2}note {8}lesson incident-9: \.env is in the repo; /);
   result = runCopy(['doctor', '--all'], sandbox.repo);
-  assert.match(result.stdout, /\n {2}note {4}lesson incident-9: \.env is in the repo; remove it, and add it to \.gitignore\n/);
+  assert.match(result.stdout, /\n {2}note {8}lesson incident-9: \.env is in the repo; remove it, and add it to\n {14}\.gitignore\n/);
   const report = JSON.parse(runCopy(['doctor', '--json'], sandbox.repo).stdout);
   assert.deepEqual(report.lessons.find((lesson: { id: string }) => lesson.id === 'incident-9'), { id: 'incident-9', mark: 'note' });
   assert.ok(report.notes.some((note: { id: string }) => note.id === 'incident-9') && !report.findings.some((f: { id: string }) => f.id === 'incident-9'), 'a note, never a finding');
   // Not now, with the reason.
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { 'incident-9': 'a sample file, no secret in it' } }));
   result = runCopy(['doctor', '--all'], sandbox.repo);
-  assert.match(result.stdout, /\n {2}not now lesson incident-9: a sample file, no secret in it\n/);
+  assert.match(result.stdout, /\n {2}skipped {5}lesson incident-9: not now, a sample file, no secret in it\n/);
 });
 
 // #392: `learn --upstream` from a project, run as a person would. The note names neither
