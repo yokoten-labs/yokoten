@@ -1508,7 +1508,7 @@ const PLATFORM_READS: [string, number][] = [
   ['setup/advice/unsaved.ts', 5],
   ['setup/doctor/checks.ts', 2],
   ['setup/init.ts', 1],
-  ['setup/install.ts', 10],
+  ['setup/install.ts', 5],
   ['setup/road.ts', 1],
 ];
 
