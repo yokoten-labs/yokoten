@@ -38,7 +38,7 @@ jobs:
             exit 1
           fi
       - run: npm ci
-      - run: node --test
+      - run: node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination=/dev/null
       - run: npm run typecheck
       - run: node bin/yokoten.ts check
       # The npm package (record 0008): pack it, install it offline, run install, init and doctor.

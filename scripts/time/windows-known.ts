@@ -47,6 +47,7 @@ import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { fileBlock, tapLines } from './suite.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 export const KNOWN_FILE = join(ROOT, 'scripts', 'time', 'windows-known.txt');
@@ -313,9 +314,9 @@ export function fileLine(file: string, found: string[], known: { required: strin
 
 // ---- The log's text (issue #1119) ----
 
-/** The line printed when a file starts: its place in this shard and its time cap. */
-export function progressLine(file: string, position: number, total: number, capSeconds: number): string {
-  return `[${position}/${total}] ${file.replace(/\\/g, '/')} (cap ${capSeconds} s)`;
+/** A file's line when it finishes: how many are done in this shard, its time and its time cap. */
+export function progressLine(file: string, position: number, total: number, seconds: number, capSeconds: number): string {
+  return `[${position}/${total}] ${file.replace(/\\/g, '/')} ${seconds} s (cap ${capSeconds} s)`;
 }
 
 /** The line printed every minute while a file runs long. */
@@ -500,14 +501,13 @@ async function main(): Promise<number> {
   const folders = { root: ROOT, home: homedir() };
   const known = readKnown(readFileSync(KNOWN_FILE, 'utf8'));
   let next = 0;
+  let finished = 0;
   const worker = async () => {
     while (next < files.length) {
-      const position = next + 1;
       const file = files[next++];
       const name = file.replace(/\\/g, '/');
       const started = Date.now();
       const capSeconds = capOf(name, times, Number(values.cap));
-      process.stdout.write(`${progressLine(name, position, files.length, capSeconds)}\n`);
       // A slow file says so every minute, so a long run does not look like a hang.
       const ticker = setInterval(() => process.stdout.write(`${slowLine(name, Math.round((Date.now() - started) / 1000), capSeconds)}\n`), 60_000);
       let result;
@@ -530,6 +530,9 @@ async function main(): Promise<number> {
       took.push(`${Math.max(1, Math.round((Date.now() - started) / 1000))} ${name}`);
       for (const [test, reason] of readReasons(tap)) reasons.set(`${name} :: ${test}`, maskReason(reason, folders));
       seconds.push({ name, seconds: Math.max(1, Math.round((Date.now() - started) / 1000)) });
+      // The same block as the other test jobs: the file's line, its tests lined up under the name (#1115).
+      const head = progressLine(name, ++finished, files.length, Math.round((Date.now() - started) / 1000), capSeconds);
+      process.stdout.write(`${fileBlock(head, tapLines(tap, (test) => reasons.get(`${name} :: ${test}`))).join('\n')}\n`);
       fileLines.push(fileLine(file, found, known, Math.round((Date.now() - started) / 1000)));
     }
   };

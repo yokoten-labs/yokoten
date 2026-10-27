@@ -57,6 +57,45 @@ type TestEvent = { type: string; data: { nesting: number; name?: string; file?: 
 /** How many lines of a failing test's error the log shows under it. */
 const ERROR_LINES = 20;
 
+/** One test as a file's block shows it: ✔, ✖ or - for skipped, its name, its time. */
+export function testLine(mark: '✔' | '✖' | '-', name: string, ms?: number): string {
+  return `${mark} ${name}${ms === undefined ? '' : ` (${ms.toFixed(1)} ms)`}`;
+}
+
+/** A failure's error, at most ERROR_LINES lines, each indented under its test. */
+export function errorBlock(text: string): string[] {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim() !== '');
+  return [...lines.slice(0, ERROR_LINES), ...(lines.length > ERROR_LINES ? [`… ${lines.length - ERROR_LINES} more lines in the TAP report`] : [])].map((line) => `    ${line}`);
+}
+
+/**
+ * One file's block in every CI test log (#1115): its line, then its tests lined up under the
+ * file name, the `[n/N] ` column left blank. The test and windows jobs both print this.
+ */
+export function fileBlock(head: string, lines: string[]): string[] {
+  const pad = ' '.repeat(/^\[\d+\/\d+\] /.exec(head)?.[0].length ?? 0);
+  return [head, ...lines.map((line) => pad + line)];
+}
+
+/** Each top-level test of a TAP report of one file, as its block's lines. */
+export function tapLines(tap: string, reasonOf: (test: string) => string | undefined = () => undefined): string[] {
+  const lines = tap.split(/\r?\n/);
+  const out: string[] = [];
+  lines.forEach((line, index) => {
+    const result = /^(not )?ok \d+ - (.*?)(?: # (SKIP|TODO)\b.*)?$/.exec(line);
+    if (!result) return;
+    const name = result[2].replace(/\\#/g, '#');
+    let ms: number | undefined;
+    for (let at = index + 1; at < lines.length && /^\s/.test(lines[at]); at++) {
+      const own = /^ {2}duration_ms: ([\d.]+)$/.exec(lines[at]);
+      if (own) ms = Number(own[1]);
+    }
+    out.push(testLine(result[1] ? '✖' : result[3] ? '-' : '✔', name, ms));
+    if (result[1]) out.push(...errorBlock(reasonOf(name) ?? ''));
+  });
+  return out;
+}
+
 /**
  * The test log of every CI test job (#1125): when a file finishes, `[n/N] <file>` and under
  * it, each of its tests lined up under the file name, a failing one with its error indented under it.
@@ -74,9 +113,7 @@ export function fileProgress() {
   const seconds = (from: number, now: number) => Math.round((now - from) / 1000);
   const errorLines = (error: unknown): string[] => {
     const cause = (error as { cause?: unknown } | undefined)?.cause ?? error;
-    const text = cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause);
-    const lines = text.split('\n').filter((line) => line.trim() !== '');
-    return [...lines.slice(0, ERROR_LINES), ...(lines.length > ERROR_LINES ? [`… ${lines.length - ERROR_LINES} more lines in the TAP report`] : [])].map((line) => `    ${line}`);
+    return errorBlock(cause instanceof Error ? cause.message : cause === undefined ? '' : String(cause));
   };
   return {
     /** The lines this event prints, if any. */
@@ -91,7 +128,7 @@ export function fileProgress() {
           const isFail = event.type === 'test:fail';
           const mark = isFail ? '✖' : event.data.skip ? '-' : '✔';
           const ms = event.data.details?.duration_ms;
-          entry.lines.push(`${mark} ${name}${ms === undefined ? '' : ` (${ms.toFixed(1)} ms)`}`, ...(isFail ? errorLines(event.data.details?.error) : []));
+          entry.lines.push(testLine(mark, name, ms), ...(isFail ? errorLines(event.data.details?.error) : []));
           if (isFail) entry.fails += 1;
           results.set(file, entry);
         }
@@ -105,9 +142,7 @@ export function fileProgress() {
       const head = `[${done}/${total}] ${name} ${seconds(started.get(name) ?? now, now)} s${fails ? `, ${fails} failing` : ''}`;
       started.delete(name);
       results.delete(name);
-      // The tests sit under the file name, with the [n/N] column left blank.
-      const pad = ' '.repeat(`[${done}/${total}] `.length);
-      return [head, ...lines.map((line) => pad + line)];
+      return fileBlock(head, lines);
     },
     /** One line for each file running a minute or more. */
     slow(now: number): string[] {
