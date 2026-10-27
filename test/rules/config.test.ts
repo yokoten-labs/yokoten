@@ -45,6 +45,9 @@ const WRONG_KEYS: [string, Record<string, unknown>][] = [
   ['translations.fail', { translations: { fail: 'no' } }],
   ['commands', { commands: 'python3' }],
   ['commands', { commands: { block: ['python3'] } }],
+  ['worker.settings', { worker: { settings: 'SCREENS_OUT' } }],
+  ['worker.settings', { worker: { settings: ['SCREENS_OUT', 'PATH'] } }],
+  ['worker.settings', { worker: { settings: ['screens_out'] } }],
 ];
 
 test('glob: a slash anchors at the root, no slash matches in any folder', () => {
@@ -221,4 +224,71 @@ test('config: yokoten\'s own areas cover its open work', () => {
   assert.ok(own.areas.includes('doctor') && own.areas.includes('owner'));
   assert.ok(Object.hasOwn(own.commands.block, 'python') && Object.hasOwn(own.commands.block, 'python3'), 'no Python here (#192)');
   assert.deepEqual(DEFAULTS.areas, []);
+});
+
+// #1135: worker.settings names the test settings a worker may make. A name that moves a
+// folder or runs code, or that is not a setting name, drops the whole list.
+test('config: "worker.settings" reads plain names and refuses a never name or a malformed one, naming the key (#1135)', () => {
+  const dir = makeTempDir();
+  const load = (settings: unknown) => {
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings } }));
+    return loadConfig(dir, { onProblem: () => {} }).worker.settings;
+  };
+  // The control: a plain list is read as it is, and the default is none.
+  assert.deepEqual(load(['SCREENS_OUT', 'TEST_SHARD_2']), ['SCREENS_OUT', 'TEST_SHARD_2']);
+  assert.deepEqual(DEFAULTS.worker.settings, []);
+  const refusals: [unknown, RegExp][] = [
+    [['SCREENS_OUT', 'PATH'], /PATH, which moves a folder or runs other code/],
+    [['LD_PRELOAD'], /LD_PRELOAD \(one of LD_\*\), which moves a folder/],
+    [['GIT_CONFIG_GLOBAL'], /GIT_CONFIG_GLOBAL \(one of GIT_\*\)/],
+    [['NODE_OPTIONS'], /NODE_OPTIONS, which/],
+    [['YOKOTEN_ROLE'], /YOKOTEN_ROLE \(one of YOKOTEN_\*\)/],
+    [['NPM_CONFIG_SCRIPT_SHELL'], /NPM_CONFIG_SCRIPT_SHELL \(one of NPM_CONFIG_\*\)/],
+    [['screens_out'], /"screens_out" is not a setting name/],
+    [['SCREENS-OUT'], /"SCREENS-OUT" is not a setting name/],
+    [['1OUT'], /"1OUT" is not a setting name/],
+    [['A'.repeat(65)], /is not a setting name/],
+    [['SCREENS_OUT=x'], /is not a setting name/],
+    ['SCREENS_OUT', /must be a list of setting names/],
+  ];
+  for (const [settings, message] of refusals) {
+    const label = JSON.stringify(settings);
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings } }));
+    assert.throws(() => loadConfig(dir), (err: Error) => err.message.includes('"worker.settings"') && message.test(err.message), label);
+    // The hook gets no extra names, never every name; the other worker field still counts.
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings, timeLimitMinutes: 60 } }));
+    const problems: string[] = [];
+    const config = loadConfig(dir, { onProblem: (_, ignored) => problems.push(ignored) });
+    assert.deepEqual(config.worker, { timeLimitMinutes: 60, settings: [] }, label);
+    assert.deepEqual(problems, ['worker.settings'], label);
+  }
+  // The longest name allowed passes: the length cap is not off by one.
+  assert.deepEqual(load(['A'.repeat(64)]), ['A'.repeat(64)]);
+});
+
+// #1135 review: names in the never-list's own classes. less runs a command from LESS
+// ('+!cmd') and writes a file (-oFILE), make reads MAKEFILES, glibc loads GCONV_PATH, the
+// JVM, go and cargo run what their options name, node writes where NODE_V8_COVERAGE points,
+// and on Windows node and npm find home and temp through USERPROFILE, APPDATA and TEMP.
+// The name shapes loaders use are refused by their ending, so a new loader is refused too.
+test('config: "worker.settings" refuses names that run code or move a folder, by name and by shape (#1135)', () => {
+  const dir = makeTempDir();
+  const never = [
+    'LESS', 'LESSHISTFILE', 'MAKEFILES', 'MAKEFLAGS', 'GCONV_PATH', 'GLIBC_TUNABLES', 'GOFLAGS', 'JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS',
+    'RUSTC_WRAPPER', 'CARGO_HOME', 'CC', 'CXX', 'NODE_REDIRECT_WARNINGS', 'NODE_V8_COVERAGE', 'PERL5DB', 'BASH_LOADABLES_PATH',
+    'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
+    // By shape: a loader setting not named anywhere above.
+    'SOME_TOOL_PATH', 'ANDROID_HOME', 'SOME_CACHE_DIR', 'MAVEN_OPTS', 'SOME_OPTIONS', 'CFLAGS', 'LDFLAGS',
+  ];
+  for (const name of never) {
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', name] } }));
+    assert.throws(() => loadConfig(dir), (err: Error) => err.message.includes('"worker.settings"') && err.message.includes(`${name}`) && /which moves a folder or runs other code/.test(err.message), name);
+    assert.deepEqual(loadConfig(dir, { onProblem: () => {} }).worker.settings, [], name);
+  }
+  // A shape refusal names the shape, so the lead sees why.
+  writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['MAVEN_OPTS'] } }));
+  assert.throws(() => loadConfig(dir), /MAVEN_OPTS \(one of \*OPTS\)/);
+  // The control: test names that only look close still pass.
+  writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE'] } }));
+  assert.deepEqual(loadConfig(dir).worker.settings, ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE']);
 });
