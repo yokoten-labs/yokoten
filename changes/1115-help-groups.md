@@ -1,3 +1,3 @@
 Changed
 
-`yokoten help --all` groups the other commands by job: Start, Work, Guard, Merge and CI, Maintain. The two old groups are gone (#1115).
+`yokoten help --all` lists every command once, grouped by job: Start, Work, Guard, Merge and CI, Maintain, then help and version. The two old groups are gone (#1115).
