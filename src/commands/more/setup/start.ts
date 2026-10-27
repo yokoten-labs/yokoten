@@ -1,18 +1,25 @@
 // `yokoten` with no command: the first run that installs, adds the rules and shows the road.
+//
+// It reads, runs install and init when they are missing (each returns a SetupResult), reads
+// doctor's report, and prints one screen built from those three: nothing here reads a printed
+// line back (plan 6.3, #1115).
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Writable } from 'node:stream';
-import { ghIn } from '../../../host/github/index.ts';
-import { type Env } from '../../../rules/config.ts';
-import { hideHome, homeOf, NO_HOME } from '../../../rules/privacy.ts';
-import { init } from '../../../setup/init.ts';
+import { ghIn, ghLaterIn, readServer } from '../../../host/github/index.ts';
+import { readGiteaServer } from '../../../host/gitea.ts';
+import { hostOf } from '../../../host/hosts.ts';
+import { type Env, loadConfig } from '../../../rules/config.ts';
+import { hideHome, homeOf } from '../../../rules/privacy.ts';
+import { columnFor, table } from '../../../rules/text/screen.ts';
+import { gitConfig } from '../../../run/check.ts';
+import { doctor, type DoctorReport, doctorSummary, problemRows, readAtOnce, SERVER_TIMEOUT_MS, shortLines } from '../../../setup/doctor/index.ts';
+import { type Change, type Place, type SetupResult, VERSION } from '../../../setup/files.ts';
+import { HOOKS_PATH, init } from '../../../setup/init.ts';
 import { agentsHere, install, isMachineSetUp, isYes, launcherDir, skillNames } from '../../../setup/install.ts';
-import { VERSION } from '../../../setup/files.ts';
-import { count, type Invocation, nextLine, noRootFinding, noRootScreen, print, rootOf, row, screen, title } from '../../shared.ts';
-import { askWhenTerminal, NEEDS_HAND } from './ask.ts';
-import { guardedAgents, installScreen, placeOf } from './install.ts';
-import { projectScreen } from './init.ts';
+import { askLine, askOnTerminal, count, fail, type Invocation, noRootFinding, noRootScreen, noteLine, print, rootOf, row, screen, spaced, terminalOf, title, wrap } from '../../shared.ts';
+import { commitCommand } from './init.ts';
+import { guardedAgents, placeOf } from './install.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -29,99 +36,108 @@ export async function runStart(invocation: Invocation): Promise<number> {
     print(invocation, noRootScreen(undefined, missing), invocation.stderr);
     return 1;
   }
-  // No home folder means no place to install into (#548). Say it the way install does,
-  // instead of letting a path throw: a beginner reads one plain line, not a stack trace.
-  if (!homeOf(env)) {
-    print(invocation, [`${NO_HOME}. Set HOME to your home folder's full path and run \`yokoten\` again.`], invocation.stderr);
-    return 1;
-  }
+  // No home folder means no place to install into (#548): one failure, instead of a path that throws.
+  if (!homeOf(env)) return fail(invocation, 'no home folder found (HOME is empty or not a full path), so nothing was set up', "set HOME to your home folder's full path, then run `yokoten` again");
   const isMachineMissing = !isMachineSetUp(env);
   const isProjectMissing = !hasProjectRules(root);
-  const ask = askWhenTerminal(invocation);
+  if (!isMachineMissing && !isProjectMissing) return (await import('../advice/doctor.ts')).runDoctor(invocation);
+  const { stdin, stdout } = invocation;
+  const ask = terminalOf(invocation).canAsk && stdin.fd !== null ? askOnTerminal(stdout, stdin.fd) : undefined;
   // Rustup's way (#1027): a person sees one screen of what changes, then answers one
   // question. An agent, CI or a pipe has nobody to ask and goes ahead, as before.
-  if ((isMachineMissing || isProjectMissing) && ask) {
+  if (ask) {
     print(invocation, previewLines(env, isMachineMissing, isProjectMissing));
     if (!isYes(ask(SET_UP_QUESTION))) {
       print(invocation, title(VERSION, 'nothing changed'));
       return 0;
     }
+    // The answer ends the question's screen; one blank line, then the screen of what was done.
     print(invocation, ['']);
   }
-  // Each step that ran reports whether it is done: an install that failed is not "Setup is done" (#548).
-  // A step that went well is one row on doctor's screen; one that failed keeps its whole screen,
-  // since a problem is never folded (#1027).
-  const doneRows: string[] = [];
-  const failedScreens: string[][] = [];
-  if (isMachineMissing) {
-    const done = install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform: invocation.platform });
-    // No label column: doctor's rows below have none, so every row's text starts in one column (#1115).
-    if (done.ok) doneRows.push(...row('ok', `guard on for ${guardedAgents(done).join(', ') || 'your agents'} on this computer`));
-    else failedScreens.push(installScreen(done, placeOf(invocation), { isFirstRun: true }));
-  }
-  if (isProjectMissing) {
-    const done = init(root, env, undefined, { ask, platform: invocation.platform });
-    const wrote = done.lines.filter((line) => /^wrote /.test(line)).length;
-    if (done.ok && !done.lines.some((line) => NEEDS_HAND.test(line))) doneRows.push(...row('ok', `${count(wrote, 'file')} written in this project, none of yours changed`));
-    else failedScreens.push(projectScreen(done.lines, done.ok, true));
-  }
-  for (const screen of failedScreens) print(invocation, [...screen, '']);
-  const ran = isMachineMissing || isProjectMissing;
-  const runDoctor = (await import('../advice/doctor.ts')).runDoctor;
-  if (!ran) return runDoctor(invocation);
-  // One screen (#1027): doctor's title, what this run did, the road, and one Next line, to keep
-  // what it wrote. Doctor's own Next waits for that commit; its More line stays last.
-  const held: string[] = [];
-  const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
-  const code = await runDoctor({ ...invocation, stdout: sink });
-  print(invocation, startScreen(held.join('').replace(/\n$/, '').split('\n'), doneRows));
-  return code;
+  const platform = invocation.platform ?? 'linux';
+  const installed = isMachineMissing ? install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform }) : undefined;
+  const added = isProjectMissing ? init(root, env, undefined, { ask, platform }) : undefined;
+  const { ok, report } = await doctorReport(invocation, root);
+  print(invocation, startScreen({ ...(installed ? { install: installed } : {}), ...(added ? { init: added } : {}), report, place: placeOf(invocation) }));
+  return ok && (installed?.ok ?? true) && (added?.ok ?? true) ? 0 : 1;
 }
 
 /**
- * The first run's one screen (#1027) from doctor's lines and the rows of what this run did:
- * doctor's title says it set things up, then this run's rows, then the rest of doctor's screen
- * (its problems and the road, whatever that holds), one Next line to keep what was written, and
- * doctor's More line last. Each block is told apart by one blank line (#1115), decided from the
- * blocks themselves: doctor's own Next waits for that commit.
+ * Doctor's report for this project, read as full doctor reads it: the code host's settings
+ * first, under one budget, with one note to a person while they load (#1039).
  */
-export function startScreen(doctorLines: readonly string[], doneRows: readonly string[]): string[] {
-  const next = doctorLines.findIndex((line) => line.startsWith('Next: '));
-  const moreAt = doctorLines.findIndex((line) => line.startsWith('More: '));
-  const more = moreAt === -1 ? [] : doctorLines.slice(moreAt);
-  const body = doctorLines.slice(0, next === -1 ? (moreAt === -1 ? doctorLines.length : moreAt) : next);
-  while (body.length && body.at(-1) === '') body.pop();
-  // A broken self-test line may lead the title.
-  const titleAt = Math.max(0, body.findIndex((line) => line.startsWith('yokoten doctor · ')));
-  const lead = body.slice(0, titleAt).filter(Boolean);
-  const head = body[titleAt]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
-  const rest = body.slice(titleAt + 1);
-  while (rest[0] === '') rest.shift();
-  return screen(lead, [head], doneRows, rest, [...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
+async function doctorReport(invocation: Invocation, root: string): Promise<{ ok: boolean; report: DoctorReport }> {
+  const { env } = invocation;
+  const config = loadConfig(root);
+  const host = hostOf(gitConfig(root, 'remote.origin.url', env), config.host);
+  const isRead = host.kind === 'github' || host.kind === 'gitea';
+  if (isRead && terminalOf(invocation).isPerson) print(invocation, noteLine(`reading ${host.kind === 'gitea' ? 'Gitea' : 'GitHub'} settings, ${SERVER_TIMEOUT_MS / 1000} seconds at most...`), invocation.stderr);
+  const server = host.kind === 'gitea' ? await readGiteaServer(host, env) : host.kind === 'github' ? (await readAtOnce((gh) => readServer(gh, host.repo), ghLaterIn(root, env), SERVER_TIMEOUT_MS)).result : undefined;
+  return doctor(root, { env, config, session: false, host, ...(server ? { server } : {}), gh: ghIn(root, env, SERVER_TIMEOUT_MS), fillMarks: true, ...(invocation.platform ? { platform: invocation.platform } : {}) });
+}
+
+/** What the first run's screen is built from: the parts that ran, doctor's report after them, and the place. */
+export interface StartParts {
+  install?: SetupResult;
+  init?: SetupResult;
+  report: DoctorReport;
+  place: Place;
+}
+
+/** Whether a change wrote something on this run. */
+const isWritten = (change: Change): boolean => ['wrote', 'updated', 'linked', 'added'].includes(change.state);
+
+/** The files init wrote in the project: not the runtime copy, an agent's own settings or the git setting. */
+const projectFiles = (result: SetupResult): Change[] => result.changes.filter((change) => isWritten(change) && change.kind !== 'runtime' && change.kind !== 'agent' && change.path !== HOOKS_PATH);
+
+/** A part that ran: one ok row when it is done, else what it did and each problem with its fix (#1027: a problem is never folded). */
+function partItems(result: SetupResult, done: string, missing: string): string[][] {
+  const isDone = result.ok && !result.problems.length;
+  if (isDone) return [row('ok', done)];
+  const problems = problemRows(result.problems);
+  return problems.length ? problems : [row('MISSING', missing)];
+}
+
+/**
+ * The first run's one screen (#1027, #1115): doctor's default screen with a title that says the
+ * first run set things up, a row for each part that ran right under it, and the command that
+ * keeps what init wrote as the one Next line. Built from the results, never from printed text.
+ */
+export function startScreen({ install, init, report, place }: StartParts): string[] {
+  const items: string[][] = [];
+  if (install) {
+    const agents = guardedAgents(install);
+    // A part that is not done still says the guard it did turn on.
+    if (!(install.ok && !install.problems.length) && agents.length) items.push(row('ok', `guard on for ${agents.join(', ')} on this computer`));
+    items.push(...partItems(install, `guard on for ${agents.join(', ') || 'your agents'} on this computer`, 'this computer is only partly set up'));
+  }
+  const written = init ? projectFiles(init).length : 0;
+  if (init) {
+    const kept = init.changes.some((change) => change.yours) ? 'your own files kept' : 'none of yours changed';
+    items.push(...partItems(init, `${count(written, 'file')} written in this project, ${kept}`, 'this project is only partly set up'));
+  }
+  const isDone = (install?.ok ?? true) && (init?.ok ?? true) && !install?.problems.length && !init?.problems.length;
+  const heading = title(VERSION, `${isDone ? 'set up' : 'partly set up'}; ${doctorSummary(report)}`);
+  return shortLines(report, { title: heading, lead: [spaced(items)], ...(written ? { next: commitCommand(place.platform) } : {}) });
 }
 
 /** True when init has already put the rules in this project. */
 export const hasProjectRules = (root: string): boolean =>
   existsSync(resolve(root, 'AGENTS.md')) && existsSync(resolve(root, 'yokoten.json'));
 
-/** What the first run will write, before it asks: two groups, then the way back (#1027). */
+/** What the first run will write, before it asks: one group per place, then the way back (#1027). */
 export function previewLines(env: Env, isComputer: boolean, isProject: boolean): string[] {
-  const out = title(VERSION, 'first run: here is what changes');
-  out.push('');
+  const groups: [string, string, string][] = [];
   if (isComputer) {
     const agents = ['Claude Code', ...agentsHere(env)];
-    out.push(`  computer   guard on for ${agents.join(', ')}, ${skillNames().length} skills`);
-    out.push(`             the runtime and a yokoten command in ${hideHome(launcherDir(homeOf(env) ?? ''), env)}`);
+    groups.push(['computer', `guard on for ${agents.join(', ')}, ${skillNames().length} skills`, `the runtime and a yokoten command in ${hideHome(launcherDir(homeOf(env) ?? ''), env)}`]);
   }
-  if (isProject) {
-    out.push(`  project    AGENTS.md, the commit check, CI and the templates`);
-    out.push('             nothing of yours is overwritten');
-  }
-  out.push('');
-  out.push(isComputer ? 'Undo: `yokoten uninstall`' : 'Undo: `git restore .`');
-  return out;
+  if (isProject) groups.push(['project', 'AGENTS.md, the commit check, CI and the templates', 'nothing of yours is overwritten']);
+  // Each group is its own item, a blank line between, and every group's text starts in one column.
+  const column = columnFor(groups.map(([label]) => label));
+  const rows = spaced(groups.map(([label, what, more]) => table([[label, what], ['', more]], column)));
+  return screen(title(VERSION, 'first run: here is what changes'), rows, wrap('Undo: ', isComputer ? '`yokoten uninstall`' : '`git restore .`'));
 }
 
 /** The question the first run and install ask before they write (#1027). */
-export const SET_UP_QUESTION = 'Set up yokoten here? [Y/n]';
-
+export const SET_UP_QUESTION = askLine('Set up yokoten here?');

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { type Env } from '../../../rules/config.ts';
 import { enabledPlugin } from '../../../setup/advice/marketplace.ts';
-import { type Invocation, nextLine, parse, print, row, title, usage } from '../../shared.ts';
+import { failure, type Invocation, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
 
 /**
  * A marketplace name as Claude Code writes it. The name comes from the user's own files and,
@@ -34,14 +34,25 @@ function withHttpsGit(env: Env): Env | null {
   };
 }
 
-/** A step's own line: the result first, then what it did. */
-const ok = (text: string): string => `ok      ${text}`;
-const failed = (text: string): string => `failed  ${text}`;
-
-/** What `yokoten upgrade` did: its lines, and whether every step worked. */
-export interface UpgradeDone {
+/** One step of an upgrade: the thing it updates, whether it worked, and the last line Claude Code said when it failed. */
+export interface UpgradeStep {
+  label: string;
   ok: boolean;
-  lines: string[];
+  said?: string;
+}
+
+/**
+ * What `yokoten upgrade` did, as data (#1115): the plugin it found (null without one), each
+ * step it ran, and the next thing to do. A check that refused before the first step says why
+ * in `refused`, and no step ran. A screen is built from it by `upgradeScreen`.
+ */
+export interface UpgradeResult {
+  ok: boolean;
+  plugin: null | { id: string; marketplace: string; channel: string };
+  steps: UpgradeStep[];
+  refused?: string;
+  /** The command to type next, or after a failed step the `claude` command to run by hand. */
+  next: string;
 }
 
 /**
@@ -50,7 +61,7 @@ export interface UpgradeDone {
  * `.cmd` in the same folder. An `.exe` runs by itself; a `.cmd` needs the shell, which finds it
  * by its name. With neither found, the shell is asked for `claude.cmd`, as before (#1002).
  */
-export function claudeCommand(env: Env, platform: NodeJS.Platform = process.platform): { file: string; shell: boolean } {
+export function claudeCommand(env: Env, platform: NodeJS.Platform): { file: string; shell: boolean } {
   if (platform !== 'win32') return { file: 'claude', shell: false };
   const path = env.PATH ?? env.Path ?? '';
   for (const dir of path.split(';').filter(Boolean)) {
@@ -79,58 +90,52 @@ function runClaude(args: string[], env: Env, platform: NodeJS.Platform): { ok: b
  * Brings the yokoten plugin to the newest version: the marketplace, then the plugin, with git
  * told to fetch github.com over HTTPS for these calls. It adds and removes nothing, so a
  * failed step leaves the plugin as it was (#950). Without the plugin it names the one command
- * that installs the newest yokoten and runs nothing.
+ * that installs the newest yokoten and runs nothing. The platform is the invocation's (#1000).
  */
-export function upgrade(env: Env, platform: NodeJS.Platform = process.platform): UpgradeDone {
-  const plugin = enabledPlugin(env);
-  if (plugin === null) {
-    return {
-      ok: true,
-      lines: [
-        'yokoten upgrade: yokoten is not a Claude Code plugin here, so there is no plugin to update.',
-        'To get the newest yokoten, run: npx yokoten@latest',
-      ],
-    };
-  }
+export function upgrade(env: Env, platform: NodeJS.Platform): UpgradeResult {
+  const found = enabledPlugin(env);
+  if (found === null) return { ok: true, plugin: null, steps: [], next: 'npx yokoten@latest' };
+  const plugin = { id: found.id, marketplace: found.marketplace, channel: found.channel };
   const name = plugin.marketplace;
   // Both checks come before the first call: a refusal changes nothing.
   if (!PLAIN_NAME.test(name)) {
-    return { ok: false, lines: [`yokoten upgrade: the marketplace name in your settings is not a plain name, so yokoten runs nothing. Update by hand: claude plugin update ${plugin.id}`] };
+    return { ok: false, plugin, steps: [], refused: 'the marketplace name in your settings is not a plain name, so nothing ran', next: `claude plugin update ${plugin.id}` };
   }
   const httpsEnv = withHttpsGit(env);
   if (httpsEnv === null) {
-    return { ok: false, lines: ['yokoten upgrade: GIT_CONFIG_COUNT is set, but not to a small number, so yokoten can\'t add its HTTPS setting after yours. It runs nothing. Unset GIT_CONFIG_COUNT, or fix it, and run it again.'] };
+    return { ok: false, plugin, steps: [], refused: 'GIT_CONFIG_COUNT is not a small number, so nothing ran', next: 'unset it or make it a small number, then run `yokoten upgrade`' };
   }
-  const lines = [`yokoten upgrade: the yokoten plugin is on (${plugin.channel} channel).`];
-  // Each step says one line. A failed step stops the rest: the next one needs it.
-  const step = (label: string, args: string[]): boolean => {
-    const done = runClaude(args, httpsEnv, platform);
-    lines.push(done.ok ? ok(label) : failed(label));
-    if (done.ok) return true;
-    if (done.said) lines.push(`  ${done.said}`);
-    lines.push(`To see the whole message, run this by hand: claude ${args.join(' ')}`);
-    return false;
-  };
-  if (!step(`updated the marketplace ${name}`, ['plugin', 'marketplace', 'update', name])) return { ok: false, lines };
-  if (!step(`updated the plugin ${plugin.id}`, ['plugin', 'update', plugin.id])) return { ok: false, lines };
-  lines.push('Restart Claude Code to load it: a session that is already running keeps the old copy until it restarts.');
-  return { ok: true, lines };
+  // A failed step stops the rest: the next one needs it.
+  const steps: UpgradeStep[] = [];
+  for (const [label, args] of [[`the marketplace ${name}`, ['plugin', 'marketplace', 'update', name]], [`the plugin ${plugin.id}`, ['plugin', 'update', plugin.id]]] as const) {
+    const done = runClaude([...args], httpsEnv, platform);
+    steps.push(done.ok || !done.said ? { label, ok: done.ok } : { label, ok: false, said: done.said });
+    if (!done.ok) return { ok: false, plugin, steps, next: `claude ${args.join(' ')}` };
+  }
+  return { ok: true, plugin, steps, next: 'restart Claude Code; a session already running keeps the old copy' };
+}
+
+/**
+ * The one screen of `yokoten upgrade`, from its result (#1115): a title that says what is true
+ * now, one row per step, and the next thing to do. A failed step is a MISSING row with what
+ * Claude Code said and the command to run by hand on its Fix line; a refusal is a failure.
+ */
+export function upgradeScreen(result: UpgradeResult): string[] {
+  if (result.refused !== undefined) return failure('upgrade', result.refused, result.next);
+  if (result.plugin === null) return screen(title('upgrade', 'yokoten is not a Claude Code plugin here, so nothing changed'), nextLine(result.next));
+  const rows = result.steps.map((step) => {
+    if (step.ok) return row('ok', `${step.label}: updated`);
+    return [...row('MISSING', `${step.label}: not updated`), ...(step.said ? underRow(`Claude Code said: ${step.said}`, false) : []), ...underRow(`Fix: \`${result.next}\``, false)];
+  });
+  if (!result.ok) return screen(title('upgrade', 'the yokoten plugin was not updated, it is as it was'), spaced(rows));
+  return screen(title('upgrade', `the yokoten plugin is up to date (${result.plugin.channel} channel)`), spaced(rows), wrap('Next: ', result.next));
 }
 
 export function runUpgrade(invocation: Invocation): number {
   const options = parse('upgrade', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
-  const done = upgrade(invocation.env);
-  // A failed step is never folded: its own lines and the command to type by hand (#1027).
-  if (!done.ok) {
-    print(invocation, done.lines, invocation.stderr);
-    return 1;
-  }
-  const steps = done.lines.filter((line) => /^ok /.test(line));
-  if (!steps.length) {
-    print(invocation, [...title('upgrade', 'yokoten is not a Claude Code plugin here'), '', ...row('note', 'there is no plugin to update; nothing was changed'), '', ...nextLine('npx yokoten@latest')]);
-    return 0;
-  }
-  print(invocation, [...title('upgrade', 'the yokoten plugin is up to date'), '', ...row('ok', 'updated', 'plugin'), '', ...nextLine('restart Claude Code to use it')]);
-  return 0;
+  const done = upgrade(invocation.env, invocation.platform ?? 'linux');
+  // A failed step is never folded: its row, and the command to type by hand (#1027).
+  print(invocation, upgradeScreen(done), done.ok ? invocation.stdout : invocation.stderr);
+  return done.ok ? 0 : 1;
 }

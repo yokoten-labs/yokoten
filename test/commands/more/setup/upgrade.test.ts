@@ -5,7 +5,8 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { claudeCommand } from '../../../../src/commands/more/setup/upgrade.ts';
+import { claudeCommand, upgradeScreen } from '../../../../src/commands/more/setup/upgrade.ts';
+import { screenProblems } from '../../../repo/docs/screen-rules.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
 // ---- upgrade (#950): a fake `claude` first on PATH writes its arguments and the git
@@ -82,7 +83,9 @@ test('upgrade: the two updates carry the HTTPS override, and nothing is removed 
     // A remove would leave no marketplace when the next clone fails, so there is none.
     assert.deepEqual(calls.map((call) => call.args), ['plugin marketplace update yokoten', 'plugin update yokoten-beta@yokoten'], JSON.stringify(source));
     for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
-    assert.match(result.stdout, /^Next: `restart Claude Code to use it`$/m);
+    assert.match(result.stdout, /^yokoten upgrade · the yokoten plugin is up to date \(beta channel\)$/m);
+    assert.match(result.stdout, /^ {2}ok {10}the plugin yokoten-beta@yokoten: updated$/m);
+    assert.match(result.stdout, /^Next: restart Claude Code; a session already running keeps the old copy$/m);
   }
 });
 
@@ -91,6 +94,7 @@ test('upgrade: without the plugin it names npx and runs nothing', async () => {
   const fake = fakeClaude(sandbox);
   const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^yokoten upgrade · yokoten is not a Claude Code plugin here, so nothing changed$/m);
   assert.match(result.stdout, /^Next: `npx yokoten@latest`$/m);
   assert.deepEqual(fake.calls(), []);
 });
@@ -102,8 +106,12 @@ test('upgrade: a failing step stops the rest and gives the command to run by han
   const result = await sandbox.call(['upgrade'], { extra: fake.extra });
   assert.equal(result.status, 1);
   assert.equal(fake.calls().length, 1, 'the second step waits for the first');
-  assert.match(result.stderr, /^failed {2}updated the marketplace yokoten$/m);
-  assert.match(result.stderr, /^To see the whole message, run this by hand: claude plugin marketplace update yokoten$/m);
+  // One screen on stderr (#1115): a MISSING row, what Claude Code said, and the command on its Fix line.
+  assert.match(result.stderr, /^yokoten upgrade · the yokoten plugin was not updated, it is as it was$/m);
+  assert.match(result.stderr, /^ {2}MISSING {5}the marketplace yokoten: not updated$/m);
+  assert.match(result.stderr, /^ {14}Claude Code said: ran: plugin marketplace update yokoten$/m);
+  assert.match(result.stderr, /^ {14}Fix: `claude plugin marketplace update yokoten`$/m);
+  assert.doesNotMatch(result.stderr, /yokoten upgrade: /, 'no old sentence form');
 });
 
 test('upgrade: a git config the user set the same way is kept, and the override comes after it', async () => {
@@ -126,7 +134,7 @@ test('upgrade: a GIT_CONFIG_COUNT that is set but not a small number runs nothin
     const result = await sandbox.call(['upgrade'], { extra: { ...fake.extra, GIT_CONFIG_COUNT: count } });
     assert.equal(result.status, 1, count);
     assert.deepEqual(fake.calls(), [], `${count}: no call`);
-    assert.match(result.stderr, /GIT_CONFIG_COUNT is set, but not to a small number/, count);
+    assert.match(result.stderr, /^yokoten upgrade · GIT_CONFIG_COUNT is not a small number, so nothing ran\n\nNext: unset it or make it a small number, then run `yokoten upgrade`\n$/, count);
   }
 });
 
@@ -138,7 +146,8 @@ test('upgrade: a marketplace name that is not plain runs nothing, so it never re
     const result = await sandbox.call(['upgrade'], { extra: fake.extra });
     assert.equal(result.status, 1, name);
     assert.deepEqual(fake.calls(), [], `${name}: no call`);
-    assert.match(result.stderr, /the marketplace name in your settings is not a plain name/, name);
+    assert.match(result.stderr, /^yokoten upgrade · the marketplace name in your settings is not a plain name, so\n/, name);
+    assert.match(result.stderr, /^Next: `claude plugin update yokoten-beta@/m, name);
   }
 });
 
@@ -167,4 +176,17 @@ test('upgrade on Windows (#1002): finds claude.exe, or claude.cmd, on the PATH',
   // Positive control: neither found falls back to the shell; Linux never uses it.
   assert.deepEqual(claudeCommand({ PATH: empty }, 'win32'), { file: 'claude.cmd', shell: true });
   assert.deepEqual(claudeCommand({ PATH: exeOnly }, 'linux'), { file: 'claude', shell: false });
+});
+
+test('upgrade: each screen keeps the screen rules, built from its result (#1115)', () => {
+  const plugin = { id: 'yokoten-beta@yokoten', marketplace: 'yokoten', channel: 'beta' };
+  const cases: [string, Parameters<typeof upgradeScreen>[0]][] = [
+    ['not a plugin', { ok: true, plugin: null, steps: [], next: 'npx yokoten@latest' }],
+    ['ok', { ok: true, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: true }], next: 'restart Claude Code' }],
+    ['failed step', { ok: false, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: false, said: 'Error: could not reach github.com' }], next: 'claude plugin update yokoten-beta@yokoten' }],
+    ['refused', { ok: false, plugin, steps: [], refused: 'GIT_CONFIG_COUNT is not a small number, so nothing ran', next: 'unset GIT_CONFIG_COUNT, then run `yokoten upgrade` again' }],
+  ];
+  for (const [name, result] of cases) assert.deepEqual(screenProblems({ text: upgradeScreen(result).join('\n'), isFailure: !result.ok }), [], name);
+  // The failed step's Fix line is the item's last line.
+  assert.equal(upgradeScreen(cases[2]![1]).at(-1), '              Fix: `claude plugin update yokoten-beta@yokoten`');
 });
