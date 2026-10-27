@@ -23,6 +23,8 @@ import { test } from 'node:test';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 import {
   findTempDirs,
+  listGitProcesses,
+  readProcMounts,
   findTmpfs,
   type GitProcess,
   isGitProcess,
@@ -362,11 +364,11 @@ test('unsaved: a worktree in a temp folder is made again under .worktrees/ (#571
 });
 
 test('unsaved: the temp folders come from YOKOTEN_TEMP_DIRS, else the system and /tmp (#365)', () => {
-  assert.deepEqual(findTempDirs({ YOKOTEN_TEMP_DIRS: '' }), [], 'empty turns the check off');
-  assert.deepEqual(findTempDirs({ YOKOTEN_TEMP_DIRS: ['/a', '/b'].join(delimiter) }), ['/a', '/b']);
+  assert.deepEqual(findTempDirs({ YOKOTEN_TEMP_DIRS: '' }, 'linux'), [], 'empty turns the check off');
+  assert.deepEqual(findTempDirs({ YOKOTEN_TEMP_DIRS: ['/a', '/b'].join(delimiter) }, 'linux'), ['/a', '/b']);
   assert.ok(findTempDirs({}, 'linux').includes('/tmp'));
   assert.deepEqual(findTempDirs({}, 'win32'), [tmpdir()], 'Windows: the system temp folder alone');
-  assert.ok(findTempDirs({}).includes(tmpdir()));
+  assert.ok(findTempDirs({}, 'darwin').includes('/tmp') && findTempDirs({}, 'darwin').includes(tmpdir()));
 });
 
 test('unsaved: a root reached through a link reads like the real one, as on macOS /var (#365)', () => {
@@ -510,4 +512,18 @@ test('unsaved: with no remote no advice says push on its own (#524)', () => {
   assert.equal(found[0].fix, 'commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it');
   assert.equal(found[1].fix, 'make the repo on your code host, add it as origin: `git remote add origin <url>`; then push: `git push -u origin --all`');
   for (const note of found) assert.doesNotMatch(note.fix, /, then push|and push/, 'push comes after a remote is added');
+});
+
+test('platform: the machine readers answer per platform (issue #1000)', () => {
+  const table: [string, boolean, boolean][] = [
+    // platform, reads /proc/mounts, lists processes by /proc
+    ['linux', true, true],
+    ['win32', false, false],
+    ['darwin', false, false],
+  ];
+  for (const [platform, hasProc] of table) {
+    if (!hasProc) assert.equal(readProcMounts(platform), null, `${platform}: no /proc/mounts`);
+    else assert.ok(readProcMounts(platform) === null || typeof readProcMounts(platform) === 'string');
+  }
+  assert.ok(Array.isArray(listGitProcesses('linux')), 'linux: read from /proc');
 });

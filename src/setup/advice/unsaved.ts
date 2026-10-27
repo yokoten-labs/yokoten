@@ -102,9 +102,9 @@ export interface MachineReaders {
   /** The temp folders, which the system may empty on restart. By default YOKOTEN_TEMP_DIRS, else the system's temp folder and /tmp. */
   tempDirs?: string[];
   /** The text of /proc/mounts, or null where there is none (macOS, Windows). */
-  readMounts?: () => string | null;
+  readMounts?: (platform: string) => string | null;
   /** The git processes running now, or null when they can't be read. */
-  listProcesses?: () => GitProcess[] | null;
+  listProcesses?: (platform: string) => GitProcess[] | null;
 }
 
 /** Where to look for the default branch, first found wins. Local refs only: doctor never fetches. */
@@ -221,8 +221,8 @@ export function findTmpfs(dir: string, mounts: string | null): string | null {
 }
 
 /** Reads /proc/mounts on Linux. Elsewhere there is none, and the tmpfs case says nothing. */
-function readProcMounts(): string | null {
-  if (process.platform !== 'linux') return null;
+export function readProcMounts(platform: string): string | null {
+  if (platform !== 'linux') return null;
   try {
     return readFileSync('/proc/mounts', 'utf8');
   } catch {
@@ -243,9 +243,9 @@ const isDaemon = (args: string) => /--daemon\b/.test(args);
  * working folder), `ps` on other Unix systems, `tasklist` on Windows. Null when they
  * can't be read.
  */
-function listGitProcesses(): GitProcess[] | null {
+export function listGitProcesses(platform: string): GitProcess[] | null {
   try {
-    if (process.platform === 'linux') {
+    if (platform === 'linux') {
       const found: GitProcess[] = [];
       for (const pid of readdirSync('/proc').filter((entry) => /^\d+$/.test(entry))) {
         try {
@@ -264,7 +264,7 @@ function listGitProcesses(): GitProcess[] | null {
       }
       return found;
     }
-    if (process.platform === 'win32') {
+    if (platform === 'win32') {
       const text = execFileSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
       return text.split(/\r?\n/).filter((line) => isGitProcess(line.split('","')[0].replace(/^"/, ''))).map(() => ({ cwd: null }));
     }
@@ -392,7 +392,7 @@ function readAheadOfDefault(root: string, tip: string, git: GitRunner): Map<stri
 }
 
 /** The temp folders from YOKOTEN_TEMP_DIRS (empty turns the check off), else the system's own and /tmp. */
-export function findTempDirs(env: Env, platform: string = process.platform): string[] {
+export function findTempDirs(env: Env, platform: string): string[] {
   if (env.YOKOTEN_TEMP_DIRS !== undefined) return env.YOKOTEN_TEMP_DIRS.split(delimiter).filter(Boolean);
   return [...new Set([tmpdir(), ...(platform === 'win32' ? [] : ['/tmp'])])];
 }
@@ -422,7 +422,8 @@ const isInside = (path: string, folder: string) => {
  * Null when git can't read the repo. With `budget`, it stops when the time is up and
  * returns what it read, with `isPartial`: the costly reads, one per worktree, come last.
  */
-export function readUnsaved(root: string, { env, budget, readMounts = readProcMounts, listProcesses = listGitProcesses, tempDirs = findTempDirs(env) }: { env: Env; budget?: TimeBudget } & MachineReaders): UnsavedFacts | null {
+// `platform` keeps process.platform as its default until the doctor report (group C3) passes it (issue #1000).
+export function readUnsaved(root: string, { env, budget, platform = process.platform, readMounts = readProcMounts, listProcesses = listGitProcesses, tempDirs = findTempDirs(env, platform) }: { env: Env; budget?: TimeBudget; platform?: string } & MachineReaders): UnsavedFacts | null {
   const git = makeGitRunner(gitEnv(env), budget);
   const commonDir = git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])?.trim();
   const list = commonDir ? git(root, ['worktree', 'list', '--porcelain', '-z']) : null;
@@ -451,7 +452,7 @@ export function readUnsaved(root: string, { env, budget, readMounts = readProcMo
   const detached = listed.filter((worktree) => !worktree.branch && worktree.head && !/^0+$/.test(worktree.head)).map((worktree) => worktree.head as string);
   const onNoRef = detached.length ? listCommitsOutside(root, detached, ['--branches', '--tags', '--remotes'], git) : null;
   const offDefault = detached.length && defaultTip ? listCommitsOutside(root, detached, [defaultTip], git) : null;
-  const mounts = readMounts();
+  const mounts = readMounts(platform);
   const temps = tempDirs.map(realPathOf);
   const worktrees = listed.map((worktree): WorktreeFacts => {
     const gitDir = worktree.isMain ? commonDir : (gitDirs.get(worktree.path) ?? null);
@@ -490,7 +491,7 @@ export function readUnsaved(root: string, { env, budget, readMounts = readProcMo
     branches: refs.branches,
     stashes,
     isPartial: git.isStopped(),
-    isGitRunning: hasLock ? isGitWorkingIn(folders, listProcesses()?.map((p) => ({ cwd: p.cwd === null ? null : realPathOf(p.cwd) })) ?? null) : null,
+    isGitRunning: hasLock ? isGitWorkingIn(folders, listProcesses(platform)?.map((p) => ({ cwd: p.cwd === null ? null : realPathOf(p.cwd) })) ?? null) : null,
   };
 }
 

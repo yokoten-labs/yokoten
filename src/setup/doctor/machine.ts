@@ -318,7 +318,8 @@ export function leftoverTempCheck(env: Env, probe: MachineProbe, read: typeof re
   const oldest = probe.now().getTime() - LEFTOVER_AGE_MS;
   let count = 0;
   const dirs: string[] = [];
-  for (const dir of findTempDirs(env)) {
+  // A uid of null means Windows (see MachineProbe), so the probe carries the platform's one fact this needs.
+  for (const dir of findTempDirs(env, probe.uid === null ? 'win32' : 'linux')) {
     try {
       const old = read(dir).filter((entry) => entry.mtimeMs < oldest).length;
       if (old) dirs.push(dir);
