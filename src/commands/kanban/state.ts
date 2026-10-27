@@ -3,7 +3,7 @@
 // files and the session logs on this machine, and takes what GitHub said from the caller,
 // so the server never waits for gh. Read only: nothing here starts, stops or changes work.
 
-import { type ActionsRun, branchHealth, hideHomeIn, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
+import { type ActionsRun, branchHealth, ghFailureCause, hideHomeIn, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
 import { readBoardDesks, sessionId } from './agents.ts';
 import { totalOf, type UsageCell } from './feed/read/usage.ts';
 import type { KanbanActions, KanbanCost, KanbanPull, KanbanSession, KanbanState } from './page/browser/types.ts';
@@ -205,6 +205,42 @@ export function renderStateText(state: KanbanState): string[] {
   lines.push('', `Actions: main ${main.state}${main.failingSince ? ` since ${main.failingSince}` : ''}`);
   for (const run of state.actions.queuedOver15Min) lines.push(`- ${run.name} waits for a runner, ${run.minutes} min`);
   for (const run of state.actions.flaky) lines.push(`- ${run.name} is flaky: ${run.passFailLast10}`);
-  if (state.problems.length) lines.push('', 'Not read:', ...state.problems.map((problem) => `- ${problem}`));
+  if (state.problems.length) lines.push('', 'Not read:', ...notReadLines(state.problems));
   return lines;
+}
+
+// A gh read that failed, as the board's readers word it: what was not read, and what gh said.
+const GH_READ_FAILED = /^gh can't (?:list|read) the (.+?)(?: \((.*)\))?: run `gh auth login`, and check the repo$/;
+// No gh on this machine: the same words from every reader.
+const GH_MISSING = /^gh is not installed: get it from (\S+), then run `gh auth login`$/;
+
+/**
+ * The `Not read:` items (issue #1115): the lists gh could not read for one cause share one
+ * item, in yokoten's words, never gh's own text. Its fix is its last line, said once. Any
+ * other problem is an item as it is.
+ */
+export function notReadLines(problems: readonly string[]): string[] {
+  // Each item in the order its first problem came: a problem as it is, or one cause and its lists.
+  const items: ({ text: string; fix?: string } | { cause: string; whats: string[] })[] = [];
+  for (const problem of problems) {
+    const failed = GH_READ_FAILED.exec(problem);
+    const missing = GH_MISSING.exec(problem);
+    if (missing) {
+      items.push({ text: `gh is not installed: get it from ${missing[1]}`, fix: 'gh auth login' });
+      continue;
+    }
+    if (!failed) {
+      items.push({ text: problem });
+      continue;
+    }
+    const cause = ghFailureCause(failed[2] ?? '');
+    const group = items.find((item) => 'cause' in item && item.cause === cause);
+    if (group && 'whats' in group) group.whats.push(`the ${failed[1]}`);
+    else items.push({ cause, whats: [`the ${failed[1]}`] });
+  }
+  return items.flatMap((item) => {
+    if ('text' in item) return [`- ${item.text}`, ...(item.fix ? [`  Fix: \`${item.fix}\``] : [])];
+    const fix = item.cause === 'gh is not signed in' ? 'gh auth login' : 'gh auth status';
+    return [`- ${item.whats.join(' and ')}: ${item.cause}`, `  Fix: \`${fix}\``];
+  });
 }

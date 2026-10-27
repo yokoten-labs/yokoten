@@ -657,10 +657,10 @@ test('redact: keeps line ends, a last line with no end, and text that names nobo
 test('redact: in-process, the given stdin comes out hidden, a long one streamed whole (#475)', async () => {
   const { sandbox } = ownerSandbox();
   const run = (stdin: string) => invoke(['redact'], { env: sandbox.env, cwd: sandbox.repo, stdin });
-  assert.deepEqual(await run(`by ${OWNER} at ${HOST}\nlast`), { code: 0, stdout: 'by <owner> at <host>\nlast', stderr: '' });
+  assert.deepEqual(await run(`by ${OWNER} at ${HOST}\nlast`), { code: 0, stdout: 'by <owner> at <host>\nlast', stderr: '', output: 'by <owner> at <host>\nlast' });
   const long = `${'line one\n'.repeat(50_000)}${EMAIL}\n`;
   assert.equal((await run(long)).stdout, `${'line one\n'.repeat(50_000)}<email>\n`);
-  assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '' });
+  assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '', output: '' });
 });
 
 // #1006: redact fails closed. A marks file it cannot read, or a piece it cannot redact,

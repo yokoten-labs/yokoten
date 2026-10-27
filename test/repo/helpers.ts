@@ -257,12 +257,12 @@ export function makeSandbox() {
   const run = (args: string[], { input, cwd = repo, extra = {}, timeout }: { input?: string; cwd?: string; extra?: Record<string, string>; timeout?: number } = {}) =>
     runChild('node', [CLI, ...args], { cwd, env: { ...env, ...extra }, input, timeout });
   // The same as run, in this process (#475): no child, so no second strip of every file's types.
-  // Its result has run's shape. invoke.ts is loaded on the first call, so a file that never
+  // Its result has run's shape, plus `output`: both streams in the order written. invoke.ts is loaded on the first call, so a file that never
   // calls it does not load every command. Keep one or two run tests per command for the entry.
   const call = async (args: string[], { input, cwd = repo, extra = {}, isTTY }: { input?: string; cwd?: string; extra?: Record<string, string>; isTTY?: boolean } = {}) => {
     const { invoke } = await import('./invoke.ts');
     const done = await invoke(args, { env: { ...env, ...extra }, cwd, stdin: input, isTTY });
-    return { status: done.code, stdout: done.stdout, stderr: done.stderr };
+    return { status: done.code, stdout: done.stdout, stderr: done.stderr, output: done.output };
   };
   const write = (path: string, text: string) => {
     mkdirSync(dirname(join(repo, path)), { recursive: true });
