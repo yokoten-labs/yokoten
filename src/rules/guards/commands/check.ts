@@ -542,6 +542,22 @@ function isDryRun(words: string[]): boolean {
   return isDryRun;
 }
 
+// Where `name` stands as npm's or pnpm's subcommand in the words after the program, or -1.
+// The subcommand is the first word that is not an option. An option written without `=`
+// may take the next word as its value (`npm --prefix x version`), and the guard does not
+// know every option, so a word right after one may be a value: the next word is read too.
+// Unsure means the word counts as the subcommand (#1123, #1034).
+function npmSubcommandAt(args: string[], name: string): number {
+  for (const [index, word] of args.entries()) {
+    if (word.startsWith('-')) continue;
+    if (word === name) return index;
+    const before = args[index - 1];
+    if (before !== undefined && before.startsWith('-') && before !== '--' && !before.includes('=')) continue;
+    return -1;
+  }
+  return -1;
+}
+
 function checkPublish(words: string[], env: Env): Finding | null {
   if (env.YOKOTEN_RELEASE_APPROVAL) return null;
   // `--help` prints help instead of publishing for a direct tool. It does not save a
@@ -604,11 +620,17 @@ function checkPublish(words: string[], env: Env): Finding | null {
   const make = after(['make']);
   const target = make.find((a) => !a.startsWith('-') && RELEASE_SCRIPT.test(a));
   if (target !== undefined) return release(`the make target ${target} may publish`);
-  // `npm version patch` makes a commit and a tag, without `git tag` (#829).
+  // `npm version patch` makes a commit and a tag, without `git tag` (#829). Only `version`
+  // as the subcommand counts: in `npm view yokoten version` it is a field (#1123, #1034).
+  // Every npm or pnpm word starts a reading, not just the first: `npm exec -- npm version
+  // patch` runs the inner one, and so does `npm x` or `pnpm dlx`.
   if (!help) {
-    const npm = after(['npm', 'pnpm']);
-    const version = npm.indexOf('version');
-    if (version !== -1) {
+    for (const [at, word] of words.entries()) {
+      if (!['npm', 'pnpm'].includes(base(word).replace(/\.(exe|cmd)$/i, ''))) continue;
+      const npm = words.slice(at + 1);
+      // npm's own alias table runs `npm verison` as `npm version` (cmd-list.js), so the typo counts too.
+      const version = Math.max(npmSubcommandAt(npm, 'version'), npmSubcommandAt(npm, 'verison'));
+      if (version === -1) continue;
       const rest = npm.slice(version + 1);
       if (!rest.some((a) => a === '--no-git-tag-version') && rest.some((a) => !a.startsWith('-'))) return release('npm version makes a tag');
     }

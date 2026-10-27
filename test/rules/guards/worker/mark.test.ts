@@ -167,6 +167,41 @@ test('worker mark: cmd /c that names the git folder is refused, as bash -c is (#
   for (const command of ['cmd /c dir', 'cmd //c echo hi']) assert.equal(check(command), null, command);
 });
 
+// #1021: a reviewer's loop that pipes into the hook was refused as naming a git folder, with
+// no word to change. The loop, the subshell and '../../etc' are not the cause: inline code
+// (node) is blind, and some part of the text can point at a git folder or the mark. The
+// refusal stands and names that part.
+test('worker mark: a loop into the hook is refused only for a part that names a git folder, and says which (#1021)', () => {
+  const base = makeTempDir('yokoten-desk-');
+  const desk = join(base, 'desk');
+  makeGitFolder(desk);
+  writeFileSync(join(desk, '.git', 'yokoten-worker'), 'x');
+  const check = (command: string) => checkCommand(command, { cwd: desk, env: { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') } });
+  const loop = (payload: string, out: string) =>
+    `for p in 'work' '../../etc'; do (printf '${payload}' "$p" | node bin/yokoten.mjs hook --protocol claude) > ${out}; done`;
+  const write = (path: string) => `{"tool_name":"Write","tool_input":{"file_path":"${path}"}}`;
+  const cases: Array<[string, string | null]> = [
+    // The reported shape alone passes: a loop over '../../etc', a subshell, a pipe, a temp file.
+    [loop(write('%s/x'), '/tmp/hook-out.txt'), null],
+    // Positive controls: the same loop with a part that names a git folder or the mark.
+    [loop(write('%s/.git/config'), '/tmp/hook-out.txt'), '.git'],
+    [loop(write('%s/x'), '/tmp/yokoten-worker-review.txt'), 'yokoten-worker'],
+    [loop('{"tool_name":"Bash","tool_input":{"command":"GIT_DIR=%s git status"}}', '/tmp/hook-out.txt'), 'GIT_DIR'],
+    [loop(write('%s/.*'), '/tmp/hook-out.txt'), '.*'],
+  ];
+  for (const [command, part] of cases) {
+    const found = check(command);
+    if (part === null) {
+      assert.equal(found, null, command);
+      continue;
+    }
+    assert.equal(found?.id, 'worker-mark', command);
+    // A plain text search: the part may hold regex characters (`.*`), so no pattern is built from it.
+    assert.ok((found?.what ?? '').includes(`names '${part}'`), `${command}: ${found?.what}`);
+    assert.doesNotMatch(found?.what ?? '', /\.\.\/\.\.\/etc/, 'the climb is not the cause');
+  }
+});
+
 test('checkWorkerMarkEdit: a git folder by name or by real path (#555)', () => {
   assert.equal(checkWorkerMarkEdit('/w/.git/worktrees/wt/yokoten-worker')?.id, 'worker-mark');
   assert.equal(checkWorkerMarkEdit('/w/wt/.git')?.id, 'worker-mark');

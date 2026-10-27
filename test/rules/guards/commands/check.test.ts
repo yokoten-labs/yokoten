@@ -215,6 +215,41 @@ test('redteam #829: npm version makes a tag without git tag', async () => {
   await refusesAll(['npm version patch']);
 });
 
+// #1123, #1034: `version` is a release only as npm's subcommand. After `view`, `info` or
+// `show` it is a field of the registry read.
+test('release: npm version is read only as the subcommand (#1123, #1034)', () => {
+  const cases: Array<[string, 'release' | null]> = [
+    ['npm view yokoten version', null],
+    ['npm view yokoten version description', null],
+    ['npm info yokoten version', null],
+    ['npm show yokoten version', null],
+    ['npm view yokoten versions', null],
+    ['npm view yokoten version dist-tags --json', null],
+    ['npm --json view yokoten version', null],
+    ['npm version patch --no-git-tag-version', null],
+    // Positive controls: the subcommand still makes a tag.
+    ['npm version patch', 'release'],
+    // npm's alias table runs `verison` as `version`.
+    ['npm verison patch', 'release'],
+    ['npm exec -- npm verison patch', 'release'],
+    ['npm view yokoten verison', null],
+    ['npm --prefix x version minor', 'release'],
+    ['npm --prefix=x version minor', 'release'],
+    ['pnpm version 1.2.3', 'release'],
+    ['pnpm -C x version 1.2.3', 'release'],
+    // A package runner that starts npm again: the inner npm version still makes a tag.
+    ['npm exec -- npm version patch', 'release'],
+    ['npm exec npm version patch', 'release'],
+    ['npm x npm version patch', 'release'],
+    ['pnpm dlx npm version patch', 'release'],
+    ['pnpm exec pnpm version 1.2.3', 'release'],
+    ['npm exec -- npm view yokoten version', null],
+  ];
+  for (const [command, expected] of cases) {
+    assert.equal(checkCommand(command, { cwd: process.cwd(), env: {} })?.id ?? null, expected, command);
+  }
+});
+
 test('redteam #829: gh workflow run starts a release workflow', async () => {
   await refusesAll(['gh workflow run release.yml']);
 });

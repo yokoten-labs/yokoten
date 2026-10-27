@@ -123,6 +123,25 @@ const SETTINGS_ROUTES = [
 ];
 
 /**
+ * Where a block string that opens at `start` ends: just past its closing `"""`, or the end
+ * of the document. GraphQL reads `\"""` as an escaped triple quote that keeps the string
+ * open, so the guard skips it too; reading it as the close would show a string as code and
+ * hide the code after it.
+ */
+function blockStringEnd(document: string, start: number): number {
+  let index = start + 3;
+  while (index < document.length) {
+    if (document.startsWith('\\"""', index)) {
+      index += 4;
+      continue;
+    }
+    if (document.startsWith('"""', index)) return index + 3;
+    index++;
+  }
+  return document.length;
+}
+
+/**
  * The document with its comments and string literals blanked, so a keyword inside one is not
  * read as an operation (#825). What is left is code.
  */
@@ -131,8 +150,7 @@ function documentCode(document: string): string {
   let index = 0;
   while (index < document.length) {
     if (document.startsWith('"""', index)) {
-      const block = document.indexOf('"""', index + 3);
-      index = block === -1 ? document.length : block + 3;
+      index = blockStringEnd(document, index);
       code += ' ';
       continue;
     }
@@ -143,8 +161,10 @@ function documentCode(document: string): string {
       code += ' ';
       continue;
     }
+    // A comment ends at a line break, and GraphQL reads a carriage return alone as one: a
+    // `\r` must not hide the code after it (#965).
     if (document[index] === '#') {
-      while (index < document.length && document[index] !== '\n') index++;
+      while (index < document.length && document[index] !== '\n' && document[index] !== '\r') index++;
       code += '\n';
       continue;
     }
@@ -170,8 +190,7 @@ function isCommentMutation(document: string): boolean {
     const char = document[index];
     if (char === '"') {
       if (document.startsWith('"""', index)) {
-        const block = document.indexOf('"""', index + 3);
-        index = block === -1 ? document.length : block + 3;
+        index = blockStringEnd(document, index);
         continue;
       }
       index++;
@@ -549,12 +568,16 @@ export function isPublishingApiCall(args: string[]): boolean {
   // same route (#865). A leading slash or a host must not hide a mutation from the check.
   const endpoint = plainEndpoint(apiEndpoint(args, method));
   if (endpoint.toLowerCase() === 'graphql') {
+    // The document is read as code, as the settings check reads it: `mutation` inside a
+    // string or a `#` comment is not an operation. A document it cannot read, or one the
+    // shell builds (any `$`), is still refused, and so is `mutation` in the code of any
+    // other word (#965).
     const query = graphqlQuery(args);
-    if (query === null || /\bmutation\b/i.test(query)) return true;
-  } else if (writes && isPublishingRoute(endpoint, method, args)) {
-    return true;
+    if (query === null || isShellExpanded(query)) return true;
+    return args.some((word) => MUTATION.test(documentCode(word)));
   }
-  return args.some((word) => /\bmutation\b/i.test(word));
+  if (writes && isPublishingRoute(endpoint, method, args)) return true;
+  return args.some((word) => MUTATION.test(word));
 }
 
 // Known-bad commands for doctor's self-test. A check that lets one through is named here.
