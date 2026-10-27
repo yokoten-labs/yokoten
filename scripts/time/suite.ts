@@ -51,13 +51,61 @@ export const TEST_LIMITS = [
 /** The row of TEST_LIMITS with this id. */
 export const limitOf = (id: (typeof TEST_LIMITS)[number]['id']): TestLimit => TEST_LIMITS.find((row) => row.id === id)!;
 
-/** The test reporter behind --files: one JSON line per test file, its top-level tests' time added up. */
-export default async function* fileTimes(source: AsyncIterable<{ type: string; data: { nesting: number; file?: string; details?: { duration_ms?: number } } }>): AsyncGenerator<string> {
+/** One event of node --test, as a reporter reads it. */
+type TestEvent = { type: string; data: { nesting: number; name?: string; file?: string; details?: { duration_ms?: number } } };
+
+/**
+ * The progress lines the windows job prints, for the other test jobs (#1125): `[n/N] <file>`
+ * when a file finishes, and `still running` once a minute while a file runs past a minute.
+ * node --test announces each file as a top-level test named by its path; it announces all of
+ * them early, so N is whole by the time the first file finishes.
+ */
+export function fileProgress() {
+  const started = new Map<string, number>();
+  const failing = new Map<string, number>();
+  let total = 0;
+  let done = 0;
+  const isFile = (data: TestEvent['data']) => data.nesting === 0 && !!data.file && !!data.name && /\.test\.ts$/.test(data.name) && data.file.replace(/\\/g, '/').endsWith(data.name.replace(/\\/g, '/'));
+  const seconds = (from: number, now: number) => Math.round((now - from) / 1000);
+  return {
+    /** The line this event prints, if any. */
+    see(event: TestEvent, now: number): string[] {
+      const name = (event.data.name ?? '').replace(/\\/g, '/');
+      if (!isFile(event.data)) {
+        if (event.type === 'test:fail' && event.data.nesting === 0 && event.data.file) for (const file of started.keys()) if (event.data.file.replace(/\\/g, '/').endsWith(file)) failing.set(file, (failing.get(file) ?? 0) + 1);
+        return [];
+      }
+      if (event.type === 'test:enqueue') total += 1;
+      if (event.type === 'test:dequeue') started.set(name, now);
+      if (event.type !== 'test:complete') return [];
+      done += 1;
+      const fails = failing.get(name) ?? 0;
+      const line = `[${done}/${total}] ${name} ${seconds(started.get(name) ?? now, now)} s${fails ? `, ${fails} failing` : ''}`;
+      started.delete(name);
+      return [line];
+    },
+    /** One line for each file running a minute or more. */
+    slow(now: number): string[] {
+      return [...started].filter(([, from]) => now - from >= 60_000).map(([file, from]) => `still running ${file}: ${seconds(from, now)} s`);
+    },
+  };
+}
+
+/** The test reporter behind --files: one JSON line per test file, its top-level tests' time added up. On GitHub Actions it also prints each file's progress. */
+export default async function* fileTimes(source: AsyncIterable<TestEvent>): AsyncGenerator<string> {
   const times = new Map<string, number>();
-  for await (const event of source) {
-    if ((event.type !== 'test:pass' && event.type !== 'test:fail') || event.data.nesting !== 0 || !event.data.file) continue;
-    const file = relative(process.cwd(), event.data.file).replace(/\\/g, '/');
-    times.set(file, (times.get(file) ?? 0) + (event.data.details?.duration_ms ?? 0));
+  const progress = process.env.GITHUB_ACTIONS === 'true' ? fileProgress() : null;
+  const write = (lines: string[]) => lines.length && process.stdout.write(`${lines.join('\n')}\n`);
+  const timer = progress && setInterval(() => write(progress.slow(Date.now())), 60_000).unref();
+  try {
+    for await (const event of source) {
+      if (progress) write(progress.see(event, Date.now()));
+      if ((event.type !== 'test:pass' && event.type !== 'test:fail') || event.data.nesting !== 0 || !event.data.file) continue;
+      const file = relative(process.cwd(), event.data.file).replace(/\\/g, '/');
+      times.set(file, (times.get(file) ?? 0) + (event.data.details?.duration_ms ?? 0));
+    }
+  } finally {
+    if (timer) clearInterval(timer);
   }
   for (const [file, ms] of times) yield `${JSON.stringify({ file, ms: Math.round(ms) })}\n`;
 }
