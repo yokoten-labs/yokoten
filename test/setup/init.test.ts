@@ -2165,11 +2165,12 @@ test('init: writes each agent sandbox, a second run changes nothing, and a sandb
   setJson('.gemini/settings.json', (data) => { data.security = { disableYoloMode: false }; });
   sandbox.write('.codex/config.toml', 'sandbox_mode = "danger-full-access"\napproval_policy = "on-request"\n\n[sandbox_workspace_write]\nnetwork_access = false\n');
   sandbox.write('.grok/sandbox.toml', '[profiles.yokoten]\nextends = "devbox"\n');
-  // On a terminal, a sandbox kept because the user set it is a note, the same state install prints (#964).
+  // On a terminal, a sandbox kept because the user set it is a note, the same state install
+  // prints (#964). The classic Windows console shows ‼ for ⚠ (issue #1027).
   const yours = await sandbox.call(['init', '--list'], { isTTY: true });
   assert.equal(yours.status, 0, yours.stdout + yours.stderr);
   for (const [agent, file] of [['Claude Code', '.claude/settings.json'], ['Codex', '.codex/config.toml'], ['Gemini', '.gemini/settings.json'], ['Grok', '.grok/sandbox.toml']]) {
-    assert.match(yours.stdout, new RegExp(`^\\u001b\\[33m⚠ kept\\u001b\\[0m +your ${agent} sandbox in ${file.replaceAll('.', '\\.')} \\(doctor names what differs\\)$`, 'm'), yours.stdout);
+    assert.match(yours.stdout, new RegExp(`^\\u001b\\[33m(?:⚠|‼) kept\\u001b\\[0m +your ${agent} sandbox in ${file.replaceAll('.', '\\.')} \\(doctor names what differs\\)$`, 'm'), yours.stdout);
   }
   assert.deepEqual(JSON.parse(readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: false });
   assert.ok(hasHook(join(sandbox.repo, '.claude', 'settings.json'), 'PreToolUse', 'hook'), 'the hooks still go in');
