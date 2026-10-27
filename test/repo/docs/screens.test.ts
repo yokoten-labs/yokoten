@@ -44,6 +44,10 @@ import { init, type UpdateResult } from '../../../src/setup/init.ts';
 import { setUpPlanning } from '../../../src/setup/plan.ts';
 import { VERSION } from '../../../src/setup/files.ts';
 import { fakeGh } from '../helpers.ts';
+// C16: the first run and upgrade, from their results (#1115).
+import { startScreen } from '../../../src/commands/more/setup/start.ts';
+import { upgradeScreen } from '../../../src/commands/more/setup/upgrade.ts';
+// C16 end
 
 // ---- The calibration: the owner's six verdicts (issue #1099) ----
 
@@ -453,6 +457,9 @@ function screensOf(repo: string): ScreenRun[] {
     // C2: init, update and trust, built from their results (#1115). The init screens end with
     // the commit command, which differs on Windows, so they are rendered for both.
     ...c2Screens(),
+    // C16: the first run, from install's and init's results and doctor's report, and upgrade's screens (#1115).
+    ...c16Screens(),
+    // C16 end
     // C8: the bot's refusal of a push with a time zone, the train's plan for three pull
     // requests, and the conflicts report, each rendered from data (#1115).
     { key: 'bot, a push with a time zone', words: ['bot', '--', 'git', 'push'], platform: 'linux', lines: refusalScreen(utcRefusal([{ hash: 'a'.repeat(40), short: 'a1b2c3d', subject: 'feat(host): read the zone', isRoot: false }], 'a'.repeat(40))) },
@@ -497,6 +504,36 @@ function screensOf(repo: string): ScreenRun[] {
     })(),
   ];
 }
+
+// C16: the first run and upgrade, built from their results (#1115). The first run ends with
+// init's commit command, which differs on Windows, so it is rendered for both.
+function c16Screens(): ScreenRun[] {
+  const sandbox = makeSandbox();
+  const added = init(sandbox.repo, sandbox.env, () => '', { platform: 'linux' });
+  const report: DoctorReport = {
+    version: VERSION, channel: 'stable', ok: true, selfTest: { ok: true, failed: [], ran: true, skipped: [] }, repo: true, stage: 1,
+    stages: ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'],
+    next: { id: 'tests', what: 'no workflow runs the tests', why: 'it matters', fix: '`yokoten init` adds it' }, findings: [],
+    steps: [{ id: 'rules', stage: 1, mark: 'done' }, { id: 'tool-hook', stage: 1, mark: 'done' }, { id: 'tests', stage: 1, mark: 'next' }, { id: 'templates', stage: 2, mark: 'to do' }],
+    notes: [],
+  };
+  const plugin = { id: 'yokoten-beta@yokoten', marketplace: 'yokoten', channel: 'beta' };
+  return [
+    ...(['linux', 'win32'] as const).flatMap((platform): ScreenRun[] => [
+      { key: `first run, both parts done, ${platform}`, words: [], platform, lines: startScreen({ install: c1Install(platform), init: added, report, place: c1Place(platform) }) },
+      { key: `first run, install failed, ${platform}`, words: [], platform, lines: startScreen({ install: c1Partly(platform), init: added, report, place: c1Place(platform) }) },
+    ]),
+    { key: 'upgrade, not a plugin', words: ['upgrade'], platform: 'linux', lines: upgradeScreen({ ok: true, plugin: null, steps: [], next: 'npx yokoten@latest' }) },
+    {
+      key: 'upgrade, a failed step',
+      words: ['upgrade'],
+      platform: 'linux',
+      lines: upgradeScreen({ ok: false, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: false, said: 'Error: could not reach github.com' }], next: 'claude plugin update yokoten-beta@yokoten' }),
+    },
+    { key: 'upgrade, ok', words: ['upgrade'], platform: 'linux', lines: upgradeScreen({ ok: true, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: true }], next: 'restart Claude Code; a session already running keeps the old copy' }) },
+  ];
+}
+// C16 end
 
 // C2: the results the pure screens of init, update and trust are built from.
 function c2Screens(): ScreenRun[] {
