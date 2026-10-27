@@ -265,3 +265,30 @@ test('config: "worker.settings" reads plain names and refuses a never name or a 
   // The longest name allowed passes: the length cap is not off by one.
   assert.deepEqual(load(['A'.repeat(64)]), ['A'.repeat(64)]);
 });
+
+// #1135 review: names in the never-list's own classes. less runs a command from LESS
+// ('+!cmd') and writes a file (-oFILE), make reads MAKEFILES, glibc loads GCONV_PATH, the
+// JVM, go and cargo run what their options name, node writes where NODE_V8_COVERAGE points,
+// and on Windows node and npm find home and temp through USERPROFILE, APPDATA and TEMP.
+// The name shapes loaders use are refused by their ending, so a new loader is refused too.
+test('config: "worker.settings" refuses names that run code or move a folder, by name and by shape (#1135)', () => {
+  const dir = makeTempDir();
+  const never = [
+    'LESS', 'LESSHISTFILE', 'MAKEFILES', 'MAKEFLAGS', 'GCONV_PATH', 'GLIBC_TUNABLES', 'GOFLAGS', 'JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS',
+    'RUSTC_WRAPPER', 'CARGO_HOME', 'CC', 'CXX', 'NODE_REDIRECT_WARNINGS', 'NODE_V8_COVERAGE', 'PERL5DB', 'BASH_LOADABLES_PATH',
+    'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
+    // By shape: a loader setting not named anywhere above.
+    'SOME_TOOL_PATH', 'ANDROID_HOME', 'SOME_CACHE_DIR', 'MAVEN_OPTS', 'SOME_OPTIONS', 'CFLAGS', 'LDFLAGS',
+  ];
+  for (const name of never) {
+    writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', name] } }));
+    assert.throws(() => loadConfig(dir), (err: Error) => err.message.includes('"worker.settings"') && err.message.includes(`${name}`) && /which moves a folder or runs other code/.test(err.message), name);
+    assert.deepEqual(loadConfig(dir, { onProblem: () => {} }).worker.settings, [], name);
+  }
+  // A shape refusal names the shape, so the lead sees why.
+  writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['MAVEN_OPTS'] } }));
+  assert.throws(() => loadConfig(dir), /MAVEN_OPTS \(one of \*OPTS\)/);
+  // The control: test names that only look close still pass.
+  writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE'] } }));
+  assert.deepEqual(loadConfig(dir).worker.settings, ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE']);
+});

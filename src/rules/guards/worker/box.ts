@@ -33,7 +33,9 @@ const WORKER_SETTINGS = new Set(['TZ', 'CI', 'NODE_ENV', 'NO_COLOR', 'FORCE_COLO
 /**
  * Settings no project may let a worker make (#1135): each moves a folder, makes a program
  * run other code, or changes who the guard thinks is asking. An entry ending in `*` covers
- * every name it starts.
+ * every name it starts, and one starting with `*` every name it ends: a loader list never
+ * ends, so the name shapes loaders use (`*PATH`, `*_HOME`, `*_DIR`, `*OPTS`, `*_OPTIONS`,
+ * `*FLAGS`) are refused whole, and a test setting picks another name.
  */
 export const NEVER_WORKER_SETTINGS: readonly string[] = [
   'PATH', 'HOME', 'PWD', 'OLDPWD', 'TMPDIR', 'CDPATH', 'SHELL', 'ENV', 'BASH_ENV', 'BASH_FUNC_*', 'SHELLOPTS', 'BASHOPTS',
@@ -41,15 +43,20 @@ export const NEVER_WORKER_SETTINGS: readonly string[] = [
   'GIT_*', 'GH_*', 'GITHUB_*', 'SSH_*', 'GNUPGHOME', 'YOKOTEN_*',
   'LD_*', 'DYLD_*', 'XDG_*',
   'NODE_OPTIONS', 'NODE_PATH', 'NPM_CONFIG_*', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTHONHOME', 'PERL5OPT', 'PERL5LIB', 'PERLLIB', 'RUBYOPT', 'RUBYLIB',
-  'LESSOPEN', 'LESSCLOSE', 'LESSKEY', 'EDITOR', 'VISUAL', 'PAGER', 'MANPAGER', 'BROWSER', 'RIPGREP_CONFIG_PATH',
+  'LESS*', 'EDITOR', 'VISUAL', 'PAGER', 'MANPAGER', 'BROWSER', 'RIPGREP_CONFIG_PATH',
+  'MAKE*', 'GCONV_PATH', 'GLIBC_TUNABLES', 'BASH_LOADABLES_PATH', 'PERL5DB', 'NODE_*', 'GOFLAGS', 'JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS',
+  'RUSTC_*', 'CARGO_*', 'CC', 'CXX', 'CPP', 'LD',
+  // Windows twins of HOME and TMPDIR: node's os.homedir/os.tmpdir and npm read them.
+  'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
+  '*PATH', '*_HOME', '*_DIR', '*OPTS', '*_OPTIONS', '*FLAGS',
 ];
 
 /** Why `name` can't be a declared worker setting, or null when it may be one. */
 export function workerSettingProblem(name: string): string | null {
   if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) return `${JSON.stringify(name)} is not a setting name (capital letters, digits and _, starting with a letter)`;
-  const never = NEVER_WORKER_SETTINGS.find((entry) => (entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : name === entry));
+  const never = NEVER_WORKER_SETTINGS.find((entry) => (entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : entry.startsWith('*') ? name.endsWith(entry.slice(1)) : name === entry));
   if (never === undefined) return null;
-  return `${name}${never.endsWith('*') ? ` (one of ${never})` : ''}, which moves a folder or runs other code, so no project may let a worker set it`;
+  return `${name}${never.includes('*') ? ` (one of ${never})` : ''}, which moves a folder or runs other code, so no project may let a worker set it`;
 }
 const DECLARERS = new Set(['export', 'declare', 'typeset', 'readonly', 'local']);
 const FOLDER_MOVERS = new Set(['cd', 'pushd', 'popd']);

@@ -436,3 +436,30 @@ test('guard: a worker may set a name its own repo declares in worker.settings, a
   // The lead is not boxed at all.
   assert.notEqual(checkCommand('OTHER_OUT=x node --test test/a.test.ts', { cwd: plain, env: { HOME: worker.HOME } })?.id, 'worker-mark');
 });
+
+// #1135 review: a project that declares LESS, MAKEFILES or another never name gets no extra
+// name at all, so `LESS='+!cmd' less f` (the same as `less +!cmd`, refused today) stays refused.
+test('guard: a worker can\'t set LESS, MAKEFILES or another never name even when its repo declares it (#1135)', () => {
+  const base = makeTempDir('yokoten-box-never-');
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const commands: [string, string][] = [
+    ['LESS', "LESS='+!touch x' less f"],
+    ['LESS', 'LESS=-ox less f'],
+    ['MAKEFILES', 'MAKEFILES=/tmp/evil.mk make'],
+    ['GCONV_PATH', 'GCONV_PATH=. iconv -f x f'],
+    ['JAVA_TOOL_OPTIONS', 'JAVA_TOOL_OPTIONS=-javaagent:a.jar java -version'],
+    ['GOFLAGS', 'GOFLAGS=-toolexec=./x go test'],
+    ['NODE_V8_COVERAGE', 'NODE_V8_COVERAGE=/tmp/x node --test test/a.test.ts'],
+    ['USERPROFILE', 'export USERPROFILE=/tmp/x'],
+    ['MAVEN_OPTS', 'MAVEN_OPTS=-x mvn test'],
+  ];
+  for (const [name, command] of commands) {
+    const tree = join(base, name.toLowerCase());
+    mkdirSync(tree, { recursive: true });
+    writeFileSync(join(tree, '.git'), 'gitdir: ' + join(base, `store-${name}`) + '\n');
+    writeFileSync(join(tree, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', name] } }));
+    assert.equal(checkCommand(command, { cwd: tree, env: worker })?.id, 'worker-mark', command);
+    // The declared test name goes too: one never name drops the list.
+    assert.equal(checkCommand('SCREENS_OUT=out.txt node --test test/a.test.ts', { cwd: tree, env: worker })?.id, 'worker-mark', name);
+  }
+});
