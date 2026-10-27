@@ -48,6 +48,16 @@ export interface Draft {
   note?: string;
 }
 
+/** One row of `adopt --json`: a draft row without `why`, the road's own text. The shape stays as it was (#6). */
+export type DraftJsonRow = Omit<Row, 'why'>;
+
+/**
+ * What `adopt --json` prints: the rows of the same draft the screens are built from (plan D1),
+ * each with its key, status, evidence, decision and reason, in that order. Who drafted it is
+ * the note on stderr.
+ */
+export const draftJson = (drafted: Draft): DraftJsonRow[] => drafted.rows.map(({ key, status, evidence, decision, reason }) => ({ key, status, evidence, decision, reason }));
+
 const read = (path: string) => {
   try {
     return readFileSync(path, 'utf8');

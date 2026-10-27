@@ -18,7 +18,7 @@ import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } fro
 import { docsLink, findingRow, sentence } from '../../../rules/text/message.ts';
 import { columnFor, screen, section, spaced, table, type TableRow } from '../../../rules/text/screen.ts';
 import { hideHome } from '../../../rules/privacy.ts';
-import { type Decision, type Draft, draft, facts, type Row, YOU_DECIDE } from '../../../setup/advice/adopt.ts';
+import { type Decision, type Draft, draft, draftJson, facts, type Row, YOU_DECIDE } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
 import { cleanOlderInstall, type OlderInstallCleanup, PROFILE_MARK } from '../../../setup/install.ts';
 import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED } from '../../../setup/doctor/index.ts';
@@ -307,7 +307,7 @@ export function runAdopt(invocation: Invocation): number | Promise<number> {
   if (!root) return 1;
   return draft(facts(root, env), { env }).then((drafted) => {
     if (options.flags.has('--json')) {
-      printJson(invocation, drafted.rows.map(({ key, status, evidence, decision, reason }) => ({ key, status, evidence, decision, reason })));
+      printJson(invocation, draftJson(drafted));
       print(invocation, noteLine(`${draftedBy(drafted)} You decide every row.`), invocation.stderr);
     } else print(invocation, options.flags.has('--all') ? adoptAllScreen(drafted) : adoptScreen(drafted));
     return 0;
