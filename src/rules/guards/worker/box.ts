@@ -2,7 +2,7 @@ import { isAbsolute, resolve } from 'node:path';
 import { isPathInside } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
-import { type Env } from '../../config.ts';
+import { loadConfig, type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';
 import { gitLinkAbove, FIND_WRITES } from './mark.ts';
 import { onlyReads, symlinkTargetReach, configReach } from './config-command.ts';
@@ -17,11 +17,47 @@ import { plainArgs } from '../lead-only/targets.ts';
 // a `cd` only to a plain path inside its worktree, no `$'...'` or `${...@...}`, environment
 // settings only from a short list, git with no option before its subcommand, and no
 // output option on git, less or file. A command that still names the home config folder
-// passes only when every program in it is a plain reader. Like the rest of the guard this
-// reads text: a script the worker writes and then runs is out of its reach (issue #589).
+// passes only when every program in it is a plain reader.
+//
+// What the settings rule protects (#1135): it stops the easy path and the known loaders on
+// the command line, a setting that moves a folder or makes a program run other code
+// (NEVER_WORKER_SETTINGS). A project adds the test settings its workers need in yokoten.json
+// `"worker": { "settings": [...] }`, a file only the lead may change. Like the rest of the
+// guard this reads text: a script the worker writes and then runs can set any variable, and
+// is out of its reach by design (issue #589). The desk fence (src/agents/desk/fence) is the
+// boundary for a worker's processes.
 
 /** The settings a worker may put before a command or export: none of them moves a folder or runs code. */
 const WORKER_SETTINGS = new Set(['TZ', 'CI', 'NODE_ENV', 'NO_COLOR', 'FORCE_COLOR', 'DEBUG', 'LANG', 'LC_ALL']);
+
+/**
+ * Settings no project may let a worker make (#1135): each moves a folder, makes a program
+ * run other code, or changes who the guard thinks is asking. An entry ending in `*` covers
+ * every name it starts, and one starting with `*` every name it ends: a loader list never
+ * ends, so the name shapes loaders use (`*PATH`, `*_HOME`, `*_DIR`, `*OPTS`, `*_OPTIONS`,
+ * `*FLAGS`) are refused whole, and a test setting picks another name.
+ */
+export const NEVER_WORKER_SETTINGS: readonly string[] = [
+  'PATH', 'HOME', 'PWD', 'OLDPWD', 'TMPDIR', 'CDPATH', 'SHELL', 'ENV', 'BASH_ENV', 'BASH_FUNC_*', 'SHELLOPTS', 'BASHOPTS',
+  'PROMPT_COMMAND', 'IFS', 'PS4', 'HISTFILE', 'INPUTRC', 'ZDOTDIR',
+  'GIT_*', 'GH_*', 'GITHUB_*', 'SSH_*', 'GNUPGHOME', 'YOKOTEN_*',
+  'LD_*', 'DYLD_*', 'XDG_*',
+  'NODE_OPTIONS', 'NODE_PATH', 'NPM_CONFIG_*', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTHONHOME', 'PERL5OPT', 'PERL5LIB', 'PERLLIB', 'RUBYOPT', 'RUBYLIB',
+  'LESS*', 'EDITOR', 'VISUAL', 'PAGER', 'MANPAGER', 'BROWSER', 'RIPGREP_CONFIG_PATH',
+  'MAKE*', 'GCONV_PATH', 'GLIBC_TUNABLES', 'BASH_LOADABLES_PATH', 'PERL5DB', 'NODE_*', 'GOFLAGS', 'JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS',
+  'RUSTC_*', 'CARGO_*', 'CC', 'CXX', 'CPP', 'LD',
+  // Windows twins of HOME and TMPDIR: node's os.homedir/os.tmpdir and npm read them.
+  'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
+  '*PATH', '*_HOME', '*_DIR', '*OPTS', '*_OPTIONS', '*FLAGS',
+];
+
+/** Why `name` can't be a declared worker setting, or null when it may be one. */
+export function workerSettingProblem(name: string): string | null {
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(name)) return `${JSON.stringify(name)} is not a setting name (capital letters, digits and _, starting with a letter)`;
+  const never = NEVER_WORKER_SETTINGS.find((entry) => (entry.endsWith('*') ? name.startsWith(entry.slice(0, -1)) : entry.startsWith('*') ? name.endsWith(entry.slice(1)) : name === entry));
+  if (never === undefined) return null;
+  return `${name}${never.includes('*') ? ` (one of ${never})` : ''}, which moves a folder or runs other code, so no project may let a worker set it`;
+}
 const DECLARERS = new Set(['export', 'declare', 'typeset', 'readonly', 'local']);
 const FOLDER_MOVERS = new Set(['cd', 'pushd', 'popd']);
 const VARIABLE_SETTERS = new Set(['read', 'mapfile', 'readarray', 'getopts', 'eval', 'source', '.']);
@@ -31,7 +67,7 @@ const PLAIN_PATH = /^(~(?=\/|$))?[A-Za-z0-9._/-]*$/;
 export const GIT_PLAIN_OPTIONS = new Set(['--no-pager', '-P', '--version', '--help']);
 const GIT_CONFIG_READS = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l']);
 const GIT_CONFIG_WRITES = /^(--(add|unset|unset-all|replace-all|rename-section|remove-section|edit)|-e|set|unset|rename-section|remove-section|edit)$/;
-const BOX_FIX = 'work inside your worktree with plain paths and no extra settings; if your task needs more, stop and ask the lead';
+const BOX_FIX = 'work inside your worktree with plain paths and no extra settings; the guard reads the command line, and a declared project setting goes in yokoten.json worker.settings (the lead edits it); if your task needs more, stop and ask the lead';
 const boxFinding = (what: string) => finding('worker-mark', what, BOX_FIX);
 
 /** Whether `name` is a long option `--x` that is `full`, an abbreviation of it, or longer (`--outp`, `--output-directory`). */
@@ -49,14 +85,14 @@ export const hasShortOption = (word: string, letters: string) => /^-[^-]/.test(w
  * a command, after `env`, `sudo` or another launcher, or in export/declare/readonly/typeset/
  * local. An option to `env`, or a folder option to `sudo`, counts too. Null when all pass.
  */
-function workerSettingAt(words: string[], start: number, limit = words.length): string | null {
+function workerSettingAt(words: string[], start: number, allows: (name: string) => boolean, limit = words.length): string | null {
   let index = start;
   while (index < limit) {
     for (;;) {
       const word = words[index];
       if (word === undefined || index >= limit) return null;
       if (isAssignment(word)) {
-        if (!WORKER_SETTINGS.has(word.slice(0, word.indexOf('=')).replace(/\+$/, ''))) return word;
+        if (!allows(word.slice(0, word.indexOf('=')).replace(/\+$/, ''))) return word;
         index++;
       } else if (KEYWORDS.has(word)) index++;
       else if (redirectLength(words, index) > 0) index += redirectLength(words, index);
@@ -67,7 +103,7 @@ function workerSettingAt(words: string[], start: number, limit = words.length): 
     if (DECLARERS.has(name)) {
       for (const arg of words.slice(index + 1, limit)) {
         const setting = arg.split('=')[0].replace(/\+$/, '');
-        if (arg.startsWith('-') || !/^[A-Za-z_]\w*$/.test(setting) || !WORKER_SETTINGS.has(setting)) return arg;
+        if (arg.startsWith('-') || !/^[A-Za-z_]\w*$/.test(setting) || !allows(setting)) return arg;
       }
       return null;
     }
@@ -83,6 +119,9 @@ function workerSettingAt(words: string[], start: number, limit = words.length): 
   }
   return null;
 }
+
+/** The settings a project's yokoten.json at `root` declares for its workers; a list with a problem gives none. */
+const projectWorkerSettings = (root: string): string[] => loadConfig(root, { onProblem: () => {} }).worker.settings;
 
 /** The command's text with quoted parts left out, for the characters that start a subshell. */
 const withoutQuoted = (command: string) => command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '');
@@ -134,14 +173,24 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
   if (hasXargs && commands.some(followsLinks)) {
     return configFinding("a worker can't pipe a symlink-following read (find -L, grep -R, ls -L) into xargs: it could hand a writer a path inside yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept");
   }
+  // The project's own settings come from the yokoten.json of the repo the shell is in, read
+  // only when a name is not on the short list, and checked against the never-list again here.
+  let declared: Set<string> | null = null;
+  const allows = (name: string) => {
+    if (WORKER_SETTINGS.has(name)) return true;
+    declared ??= new Set(link === null || link.kind === 'broken' ? [] : projectWorkerSettings(link.top));
+    return declared.has(name) && workerSettingProblem(name) === null;
+  };
+  const settingFinding = (word: string) =>
+    boxFinding(`a worker can't set ${word.split('=')[0].replace(/\+$/, '')}: only ${[...WORKER_SETTINGS].join(', ')} and the names this project declares in yokoten.json worker.settings may be set, so no setting moves a folder or runs a program`);
   for (const words of commands) {
     const reach = configReach(words, { folder, home, forms });
     if (reach !== null) return reach;
-    const setting = workerSettingAt(words, 0);
-    if (setting !== null) return boxFinding(`a worker can't set ${setting.split('=')[0].replace(/\+$/, '')}: only ${[...WORKER_SETTINGS].join(', ')} may be set, so no setting moves a folder or runs a program`);
+    const setting = workerSettingAt(words, 0, allows);
+    if (setting !== null) return settingFinding(setting);
     for (const action of words.flatMap((word, at) => (FIND_ACTIONS.has(word) ? [at + 1] : []))) {
-      const inner = workerSettingAt(words, action);
-      if (inner !== null) return boxFinding(`a worker can't set ${inner.split('=')[0].replace(/\+$/, '')}: only ${[...WORKER_SETTINGS].join(', ')} may be set`);
+      const inner = workerSettingAt(words, action, allows);
+      if (inner !== null) return settingFinding(inner);
     }
     let from = 0;
     for (const program of findPrograms(words)) {
