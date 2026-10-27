@@ -64,7 +64,7 @@ test('init --list: every change under the heading of its group, then the notes',
   const done = init(sandbox.repo, sandbox.env, () => '');
   const text = checked(initListScreen(done, LINUX));
   for (const heading of ['The rules:', 'CI:', 'GitHub:', 'The agents:', 'Other files:']) assert.match(text, new RegExp(`^${heading}$`, 'm'), heading);
-  assert.match(text, /^The rules:\n {2}updated the commit check, run from \.githooks \(core\.hooksPath\)$/m, 'the commit check leads (#654)');
+  assert.match(text, /^The rules:\n {2}updated the commit check, run from \.githooks$/m, 'the commit check leads (#654)');
   assert.match(text, /^ {2}wrote \.github\/CODEOWNERS /m);
   assert.match(text, /^ {2}added the Codex tool-call hook in \.codex\/hooks\.json$/m);
 });

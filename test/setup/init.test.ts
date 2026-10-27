@@ -300,7 +300,7 @@ test("init: a TZ the user set in .claude/settings.json is kept, with one note (#
 });
 
 /** Whether the step's first change is git pointed at .githooks: the commit check leads the list (#654). */
-const leadsWithHookOn = (result: Step): boolean => result.changes[0]?.path === HOOKS_PATH && result.changes[0]?.note === 'the commit check, run from .githooks (core.hooksPath)';
+const leadsWithHookOn = (result: Step): boolean => result.changes[0]?.path === HOOKS_PATH && result.changes[0]?.note === 'the commit check, run from .githooks';
 
 /** The DeepSeek Harness bridge commands init names, one a line, so each copies whole (#1040). */
 const DSH_STEPS = [

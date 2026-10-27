@@ -1345,7 +1345,7 @@ function setCommitCheck(root: string, cli: string, hooks: HookSetup, blocks: str
     execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: root, env, stdio: 'pipe' });
     // The answers kept so far name the old value.
     forgetGitReads();
-    const on = changeOf(before === '.githooks' ? 'kept' : 'updated', 'git-hook', HOOKS_PATH, 'the commit check, run from .githooks (core.hooksPath)');
+    const on = changeOf(before === '.githooks' ? 'kept' : 'updated', 'git-hook', HOOKS_PATH, 'the commit check, run from .githooks');
     return stepOf({ changes: [on], notes: [...note, ...dead] });
   }
   const { hooksPath } = hooks;
