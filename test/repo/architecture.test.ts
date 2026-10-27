@@ -13,7 +13,7 @@ import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } 
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
-import fileTimes, { judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
+import fileTimes, { fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
 import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
@@ -2229,6 +2229,26 @@ test('file time: the reporter adds up each file\'s top-level tests, and a file o
   const under = judgeFiles('{"file":"test/b.test.ts","ms":1200}\n');
   assert.equal(under.isOver, false);
   assert.equal(under.text, `Every test file took ${limit} s or less.\n\nThe slowest files:\n- 1.2 s: test/b.test.ts\n`);
+});
+
+test('suite time: each test job prints a line when a file finishes, and one a minute while a file runs long (#1125)', () => {
+  const progress = fileProgress();
+  const file = (type: string, name: string) => ({ type, data: { nesting: 0, name, file: `/repo/${name}` } });
+  const inner = (type: string, name: string, at: string) => ({ type, data: { nesting: 0, name, file: `/repo/${at}` } });
+  const lines: string[] = [];
+  const see = (event: Parameters<typeof progress.see>[0], second: number) => lines.push(...progress.see(event, second * 1000));
+  see(file('test:enqueue', 'test/a.test.ts'), 0);
+  see(file('test:dequeue', 'test/a.test.ts'), 0);
+  see(file('test:enqueue', 'test/b.test.ts'), 0);
+  see(file('test:dequeue', 'test/b.test.ts'), 1);
+  see(inner('test:fail', 'a case', 'test/b.test.ts'), 3);
+  see({ type: 'test:pass', data: { nesting: 1, name: 'a step', file: '/repo/test/b.test.ts' } }, 3);
+  see(file('test:complete', 'test/b.test.ts'), 4);
+  assert.deepEqual(progress.slow(30_000), [], 'under a minute: quiet');
+  assert.deepEqual(progress.slow(75_000), ['still running test/a.test.ts: 75 s'], 'a finished file is not still running');
+  see(file('test:complete', 'test/a.test.ts'), 80);
+  assert.deepEqual(lines, ['[1/2] test/b.test.ts 3 s, 1 failing', '[2/2] test/a.test.ts 80 s']);
+  assert.deepEqual(progress.slow(200_000), []);
 });
 
 test('suite time: --warn-only reports a run over the budget and passes; without it, the run fails (PR #1112)', () => {
