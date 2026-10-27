@@ -24,6 +24,8 @@ test('copilot trust on Windows (#1003): drive folders count, without case or sep
   trustFolders(home, '/a/Parent/');
   assert.equal(readTrust('/a/parent', env, 'linux').state, 'untrusted');
   assert.equal(readTrust('/a/Parent/x', env, 'linux').state, 'trusted');
+  assert.equal(readTrust('/a/parent', env, 'darwin').state, 'untrusted', 'macOS: the same rule as Linux');
+  assert.equal(readTrust('/a/Parent/x', env, 'darwin').state, 'trusted');
 });
 
 /** Write Copilot CLI's config.json in `home`, in the shape Copilot CLI 1.0.98 saved it (#341). */

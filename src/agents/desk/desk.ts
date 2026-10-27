@@ -38,6 +38,7 @@ import { DESK as GROK } from '../runtimes/grok.ts';
 import { DESK as MUSE } from '../runtimes/muse.ts';
 import { buildAgentEnv } from './agent-env.ts';
 import { DESK_FILE, modelOf, prepareDeskTeam, vendorOf } from './team/team.ts';
+import { hostPathPlace } from '../../platform/paths.ts';
 
 /** What a runtime's own file tells the desk: where its state is, how to move it, and its API hosts. */
 export interface RuntimeDesk {
@@ -240,7 +241,7 @@ export function planDesk(request: DeskRequest): DeskPlan {
   if (!runtime) throw new Error(`a desk starts ${Object.keys(DESK_RUNTIMES).join(', ')}; not "${request.runtime}". DeepSeek runs through codex.`);
   if (!request.command.length) throw new Error('no agent command after --');
   const { env } = request;
-  const platform = request.platform ?? process.platform;
+  const platform = request.platform ?? hostPathPlace().platform;
   // Who the agent really is (#748): the agent's own config may name a model of another
   // vendor than the harness's. The command line wins, as the runtime does: `--model X`
   // names the model for the board's roster and for the desk's env alike. The model goes to

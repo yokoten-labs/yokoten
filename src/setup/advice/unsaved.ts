@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { type Finding, finding } from '../../rules/text/message.ts';
+import { hostPathPlace } from '../../platform/paths.ts';
 
 /** One worktree of the clone, as git lists it, with what is only in its folder. */
 export interface WorktreeFacts {
@@ -422,8 +423,8 @@ const isInside = (path: string, folder: string) => {
  * Null when git can't read the repo. With `budget`, it stops when the time is up and
  * returns what it read, with `isPartial`: the costly reads, one per worktree, come last.
  */
-// `platform` keeps process.platform as its default until the doctor report (group C3) passes it (issue #1000).
-export function readUnsaved(root: string, { env, budget, platform = process.platform, readMounts = readProcMounts, listProcesses = listGitProcesses, tempDirs = findTempDirs(env, platform) }: { env: Env; budget?: TimeBudget; platform?: string } & MachineReaders): UnsavedFacts | null {
+// `platform` defaults to the host's until the doctor report (group C3) passes it (issue #1000).
+export function readUnsaved(root: string, { env, budget, platform = hostPathPlace().platform, readMounts = readProcMounts, listProcesses = listGitProcesses, tempDirs = findTempDirs(env, platform) }: { env: Env; budget?: TimeBudget; platform?: string } & MachineReaders): UnsavedFacts | null {
   const git = makeGitRunner(gitEnv(env), budget);
   const commonDir = git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'])?.trim();
   const list = commonDir ? git(root, ['worktree', 'list', '--porcelain', '-z']) : null;
@@ -565,7 +566,7 @@ function isWorktreeAtRisk(worktree: WorktreeFacts, facts: UnsavedFacts): boolean
  * in that work's own note. The rest get one line in full doctor, and none in a session.
  * The clone itself there always gets a note: that is how the repo is set up.
  */
-export function unsavedNotes(facts: UnsavedFacts, { home, now = Date.now(), platform = process.platform as string, session = false }: { home: string | undefined; now?: number; platform?: string; session?: boolean }): Finding[] {
+export function unsavedNotes(facts: UnsavedFacts, { home, now = Date.now(), platform = hostPathPlace().platform as string, session = false }: { home: string | undefined; now?: number; platform?: string; session?: boolean }): Finding[] {
   const notes: Finding[] = [];
   const show = (path: string) => showPath(path, facts.root, home);
   const defaultName = facts.defaultRef?.replace(/^refs\/(heads|remotes)\//, '') ?? 'the default branch';

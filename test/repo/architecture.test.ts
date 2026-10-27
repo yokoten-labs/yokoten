@@ -1492,26 +1492,15 @@ test('process: below bin/main.ts, src/ reads no env, folder or stream of the pro
 // keep the reads they have: a new file with a read, or one more read in a listed file,
 // fails. When a read moves out, lower its count here, so the list only gets shorter.
 const PLATFORM_READS: [string, number][] = [
-  ['agents/copilot.ts', 1],
-  ['agents/desk/desk.ts', 1],
-  ['agents/desk/start.ts', 1],
   ['agents/runtimes/small/deepseek-harness.ts', 1],
   ['commands/kanban/server.ts', 1],
   ['commands/more/check.ts', 1],
   ['commands/hook.ts', 1],
   ['commands/more/merge/train.ts', 1],
   ['commands/more/setup/upgrade.ts', 2],
-  ['host/light.ts', 1],
-  ['rules/guards/commands/no-wipe.ts', 2],
-  ['rules/guards/hooks/read.ts', 1],
-  ['rules/guards/lead-only/edit.ts', 2],
-  ['rules/privacy.ts', 1],
-  ['run/hook.ts', 5],
-  ['setup/advice/unsaved.ts', 5],
   ['setup/doctor/checks.ts', 2],
   ['setup/init.ts', 1],
   ['setup/install.ts', 10],
-  ['setup/road.ts', 1],
 ];
 
 /** How many times `text` reads `process.platform`, outside comments and strings. */

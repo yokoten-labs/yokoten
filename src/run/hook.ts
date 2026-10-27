@@ -1522,8 +1522,8 @@ export function runDoneWhen(
   timeoutMs: number = DONE_WHEN_MS,
   givenKill?: (pid: number) => void,
   powerShellHost?: string,
-  // Kept as process.platform until the hook command (group C5) passes it (issue #1000).
-  platform: string = process.platform,
+  // Defaults to the host's until the hook command (group C5) passes it (issue #1000).
+  platform: string = hostPathPlace().platform,
 ): Promise<{ ok: boolean; output: string }> {
   const killTree = givenKill ?? ((pid: number) => killCommandTree(pid, platform));
   const childEnv: Record<string, string> = {};

@@ -2,6 +2,7 @@
 
 import '../repo/home.ts';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
 import { makeSandbox } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
@@ -119,8 +120,6 @@ test('guard cost: the platform argument picks the way to measure (issue #1000)',
   const sandbox = makeSandbox();
   const run = (platform: string) => measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i'], '', { cwd: sandbox.repo, env: sandbox.env }, platform);
   // Off Windows the shell's `times` gives CPU; the win32 row has the wall time alone.
-  if (process.platform !== 'win32') {
-    for (const platform of ['linux', 'darwin']) assert.ok(run(platform)?.cpuMs, `${platform}: CPU time from the shell`);
-    assert.equal(run('win32')?.cpuMs, null, 'win32: the wall time alone');
-  }
+  assert.equal(run('win32')?.cpuMs, null, 'win32: the wall time alone');
+  if (existsSync('/bin/sh')) for (const platform of ['linux', 'darwin']) assert.ok(run(platform)?.cpuMs, `${platform}: CPU time from the shell`);
 });
