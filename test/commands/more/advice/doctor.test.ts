@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
 import { problemRows, runDoctor, sessionNoteBlocks, sessionScreen } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
+import { machineChecks } from '../../../../src/setup/doctor/checks.ts';
 import { fillMarks, machineMarks, paths } from '../../../../src/setup/install.ts';
 
 // What Codex and Gemini CLI hear at a session start: they don't filter command output (#390), as a note (#1099).
@@ -181,7 +182,7 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   // The Fix is a command that runs: a newcomer who follows it gets the row healed, not a refusal.
   const followed = await sandbox.call(['marks', 'add'], { input: 'nowhere-town\n' });
   assert.equal(followed.status, 0, followed.stderr);
-  assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /MISSING +private-marks:/, 'the Fix healed the row');
+  assert.equal(machineChecks(sandbox.env).find((check) => check.name === 'private-marks')?.ok, true, 'the Fix healed the row');
   assert.deepEqual(fillMarks(sandbox.env, machineMarks(sandbox.env, { cwd: sandbox.repo })), ['git name'], 'the git name was there to fill');
 });
 
