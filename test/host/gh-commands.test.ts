@@ -220,13 +220,37 @@ test('repo settings: a graphql mutation is a settings write, a query passes (#82
     "gh api graphql -f query='fragment F on Repository { id } query Q { viewer { login } ...F }'",
   ];
   for (const command of reads) assert.equal(checkCommand(command, { cwd: process.cwd(), env: lead }), null, command);
-  // Not a settings write: a comment that names a mutation, and a comment, the one mutation the
-  // bot needs (text with a brace is still text). The release check (#865) still refuses any
-  // `mutation` word, so this check adds no second refusal of its own.
-  for (const command of [
-    "gh api graphql -f query='# mutation { changeVisibility }\nquery { viewer { login } }'",
-    "gh api graphql -f query='mutation { addComment(input: {body: \"a } brace\"}) { clientMutationId } }'",
-  ]) assert.equal(checkCommand(command, { cwd: process.cwd(), env: lead })?.id, 'release', command);
+  // Not a settings write: a comment that names a mutation is a read for both checks (#965).
+  // A comment, the one mutation the bot needs (text with a brace is still text), is not a
+  // settings write; the release check (#865) still refuses it as a mutation.
+  const commented = "gh api graphql -f query='# mutation { changeVisibility }\nquery { viewer { login } }'";
+  assert.equal(checkCommand(commented, { cwd: process.cwd(), env: lead }), null, commented);
+  const comment = "gh api graphql -f query='mutation { addComment(input: {body: \"a } brace\"}) { clientMutationId } }'";
+  assert.equal(checkCommand(comment, { cwd: process.cwd(), env: lead })?.id, 'release', comment);
+});
+
+// #965: the release check reads the GraphQL document as code, as the settings check does, so
+// `mutation` inside a string or a `#` comment is not a mutation.
+test('publishing routes: mutation in a string or a comment is not a mutation (#965)', () => {
+  const publishes = (command: string) => isPublishingApiCall(wordsOf(command).slice(2));
+  const cases: Array<[string, boolean]> = [
+    ["gh api graphql -f query='query { search(query: \"mutation\") { issueCount } }'", false],
+    ["gh api graphql -f query='# mutation\nquery { viewer { login } }'", false],
+    ['gh api graphql -f query=\'query { search(query: "a \\" mutation") { issueCount } }\'', false],
+    // Positive controls: a real mutation, one after a comment or a string, a comment that a
+    // lone carriage return ends, a document the shell builds, and one the guard cannot read.
+    ["gh api graphql -f query='mutation { addComment(input: {body: \"x\"}) { clientMutationId } }'", true],
+    ["gh api graphql -f query='# read\nmutation { addComment(input: {body: \"x\"}) { clientMutationId } }'", true],
+    ["gh api graphql -f query='query { a(x: \"mutation\") { b } } mutation { c }'", true],
+    ["gh api graphql -f query='# read\rmutation { c }'", true],
+    ["gh api graphql -f query='mutation($id: ID!) { addComment(input: {subjectId: $id, body: \"x\"}) { clientMutationId } }'", true],
+    ["gh api graphql -f query='query { search(query: \"mutation\") { issueCount } }' -f other='mutation { c }'", true],
+    ['gh api graphql -F query=@q.graphql', true],
+    ['gh api graphql -f name=x', true],
+  ];
+  for (const [command, expected] of cases) assert.equal(publishes(command), expected, command);
+  // The hook answers the same for the read from the issue.
+  assert.equal(checkCommand("gh api graphql -f query='query { search(query: \"mutation\") { issueCount } }'", { cwd: process.cwd(), env: {} }), null);
 });
 
 test('host samples: doctor hears a miss, and a catch is quiet (#650)', () => {

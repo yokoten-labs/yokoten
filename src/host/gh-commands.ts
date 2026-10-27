@@ -143,8 +143,10 @@ function documentCode(document: string): string {
       code += ' ';
       continue;
     }
+    // A comment ends at a line break, and GraphQL reads a carriage return alone as one: a
+    // `\r` must not hide the code after it (#965).
     if (document[index] === '#') {
-      while (index < document.length && document[index] !== '\n') index++;
+      while (index < document.length && document[index] !== '\n' && document[index] !== '\r') index++;
       code += '\n';
       continue;
     }
@@ -549,12 +551,16 @@ export function isPublishingApiCall(args: string[]): boolean {
   // same route (#865). A leading slash or a host must not hide a mutation from the check.
   const endpoint = plainEndpoint(apiEndpoint(args, method));
   if (endpoint.toLowerCase() === 'graphql') {
+    // The document is read as code, as the settings check reads it: `mutation` inside a
+    // string or a `#` comment is not an operation. A document it cannot read, or one the
+    // shell builds (any `$`), is still refused, and so is `mutation` in the code of any
+    // other word (#965).
     const query = graphqlQuery(args);
-    if (query === null || /\bmutation\b/i.test(query)) return true;
-  } else if (writes && isPublishingRoute(endpoint, method, args)) {
-    return true;
+    if (query === null || isShellExpanded(query)) return true;
+    return args.some((word) => MUTATION.test(documentCode(word)));
   }
-  return args.some((word) => /\bmutation\b/i.test(word));
+  if (writes && isPublishingRoute(endpoint, method, args)) return true;
+  return args.some((word) => MUTATION.test(word));
 }
 
 // Known-bad commands for doctor's self-test. A check that lets one through is named here.
