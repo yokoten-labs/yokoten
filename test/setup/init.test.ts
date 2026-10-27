@@ -2512,3 +2512,30 @@ test('init --github --yes: the GitHub results are rows (#1027)', async () => {
   assert.equal(all.match(/GitHub was not read/g)?.length, 1, 'said once');
   for (const line of all.split('\n')) assert.ok(line.length <= 80, `over 80 columns: ${line}`);
 });
+
+// #984 for init's writes: an agent file the project already has is merged, never replaced.
+test('init (#984): a project agent file that is there gets yokoten\'s entries, and every key of the user\'s stays', () => {
+  const sandbox = makeSandbox();
+  const claude = { permissions: { allow: ['Bash(make test)'] }, env: { FOO: 'ours' }, hooks: { PreToolUse: [{ matcher: 'Write', hooks: [{ type: 'command', command: 'our-lint' }] }] } };
+  const gemini = { theme: 'Dracula', general: { vimMode: true } };
+  sandbox.write('.claude/settings.json', `${JSON.stringify(claude, null, 2)}\n`);
+  sandbox.write('.gemini/settings.json', `${JSON.stringify(gemini, null, 2)}\n`);
+  const result = initIn(sandbox);
+  assert.ok(result.ok, said(result));
+  // The positive control: yokoten's entries went in, so init did write these files.
+  assert.ok(has(result, 'added', /^the tool-call hook in \.claude\/settings\.json$/), said(result));
+  assert.ok(has(result, 'added', /^the Gemini CLI tool-call hook in \.gemini\/settings\.json$/), said(result));
+  const claudeAfter = JSON.parse(readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8'));
+  assert.ok(hasHook(join(sandbox.repo, '.claude', 'settings.json'), 'PreToolUse', 'hook'));
+  // The user's keys, and their own hook, stay as they were.
+  assert.deepEqual(claudeAfter.permissions, claude.permissions);
+  assert.equal(claudeAfter.env.FOO, 'ours');
+  assert.ok(JSON.stringify(claudeAfter.hooks.PreToolUse).includes('our-lint'), 'the user\'s own hook stays');
+  const geminiAfter = JSON.parse(readFileSync(join(sandbox.repo, '.gemini', 'settings.json'), 'utf8'));
+  assert.equal(geminiAfter.theme, 'Dracula');
+  assert.deepEqual(geminiAfter.general, gemini.general);
+  // A second run changes neither file.
+  const before = [readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8'), readFileSync(join(sandbox.repo, '.gemini', 'settings.json'), 'utf8')];
+  assert.ok(initIn(sandbox).ok);
+  assert.deepEqual([readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8'), readFileSync(join(sandbox.repo, '.gemini', 'settings.json'), 'utf8')], before);
+});
