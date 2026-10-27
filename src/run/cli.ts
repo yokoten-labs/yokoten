@@ -914,7 +914,7 @@ export const COMMANDS: Command[] = [
     shown: 'always',
     oldNames: ['board'],
     summary: 'the team at a glance, live and read only (preview)',
-    usage: '[--text] [--no-open]',
+    usage: '[--text] [--json] [--no-open]',
     help: {
       summary: 'Preview: it may change. Read only: nothing on the page starts, stops or changes work. It serves a page on this machine only.',
       examples: [
@@ -938,6 +938,7 @@ export const COMMANDS: Command[] = [
     },
     options: [
       { name: '--text', text: 'print the sessions, pull requests and Actions, and exit' },
+      { name: '--json', text: 'print the same facts as data (the object the page reads), and exit' },
       { name: '--no-open', text: 'do not open the browser; print the address only' },
     ],
   },
