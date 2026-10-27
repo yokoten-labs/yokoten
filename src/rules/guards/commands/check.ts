@@ -628,7 +628,8 @@ function checkPublish(words: string[], env: Env): Finding | null {
     for (const [at, word] of words.entries()) {
       if (!['npm', 'pnpm'].includes(base(word).replace(/\.(exe|cmd)$/i, ''))) continue;
       const npm = words.slice(at + 1);
-      const version = npmSubcommandAt(npm, 'version');
+      // npm's own alias table runs `npm verison` as `npm version` (cmd-list.js), so the typo counts too.
+      const version = Math.max(npmSubcommandAt(npm, 'version'), npmSubcommandAt(npm, 'verison'));
       if (version === -1) continue;
       const rest = npm.slice(version + 1);
       if (!rest.some((a) => a === '--no-git-tag-version') && rest.some((a) => !a.startsWith('-'))) return release('npm version makes a tag');

@@ -229,6 +229,10 @@ test('release: npm version is read only as the subcommand (#1123, #1034)', () =>
     ['npm version patch --no-git-tag-version', null],
     // Positive controls: the subcommand still makes a tag.
     ['npm version patch', 'release'],
+    // npm's alias table runs `verison` as `version`.
+    ['npm verison patch', 'release'],
+    ['npm exec -- npm verison patch', 'release'],
+    ['npm view yokoten verison', null],
     ['npm --prefix x version minor', 'release'],
     ['npm --prefix=x version minor', 'release'],
     ['pnpm version 1.2.3', 'release'],
