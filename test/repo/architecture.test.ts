@@ -1495,7 +1495,6 @@ const PLATFORM_READS: [string, number][] = [
   ['agents/copilot.ts', 1],
   ['agents/desk/desk.ts', 1],
   ['agents/desk/start.ts', 1],
-  ['commands/kanban/server.ts', 1],
   ['commands/more/setup/upgrade.ts', 2],
   ['host/light.ts', 1],
   ['rules/guards/commands/no-wipe.ts', 2],
