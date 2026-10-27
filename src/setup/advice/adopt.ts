@@ -301,20 +301,5 @@ export async function draft(rows: Fact[], { env, send = chat, timeoutMs }: { env
   return { rows: answer.rows, by: `the model (${config.model})` };
 }
 
-// A cell in a Markdown table: a backslash first, then a pipe, so neither can end the cell.
-const cell = (text: string) => text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
-
 /** The one line that says who decides. */
 export const YOU_DECIDE = 'This is a draft. You decide every row: as-is, lighter, or not now with a reason and when to look again.';
-
-/** The draft as a Markdown table, with who drafted it and who decides. */
-export function table(d: Draft): string[] {
-  return [
-    '| Practice | The project today | Draft | Why |',
-    '|----------|-------------------|-------|-----|',
-    ...d.rows.map((r) => `| ${r.key} | ${r.status}: ${cell(r.evidence)} | ${r.decision} | ${cell(r.reason)} |`),
-    '',
-    d.by === 'rules' ? `Drafted by rules (done, missing or unknown: as-is; partial: lighter), because ${d.note}.` : `Drafted by ${d.by}.`,
-    YOU_DECIDE,
-  ];
-}

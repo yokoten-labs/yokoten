@@ -12,14 +12,23 @@ import { shareGuardMeasure, shareSelfTest } from '../../repo/helpers.ts';
 import { at, fakeGh, GOOD, makeSandbox, makeTempDir, planningFound, REPO, said, serverGh, sessionRoad, stepMark, stopCheckoutWalk, withPlanning } from '../../repo/helpers.ts';
 import { DEFAULTS, type Env, loadConfig } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
-import { blocksToSay, doctor, noteLines, listBoardSteps, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
+import { blocksToSay, type DoctorReport, doctor, fullLines, noteLines, listBoardSteps, readAtOnce, reportJson, SESSION_BLOCKS_MOST, sessionBlocks, shortLines, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, oneStepEach, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
 import { LABELS } from '../../../src/setup/plan.ts';
 import { missingPaths, readDefaultBranchFiles, road, ROAD, serverChecks, stepFinding, stepText } from '../../../src/setup/road.ts';
 import { museClaudeRules } from '../../../src/setup/doctor/checks.ts';
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
+import { type Finding } from '../../../src/rules/text/message.ts';
+import { screenProblems } from '../../repo/docs/screen-rules.ts';
 
 shareGuardMeasure();
 shareSelfTest();
+
+/** A screen with each wrapped row on one line again: the rows wrap at 80 columns under their text (#1115). */
+const flat = (text: string): string => text.replace(/\n {14}/g, ' ');
+/** The lines of a screen, each wrapped row as one line. */
+const rowsOf = (lines: readonly string[]): string[] => flat(lines.join('\n')).split('\n');
+/** A note wrapped under `yokoten: `, as one line again. */
+const unwrapNote = (lines: readonly string[]): string[] => lines.join('\n').replace(/\n {9}(?=\S)/g, ' ').split('\n');
 
 const marks = (s: ServerSettings | Unread) => Object.fromEntries(serverChecks(s).map((c) => [c.id, c.mark]));
 
@@ -47,7 +56,7 @@ test('doctor: no temp folder is one line with the fix, not BROKEN (#1108)', () =
   assert.equal(result.report.selfTest.ok, true);
   assert.deepEqual(result.report.selfTest, { ok: true, failed: [], ran: false, skipped: ['user guard check', 'OpenCode plugin note'], reason: 'no temp folder to test in' }, 'the JSON says the self-test did not run');
   assert.ok(!result.lines.some((line) => line.includes('BROKEN')), result.lines.join('\n'));
-  const noTemp = result.lines.filter((line) => line.includes('could not set up a temp folder'));
+  const noTemp = unwrapNote(result.lines).filter((line) => line.includes('could not set up a temp folder'));
   assert.equal(noTemp.length, 1, result.lines.join('\n'));
   assert.match(noTemp[0]!, /user guard check and OpenCode plugin note did not run; free space in the temp folder/);
   assert.ok(!doctor(null, { env: { HOME: '/home/a' }, config: DEFAULTS }).lines.some((line) => line.includes('temp folder')), 'a working temp folder says nothing');
@@ -181,18 +190,18 @@ test('doctor: the tag bypass and the release environment each show one line with
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
   const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
-  const lineOf = (routes: Record<string, unknown>, key: string) => run(routes).lines.find((line) => {
-    if (new RegExp(`^ {4}to do +${key}\\b`).test(line)) return true;
+  const lineOf = (routes: Record<string, unknown>, key: string) => rowsOf(run(routes).lines).find((line) => {
+    if (new RegExp(`^ {2}to do +${key}\\b`).test(line)) return true;
     // The done steps of a stage share one line: the key is one name in it (#946).
-    const done = /^ {4}done +(.*)$/.exec(line);
+    const done = /^ {2}done +(.*)$/.exec(line);
     return done?.[1]?.split(', ').some((name) => name === key || name.startsWith(`${key} (`)) ?? false;
   }) ?? '';
   // All set: no line for these asks the owner for anything.
-  for (const key of ['tag-bypass', 'release-reviewer', 'release-tag-rule']) assert.match(lineOf(GOOD, key), /^ {4}done /, key);
+  for (const key of ['tag-bypass', 'release-reviewer', 'release-tag-rule']) assert.match(lineOf(GOOD, key), /^ {2}done /, key);
   // Positive control: a known-bad setting is caught, with its own line and GitHub's menu.
   // 'road: each server step catches its setting off' has every other bad case.
   const line = lineOf({ ...GOOD, [`repos/${REPO}/rulesets/7`]: { ...(GOOD[`repos/${REPO}/rulesets/7`] as object), bypass_actors: [] } }, 'tag-bypass');
-  assert.match(line, /^ {4}to do +tag-bypass: /);
+  assert.match(line, /^ {2}to do +tag-bypass: /);
   assert.match(line, /Repository admin/);
   assert.match(line, /; in Settings, Rules, /, 'says where to click');
 });
@@ -234,16 +243,16 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
   execFileSync('git', ['init', '-q', root]);
   const run = (routes: Record<string, unknown>) => doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh(routes).gh });
   let result = run(GOOD);
-  const text = () => result.lines.join('\n');
+  const text = () => flat(result.lines.join('\n'));
   // No origin remote at all: say so once in each block that has such steps (#502, #946).
-  const cant = result.lines.filter((l) => /can't check/.test(l));
+  const cant = rowsOf(result.lines).filter((l) => /can't check/.test(l));
   assert.equal(cant.length, 3, cant.join('\n'));
-  assert.ok(cant.some((line) => /^ {4}can't check labels, milestone: there is no origin remote yet/.test(line)), cant.join('\n'));
-  assert.ok(cant.some((line) => /^ {4}can't check review \(Scorecard: Code-Review\): there is no origin remote yet/.test(line)), cant.join('\n'));
-  assert.ok(cant.some((line) => /^ {4}can't check .*protection.*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {2}can't check labels, milestone: there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {2}can't check review \(Scorecard: Code-Review\): there is no origin remote yet/.test(line)), cant.join('\n'));
+  assert.ok(cant.some((line) => /^ {2}can't check .*protection.*: there is no origin remote yet, so doctor can't read the server; make the repo on your code host, add it as origin with `git remote add origin <url>`, and push; then run `yokoten doctor` again/.test(line)), cant.join('\n'));
   assert.ok(!/can't check.*can't check/.test(text()), 'no line says "can\'t check" twice');
   assert.equal(result.report.steps?.find((s) => s.id === 'protection')?.mark, "can't check", 'the data still has each step');
-  assert.ok(result.lines.some((l) => /secret scanning with push protection/.test(l)), 'the by-hand list when nothing is read');
+  assert.ok(rowsOf(result.lines).some((l) => /secret scanning with push protection/.test(l)), 'the by-hand list when nothing is read');
   execFileSync('git', ['remote', 'add', 'origin', 'https://forgebox.example.com/me/repo.git'], { cwd: root });
   result = run(GOOD);
   // Another host (#504): the doctor-other-host test has the rest.
@@ -267,21 +276,21 @@ test('doctor: reads the server of a GitHub origin into the road; a step not done
 
 test('doctor: the next step comes first, each part is a block, and done steps share a line (#946)', async () => {
   const sandbox = makeSandbox();
-  const text = (await sandbox.call(['doctor', '--all'])).stdout;
+  const text = flat((await sandbox.call(['doctor', '--all'])).stdout);
   const lines = text.trimEnd().split('\n');
   // The first line says where the project is and the one step to take next.
-  assert.match(lines[0] ?? '', /^stage \d of 5, [^.]+\. Next: .+\.$/, text);
+  assert.match(lines[0] ?? '', /^yokoten doctor · stage \d of 5, .+$/, text);
   // Every stage and every part has a short heading, then a blank line before it.
-  const stageHeads = lines.map((line, at) => ({ line, at })).filter(({ line }) => /^ {2}\d\. \S/.test(line));
+  const stageHeads = lines.map((line, at) => ({ line, at })).filter(({ line }) => /^Stage \d, \S.*:$/.test(line));
   assert.equal(stageHeads.length, 5, text);
   for (const { line, at } of stageHeads) assert.equal(lines[at - 1], '', `${line} starts its block`);
-  for (const heading of ['project:', 'unsaved work (only on this machine):', 'machine:', 'server (read only;']) {
+  for (const heading of ['Project:', 'Unsaved work, only on this machine:', 'Machine:', 'Server, read only;']) {
     const at = lines.findIndex((line) => line === heading || line.startsWith(heading));
     assert.ok(at > 0, heading);
     assert.equal(lines[at - 1], '', `${heading} starts its block`);
   }
   // The done steps of a stage share one line, and none of them keeps its own.
-  const done = lines.filter((line) => /^ {4}done  /.test(line));
+  const done = rowsOf(lines).filter((line) => /^ {2}done {8}/.test(line));
   assert.ok(done.length > 0, text);
   assert.ok(done.some((line) => line.includes(', ')), 'a stage with several done steps lists them together');
   // --json is the same data as before: one entry per step, with no block layout.
@@ -305,7 +314,7 @@ test("doctor: a slow server read stops in time, and each step says it can't be c
   const env = { HOME: root, YOKOTEN_TEMP_DIRS: '', PATH: `${dir}${delimiter}${process.env.PATH ?? ''}` };
   const result = doctor(root, { env, config: DEFAULTS, gh: ghIn(root, env, SERVER_TIMEOUT_MS) });
   for (const key of SERVER_KEYS) assert.equal(result.report.steps?.find((s) => s.id === key)?.mark, "can't check", key);
-  const line = result.lines.find((l) => /can't check/.test(l) && /protection/.test(l)) ?? '';
+  const line = rowsOf(result.lines).find((l) => /can't check/.test(l) && /protection/.test(l)) ?? '';
   assert.match(line, /GitHub took too long to answer/, 'the cap fired, not the stub');
   assert.match(line, /check the network, then run doctor again/);
 });
@@ -332,7 +341,7 @@ test('doctor: on another host, each forge step says once what it asks, with no G
     execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: root });
     for (const session of [false, true]) {
       const result = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session, gh: noGh });
-      const text = result.lines.join('\n');
+      const text = flat(result.lines.join('\n'));
       assert.ok(!text.includes('forgebox'), `${remote}: a self-hosted server is never named`);
       assert.ok(!GITHUB_ONLY.test(text), `${remote}: no GitHub-only instruction: ${GITHUB_ONLY.exec(text)?.[0]}`);
       assert.ok(!FORGE_STEPS.includes(result.report.next?.id ?? ''), `${remote}: a forge step is never the next step`);
@@ -340,12 +349,12 @@ test('doctor: on another host, each forge step says once what it asks, with no G
       if (session) continue;
       for (const key of FORGE_STEPS) {
         assert.equal(result.report.steps?.find((s) => s.id === key)?.mark, "can't check", `${remote}: ${key}`);
-        const lines = result.lines.filter((line) => new RegExp(`^ {4}can't check +${key}\\b`).test(line));
+        const lines = rowsOf(result.lines).filter((line) => new RegExp(`^ {2}can't check +${key}\\b`).test(line));
         assert.equal(lines.length, 1, `${remote}: ${key} has one line`);
         assert.ok(lines[0].includes(`: yokoten can't check this on ${label} yet; do it by hand: `), `${remote}: ${key}`);
       }
-      assert.ok(result.lines.some((line) => line.startsWith(`  can't check server-settings: yokoten can't read the server settings on ${label} yet; the steps marked can't check say`)), `${remote}: server-settings`);
-      assert.ok(!text.includes('check these by hand') && !text.includes('not checked '), `${remote}: the GitHub by-hand lists are left out`);
+      assert.ok(rowsOf(result.lines).some((line) => line.startsWith(`  can't check server-settings: yokoten can't read the server settings on ${label} yet; the steps marked can't check say`)), `${remote}: server-settings`);
+      assert.ok(!text.includes('to do       by hand:') && !text.includes('not checked: the bot'), `${remote}: the GitHub by-hand lists are left out`);
     }
     execFileSync('git', ['remote', 'remove', 'origin'], { cwd: root });
   }
@@ -448,7 +457,7 @@ test('doctor: lists the board clicks by hand only when a board is linked, and ne
   assert.deepEqual(listBoardSteps({ ...server, boards: [] }), [], 'no board: no lines');
   assert.deepEqual(listBoardSteps(undefined), [], 'a session: no lines');
   const lines = listBoardSteps({ ...server, boards: [{ number: 1, title: 'demo' }] });
-  assert.deepEqual(lines.map((l) => l.replace(/:.*/, '')), Array(4).fill('  by hand     board "demo"'));
+  assert.deepEqual(lines.map((l) => l.replace(/:.*/, '')), Array(4).fill('board "demo"'));
   for (const part of [/views: a Board view grouped by Status/, /"Auto-add to project": on/, /"Item closed": sets Status to Done/, /"Pull request merged": sets Status to Done/]) assert.ok(lines.some((l) => part.test(l)), String(part));
   // Through readServer and doctor: the lines appear, and the result does not change.
   const root = makeTempDir('yokoten-board-');
@@ -459,8 +468,8 @@ test('doctor: lists the board clicks by hand only when a board is linked, and ne
   assert.deepEqual((readServer(withBoard, REPO) as ServerSettings).boards, [{ number: 1, title: 'demo' }]);
   const plainResult = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: plain });
   const boardResult = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: withBoard });
-  assert.ok(!plainResult.lines.some((l) => /by hand {5}board/.test(l)));
-  assert.equal(boardResult.lines.filter((l) => /^ {2}by hand {5}board "demo": /.test(l)).length, 4);
+  assert.ok(!rowsOf(plainResult.lines).some((l) => /by hand: board/.test(l)));
+  assert.equal(rowsOf(boardResult.lines).filter((l) => /^ {2}to do {7}by hand: board "demo": /.test(l)).length, 4);
   assert.equal(boardResult.ok, plainResult.ok);
   assert.deepEqual(boardResult.report.findings, plainResult.report.findings);
 });
@@ -534,7 +543,7 @@ test('doctor: a hook in the project\'s folder that is not executable is not chec
   const mergeHook = join(sandbox.repo, 'tools/hooks/pre-merge-commit');
   chmodSync(mergeHook, 0o644);
   assert.notEqual(await stepMark(sandbox, 'commit-check'), 'done', 'the check is in the file, but git does not run it');
-  let doctor = (await sandbox.call(['doctor', '--all'])).stdout;
+  let doctor = flat((await sandbox.call(['doctor', '--all'])).stdout);
   assert.match(doctor, /commit-check \(OSPS-BR-07\.01\): merge commits are not checked: tools\/hooks\/pre-merge-commit is not executable, so git skips it/);
   assert.match(doctor, /run `chmod \+x tools\/hooks\/pre-merge-commit`, or `yokoten init`/);
   const result = await sandbox.call(['init', '--list']);
@@ -545,7 +554,7 @@ test('doctor: a hook in the project\'s folder that is not executable is not chec
   const preCommit = join(sandbox.repo, 'tools/hooks/pre-commit');
   writeFileSync(preCommit, '#!/bin/sh\necho own\n');
   chmodSync(preCommit, 0o644);
-  doctor = (await sandbox.call(['doctor', '--all'])).stdout;
+  doctor = flat((await sandbox.call(['doctor', '--all'])).stdout);
   assert.match(doctor, /commit-check \(OSPS-BR-07\.01\): commits are not checked: tools\/hooks\/pre-commit does not run yokoten; `yokoten init` adds the check to tools\/hooks\/pre-commit,/);
   assert.match(doctor, /or do it yourself: add the line below to tools\/hooks\/pre-commit, after its `#!` line; run `chmod \+x tools\/hooks\/pre-commit`\. The line: /);
 });
@@ -555,7 +564,7 @@ test('doctor: a workflow of the project\'s own that init keeps gets the step to 
   sandbox.write('.github/workflows/pr.yml', 'name: pr\non: pull_request\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo lint\n');
   sandbox.write('.github/workflows/yokoten.yml', 'name: yokoten\non: push\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo build\n');
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
+  const doctor = flat((await sandbox.call(['doctor', '--all'])).stdout);
   assert.ok(doctor.includes('titles (Conventional Commits 1.0.0): CI does not check pull requests (`yokoten check --pr`); add this step to .github/workflows/pr.yml, after actions/checkout with `fetch-depth: 0` and actions/setup-node, in a job that runs on pull_request (`yokoten init` keeps your file as it is): `- run: node .yokoten/bin/yokoten.ts check --pr`\n'), doctor);
   assert.ok(doctor.includes('ci (Scorecard: CI-Tests): CI does not run `yokoten check`; add this step to .github/workflows/yokoten.yml, after actions/checkout and actions/setup-node (`yokoten init` keeps your file as it is): `- run: node .yokoten/bin/yokoten.ts check`\n'), doctor);
   assert.doesNotMatch(doctor, /`yokoten init` adds \.github\/workflows/);
@@ -598,12 +607,12 @@ test('doctor --session: "not now" skips a step, by the names yokoten.json alread
   assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      CI does not run/, 'a stage with every step not now is passed');
   sandbox.write('yokoten.json', JSON.stringify({ notNow: { rules: 'a', 'tool-hook': 'b', 'commit-check': 'c', runtime: 'd', tests: 'e', remote: 'no remote yet', ci: 'no remote yet', issues: 'f' } }));
   assert.match(await next(), /stage 2 of 5, issues and pull requests\n  Next      No issue templates and no pull request template/);
-  const full = (await sandbox.call(['doctor', '--all'])).stdout;
-  assert.match(full, /^ +not now +ci \(Scorecard: CI-Tests\): no remote yet$/m, 'the full map shows the reason');
+  const full = flat((await sandbox.call(['doctor', '--all'])).stdout);
+  assert.match(full, /^ +skipped +ci \(Scorecard: CI-Tests\): not now, no remote yet$/m, 'the full map shows the reason');
   assert.match(full, /^ +next +templates \(GitHub community profile\): /m);
   assert.match(full, /^ +to do +changelog \(Best Practices: release_notes\): /m);
   // "notNow" ci covers the steps that need CI (#377): titles waits too, and says what to run instead.
-  assert.match(full, /^ +not now +titles \(Conventional Commits 1\.0\.0\): no remote yet \(notNow ci\); run `yokoten check --pr <number>` before each merge$/m);
+  assert.match(full, /^ +skipped +titles \(Conventional Commits 1\.0\.0\): not now, no remote yet \(notNow ci\); run `yokoten check --pr <number>` before each merge$/m);
 });
 
 test('doctor: each stage boundary, from a fresh repo to the end of the road', async () => {
@@ -660,15 +669,15 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
   // The order is advice, not a gate: a later step done early counts as done.
   rmSync(join(sandbox.repo, 'AGENTS.md'));
   assert.match(await next(bot), /stage 1 of 5, safety net\n  Next      No AGENTS\.md/);
-  assert.match((await sandbox.call(['doctor', '--all'], { extra: { ...extra, ...bot } })).stdout, /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
+  assert.match(flat((await sandbox.call(['doctor', '--all'], { extra: { ...extra, ...bot } })).stdout), /^ +done +security-files \(Scorecard: Security-Policy · OSPS-VM-02\.01\)$/m, 'full doctor names the outside standard (#58)');
 });
 
 test('doctor: a stage that jumped says which stages it passed, once (#514)', async () => {
   const sandbox = makeSandbox();
-  const jumpLine = /^stage \d (is done too|counts as done): /m;
+  const jumpLine = /^ {2}done {8}stage \d (is done too|counts as done): /m;
   // The first run has nothing to compare with: stage 1 is next, and no line.
   const first = await sandbox.call(['doctor', '--all']);
-  assert.match(first.stdout, /^stage 1 of 5, /m);
+  assert.match(first.stdout, /^yokoten doctor · stage 1 of 5, /m);
   assert.doesNotMatch(first.stdout, jumpLine);
   // The stage file sits next to the lessons state, in the git folder, not one folder deeper (#514).
   const stagePath = join(sandbox.repo, '.git/yokoten/stage.json');
@@ -683,16 +692,16 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   sandbox.git('commit', '--allow-empty', '-qm', 'first');
   sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   const jumpedRun = await sandbox.call(['doctor', '--all']);
-  assert.match(jumpedRun.stdout, /^stage 4 of 5, /m);
+  assert.match(jumpedRun.stdout, /^yokoten doctor · stage 4 of 5, /m);
   // Each passed stage says its own reason: stage 2 has steps only the server can check,
   // while stage 3 was already in place.
-  assert.match(jumpedRun.stdout, /^stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
-  assert.match(jumpedRun.stdout, /^stage 3 is done too: its steps were already in place$/m);
+  assert.match(flat(jumpedRun.stdout), /^ {2}done {8}stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
+  assert.match(flat(jumpedRun.stdout), /^ {2}done {8}stage 3 is done too: its steps were already in place$/m);
   // Two stages passed, each in its own line in the singular: never "stages 3 are" (#514).
   assert.doesNotMatch(jumpedRun.stdout, /^stages /m);
   // The lines are told once: the next run starts from stage 4.
   const later = await sandbox.call(['doctor', '--all']);
-  assert.match(later.stdout, /^stage 4 of 5, /m);
+  assert.match(later.stdout, /^yokoten doctor · stage 4 of 5, /m);
   assert.doesNotMatch(later.stdout, jumpLine);
   // A session stays short: it never prints the lines.
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, jumpLine);
@@ -734,7 +743,7 @@ test('doctor: exits 0 on a set-up project with steps to do, and 1 on a problem (
   sandbox.write('notes.md', 'I live in MyCity\n');
   sandbox.git('add', 'notes.md');
   result = sandbox.run(['doctor', '--all']);
-  assert.match(result.stdout, /MISSING tree: 1 problem/);
+  assert.match(result.stdout, /MISSING +tree: 1 problem/);
   assert.equal(result.status, 1);
   assert.equal(sandbox.run(['doctor', '--session']).status, 0, 'a session always starts');
 });
@@ -749,7 +758,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   // A fresh change is work going on now: the session does not hear it.
   sandbox.write('a.txt', 'a\n');
   assert.equal((await session()).length, 1, 'only the road');
-  assert.match((await sandbox.call(['doctor', '--all'], { extra })).stdout, /^unsaved work \(only on this machine\):\n {2}note {4}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'], { extra })).stdout), /^Unsaved work, only on this machine:\n {2}note {8}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
   const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   utimesSync(join(sandbox.repo, 'a.txt'), old, old);
   assert.deepEqual((await session()).slice(1), [[...noteLines('yokoten: . has 1 uncommitted file, the oldest changed 2 days ago; commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it.'), ...noteLines(UNSAVED_OFFER)].join('\n')]);
@@ -771,8 +780,8 @@ test('doctor: lists the work only on this machine; a session hears at most three
   assert.equal(lines[3], 'yokoten: 2 more like this; `yokoten doctor` lists them all.');
   assert.ok(lines.every((line) => !line.includes(sandbox.home)), 'never the full home path');
   const full = await sandbox.call(['doctor', '--all'], { extra });
-  assert.equal(full.stdout.match(/^ {2}note {4}(uncommitted-changes|unpushed-commits): /gm)?.length, 5);
-  assert.match(full.stdout, /uncommitted-changes: ~\/w1 has 1 uncommitted file/, 'a worktree outside the repo shows from ~');
+  assert.equal(full.stdout.match(/^ {2}note {8}(uncommitted-changes|unpushed-commits): /gm)?.length, 5);
+  assert.match(flat(full.stdout), /uncommitted-changes: ~\/w1 has 1 uncommitted file/, 'a worktree outside the repo shows from ~');
 });
 
 test('doctor: a clean, pushed repo has no unsaved-work note (#365)', async () => {
@@ -784,8 +793,8 @@ test('doctor: a clean, pushed repo has no unsaved-work note (#365)', async () =>
   sandbox.git('commit', '-qm', 'first');
   sandbox.git('remote', 'add', 'origin', origin);
   sandbox.git('push', '-q', '-u', 'origin', 'main');
-  const full = (await sandbox.call(['doctor', '--all'])).stdout;
-  assert.match(full, /^unsaved work \(only on this machine\):\n {2}ok {6}everything is committed and pushed$/m);
+  const full = flat((await sandbox.call(['doctor', '--all'])).stdout);
+  assert.match(full, /^Unsaved work, only on this machine:\n {2}ok {10}everything is committed and pushed$/m);
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /only on this machine/);
 });
 
@@ -825,9 +834,9 @@ test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to i
   writeFileSync(hooks, '{}\n');
   const what = "outside a desk, Muse can send ~/.claude/CLAUDE.md to Muse's model";
   const fix = 'run Muse in a desk (`yokoten desk muse`) so the home folder stays hidden';
-  const line = `  note    muse-claude-rules: ${what}; ${fix}`;
+  const line = `  note        muse-claude-rules: ${what}; ${fix}`;
   const full = run();
-  assert.ok(full.lines.includes(line), full.lines.join('\n'));
+  assert.ok(rowsOf(full.lines).includes(line), full.lines.join('\n'));
   assert.deepEqual(noteOf(full).map((note) => [note.what, note.why, note.fix]), [[what, 'the file was written for one vendor', fix]]);
   assert.ok(!full.report.findings.some((note) => note.id === 'muse-claude-rules'));
   const session = run(true);
@@ -888,7 +897,7 @@ test('doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder
   assert.equal(noteOf({ ...base, YOKOTEN_TEAM: team })[0]?.finding.what, what);
   const report = doctor(sandbox.repo, { env: inDesk, config: DEFAULTS, gh: noGh });
   const session = doctor(sandbox.repo, { env: inDesk, config: DEFAULTS, session: true, gh: noGh });
-  assert.ok(report.lines.includes(`  note    muse-claude-rules: ${what}; ${fix}`), report.lines.join('\n'));
+  assert.ok(rowsOf(report.lines).includes(`  note        muse-claude-rules: ${what}; ${fix}`), report.lines.join('\n'));
   assert.ok(!report.report.findings.some((note) => note.id === 'muse-claude-rules'));
   assert.deepEqual(report.report.notes?.filter((note) => note.id === 'muse-claude-rules').map((note) => [note.what, note.fix]), [[what, fix]]);
   const sessionLine = sessionNotes(session).find((text) => text.includes('~/.claude/CLAUDE.md'));
@@ -941,7 +950,7 @@ test('doctor: in the yokoten repo, the session and doctor count the notes from o
   const sessionReport = doctor(sandbox.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: noGh });
   assert.deepEqual(sessionReport.report.findings.filter((found) => found.id === 'upstream-inbox'), [note]);
   const full = doctor(sandbox.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noGh });
-  assert.ok(full.lines.includes(`  note    upstream-inbox: ${note?.what}`), full.lines.join('\n'));
+  assert.ok(rowsOf(full.lines).includes(`  note        upstream-inbox: ${note?.what}`), full.lines.join('\n'));
   assert.deepEqual(full.report.notes?.filter((found) => found.id === 'upstream-inbox'), [note]);
   // Elsewhere, full doctor has neither.
   const other = makeSandbox();
@@ -986,7 +995,7 @@ test('doctor: a file on the default branch, missing on this one, is no "run init
   // No origin: init.defaultBranch, else main.
   assert.equal(sandbox.git('checkout', '-q', 'old').status, 0);
   assert.equal(await first(), 'yokoten: stage 1 of 5, safety net\n  Next      AGENTS.md is on main, not on this branch (old); work on a branch made from main, or merge main into this one.');
-  const full = (await sandbox.call(['doctor', '--all'])).stdout;
+  const full = flat((await sandbox.call(['doctor', '--all'])).stdout);
   const line = (key: string) => full.split('\n').find((l) => new RegExp(` ${key}[ :]`).test(l)) ?? '';
   assert.match(line('rules'), /AGENTS\.md is on main, not on this branch \(old\)/);
   // A step that checks more than that a file exists keeps its own advice.
@@ -1054,10 +1063,10 @@ test('doctor: with no home folder, full and session say so in one note and do no
     const machine = fakeMachine(250 * GB);
     const note = /no home folder found; yokoten can't read or keep its settings/;
     const full = doctor(root, { env: { HOME: '' }, config: DEFAULTS, machine, fillMarks: true });
-    assert.equal(full.lines.filter((line) => note.test(line)).length, 1, full.lines.join('\n'));
+    assert.equal(rowsOf(full.lines).filter((line) => note.test(line)).length, 1, full.lines.join('\n'));
     assert.ok(!full.lines.some((line) => /private-marks|mailmap/.test(line)), 'the checks of files in the home are skipped');
     const session = doctor(root, { env: { HOME: 'relative' }, config: DEFAULTS, session: true, machine });
-    assert.equal(session.lines.filter((line) => note.test(line)).length, 1, session.lines.join('\n'));
+    assert.equal(unwrapNote(session.lines).filter((line) => note.test(line)).length, 1, session.lines.join('\n'));
     // The kept reading of the host disk is neither read nor written without a home.
     saveHostCache({ HOME: '' }, machine, { free: 0, size: 1, readAt: NOW.toISOString(), distro: '<distro>', version: 2 });
   } finally {
@@ -1095,7 +1104,7 @@ test('doctor: full doctor in an empty repo starts each git read once, ten child 
   syncBuiltinESMExports();
   try {
     const result = doctor(sandbox.repo, { env: process.env, config: DEFAULTS, gh: () => { throw new Error('no network in this test'); }, machine: fakeMachine(100 * GB) });
-    assert.ok(result.lines.includes('unsaved work (only on this machine):'), result.lines.join('\n'));
+    assert.ok(result.lines.includes('Unsaved work, only on this machine:'), result.lines.join('\n'));
   } finally {
     Object.assign(childProcess, originals);
     syncBuiltinESMExports();
@@ -1144,12 +1153,12 @@ test('doctor: a repo with a default branch reads its merge history in one git pr
 test('doctor: the sandbox step is to do, then done after init, then names a too-wide value (#589)', async () => {
   const sandbox = makeSandbox();
   // One run for each state: the line's mark is the step's mark.
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}(next|to do) +sandbox: no sandbox in \.claude\/settings\.json; `yokoten init` adds it$/m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}(next|to do) +sandbox: no sandbox in \.claude\/settings\.json; `yokoten init` adds it$/m);
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /^ {4}done +sandbox$/m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}done +sandbox$/m);
   sandbox.write('.gemini/settings.json', JSON.stringify({ security: { disableYoloMode: false } }));
-  const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
-  assert.match(doctor, /^ {4}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
+  const doctor = flat((await sandbox.call(['doctor', '--all'])).stdout);
+  assert.match(doctor, /^ {2}(next|to do) +sandbox: Gemini YOLO mode is allowed in \.gemini\/settings\.json; set security\.disableYoloMode to true in \.gemini\/settings\.json$/m);
 });
 
 // #667: full doctor runs check, so a CODEOWNERS line that protects nothing is a finding.
@@ -1167,14 +1176,139 @@ test('doctor: a CODEOWNERS line that matches no file is a finding (#667)', () =>
 test('doctor: a shell that is not UTC gets the line for that shell, once, at the end (#932)', async () => {
   const sandbox = makeSandbox();
   const extra = { TZ: 'America/New_York', SHELL: '/usr/bin/fish' };
-  const full = (await sandbox.call(['doctor', '--all'], { extra })).stdout.trimEnd().split('\n');
-  const last = full.at(-1) ?? '';
-  assert.match(last, /^yokoten: your shell's time zone is not UTC, so each commit would carry it\./);
+  const full = flat((await sandbox.call(['doctor', '--all'], { extra })).stdout).trimEnd().split('\n');
+  // The row before the Next line, where a person looks for the next step.
+  const last = full.at(-3) ?? '';
+  assert.match(last, /^ {2}note {8}shell: your shell's time zone is not UTC, so each commit would carry it\./);
   assert.match(last, /`set -gx TZ UTC`/);
   assert.match(last, /~\/\.config\/fish\/config\.fish/);
   assert.equal(full.filter((line) => line.includes('time zone is not UTC')).length, 1, 'said once');
   // A session never needs it: init already sets TZ=UTC for agent sessions.
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'], { extra })).stdout, /time zone is not UTC/);
   // A shell already in UTC hears nothing.
-  assert.doesNotMatch((await sandbox.call(['doctor', '--all'], { extra: { ...extra, TZ: 'UTC' } })).stdout, /time zone is not UTC/);
+  assert.doesNotMatch(flat((await sandbox.call(['doctor', '--all'], { extra: { ...extra, TZ: 'UTC' } })).stdout), /time zone is not UTC/);
+});
+
+// ---- The screens, from the report (plan 6.4, #1115) ----
+
+/** A finding as a test writes it: what, why and the fix. */
+const note = (id: string, what: string, fix = 'run `yokoten doctor`'): Finding => ({ id, what, why: 'it matters', fix });
+
+/** A report at stage 1 with the next step, as doctorRun builds it; `view` and the notes are the test's. */
+const reportWith = (parts: Partial<DoctorReport>): DoctorReport => ({
+  version: '0.0.0', channel: 'stable', ok: true, selfTest: { ok: true, failed: [], ran: true, skipped: [] }, repo: true, stage: 1, stages: ['safety net', 'b', 'c', 'd', 'e'],
+  next: note('rules', 'no AGENTS.md, so the agents have no written rules here', '`yokoten init` adds one'), findings: [], ...parts,
+});
+
+test('sessionBlocks: a session start says three blocks at most, the most important note first, and counts the rest (#930)', () => {
+  const notes = [
+    { rank: 3 as const, lines: ['yokoten: a lesson waits'] },
+    { rank: 2 as const, finding: note('core-rules', 'the core rules in AGENTS.md are behind', 'run `yokoten update --write`') },
+    { rank: 1 as const, lines: ['yokoten: . has 1 uncommitted file'] },
+    { rank: 0 as const, finding: note('private-marks', '~/.config/yokoten/private-marks is missing or has no marks', 'run `yokoten marks add`') },
+    { rank: 2 as const, finding: note('edited-kit', 'a newer kit copy waits behind your edit') },
+  ];
+  const blocks = sessionBlocks(reportWith({ view: { lead: [], session: notes } }), { isPlugin: false });
+  assert.equal(SESSION_BLOCKS_MOST, 3);
+  assert.equal(blocks.length, SESSION_BLOCKS_MOST, blocks.map((block) => block.join('\n')).join('\n\n'));
+  assert.match(blocks[0]?.[0] ?? '', /^yokoten: stage 1 of 5, safety net$/, 'where the project is, with the next step');
+  assert.match(blocks[1]?.[0] ?? '', /private-marks is missing/, 'security first');
+  assert.deepEqual(blocks[2], ['yokoten: 4 more notes; `yokoten doctor --all` lists them.']);
+  // Two notes fit: both show, in rank order, and nothing is counted.
+  const two = sessionBlocks(reportWith({ view: { lead: [], session: notes.slice(0, 2) } }), { isPlugin: false });
+  assert.deepEqual(two.map((block) => block[0]), ['yokoten: stage 1 of 5, safety net', 'yokoten: the core rules in AGENTS.md are behind', 'yokoten: a lesson waits']);
+  // No notes: the road alone; the plugin's commands in its offer.
+  const alone = sessionBlocks(reportWith({ view: { lead: [] } }), { isPlugin: true });
+  assert.equal(alone.length, 1);
+  assert.match(alone[0]?.at(-1) ?? '', /\/yokoten:doctor/);
+  // A broken self-test always leads, outside the cap.
+  assert.match(sessionBlocks(reportWith({ view: { lead: ['yokoten is BROKEN: a check let a known-bad input through.'], session: notes } }), { isPlugin: false })[0]?.[0] ?? '', /BROKEN/);
+});
+
+test('doctor --session: the sandbox start keeps the cap, and the JSON keeps its shape (#930)', () => {
+  const sandbox = makeSandbox();
+  const noGh = () => { throw new Error('no network in this test'); };
+  const result = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, session: true, gh: noGh });
+  assert.ok((result.blocks ?? []).length <= SESSION_BLOCKS_MOST, (result.blocks ?? []).map((block) => block.join('\n')).join('\n\n'));
+  const json = reportJson(result.report);
+  assert.ok(!('view' in json), '--json never prints the screens');
+  assert.deepEqual(Object.keys(json), Object.keys(result.report).filter((key) => key !== 'view'));
+});
+
+test('shortLines: 25 branches only on this machine fold into one row, and the screen fits (#1037)', () => {
+  const branches = Array.from({ length: 25 }, (_, at) => note('unpushed-commits', `branch topic-${at} has 2 commits not pushed to origin/topic-${at}; a commit not pushed is still only on this machine`, `\`git push origin topic-${at}\``));
+  const steps = [{ id: 'rules', stage: 1, mark: 'next' as const }, { id: 'tool-hook', stage: 1, mark: 'done' as const }];
+  const lines = shortLines(reportWith({ steps, notes: [...branches, note('uncommitted-changes', '. has 1 uncommitted file; commit it')] }));
+  assert.ok(lines.length <= 25, lines.join('\n'));
+  assert.ok(lines.includes('  note        25 branches with commits only on this machine;'), lines.join('\n'));
+  assert.ok(lines.includes('  note        this project has 1 uncommitted file'), 'one note of a kind keeps its words');
+  // Every wrapped line starts under the text column (14), never at the left edge.
+  for (const [at, line] of lines.entries()) if (at && lines[at - 1]?.startsWith('  ') && line !== '' && !/^(?:Next|More): /.test(line)) assert.ok(/^ {2}\S/.test(line) || /^ {14}\S/.test(line), line);
+  assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
+  // A caller's own title, its rows after the title, and its own next command (the first run, C16).
+  const start = shortLines(reportWith({ steps }), { title: ['yokoten 0.0.0 · set up; stage 1 of 5, safety net'], lead: [['  ok          guard on for your agents']], next: 'git add -A' });
+  assert.deepEqual(start.slice(0, 3), ['yokoten 0.0.0 · set up; stage 1 of 5, safety net', '', '  ok          guard on for your agents']);
+  assert.ok(start.includes('Next: `git add -A`'));
+});
+
+test('fullLines: every row starts its text in one column, a fix is said once, and a failure ends with Next (#1115)', () => {
+  const problem = { mark: 'MISSING' as const, name: 'runtime', what: 'no runtime installed', fix: 'run `yokoten install` from this copy of yokoten' };
+  const guard = { mark: 'MISSING' as const, name: 'user-guard', what: 'no guard for Claude Code', fix: 'run `yokoten install`' };
+  const report = reportWith({
+    ok: false,
+    findings: [note('machine-runtime', 'no runtime installed', 'run `yokoten install` from this copy of yokoten')],
+    steps: [{ id: 'rules', stage: 1, mark: 'next' }],
+    view: {
+      lead: [],
+      full: {
+        version: { mark: 'ok', name: 'yokoten 0.0.0 (stable)', what: 'self-test ok' },
+        jumps: [],
+        stages: [[{ mark: 'next', name: 'rules', what: 'no AGENTS.md', fix: '`yokoten init` adds one' }], [{ mark: 'skipped', name: 'ci', what: 'not now, no remote yet' }], [], [], []],
+        project: [{ mark: 'ok', name: 'tree', what: 'layout and privacy clean' }],
+        unsaved: [{ mark: 'ok', name: 'everything is committed and pushed' }],
+        machine: [guard, problem],
+        server: [{ mark: 'to do', name: 'by hand', what: 'tags: a ruleset on v*' }],
+      },
+    },
+  });
+  const lines = fullLines(report);
+  assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), [], lines.join('\n'));
+  assert.equal(lines.filter((line) => line.includes('Fix: `yokoten install`')).length, 1, 'said once');
+  assert.ok(lines.indexOf('              Fix: `yokoten install`') > lines.findIndex((line) => line.includes('runtime: no runtime')), 'under the last row it fixes');
+  assert.equal(lines.at(-1), 'Next: `yokoten install`', 'a problem comes before the next step');
+  assert.ok(lines.includes('  skipped     ci: not now, no remote yet'));
+});
+
+test('readAtOnce: the reads that wait on no other run at once, under one budget (#1039)', async () => {
+  // A slow gh: each call answers after 150 ms. readServer makes about twenty calls, most after the first one.
+  const sync = serverGh(GOOD).gh;
+  let calls = 0;
+  let most = 0;
+  let open = 0;
+  const slow = async (args: string[]) => {
+    calls += 1;
+    open += 1;
+    most = Math.max(most, open);
+    await new Promise((done) => setTimeout(done, 150));
+    open -= 1;
+    return sync(args);
+  };
+  const started = performance.now();
+  const { result, slow: late } = await readAtOnce((gh) => readServer(gh, REPO), slow, 10_000);
+  const took = performance.now() - started;
+  assert.deepEqual(result, readServer(sync, REPO), 'the same settings as one call at a time');
+  assert.equal(late, 0);
+  assert.ok(most > 3, `${most} calls at once`);
+  assert.ok(took < (calls * 150) / 2, `${Math.round(took)} ms for ${calls} calls of 150 ms`);
+  // Past the budget, a call left out says GitHub took too long, as a gh timeout does.
+  const never = () => new Promise<string>(() => {});
+  const stopped = await readAtOnce((gh) => readServer(gh, REPO), never, 50);
+  assert.equal(stopped.slow, 1);
+  assert.deepEqual(stopped.result, { unread: 'GitHub took too long to answer', fix: 'check the network, then run doctor again' });
+});
+
+test('oneStepEach: a two-step command becomes two, so a long place name wraps under 100 columns (#1037)', () => {
+  const what = 'commit them: `git -C ../a-very-long-worktree add -A && git -C ../a-very-long-worktree commit -m "chore: save work"`, then push';
+  assert.equal(oneStepEach(what), 'commit them: `git -C ../a-very-long-worktree add -A`, then `git -C ../a-very-long-worktree commit -m "chore: save work"`, then push');
+  assert.equal(oneStepEach('`yokoten init`'), '`yokoten init`');
 });

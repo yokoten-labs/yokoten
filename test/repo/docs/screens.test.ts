@@ -19,6 +19,8 @@ import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, 
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
+import { type DoctorReport, fullLines, shortLines } from '../../../src/setup/doctor/index.ts';
+import { adoptAllScreen } from '../../../src/commands/more/advice/doctor.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -276,6 +278,43 @@ function screensOf(repo: string): ScreenRun[] {
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // C3: doctor's screens from reports built here, and explain's and adopt's (#1037, #1115).
+    ...((): ScreenRun[] => {
+      const found = (id: string, what: string, fix: string) => ({ id, what, why: 'it matters', fix });
+      const base: DoctorReport = { version: '0.1.2', channel: 'stable', ok: false, selfTest: { ok: true, failed: [], ran: true, skipped: [] }, repo: true, stage: 2, stages: ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'], next: found('ci', 'CI does not run `yokoten check`', '`yokoten init` adds .github/workflows/yokoten.yml'), findings: [] };
+      const steps = [{ id: 'rules', stage: 1, mark: 'done' as const }, { id: 'tool-hook', stage: 1, mark: 'done' as const }, { id: 'ci', stage: 2, mark: 'next' as const }, { id: 'templates', stage: 2, mark: 'to do' as const }, { id: 'labels', stage: 2, mark: "can't check" as const }];
+      const marks = found('private-marks', '~/.config/yokoten/private-marks is missing or has no marks', 'run `yokoten marks add` and type your name, your city or a domain; it is not shown');
+      const branches = Array.from({ length: 24 }, (_, at) => found('unpushed-commits', `branch topic-${at} has 1 commit not pushed to origin/topic-${at}; a commit not pushed is still only on this machine`, `\`git push origin topic-${at}\``));
+      const problems: DoctorReport = { ...base, findings: [base.next!, marks], steps, notes: branches };
+      const done: DoctorReport = { ...base, ok: true, stage: null, next: null, steps: steps.map((step) => ({ ...step, mark: 'done' as const })), notes: [] };
+      const all: DoctorReport = {
+        ...problems,
+        view: {
+          lead: [],
+          full: {
+            version: { mark: 'ok', name: 'yokoten 0.1.2 (stable)', what: 'self-test ok' },
+            jumps: ['stage 1 is done too: its steps were already in place'],
+            stages: [[{ mark: 'done', name: 'rules (OpenSSF: AI code assistant instructions), tool-hook' }], [{ mark: 'next', name: 'ci (Scorecard: CI-Tests)', what: base.next!.what, fix: base.next!.fix }, { mark: "can't check", name: 'labels', what: 'gh is not signed in', fix: 'run `gh auth login`' }], [{ mark: 'skipped', name: 'titles', what: 'not now, no CI yet' }], [], []],
+            project: [{ mark: 'note', name: 'codex-hook', what: 'no tool-call guard in .codex/hooks.json', fix: '`yokoten init` adds it' }, { mark: 'ok', name: 'tree', what: 'layout and privacy clean' }],
+            unsaved: branches.slice(0, 2).map((one) => ({ mark: 'note' as const, name: one.id, what: one.what, fix: one.fix })),
+            machine: [{ mark: 'MISSING', name: 'private-marks', what: marks.what, fix: marks.fix }, { mark: 'ok', name: 'desk-fence', what: 'the programs the desk fence needs are here' }],
+            server: [{ mark: 'to do', name: 'by hand', what: 'tags: a ruleset on v* so only you create, move or delete a release tag' }],
+          },
+        },
+      };
+      const rows = [
+        { key: 'rules', status: 'done' as const, evidence: 'AGENTS.md', why: '', decision: 'as-is' as const, reason: 'the project already does this; keep it as it is' },
+        { key: 'tests', status: 'partial' as const, evidence: 'package.json has a test script, no workflow runs it', why: '', decision: 'lighter' as const, reason: 'the project has its own way; keep it and add only the missing part' },
+        { key: 'codeowners', status: 'missing' as const, evidence: 'no CODEOWNERS file', why: '', decision: 'not-now' as const, reason: 'one person; look again at the first outside contributor' },
+      ];
+      return [
+        { key: 'doctor, stage 2 with problems and 24 branches only here', words: ['doctor'], lines: shortLines(problems) },
+        { key: 'doctor, all done', words: ['doctor'], lines: shortLines(done) },
+        { key: 'doctor --all, a report', words: ['doctor', '--all'], lines: fullLines(all) },
+        { key: 'explain, an unknown id', words: ['explain', 'not-a-rule'] },
+        { key: 'adopt --all, the whole draft', words: ['adopt', '--all'], lines: adoptAllScreen({ rows, by: 'rules', note: 'no model key; set MODEL_API_KEY' }) },
+      ];
+    })(),
   ];
 }
 

@@ -2,13 +2,13 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
-import { type Finding, finding, findingRow, fixText, formatFinding, formatNote, leadingCommand, sentence } from '../../rules/text/message.ts';
-import { spaced, wrap } from '../../rules/text/screen.ts';
-import { homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
+import { type Finding, finding, findingRow, fixCommand, fixText, formatFindingMarks, formatNote, leadingCommand, place, sentence } from '../../rules/text/message.ts';
+import { moreLine, nextLine, row, type RowMark, screen, section, spaced, title, underRow, wrap } from '../../rules/text/screen.ts';
+import { hideHome, homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
 import { countNotes, waitingLine } from '../../run/learn.ts';
-import { type Gh, readServer, type ServerSettings, type Unread } from '../../host/github/index.ts';
+import { type Gh, type GhLater, readServer, type ServerSettings, type Unread } from '../../host/github/index.ts';
 import { type Host, hostOf, isNoAdapter, noAdapter } from '../../host/hosts.ts';
 import { readUnsaved, unsavedNotes } from '../advice/unsaved.ts';
 import { VERSION } from '../files.ts';
@@ -17,12 +17,15 @@ import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
 import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
 import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
-import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
-import { findStateFile, formatLessonChecks, type LessonCheck, lessonChecks, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
+import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, deskFenceCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
+import { findStateFile, type LessonCheck, lessonChecks, lessonRows, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { pluginSourceNote } from '../advice/marketplace.ts';
 import { makeTempDir, type MakeTemp, noTempLine, SELF_TEST } from './self-test.ts';
 import { hostPathPlace } from '../../platform/paths.ts';
+
+/** "1 step", "3 steps": a count with its noun in the right number (as `count` in src/commands/shared.ts). */
+const count = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 /** What doctor can't read on the server yet, and the owner sets once per repo. */
 const OWNER_STEPS = ['the bot: a GitHub App (or collaborator) with write access; CODEOWNERS sends CI changes to you'];
@@ -46,14 +49,17 @@ const BOARD_BY_HAND = [
   'workflow "Pull request merged": sets Status to Done',
 ];
 
-/** The by-hand lines for each board linked to the repo; none when there is no board or it can't be read. */
+/** The by-hand steps for each board linked to the repo; none when there is no board or it can't be read. */
 export function listBoardSteps(server: ServerRead): string[] {
   if (!server || 'unread' in server || !Array.isArray(server.boards)) return [];
-  return server.boards.flatMap((board) => BOARD_BY_HAND.map((step) => `  by hand     board "${board.title}": ${step}`));
+  return server.boards.flatMap((board) => BOARD_BY_HAND.map((step) => `board "${board.title}": ${step}`));
 }
 
-/** How long full doctor waits for one GitHub read: past it, the server steps say they can't check, and why (#561). */
-export const SERVER_TIMEOUT_MS = 3000;
+/**
+ * How long full doctor waits for the GitHub reads, all of them together: they run at once, and
+ * a read still out past it makes its server steps say they can't check, and why (#561, #1039).
+ */
+export const SERVER_TIMEOUT_MS = 5000;
 
 /** Why the server can't be read in a repo with no origin remote; the road shows it once (#502). */
 const NO_REMOTE = 'there is no origin remote yet';
@@ -241,19 +247,28 @@ export interface DoctorReport {
   server?: { id: string; mark: ServerCheck['mark'] }[];
   /** The kit's lessons, run against this project (#147). Their findings are in `notes`. */
   lessons?: { id: string; mark: LessonCheck['mark']; reason?: string; isNew?: boolean }[];
+  /** What the screens show past these fields; `--json` leaves it out (`reportJson`). */
+  view?: DoctorView;
 }
 
 /** What doctor says when HOME is empty or not a full path, and the system names no home either (#404). */
 export const NO_HOME_NOTE = "no home folder found; yokoten can't read or keep its settings (set HOME to your home folder's full path)";
 
 /**
- * The report, as text lines and as data, and whether doctor found no problem. Each git
- * answer is kept for the run (`withGitReads`, #408).
+ * The report, and whether doctor found no problem. Each git answer is kept for the run
+ * (`withGitReads`, #408). `lines` and `blocks` are the screens built from the report, for a
+ * caller that reads text: the full map, or a session's blocks.
  */
-export const doctor = (root: string | null, options: Parameters<typeof doctorRun>[1]): ReturnType<typeof doctorRun> => {
-  const result = withGitReads(() => doctorRun(root, options));
+export const doctor = (root: string | null, options: Parameters<typeof doctorRun>[1]): { ok: boolean; report: DoctorReport; lines: string[]; blocks?: string[][] } => {
+  const run = withGitReads(() => doctorRun(root, options));
   const reword = commandWording(options.env);
-  return reword ? rewordStrings(result, reword) : result;
+  const { ok, report: worded } = reword ? rewordStrings(run, reword) : run;
+  // The screens wrap their text once, so the home folder is ~ before they do: a long path
+  // shown as ~ later would leave a line cut short (core rule 11).
+  const report = worded.view ? { ...worded, view: { ...rewordStrings(worded.view, (text) => hideHome(text, options.env)), ...(reword ? { npx: true } : {}) } } : worded;
+  if (!options.session || !root) return { ok, report, lines: fullLines(report) };
+  const blocks = sessionBlocks(report, { isPlugin: Boolean(options.env.CLAUDE_PLUGIN_ROOT) });
+  return { ok, report, lines: blocks.flat(), blocks };
 };
 
 /** `value` with `reword` applied to every string in it (plain arrays and objects only). */
@@ -320,28 +335,394 @@ const roadLines = (stage: number, next: Finding, offer: string): string[] => {
   ]);
 };
 
+// ---- What the screens show, as data (plan 6.4, #1115) ----
+//
+// doctorRun reads and computes; it returns the report and nothing printed. The report's
+// `view` holds what the screens show past the JSON fields, and `reportJson` leaves it out,
+// so `--json` keeps its shape. fullLines, shortLines and sessionBlocks are pure functions of
+// the report, built only with src/rules/text/screen.ts.
+
+/** One row of the full map: its mark, the check's name (empty when its text says it all), what it found, and the fix. */
+export interface CheckRow {
+  mark: RowMark;
+  name: string;
+  what?: string;
+  /** A fix that starts with a command goes on a `Fix` line under a problem row (#1115). */
+  fix?: string;
+}
+
+/** How much a session note matters (#930): security first, then work only on this machine, then setup, then the rest. */
+export type NoteRank = 0 | 1 | 2 | 3;
+const SECURITY: NoteRank = 0;
+const ONLY_HERE: NoteRank = 1;
+const SETUP: NoteRank = 2;
+const OTHER: NoteRank = 3;
+
+/** A note a session start may say: a finding, or `yokoten: ` sentences, one item each. */
+export type SessionNote = { rank: NoteRank; finding: Finding } | { rank: NoteRank; lines: string[] };
+
+/** The full map's parts, each a list of rows. */
+export interface FullView {
+  /** The version that runs, and its self-test. */
+  version: CheckRow;
+  /** The stages a jump passed since the last full doctor (#514), one sentence each. */
+  jumps: string[];
+  /** The rows of each stage, in the order of STAGES. */
+  stages: CheckRow[][];
+  project: CheckRow[];
+  unsaved: CheckRow[];
+  machine: CheckRow[];
+  server: CheckRow[];
+  /** The shell's time zone, when it is not UTC (#932). */
+  timeZone?: CheckRow;
+}
+
+/** What the screens show past the JSON fields. `--json` leaves it out (`reportJson`). */
+export interface DoctorView {
+  /** True when the text says `npx yokoten`: no launcher on the PATH runs yokoten (#500). */
+  npx?: boolean;
+  /** Sentences that come before everything: a broken self-test, no temp folder. */
+  lead: string[];
+  /** A session's notes, before the cap (#930). */
+  session?: SessionNote[];
+  /** The full map, for full doctor. */
+  full?: FullView;
+}
+
+/** A yokoten command as this machine runs it: `yokoten <words>`, or `npx yokoten <words>` (#500). */
+const commandOf = (report: DoctorReport, words: string): string => `${report.view?.npx ? 'npx ' : ''}yokoten ${words}`;
+
+/** The report as `--json` prints it: every field but the screens' `view`. */
+export function reportJson(report: DoctorReport): Omit<DoctorReport, 'view'> {
+  const json = { ...report };
+  delete json.view;
+  return json;
+}
+
+/** The most blocks a session start says (#930): where the project is with the next step, the most important note, and how many more. */
+export const SESSION_BLOCKS_MOST = 3;
+
+/** What a session start knows that the report does not: whether the Claude Code plugin's hook runs it. */
+export interface SessionPlace {
+  isPlugin: boolean;
+}
+
+/** A session note as its block of lines. */
+const noteBlock = (note: SessionNote): string[] => ('finding' in note ? formatNote(note.finding) : note.lines.flatMap(noteLines));
+
+/**
+ * The blocks a session start says (#405, #930), from the report: a broken self-test first,
+ * then the road (where the project is, the one next step), then the notes by rank. At most
+ * SESSION_BLOCKS_MOST blocks past the self-test: when more notes wait, the most important
+ * ones show and one line counts the rest. The words of each block are the ones agents read.
+ */
+export function sessionBlocks(report: DoctorReport, { isPlugin }: SessionPlace): string[][] {
+  const lead = (report.view?.lead ?? []).map(noteLines);
+  const road = report.stage !== null && report.next ? roadLines(report.stage, report.next, isPlugin ? `${OFFER} ${PLUGIN_COMMANDS}` : OFFER) : noteLines(ROAD_DONE);
+  // A stable sort: notes of one rank keep the order doctor read them in.
+  const notes = (report.view?.session ?? []).map((note, at) => ({ note, at })).sort((a, b) => a.note.rank - b.note.rank || a.at - b.at).map(({ note }) => noteBlock(note));
+  const room = SESSION_BLOCKS_MOST - 1;
+  if (notes.length <= room) return [...lead, road, ...notes];
+  const shown = notes.slice(0, room - 1);
+  const more = notes.length - shown.length;
+  return [...lead, road, ...shown, noteLines(`yokoten: ${count(more, 'more note')}; \`${commandOf(report, 'doctor --all')}\` lists ${more === 1 ? 'it' : 'them'}.`)];
+}
+
+/** A problem row: its mark says it needs a hand. Only these rows put their command on a Fix line. */
+const isProblemMark = (mark: RowMark): boolean => mark === 'MISSING' || mark === "can't check";
+
+/** The command a problem row puts on its Fix line, or null: a row that is no problem, or a fix that is a sentence. */
+const fixOf = (check: CheckRow) => (check.fix && isProblemMark(check.mark) ? fixCommand(check.fix) : null);
+
+/**
+ * One row of the full map. A problem whose fix starts with a command ends with
+ * `Fix: \`<command>\`` on a line of its own, under the last row that command fixes, so a
+ * screen says each fix once (#1115): `lastFixed` maps each command to that row. Any other
+ * row keeps its fix in its text, as before.
+ */
+function checkRowLines(check: CheckRow, lastFixed: ReadonlyMap<string, CheckRow>): string[] {
+  const head = check.name && check.what ? `${check.name}: ${check.what}` : check.name || (check.what ?? '');
+  if (!check.fix) return row(check.mark, head);
+  const command = fixOf(check);
+  if (!command) return row(check.mark, `${head}; ${check.fix}`);
+  return [
+    ...row(check.mark, head),
+    ...(command.then ? underRow(`${sentence(command.then)}${/[.!?]$/.test(command.then) ? '' : '.'}`, false) : []),
+    ...(lastFixed.get(command.command) === check ? underRow(`Fix: \`${command.command}\``, false) : []),
+  ];
+}
+
+/** Rows under a heading, a blank line between them when one wraps. Empty with no rows. */
+const checkSection = (heading: string, checks: readonly CheckRow[], lastFixed: ReadonlyMap<string, CheckRow>): string[] => section(heading, spaced(checks.map((check) => checkRowLines(check, lastFixed))));
+
+/** The one-line summary of where the project is: the stage, or that the road is done. */
+export const doctorSummary = (report: DoctorReport): string =>
+  report.stage === null ? `all ${STAGES.length} stages done` : `stage ${report.stage} of ${STAGES.length}, ${STAGES[report.stage - 1]}`;
+
+/** The problems of the report: findings that are not road steps. They fail doctor, so a screen never folds them. */
+const problemsOf = (report: DoctorReport): Finding[] => {
+  const stepIds = new Set((report.steps ?? []).map((step) => step.id));
+  return report.findings.filter((one) => !stepIds.has(one.id) && (report.next === null || one !== report.next));
+};
+
+/** The command to type next: the first problem's, else the next step's; null when nothing is left. */
+export function doctorNext(report: DoctorReport): string | null {
+  for (const problem of problemsOf(report)) {
+    const command = fixCommand(problem.fix);
+    if (command) return command.command;
+  }
+  return report.next ? nextCommand(report.next) : null;
+}
+
+/**
+ * `yokoten doctor --all`, the whole map, from the report: the title, the version, each stage
+ * with its steps, then the project, the work only on this machine, the machine and the server,
+ * each a section of rows (#1027, #1115). Every row starts its text in one column.
+ */
+export function fullLines(report: DoctorReport): string[] {
+  const lead = (report.view?.lead ?? []).map(noteLines);
+  const full = report.view?.full;
+  if (!report.repo || !full) return screen(...lead);
+  // Each command's Fix line goes under the last problem row it fixes, in screen order.
+  const lastFixed = new Map<string, CheckRow>();
+  for (const check of [full.version, ...full.stages.flat(), ...full.project, ...full.unsaved, ...full.machine, ...full.server, ...(full.timeZone ? [full.timeZone] : [])]) {
+    const command = fixOf(check);
+    if (command) lastFixed.set(command.command, check);
+  }
+  const next = doctorNext(report);
+  return screen(
+    ...lead,
+    title('doctor', doctorSummary(report)),
+    spaced([checkRowLines(full.version, lastFixed), ...full.jumps.map((jump) => row('done', jump))]),
+    ...STAGES.map((name, at) => checkSection(`Stage ${at + 1}, ${name}`, full.stages[at] ?? [], lastFixed)),
+    checkSection('Project', full.project, lastFixed),
+    checkSection('Unsaved work, only on this machine', full.unsaved, lastFixed),
+    checkSection('Machine', full.machine, lastFixed),
+    checkSection('Server, read only; the owner sets these once per repo', full.server, lastFixed),
+    full.timeZone ? checkRowLines(full.timeZone, lastFixed) : [],
+    next ? nextLine(next) : [],
+  );
+}
+
+// What `yokoten doctor` shows by default (issue #1027): one screen. Owner 2026-10-25, after running it
+// himself: "我是新手，看到这么一堆文字，就被劝退了" (as a beginner, this wall of text made me give up).
+// Flutter's doctor shows a summary unless asked for detail; Homebrew's shows only what is wrong.
+// `yokoten doctor --all` keeps the full map. The same text for a person and an agent.
+
+/** Each road step as a task, in plain words for a beginner. A test keeps it in step with the road. */
+export const STEP_TITLES: Record<string, string> = {
+  rules: 'Write the rules for your agents (AGENTS.md)',
+  'tool-hook': "Turn on the guard for your agents' commands",
+  'commit-check': 'Check each commit before it is made',
+  runtime: 'Add the yokoten runtime to the project',
+  tests: 'Run your tests on every push',
+  remote: 'Put the project on GitHub or Gitea',
+  ci: 'Run the checks on every pull request',
+  issues: 'Turn on issues',
+  templates: 'Add issue and pull request templates',
+  labels: 'Add the standard labels',
+  milestone: 'Add a first milestone',
+  'no-build-output': 'Keep build output out of git',
+  changelog: 'Keep a changelog',
+  titles: 'Check pull request titles',
+  codeowners: 'Name the owner (CODEOWNERS)',
+  bot: 'Set up the bot account',
+  skills: 'Install the yokoten skills',
+  sandbox: 'Keep your agents in a sandbox',
+  review: 'Ask for a review before a merge',
+  'security-files': 'Add a license and a security policy',
+  protection: 'Protect the main branch',
+  'merge-settings': 'Set the merge settings',
+  'security-settings': 'Turn on the security settings',
+  'tag-bypass': 'Let only you create release tags',
+  'release-reviewer': 'Approve each release yourself',
+  'release-tag-rule': 'Limit releases to version tags',
+};
+
+/** The command to type for a step: one its fix names, or else `yokoten explain`, which says what to do. */
+export function nextCommand(next: Finding): string {
+  const named = [...next.fix.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? '').find((c) => /^(yokoten|npx yokoten|git) /.test(c));
+  return named ?? `yokoten explain ${next.id}`;
+}
+
+/**
+ * The problems of the default screen, each fix said once (issue #1115): problems whose fix
+ * names the same command share one row, and the command is the row's last line,
+ * `Fix: \`<command>\``. A fix that names no command stays in the row's text.
+ */
+export function problemRows(problems: readonly Finding[]): string[][] {
+  const byFix = new Map<string, { whats: string[]; thens: string[] }>();
+  const plain: string[][] = [];
+  for (const f of problems) {
+    // A command only when the fix starts with one; "make `yokoten.json` valid JSON" is a sentence.
+    const fix = fixCommand(f.fix);
+    if (fix === null) plain.push(row('MISSING', `${f.what}; ${f.fix}`));
+    else {
+      const seen = byFix.get(fix.command);
+      byFix.set(fix.command, { whats: [...(seen?.whats ?? []), f.what], thens: fix.then && !seen?.thens.includes(fix.then) ? [...(seen?.thens ?? []), fix.then] : seen?.thens ?? [] });
+    }
+  }
+  // The follow-up ("and type your name") stays, as check's screen keeps it: the same finding says the same on both.
+  return [
+    ...[...byFix].map(([command, { whats, thens }]) => [...row('MISSING', whats.join('; ')), ...thens.flatMap((then) => underRow(`${sentence(then)}${/[.!?]$/.test(then) ? '' : '.'}`, false)), ...underRow(`Fix: \`${command}\``, false)]),
+    ...plain,
+  ];
+}
+
+/**
+ * A command of two steps, `a && b`, as two commands: `a`, then `b`. Each wraps on its own, so a
+ * long place name never pushes a line past the widest a screen may be (#1037).
+ */
+export const oneStepEach = (text: string): string => text.replace(/`([^`]+?) && ([^`]+)`/g, "`$1`, then `$2`");
+
+/** The notes the default screen keeps, by id: work only on this machine can be lost, and a desk that can't start surprises (#1097). */
+const KEPT_NOTES: Record<string, { one: string; many: string }> = {
+  'uncommitted-changes': { one: 'place with uncommitted files', many: 'places with uncommitted files' },
+  'unpushed-commits': { one: 'branch with commits only on this machine', many: 'branches with commits only on this machine' },
+  stashes: { one: 'stash, only on this machine', many: 'stashes, only on this machine' },
+  'desk-fence': { one: 'desk fence that cannot start', many: 'desk fences that cannot start' },
+};
+
+/**
+ * The kept notes as rows, one per kind (#1037): a kind with one note shows its first clause;
+ * a kind with more folds into one counted row, and `doctor --all` lists each.
+ */
+function keptNoteRows(notes: readonly Finding[], all: string): string[][] {
+  return Object.entries(KEPT_NOTES).flatMap(([id, words]) => {
+    const kind = notes.filter((note) => note.id === id);
+    if (!kind.length) return [];
+    if (kind.length === 1) return [row('note', (kind[0]?.what.split(';')[0] ?? '').replace(/^\. has /, 'this project has '))];
+    return [row('note', `${kind.length} ${words.many}; \`${all}\` lists them`)];
+  });
+}
+
+/** What a caller puts on the default screen in doctor's place: its own title, rows after it, and its own next command. */
+export interface ShortScreenParts {
+  /** The title lines, in place of `yokoten doctor · <where>`. */
+  title?: string[];
+  /** Blocks right after the title, such as what a first run just did. */
+  lead?: string[][];
+  /** The command to type next, in place of doctor's. */
+  next?: string;
+}
+
+/**
+ * The default screen of `yokoten doctor`, from its report (#1027, #1037): a broken self-test
+ * first, the title, the problems (never folded), the road, the kept notes folded by kind, and
+ * one Next line. Every row starts its text in one column.
+ */
+export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): string[] {
+  const lead = (report.view?.lead ?? []).map(noteLines);
+  const steps = report.steps ?? [];
+  const left = steps.filter((s) => s.mark === 'next' || s.mark === 'to do').sort((a, b) => (a.mark === 'next' ? -1 : b.mark === 'next' ? 1 : 0));
+  const problems = problemsOf(report);
+  const heading = parts.title ?? title('doctor', report.stage === null && !problems.length ? `${doctorSummary(report)}, nothing to do` : doctorSummary(report));
+  if (report.stage === null && !problems.length && !parts.lead?.length && parts.next === undefined) return screen(...lead, heading);
+  const road: string[][] = [];
+  const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
+  if (steps.length) road.push(row('done', `${done} of ${count(steps.length, 'step')}`));
+  // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
+  for (const s of left.slice(0, 5)) road.push(row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+  const all = commandOf(report, 'doctor --all');
+  if (left.length > 5) road.push(row('to do', `${count(left.length - 5, 'more step')}, listed by \`${all}\``));
+  const unchecked = steps.filter((s) => s.mark === "can't check").length;
+  if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
+  const notes = (report.notes ?? []).length;
+  const next = parts.next ?? (report.next ? nextCommand(report.next) : null);
+  // A problem fails doctor, so it is never folded; it comes first, each block spaced when an item wraps (#1115).
+  return screen(
+    ...lead,
+    heading,
+    ...(parts.lead ?? []),
+    spaced(problemRows(problems)),
+    spaced(road),
+    spaced(keptNoteRows(report.notes ?? [], all)),
+    [...(next ? nextLine(next) : []), ...moreLine(`\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+  );
+}
+
+// ---- The server read (#1039) ----
+
+/** Why a gh call was not made yet: the read runs again once its answer is in. */
+const NOT_READ_YET = new Error('not read yet');
+
+/** The error a call left over past the budget throws: the same code as a gh stopped by its timeout. */
+const tooSlow = (): Error => Object.assign(new Error('GitHub took too long to answer'), { code: 'ETIMEDOUT' });
+
+/**
+ * The server settings, with every gh call that does not wait on another one made at once, all
+ * under one budget of `budgetMs` (#1039). `read` is a reader that calls gh one call at a time,
+ * such as `readServer`: it runs again with the answers so far, and each round makes at once the
+ * calls it asked for and did not have. A call still out when the budget ends throws as a gh
+ * timeout does, so its part says it can't check. `slow` counts those calls.
+ */
+export async function readAtOnce<T>(read: (gh: Gh) => T, gh: GhLater, budgetMs = SERVER_TIMEOUT_MS, clock: () => number = Date.now): Promise<{ result: T; slow: number }> {
+  const answers = new Map<string, { text: string } | { error: unknown }>();
+  const deadline = clock() + budgetMs;
+  const stop = new AbortController();
+  let slow = 0;
+  for (;;) {
+    const asked = new Set<string>();
+    const result = read((args) => {
+      const key = JSON.stringify(args);
+      const answer = answers.get(key);
+      if (!answer) {
+        asked.add(key);
+        throw NOT_READ_YET;
+      }
+      if ('error' in answer) throw answer.error;
+      return answer.text;
+    });
+    if (!asked.size) return { result, slow };
+    const left = deadline - clock();
+    let timer: NodeJS.Timeout | undefined;
+    const outOfTime = new Promise<void>((done) => {
+      timer = setTimeout(done, Math.max(0, left));
+    });
+    const calls = [...asked].map(async (key) => {
+      try {
+        answers.set(key, { text: await gh(JSON.parse(key) as string[], stop.signal) });
+      } catch (error) {
+        answers.set(key, { error });
+      }
+    });
+    await Promise.race([Promise.all(calls), outOfTime]);
+    clearTimeout(timer);
+    for (const key of asked) {
+      if (answers.has(key)) continue;
+      answers.set(key, { error: tooSlow() });
+      slow += 1;
+    }
+    if (slow) stop.abort();
+  }
+}
+
+/**
+ * Where full doctor is and what it found, as data (plan 6.4): the report, and whether no problem
+ * was found. Nothing here prints; the screens are built from the report.
+ */
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp },
-): { ok: boolean; lines: string[]; blocks?: string[][]; report: DoctorReport } {
-  const lines: string[] = [];
+  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir, platform = hostPathPlace().platform, isFile }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp; platform?: NodeJS.Platform; isFile?: (path: string) => boolean },
+): { ok: boolean; report: DoctorReport } {
+  const lead: string[] = [];
   const { failed, unset } = SELF_TEST.run(makeTemp);
   const findings: Finding[] = [];
   if (failed.length) {
-    lines.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);
+    lead.push(`yokoten is BROKEN: ${failed.join(', ')} let a known-bad input through. Do not trust any check until this is fixed.`);
     findings.push(finding('self-test', `${failed.join(', ')} let a known-bad input through`, 'do not trust any check until this is fixed; run `yokoten install` again, or report it in an issue'));
   }
   // No temp folder is a machine to fix, not a broken yokoten (#1108): one line, never a failure.
   if (unset.length) {
     const place = hostPathPlace();
-    lines.push(noTempLine(unset, place.tmp, homeOf(env), place.platform));
+    lead.push(noTempLine(unset, place.tmp, homeOf(env), place.platform));
   }
   const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed, ran: !unset.length, skipped: unset, ...(unset.length ? { reason: 'no temp folder to test in' } : {}) }, stages: STAGES };
-  if (!root) return { ok: !failed.length, lines, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings } };
+  if (!root) return { ok: !failed.length, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings, view: { lead } } };
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).
   // A host with no adapter needs no network, so a session knows it too (#504).
-  // The Gitea read is async, so the command makes it and passes it in (#505).
+  // The Gitea and GitHub reads are async, so the command makes them and passes them in (#505, #1039).
   const host = givenHost ?? hostOf(gitConfig(root, 'remote.origin.url', env), config.host);
   const server: ServerRead = givenServer !== undefined
     ? givenServer
@@ -370,16 +751,13 @@ function doctorRun(
   // A session reads files only, never the network, so it starts fast and works offline.
   if (session) {
     // Each note is a block of lines: a compaction start repeats only the blocks that changed (#405).
-    // Each block keeps the screen limits of record 0049: a title, then rows (#1099).
-    const blocks: string[][] = lines.map(noteLines);
-    const { stage } = where;
-    if (stage && next) blocks.push(roadLines(stage, next, env.CLAUDE_PLUGIN_ROOT ? `${OFFER} ${PLUGIN_COMMANDS}` : OFFER));
-    else blocks.push(noteLines(ROAD_DONE));
+    // Each note has a rank, so the cap keeps the ones that matter most (#930).
+    const notes: SessionNote[] = [];
     if (next) findings.push(next);
     // Not a step on the road, but the privacy check is weaker until it is fixed.
     const marks = machine.find((c) => c.name === 'private-marks' && !c.ok);
     if (marks) {
-      blocks.push(formatNote(marks.finding));
+      notes.push({ rank: SECURITY, finding: marks.finding });
       findings.push(marks.finding);
     }
     // No guard at all is unsafe at once, so a session hears it too (#904). Only where
@@ -387,57 +765,51 @@ function doctorRun(
     // guard, and full doctor names the missing guard for the user who wants one.
     const guard = hasUserSettings(env) ? machine.find((c) => c.name === 'user-guard' && !c.ok) : undefined;
     if (guard) {
-      blocks.push(formatNote(guard.finding));
+      notes.push({ rank: SECURITY, finding: guard.finding });
       findings.push(guard.finding);
     }
     // A stale plugin keeps old guard rules running; the session hears it (#198).
     const stale = pluginAgeCheck(root, env);
-    if (stale) blocks.push(formatNote(stale));
+    if (stale) notes.push({ rank: SECURITY, finding: stale });
     // A github marketplace updates over SSH, and fails without a key; the session says how to move it (#950).
     const source = pluginSourceNote(env);
-    if (source) blocks.push(formatNote(source));
-    if (!hasHome) blocks.push(noteLines(`yokoten: ${NO_HOME_NOTE}`));
+    if (source) notes.push({ rank: SETUP, finding: source });
+    if (!hasHome) notes.push({ rank: SETUP, lines: [`yokoten: ${NO_HOME_NOTE}`] });
     // This note only. The other privacy notes stay out of a session (#681).
     const claudeRules = museClaudeRules(env, root);
-    if (claudeRules) blocks.push(formatNote(claudeRules.finding));
+    if (claudeRules) notes.push({ rank: SETUP, finding: claudeRules.finding });
     const double = hasHome ? doubleInstallCheck(root, env) : null;
-    if (double) blocks.push(formatNote(double));
+    if (double) notes.push({ rank: SETUP, finding: double });
     // An edit stays, and a kit fix that waits behind it is named here, not after a surprise (#477).
     const edited = hasHome ? editedKitCheck(env) : null;
-    if (edited) blocks.push(formatNote(edited));
+    if (edited) notes.push({ rank: SETUP, finding: edited });
     // A full disk stops every session unseen (record 0012): statfs and one small file, no child process.
-    for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) blocks.push(formatNote(c.finding));
+    for (const c of diskSpaceChecks(root, env, probe, true).filter((check) => !check.ok)) notes.push({ rank: ONLY_HERE, finding: c.finding });
     const unsaved = sessionUnsaved(root, env);
-    if (unsaved.lines.length) blocks.push(unsaved.lines.flatMap(noteLines));
+    if (unsaved.lines.length) notes.push({ rank: ONLY_HERE, lines: unsaved.lines });
     // A lesson the kit learned reaches the project here: the session hears it (#120).
     if (core && isCoreBehind) {
-      blocks.push(formatNote(core.finding));
+      notes.push({ rank: SETUP, finding: core.finding });
       findings.push(core.finding);
     }
     const waiting = upstreamNote(root, env);
     if (waiting) {
-      blocks.push(noteLines(`yokoten: ${waiting.what}`));
+      notes.push({ rank: OTHER, lines: [`yokoten: ${waiting.what}`] });
       findings.push(waiting);
     }
     // A lesson new to this clone that finds something here: one line, at one start only (#339).
     const stateFile = unsaved.commonDir ? join(unsaved.commonDir, STATE_FILE) : findStateFile(root, env);
     const lesson = sessionLessonNote(root, config.notNow, stateFile, env.CLAUDE_PLUGIN_ROOT ? '/yokoten:doctor' : '`yokoten doctor`');
-    if (lesson.line) blocks.push(noteLines(lesson.line));
-    const notes = [...unsaved.notes, ...lesson.findings, ...(claudeRules ? [claudeRules.finding] : [])];
+    if (lesson.line) notes.push({ rank: OTHER, lines: [lesson.line] });
+    const found = [...unsaved.notes, ...lesson.findings, ...(claudeRules ? [claudeRules.finding] : [])];
     // A machine with no guard fails the run as full doctor does; a session still starts.
     const ok = !failed.length && !isCoreBehind && !guard;
-    return { ok, lines: blocks.flat(), blocks, report: { ...base, ok, repo: true, stage, next, findings, ...(notes.length ? { notes } : {}) } };
+    return { ok, report: { ...base, ok, repo: true, stage: where.stage, next, findings, ...(found.length ? { notes: found } : {}), view: { lead, session: notes } } };
   }
 
-  // The first line says where the project is and the one step to take next (owner
-  // 2026-10-24): a person and an agent meet the answer before the map.
-  lines.push(where.stage !== null && next
-    ? `stage ${where.stage} of ${STAGES.length}, ${STAGES[where.stage - 1]}. Next: ${stepText(next)}.`
-    : `the road is done: ${ROAD_DONE.replace(/^yokoten: /, '')}`);
-  lines.push(`yokoten ${VERSION} (${base.channel}), self-test ${failed.length ? 'FAILED' : 'ok'}`);
   // Work only on this machine (#365): notes, never a failure, and read only. Read before the
-  // road line, so the state file is found in the git folder it names (#453), as a session
-  // start finds it, and a stage that jumped can say so next to the road (#514).
+  // road, so the state file is found in the git folder it names (#453), as a session start
+  // finds it, and a stage that jumped can say so next to the road (#514).
   const unsaved = readUnsaved(root, { env });
   // Full doctor keeps which lessons this clone has seen; a session start keeps only which it ran.
   const stateFile = unsaved?.commonDir ? join(unsaved.commonDir, STATE_FILE) : findStateFile(root, env);
@@ -450,71 +822,65 @@ function doctorRun(
   // A stage that moved by more than one since the last full doctor says which stages it
   // passed, and why each counts as done, one line each (#514). The first run has no stage to
   // compare with, and a move of one is the usual next step, so neither says anything.
+  const jumps: string[] = [];
   if (where.stage !== null && lastStage !== null && where.stage - lastStage >= 2) {
     for (let stage = lastStage + 1; stage < where.stage; stage++) {
       const marks = where.steps.filter((walked) => walked.step.stage === stage).map((walked) => walked.mark);
       const isDone = marks.every((mark) => mark === 'done');
-      lines.push(`stage ${stage} ${isDone ? 'is done too' : 'counts as done'}: ${stageJumpText(marks)}`);
+      jumps.push(`stage ${stage} ${isDone ? 'is done too' : 'counts as done'}: ${stageJumpText(marks)}`);
     }
   }
   const steps: StepState[] = [];
   // With no origin remote, the server settings list leaves out server-settings (#502).
   const noRemote = server !== undefined && 'unread' in server && server.unread === NO_REMOTE;
-  STAGES.forEach((name, i) => {
-    // Each stage is its own block, with a blank line between blocks (owner 2026-10-24).
-    lines.push('');
-    lines.push(`  ${i + 1}. ${name}`);
+  const stageRows = STAGES.map((_, i): CheckRow[] => {
+    const rows: CheckRow[] = [];
     const walked = where.steps.filter((w) => w.step.stage === i + 1);
-    // The done steps of every stage except the one holding the next step share one line:
+    const nameOf = (step: (typeof walked)[number]['step']) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`;
+    // The done steps of every stage except the one holding the next step share one row:
     // that stage is the reader's checklist, and a step named alone there still answers
     // "is this done?" at a glance (#946).
     const isCurrent = where.stage === i + 1;
-    const doneNames = isCurrent
-      ? []
-      : walked
-        .filter(({ mark }) => mark === 'done')
-        .map(({ step }) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`);
-    if (doneNames.length) lines.push(`    ${'done'.padEnd(11)} ${doneNames.join(', ')}`);
-    // The "can't check" steps of a stage that share one reason share one line too.
+    const doneNames = isCurrent ? [] : walked.filter(({ mark }) => mark === 'done').map(({ step }) => nameOf(step));
+    if (doneNames.length) rows.push({ mark: 'done', name: doneNames.join(', ') });
+    // The "can't check" steps of a stage that share one reason share one row too.
     const unchecked = new Map<string, string[]>();
     for (const { step, mark } of walked) {
-      const state: StepState = { id: step.key, stage: step.stage, mark };
-      if (step.standard) state.standard = step.standard;
+      const stepState: StepState = { id: step.key, stage: step.stage, mark };
+      if (step.standard) stepState.standard = step.standard;
+      steps.push(stepState);
       if (mark === 'done') {
-        steps.push(state);
-        if (isCurrent) lines.push(`    ${mark.padEnd(11)} ${step.key}${step.standard ? ` (${step.standard})` : ''}`);
+        if (isCurrent) rows.push({ mark: 'done', name: nameOf(step) });
         continue;
       }
-      let note = '';
-      // A step that needs CI waits with "notNow" `ci` (#377): its reason, then what covers it meanwhile.
-      if (mark === 'not now') note = state.reason = Object.hasOwn(config.notNow, step.key) ? config.notNow[step.key] : `${config.notNow.ci} (notNow ci); ${step.withoutCi}`;
-      else if (mark === 'next' || mark === 'to do') {
+      if (mark === 'not now') {
+        // A step that needs CI waits with "notNow" `ci` (#377): its reason, then what covers it meanwhile.
+        stepState.reason = Object.hasOwn(config.notNow, step.key) ? config.notNow[step.key] : `${config.notNow.ci} (notNow ci); ${step.withoutCi}`;
+        rows.push({ mark: 'skipped', name: nameOf(step), what: `not now, ${stepState.reason}` });
+      } else if (mark === 'next' || mark === 'to do') {
         const f = stepFinding(step, root, env, { server, config, elsewhere });
         findings.push(f);
-        note = stepText(f);
-      } else if (mark === "can't check") note = uncheckedText(step, server);
-      // Keep the old words for no origin remote (#502): the server is where these live.
-      if (noRemote && note.startsWith(`${NO_REMOTE};`)) note = `${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`;
-      steps.push(state);
-      if (mark === "can't check") {
-        const names = unchecked.get(note) ?? [];
-        names.push(`${step.key}${step.standard ? ` (${step.standard})` : ''}`);
-        unchecked.set(note, names);
-        continue;
+        rows.push({ mark, name: nameOf(step), what: f.what, fix: f.fix });
+      } else {
+        let note = uncheckedText(step, server);
+        // Keep the old words for no origin remote (#502): the server is where these live.
+        if (noRemote && note.startsWith(`${NO_REMOTE};`)) note = `${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`;
+        unchecked.set(note, [...(unchecked.get(note) ?? []), nameOf(step)]);
       }
-      lines.push(`    ${mark.padEnd(11)} ${step.key}${step.standard ? ` (${step.standard})` : ''}${note ? `: ${note}` : ''}`);
     }
-    for (const [note, names] of unchecked) lines.push(`    ${"can't check".padEnd(11)} ${names.join(', ')}${note ? `: ${note}` : ''}`);
+    for (const [note, names] of unchecked) rows.push({ mark: "can't check", name: names.join(', '), ...splitFix(note) });
+    return rows;
   });
-  lines.push('');
-  lines.push('project:');
+  const project: CheckRow[] = [];
   const notes: Finding[] = [];
+  /** A practice as a row: ok with its detail, or a note with its finding. */
+  const practiceRow = (c: Practice, failMark: RowMark = 'note'): CheckRow => (c.ok ? { mark: 'ok', name: c.name, ...(c.detail ? { what: c.detail } : {}) } : { mark: failMark, name: c.name, what: c.finding.what, fix: c.finding.fix });
   for (const c of agentHooks(root, env)) {
-    lines.push(`  ${c.ok ? 'ok     ' : 'note   '} ${c.name}${c.ok ? (c.detail ? `: ${c.detail}` : '') : `: ${stepText(c.finding)}`}`);
+    project.push(practiceRow(c));
     if (!c.ok) notes.push(c.finding);
   }
   if (core) {
-    lines.push(`  ${core.mark.padEnd(7)} core-rules${core.mark === 'ok' ? '' : `: ${stepText(core.finding)}`}`);
+    project.push(core.mark === 'ok' ? { mark: 'ok', name: 'core-rules' } : { mark: core.mark, name: 'core-rules', what: core.finding.what, fix: core.finding.fix });
     if (core.mark === 'MISSING') findings.push(core.finding);
     else if (core.mark === 'note') notes.push(core.finding);
   }
@@ -522,15 +888,15 @@ function doctorRun(
   // failure, and one command shows the merges (#760). Full doctor only: a session reads no history.
   const zones = config.privacy.utc ? mergeTimeZones(root, env) : null;
   if (zones) {
-    lines.push(`  note    time-zone: ${stepText(zones)}`);
+    project.push({ mark: 'note', name: 'time-zone', what: zones.what, fix: zones.fix });
     notes.push(zones);
   }
   // Open changes that collide (#909): read from the kept map, no git call for each change.
   const conflicts = conflictNote(root, env, Date.now(), unsaved?.commonDir ?? null);
-  if (conflicts) lines.push(`  note    conflicts: ${conflicts}`);
+  if (conflicts) project.push({ mark: 'note', name: 'conflicts', what: conflicts });
   const noCi = noCiNote(config.notNow, where.stage, server);
   if (noCi) {
-    lines.push(`  note    no-ci: ${stepText(noCi)}`);
+    project.push({ mark: 'note', name: 'no-ci', what: noCi.what, fix: noCi.fix });
     notes.push(noCi);
   }
   const seenLessons = state.seenLessons ?? [];
@@ -541,7 +907,7 @@ function doctorRun(
   const seenWorkflows = state.seenWorkflows ?? [];
   const workflows = workflowNotes(root).filter((w) => w.seen === undefined || !seenWorkflows.includes(w.seen));
   for (const { note } of workflows) {
-    lines.push(`  note    kit-workflows: ${stepText(note)}`);
+    project.push({ mark: 'note', name: 'kit-workflows', what: note.what, fix: note.fix });
     notes.push(note);
   }
   const nextWorkflows = [...seenWorkflows, ...workflows.flatMap((w) => (w.seen === undefined ? [] : [w.seen]))];
@@ -549,7 +915,7 @@ function doctorRun(
   // A stage this run holds is saved for the next one. The done road (`where.stage === null`)
   // leaves the last stage where it was: there is no new stage to compare with.
   if (where.stage !== null && where.stage !== lastStage) saveState(stageFile, { lastStage: where.stage });
-  lines.push(...formatLessonChecks(lessons));
+  project.push(...lessonRows(lessons));
   notes.push(...lessons.flatMap((lesson) => lesson.findings));
   const checkNotes: Finding[] = [];
   let problems: Finding[];
@@ -562,95 +928,96 @@ function doctorRun(
   }
   findings.push(...problems);
   const allowed = allowedMarkCount(env, config, root);
-  if (allowed.project) lines.push(`  ok      own-marks: ${allowed.project} of your private marks allowed here by privacy.allow`);
-  if (allowed.machine) lines.push(`  ok      own-marks: ${allowed.machine} of your private marks allowed here by this machine (\`yokoten marks allow\`)`);
-  if (allowed.ownName) lines.push(`  ok      own-marks: ${allowed.ownName} of your private marks skipped here because they name this repo ("privacy": { "skipOwnName": false } turns this off)`);
-  if (allowed.unsure) lines.push(`  note    own-marks: this machine allows no private mark here, because ${allowed.unsure}`);
-  lines.push(`  ${problems.length ? 'MISSING' : 'ok     '} tree: ${problems.length ? `${problems.length} problem(s), run \`yokoten check\`` : 'layout and privacy clean'}`);
+  if (allowed.project) project.push({ mark: 'ok', name: 'own-marks', what: `${allowed.project} of your private marks allowed here by privacy.allow` });
+  if (allowed.machine) project.push({ mark: 'ok', name: 'own-marks', what: `${allowed.machine} of your private marks allowed here by this machine (\`yokoten marks allow\`)` });
+  if (allowed.ownName) project.push({ mark: 'ok', name: 'own-marks', what: `${allowed.ownName} of your private marks skipped here because they name this repo ("privacy": { "skipOwnName": false } turns this off)` });
+  if (allowed.unsure) project.push({ mark: 'note', name: 'own-marks', what: `this machine allows no private mark here, because ${allowed.unsure}` });
+  project.push(problems.length ? { mark: 'MISSING', name: 'tree', what: count(problems.length, 'problem'), fix: '`yokoten check` lists them' } : { mark: 'ok', name: 'tree', what: 'layout and privacy clean' });
   // check's own notes (#228), such as an unknown yokoten.json key or a translation behind: worded as check words them, and never a failure.
-  for (const n of checkNotes) lines.push(`  note    ${formatFinding(n).replaceAll('\n', '\n        ')}`);
+  for (const n of checkNotes) project.push({ mark: 'note', name: '', what: `${place(n)}${n.what}${formatFindingMarks(n)}. ${sentence(n.why)}. ${sentence(n.fix)}.` });
   notes.push(...checkNotes);
   const unsavedFound = unsaved ? unsavedNotes(unsaved, { home: env.HOME }) : [];
-  lines.push('');
-  lines.push('unsaved work (only on this machine):');
-  if (!unsaved) lines.push("  note    can't read this repo with git, so doctor can't tell what is only here");
-  else if (!unsavedFound.length) lines.push('  ok      everything is committed and pushed');
-  for (const n of unsavedFound) lines.push(`  note    ${n.id}: ${stepText(n)}`);
+  const unsavedRows: CheckRow[] = !unsaved
+    ? [{ mark: 'note', name: 'git', what: "can't read this repo with git, so doctor can't tell what is only here" }]
+    : unsavedFound.length
+      ? unsavedFound.map((n): CheckRow => ({ mark: 'note', name: n.id, what: oneStepEach(n.what), fix: oneStepEach(n.fix) }))
+      : [{ mark: 'ok', name: 'everything is committed and pushed' }];
   notes.push(...unsavedFound);
-  lines.push('');
-  lines.push('machine:');
+  const machineRows: CheckRow[] = [];
   for (const c of machine) {
-    lines.push(`  ${c.ok ? 'ok     ' : 'MISSING'} ${c.name}${c.ok ? '' : `: ${stepText(c.finding)}`}`);
+    machineRows.push(practiceRow(c, 'MISSING'));
     if (!c.ok) findings.push(c.finding);
   }
-  if (!hasHome) lines.push(`  note    ${NO_HOME_NOTE}`);
-  for (const line of filled) lines.push(`  note    ${line}`);
+  if (!hasHome) machineRows.push({ mark: 'note', name: 'home', what: NO_HOME_NOTE });
+  for (const line of filled) machineRows.push({ mark: 'note', name: 'private-marks', what: line });
   for (const c of hasHome ? privacyNotes(env, root, config.privacy.output) : []) {
-    lines.push(`  note    ${c.name}: ${stepText(c.finding)}`);
+    machineRows.push(practiceRow(c));
     notes.push(c.finding);
   }
   // Machine notes (record 0012) never fail doctor: the disk, the agent's temp folder, old
-  // test folders left in the temp folder (#400), and a Node without the security fixes (#572).
+  // test folders left in the temp folder (#400), a Node without the security fixes (#572),
+  // and a desk fence that can't start (#1097).
   const agentTemp = agentTempDirCheck(env, probe);
   const leftovers = leftoverTempCheck(env, probe);
-  const guardCost = session || root === null ? null : guardCostCheck(root, probe, env);
-  for (const c of [...userAgentHooks(env), ...diskSpaceChecks(root, env, probe, false), ...(agentTemp ? [agentTemp] : []), ...(leftovers ? [leftovers] : []), nodeSecurityCheck(probe), ...(guardCost ? [guardCost] : [])]) {
-    lines.push(`  ${c.ok ? 'ok     ' : 'note   '} ${c.name}${c.ok ? (c.detail ? `: ${c.detail}` : '') : `: ${stepText(c.finding)}`}`);
+  const guardCost = guardCostCheck(root, probe, env);
+  const fence = deskFenceCheck(env, platform, isFile);
+  for (const c of [...userAgentHooks(env), ...diskSpaceChecks(root, env, probe, false), ...(agentTemp ? [agentTemp] : []), ...(leftovers ? [leftovers] : []), nodeSecurityCheck(probe), ...(guardCost ? [guardCost] : []), ...(fence ? [fence] : [])]) {
+    machineRows.push(practiceRow(c));
     if (!c.ok) notes.push(c.finding);
   }
-  const stale = pluginAgeCheck(root, env);
-  if (stale) {
-    lines.push(`  note    plugin: ${stepText(stale)}`);
-    notes.push(stale);
-  }
-  const source = pluginSourceNote(env);
-  if (source) {
-    lines.push(`  note    plugin-source: ${stepText(source)}`);
-    notes.push(source);
-  }
-  const double = hasHome ? doubleInstallCheck(root, env) : null;
-  if (double) {
-    lines.push(`  note    plugin-and-install: ${stepText(double)}`);
-    notes.push(double);
-  }
-  const launcher = hasHome ? launcherCheck(env) : null;
-  if (launcher) {
-    lines.push(`  note    command: ${stepText(launcher)}`);
-    notes.push(launcher);
-  }
-  const edited = hasHome ? editedKitCheck(env) : null;
-  if (edited) {
-    lines.push(`  note    edited-kit: ${stepText(edited)}`);
-    notes.push(edited);
+  const named: [string, Finding | null][] = [
+    ['plugin', pluginAgeCheck(root, env)],
+    ['plugin-source', pluginSourceNote(env)],
+    ['plugin-and-install', hasHome ? doubleInstallCheck(root, env) : null],
+    ['command', hasHome ? launcherCheck(env) : null],
+    ['edited-kit', hasHome ? editedKitCheck(env) : null],
+  ];
+  for (const [name, note] of named) {
+    if (!note) continue;
+    machineRows.push({ mark: 'note', name, what: note.what, fix: note.fix });
+    notes.push(note);
   }
   const waiting = upstreamNote(root, env);
   if (waiting) {
-    lines.push(`  note    upstream-inbox: ${waiting.what}`);
+    machineRows.push({ mark: 'note', name: 'upstream-inbox', what: waiting.what });
     notes.push(waiting);
   }
   // The road's stage 5 shows the settings it groups (#7); here are the rest, which never fail doctor.
   const settings = serverChecks(server ?? { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' }, { isCiOff: Object.hasOwn(config.notNow, 'ci') });
-  lines.push('');
-  lines.push('server (read only; the owner sets these once per repo):');
+  const serverRows: CheckRow[] = [];
   for (const c of settings.filter((c) => !ROAD_SERVER_IDS.includes(c.id) && !(noRemote && c.id === 'server-settings'))) {
-    lines.push(`  ${c.mark.padEnd(11)} ${c.id}${c.mark === 'ok' ? '' : `: ${stepText(c.finding)}`}`);
+    serverRows.push(c.mark === 'ok' ? { mark: 'ok', name: c.id } : { mark: c.mark, name: c.id, what: c.finding.what, fix: c.finding.fix });
     if (c.mark !== 'ok') notes.push(c.finding);
   }
   // On a host with no adapter, each road step says what it asks; these lists name GitHub's menus (#504).
   if (!isNoAdapter(server)) {
-    if (settings[0].id === 'server-settings') lines.push('  check these by hand:', ...BY_HAND.map((s) => `    ${s}`));
-    lines.push(...OWNER_STEPS.map((s) => `  not checked ${s}`));
+    if (settings[0].id === 'server-settings') serverRows.push(...BY_HAND.map((step): CheckRow => ({ mark: 'to do', name: 'by hand', what: step })));
+    serverRows.push(...OWNER_STEPS.map((step): CheckRow => ({ mark: 'to do', name: 'not checked', what: step })));
   }
-  lines.push(...listBoardSteps(server));
-  // A shell that is not UTC makes each new commit carry its zone (#932). Say the one line
+  serverRows.push(...listBoardSteps(server).map((step): CheckRow => ({ mark: 'to do', name: 'by hand', what: step })));
+  // A shell that is not UTC makes each new commit carry its zone (#932). Say the one row
   // for this shell at the end, where a person looks for the next step. A session never
   // needs it: init already sets TZ=UTC for agent sessions.
-  if (!session && config.privacy.utc && !isUtcTimeZone(env)) {
-    lines.push('');
-    lines.push(`yokoten: your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.`);
-  }
+  const timeZone: CheckRow | undefined = config.privacy.utc && !isUtcTimeZone(env) ? { mark: 'note', name: 'shell', what: `your shell's time zone is not UTC, so each commit would carry it. ${timeZoneFix(env)}.` } : undefined;
   // The road has no failed mark: a step is done, to do, not now or can't check. Steps
   // left are the way ahead, not problems, so they never fail doctor (#208).
   const ok = !failed.length && !isCoreBehind && !problems.length && machine.every((c) => c.ok);
-  return { ok, lines, report: { ...base, ok, repo: true, stage: where.stage, next, findings, steps, notes, server: settings.map(({ id, mark }) => ({ id, mark })), lessons: lessons.map(({ id, mark, reason, isNew }) => ({ id, mark, ...(reason === undefined ? {} : { reason }), ...(isNew ? { isNew } : {}) })) } };
+  const version: CheckRow = { mark: failed.length ? 'MISSING' : 'ok', name: `yokoten ${VERSION} (${base.channel})`, what: `self-test ${failed.length ? 'FAILED' : 'ok'}` };
+  const full: FullView = { version, jumps, stages: stageRows, project, unsaved: unsavedRows, machine: machineRows, server: serverRows, ...(timeZone ? { timeZone } : {}) };
+  return {
+    ok,
+    report: {
+      ...base, ok, repo: true, stage: where.stage, next, findings, steps, notes,
+      server: settings.map(({ id, mark }) => ({ id, mark })),
+      lessons: lessons.map(({ id, mark, reason, isNew }) => ({ id, mark, ...(reason === undefined ? {} : { reason }), ...(isNew ? { isNew } : {}) })),
+      view: { lead, full },
+    },
+  };
+}
+
+/** A sentence and its fix, split at the first `; `: the fix goes on a Fix line when it starts with a command. */
+function splitFix(text: string): { what?: string; fix?: string } {
+  const at = text.indexOf('; ');
+  if (at === -1) return text ? { what: text } : {};
+  return { what: text.slice(0, at), fix: text.slice(at + 2) };
 }

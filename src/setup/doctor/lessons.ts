@@ -11,6 +11,7 @@ import { withGitReads } from '../init.ts';
 import { assumeEmptyFolder } from '../../run/check.ts';
 import { road, ROAD, type ServerRead, stepText } from '../road.ts';
 import { coreRulesCheck } from './checks.ts';
+import type { CheckRow } from './report.ts';
 
 /** A server with every setting off, no label and only a closed milestone: no server step on the road may pass it (#7, #10). */
 const SERVER_CONTROL: ServerRead = {
@@ -137,6 +138,46 @@ function lessonFindingLines(id: string, findings: Finding[]): string[] {
     if (places.length === 1) return `  note    lesson ${id}: ${stepText(finding)}`;
     const more = places.length > 3 ? `, +${places.length - 3} more (\`yokoten doctor --json\`)` : '';
     return `  note    lesson ${id}: ${rest}: ${places.slice(0, 3).join(', ')}${more}; ${finding.fix}`;
+  });
+}
+
+/**
+ * The lessons as rows of the full map's project part (#1115): one per lesson, or one per
+ * reason a lesson found, with up to three places and a count of the rest (#946). A new lesson
+ * gets one row more before them, even when it finds no problem.
+ */
+export function lessonRows(lessons: LessonCheck[]): CheckRow[] {
+  return lessons.flatMap(({ id, mark, findings, reason, what, isNew }): CheckRow[] => {
+    // A new lesson that passes says so in a few words: its own lesson text reads as an accusation.
+    const intro: CheckRow[] = isNew
+      ? mark === 'ok'
+        ? [{ mark: 'note', name: 'a new check ran', what: `ok (${id}); doctor now runs it in this project` }]
+        : [{ mark: 'note', name: 'new lesson', what: `${id}${what ? ` (${what})` : ''}; doctor now runs it in this project` }]
+      : [];
+    if (mark === 'not now') return [{ mark: 'skipped', name: `lesson ${id}`, what: `not now, ${reason ?? ''}` }];
+    if (mark === 'ok') return [...intro, { mark: 'ok', name: `lesson ${id}` }];
+    const groups = new Map<string, { places: string[]; finding: Finding }>();
+    const plain: Finding[] = [];
+    for (const finding of findings) {
+      const place = placeOf(finding.what);
+      if (!place) {
+        plain.push(finding);
+        continue;
+      }
+      const group = groups.get(place.rest);
+      if (group) group.places.push(place.place);
+      else groups.set(place.rest, { places: [place.place], finding });
+    }
+    // A finding with no place keeps its own row: there is nothing to list.
+    if (plain.length) return [...intro, ...findings.map((one): CheckRow => ({ mark: 'note', name: `lesson ${id}`, what: one.what, fix: one.fix }))];
+    return [
+      ...intro,
+      ...[...groups].map(([rest, { places, finding }]): CheckRow => {
+        if (places.length === 1) return { mark: 'note', name: `lesson ${id}`, what: finding.what, fix: finding.fix };
+        const more = places.length > 3 ? `, +${places.length - 3} more (\`yokoten doctor --json\`)` : '';
+        return { mark: 'note', name: `lesson ${id}`, what: `${rest}: ${places.slice(0, 3).join(', ')}${more}`, fix: finding.fix };
+      }),
+    ];
   });
 }
 

@@ -119,9 +119,9 @@ test('doctor --session: a worker hears that lead-only files are guarded; the lea
   assert.ok(has(await start('compact')), 'after a compaction too');
 });
 
-// #561: full doctor says one line while the slow reads run, on a terminal only. A session
-// never reads the server, and --json keeps stdout to the report.
-test('doctor: one progress line on a terminal; none off it, in a session, or with --json (#561)', async () => {
+// #561, #1039: full doctor says one note while the slow reads run, to a person at a terminal
+// only, on stderr. A session never reads the server, and --json keeps stdout to the report.
+test('doctor: one progress note on a terminal; none off it, in a session, or with --json (#561, #1039)', async () => {
   const sandbox = makeSandbox();
   const kept = (isTTY: boolean | undefined) => {
     const chunks: string[] = [];
@@ -129,20 +129,22 @@ test('doctor: one progress line on a terminal; none off it, in a session, or wit
     if (isTTY !== undefined) (stream as Writable & { isTTY: boolean }).isTTY = isTTY;
     return { stream: stream as Output, text: () => chunks.join('') };
   };
-  const run = async (isTTY: boolean | undefined, args: string[]): Promise<{ code: number; stdout: string }> => {
+  const run = async (isTTY: boolean | undefined, args: string[]): Promise<{ code: number; stdout: string; stderr: string }> => {
     const stdout = kept(isTTY);
     const stderr = kept(undefined);
-    const invocation: Invocation = { command: 'doctor', args, env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: '', stream: Readable.from(['']) }, script: CLI };
-    return { code: await runDoctor(invocation), stdout: stdout.text() };
+    const input = Object.assign(Readable.from(['']), isTTY === undefined ? {} : { isTTY });
+    const invocation: Invocation = { command: 'doctor', args, env: { ...sandbox.env }, cwd: sandbox.repo, stdout: stdout.stream, stderr: stderr.stream, stdin: { fd: null, text: '', stream: input }, script: CLI };
+    return { code: await runDoctor(invocation), stdout: stdout.text(), stderr: stderr.text() };
   };
-  const line = 'reading GitHub settings...\n';
+  const note = 'note: reading GitHub settings, 5 seconds at most...\n';
   const tty = await run(true, []);
-  assert.ok(tty.stdout.startsWith(line), 'the line comes first');
+  assert.ok(tty.stderr.startsWith(note), tty.stderr);
+  assert.ok(!tty.stdout.includes('reading GitHub'), 'the note is not part of the screen');
   const piped = await run(undefined, []);
-  assert.ok(!piped.stdout.includes('reading GitHub settings'), 'no line off a terminal');
-  assert.ok(!(await run(true, ['--session'])).stdout.includes('reading GitHub settings'), 'no line at session start');
+  assert.ok(!piped.stderr.includes('reading GitHub settings'), 'no note off a terminal');
+  assert.ok(!(await run(true, ['--session'])).stderr.includes('reading GitHub settings'), 'no note at session start');
   const json = await run(true, ['--json']);
-  assert.ok(!json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
+  assert.ok(!json.stderr.includes('reading GitHub settings') && !json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
   JSON.parse(json.stdout);
 });
 
@@ -161,7 +163,7 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.doesNotMatch(short.stdout, /OpenSSF|Scorecard|OSPS-/, 'no standard ids on the default screen');
   const all = await sandbox.call(['doctor', '--all']);
   assert.match(all.stdout, /OpenSSF/, '--all keeps the standards');
-  assert.match(all.stdout, /^machine:$/m);
+  assert.match(all.stdout, /^Machine:$/m);
   assert.equal(short.status, all.status, 'the same exit code');
 });
 
