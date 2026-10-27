@@ -7,18 +7,19 @@
 // holds 7 entries, the cap, so it has no test/platform/ folder.
 import '../home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative, sep } from 'node:path';
 import { test } from 'node:test';
 import {
   askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
   spaced, summaryLine, table, title, underRow, wrap,
 } from '../../../src/rules/text/screen.ts';
-import { limitOf, SCREEN_RULES, screenProblems } from './screen-rules.ts';
+import { limitOf, machinePathsIn, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
+import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
-import { makeSandbox, writeNodeProgram } from '../helpers.ts';
+import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
 // ---- The calibration: the owner's six verdicts (issue #1099) ----
@@ -218,6 +219,8 @@ interface ScreenRun {
   place?: 'repo' | 'plain' | 'dirty' | 'signed-out' | 'deepseek' | 'zoned' | 'fresh';
   /** A screen built in this process instead of run: the kanban serves until it is stopped, so its banner is rendered as the server would print it. */
   lines?: string[];
+  /** The system a screen built in this process was rendered for; a run screen is always this one's (#1115). */
+  platform?: NodeJS.Platform;
   stdin?: string;
   /** A guard refusal: the person reads stderr, and stdout is JSON for the agent. */
   isStderrOnly?: boolean;
@@ -282,8 +285,8 @@ function screensOf(repo: string): ScreenRun[] {
 // drifts from what the rules see, and needs no script.
 const CAPTURE_FILE = process.env.SCREENS_OUT;
 
-/** One screen in the capture: the piped text the rules check, and the same lines coloured as a terminal shows them. */
-interface Captured { key: string; command: string; exit: number | null; text: string; problems: string[]; colour: string }
+/** One screen in the capture: the system it was rendered for, the piped text the rules check, and the same lines coloured as a terminal shows them. */
+interface Captured { key: string; command: string; platform: NodeJS.Platform; exit: number | null; text: string; problems: string[]; colour: string }
 
 /**
  * Today's offenders (issue #1099, stage 1). Each is a screen built before the layout; stage 2
@@ -344,7 +347,11 @@ test('screens: every screen the command list reaches keeps the limits of record 
     text,
     problems: text.trim() === '' ? [] : screenProblems({ text, isFailure: status !== 0, isHelp: run.isHelp }),
   }));
+  // The colour copy is the same text styled as `print` styles it on a terminal; a guard refusal is never coloured (canColour).
+  const captured: Captured[] = checked.map(({ run, status, text, problems }) => ({ key: run.key, command: ['yokoten', ...run.words].join(' '), platform: run.platform ?? process.platform, exit: status, text, problems, colour: styleText(text, run.words[0] !== 'hook') }));
+  const dump = `${JSON.stringify(captured, null, 2)}\n`;
   try {
+    assert.deepEqual(machinePathsIn(dump), [], 'the capture shows no path on this machine: the owner shares it (no-internal-path, #1115)');
     const broken: string[] = [];
     const healed: string[] = [];
     for (const { run, text, problems } of checked) {
@@ -363,11 +370,7 @@ test('screens: every screen the command list reaches keeps the limits of record 
     assert.ok(Object.values(WAIVED).every((reason) => reason.includes('#1115')), 'each waiver names issue #1115');
     assert.ok(Object.keys(WAIVED).length <= WAIVED_MOST, `WAIVED holds ${Object.keys(WAIVED).length}; the most is ${WAIVED_MOST}, and it only goes down`);
   } finally {
-    // The colour copy is the same text styled as `print` styles it on a terminal; a guard refusal is never coloured (canColour).
-    if (CAPTURE_FILE) {
-      const captured: Captured[] = checked.map(({ run, status, text, problems }) => ({ key: run.key, command: ['yokoten', ...run.words].join(' '), exit: status, text, problems, colour: styleText(text, run.words[0] !== 'hook') }));
-      writeFileSync(CAPTURE_FILE, `${JSON.stringify(captured, null, 2)}\n`);
-    }
+    if (CAPTURE_FILE) writeFileSync(CAPTURE_FILE, dump);
   }
   console.log(`screens: ${runs.length} rendered, ${Object.keys(WAIVED).length} waived, ${Math.round(performance.now() - started)} ms`);
 });
@@ -378,4 +381,121 @@ test('screens: desk --help is built from the help spec and keeps every limit (#1
   const lines = commandHelp(desk);
   assert.deepEqual(screenProblems({ text: lines.join('\n'), isHelp: true }), []);
   for (const heading of ['Examples:', 'Options:', 'The fence:']) assert.ok(lines.includes(heading), `desk --help has ${heading}`);
+});
+
+// ---- Every render in the suite (test/repo/invoke.ts, #1115) ----
+
+test('every render: the key, what a person reads, and a waiver that covers only its rules (#1115)', () => {
+  assert.equal(renderKey(['check', '--staged', '--all']), 'check --all --staged', 'flags sorted');
+  assert.equal(renderKey(['desk', 'claude', 'work', '--name=one', '--', 'npm', '--help']), 'desk --name', 'a value and the words after -- are left out');
+  assert.equal(renderKey([]), '(none)', 'the bare command');
+  const done = { code: 0, stdout: '{"ok":true}\n', stderr: 'yokoten · refused\n', output: 'both\n' };
+  assert.equal(readText(['doctor', '--json'], done), null, '--json is for a program');
+  assert.equal(readText(['redact'], done), null, 'redact passes a stream through');
+  assert.equal(readText(['bot', 'run', '--', 'gh', 'pr'], done), null, "bot -- prints the child's output");
+  assert.equal(readText(['hook'], done), done.stderr, 'hook: only stderr, the person reads it');
+  assert.equal(readText(['doctor'], done), done.output);
+  const wide = { code: 1, stdout: '', stderr: '', output: `${'x'.repeat(101)}\n` };
+  const rules = (problems: string[]) => problems.map((problem) => /\[([a-z-]+)\]$/.exec(problem)?.[1]);
+  assert.deepEqual(rules(renderProblems(['demo'], wide, { waived: {} })), ['widest', 'next-step'], 'a failure with no next step, and a line too wide (one line may run past 80)');
+  assert.deepEqual(rules(renderProblems(['demo'], wide, { waived: { demo: { rules: ['widest'], reason: '#1115' } } })), ['next-step'], 'a waiver covers only the rules it lists');
+  assert.deepEqual(renderProblems(['demo', '--json'], wide, { waived: {} }), [], 'nobody reads --json');
+  assert.deepEqual(renderProblems(['demo'], { ...wide, code: 0, output: '\u001b[1mok\u001b[0m\n' }, { isTTY: true, waived: {} }), [], 'colour on a terminal is what the person sees');
+});
+
+test('every render: RENDER_WAIVED holds old screens only, each naming #1115, and healedWaivers says what to take off (#1115)', () => {
+  const keys = Object.keys(RENDER_WAIVED);
+  assert.ok(keys.length <= RENDER_WAIVED_MOST, `RENDER_WAIVED holds ${keys.length}; the most is ${RENDER_WAIVED_MOST}, and it only goes down`);
+  assert.deepEqual(keys.filter((key) => !RENDER_WAIVED[key]?.reason.includes('#1115')), [], 'each waiver names issue #1115');
+  assert.deepEqual(keys.filter((key) => renderKey(key.split(' ')) !== key), [], 'each key is a render key: the command, then its flags sorted');
+  const ids = new Set<string>(SCREEN_RULES.map((rule) => rule.id));
+  assert.deepEqual(keys.filter((key) => !RENDER_WAIVED[key]?.rules.length || RENDER_WAIVED[key]?.rules.some((rule) => !ids.has(rule))), [], 'each waiver lists rules of SCREEN_RULES');
+  // The positive control: a report where one key healed, one rule healed, and one is still needed.
+  const waived = { 'a --x': { rules: ['width'], reason: '#1115' }, b: { rules: ['width', 'prose'], reason: '#1115' }, c: { rules: ['prose'], reason: '#1115' } } as const;
+  const report = [
+    { key: 'a --x', file: 'one.test.ts', checked: true, rules: [] },
+    { key: 'b', file: 'one.test.ts', checked: true, rules: ['prose'] },
+    { key: 'b', file: 'two.test.ts', checked: true, rules: [] },
+    { key: 'c', file: 'two.test.ts', checked: true, rules: ['prose'] },
+    { key: 'c', file: 'one.test.ts', checked: true, rules: [] },
+  ];
+  assert.deepEqual(healedWaivers(report, waived), ['a --x: it keeps width now; take it off RENDER_WAIVED', 'b: it keeps width now; take that rule off its waiver'], 'a key that passes in one file and fails in another is still needed');
+});
+
+// ---- The screens' source (plan 6.5, #1115) ----
+//
+// Each ratchet counts one way a screen is built by hand in src/ (RATCHETS in screen-rules.ts).
+// A count may only go down: above its ceiling the test fails, and below it the test asks for
+// the ceiling to come down with it. The finish line is every ceiling at 0. The integrator
+// owns the ceilings; a group reports what healed.
+
+/** The most each ratchet may find. Only the integrator changes these, and only down. */
+const RATCHET_CEILINGS: Record<Exclude<RatchetId, 'R4'>, number> = { R1: 104, R2: 17, R3: 150, R5: 24, R6: 9 };
+
+/**
+ * R4: the raw writes that stay, as `path: <the line, trimmed>`. A child's or a hook's own
+ * bytes pass through as they are; anything a person reads goes through `show` or `fail`.
+ */
+const RAW_WRITES = [
+  // The hook's JSON answer to the agent.
+  'src/commands/hook.ts: invocation.stdout.write(answer.text());',
+  'src/commands/hook.ts: else answerInvocation.stdout.write(rewritten);',
+  // The desk child's own stderr, passed through.
+  'src/commands/hook.ts: if (started.stderr) invocation.stderr.write(started.stderr);',
+  'src/commands/desk/desk.ts: if (ran.stderr) invocation.stderr.write(ran.stderr);',
+  // redact: the stream, as it comes in.
+  'src/commands/more/check.ts: void redactStream(invocation.stdin.stream, pieces, (text) => stdout.write(text)).then((err) => {',
+  // bot: the child's own output, passed through.
+  'src/commands/more/merge/bot.ts: if (result.stdout) stdout.write(result.stdout);',
+  'src/commands/more/merge/bot.ts: if (result.stderr) stderr.write(result.stderr);',
+  'src/commands/more/merge/bot.ts: if (shown.stdout) stdout.write(shown.stdout);',
+  'src/commands/more/merge/bot.ts: if (shown.stderr) stderr.write(shown.stderr);',
+  // Not a kind of plan 6.5: the release notes, a Markdown document (C9 decides), and the
+  // bridge's two failure lines, hand-made (C7 moves them to failure()). Take them off when they go.
+  'src/commands/more/learn.ts: invocation.stdout.write(notes);',
+  'src/agents/desk/network/bridge.ts: stderr.write(`yokoten desk: ${parsed}\\n`);',
+  "src/agents/desk/network/bridge.ts: stderr.write(`yokoten desk: can't start ${file}: ${error.code ?? error.message}\\n`);",
+];
+
+const SRC_FILES: SourceFile[] = readdirSync(join(ROOT, 'src'), { recursive: true, withFileTypes: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
+  .map((entry) => join(entry.parentPath, entry.name))
+  .sort()
+  .map((path) => ({ path: relative(ROOT, path).split(sep).join('/'), source: readFileSync(path, 'utf8') }));
+const FOUND = ratchetsOf(SRC_FILES);
+
+test("the screens' source: the reader skips comments and imports, and keeps strings apart from code (#1115)", () => {
+  const { code, strings } = readSource([
+    "import { row } from './screen.ts';",
+    "// print('yokoten desk: in a comment')",
+    "const at = /it's '/.test(line); const half = total / 2 / 3;",
+    "const line = `yokoten tidy: ${count > 0 ? 'a' : ''} left`; /* ' '.repeat(26) */",
+  ].join('\n'));
+  assert.equal(code.split('\n').length, 4, 'every line stays where it was');
+  assert.deepEqual(strings.filter((text) => text.includes('yokoten')), ['yokoten tidy: '], 'a template string, not the comment, and not the import path');
+  assert.ok(!code.includes('row') && !code.includes('print') && !code.includes('repeat'), 'imports and comments are gone');
+  assert.ok(code.includes("/it's '/.test(line)") && code.includes('total / 2 / 3'), 'a regex with a quote, and a division');
+  const control = ratchetsOf([
+    { path: 'src/commands/demo.ts', source: "say(`yokoten demo: x`);\nconst pad = 'a'.padEnd(12) + ' '.repeat(26);\nconst lines = ['a', '', 'b'];\nlines.filter((line) => /^ok /.test(line));\nif (stdout.isTTY) stdout.write('x');" },
+    { path: 'src/rules/text/screen.ts', source: "const blank = ['', 'a'];\nconst pad = 'a'.padEnd(12);" },
+  ]);
+  assert.deepEqual(Object.fromEntries(Object.entries(control).map(([id, places]) => [id, places.length])), { R1: 1, R2: 2, R3: 1, R4: 1, R5: 1, R6: 1 }, 'each ratchet catches its known-bad line, and src/rules/text/ is the layout');
+});
+
+for (const [id, ceiling] of Object.entries(RATCHET_CEILINGS) as [Exclude<RatchetId, 'R4'>, number][]) {
+  test(`the screens' source: ${id}, ${RATCHETS[id]}, only goes down (#1115)`, () => {
+    const found = FOUND[id].length;
+    console.log(`ratchet ${id}: [${found}, ${ceiling}]`);
+    const where = [...new Set(FOUND[id])].slice(0, 12).join(', ');
+    assert.ok(found <= ceiling, `${id} finds ${found}, above its ceiling ${ceiling}: build the screen with src/rules/text/screen.ts. Found in: ${where}`);
+    assert.ok(found >= ceiling, `${id} finds ${found}, below its ceiling ${ceiling}: lower the ceiling to ${found}`);
+  });
+}
+
+test("the screens' source: R4, the raw writes, are exactly the allow-list (#1115)", () => {
+  console.log(`ratchet R4: ${FOUND.R4.length} raw writes, ${RAW_WRITES.length} allowed`);
+  const extra = FOUND.R4.filter((entry) => !RAW_WRITES.includes(entry));
+  const gone = RAW_WRITES.filter((entry) => !FOUND.R4.includes(entry));
+  assert.deepEqual(extra, [], 'print a screen with show() or fail() from src/commands/shared.ts, not a raw write');
+  assert.deepEqual(gone.map((entry) => `${entry}: no such write now; take it off RAW_WRITES`), []);
 });
