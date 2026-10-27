@@ -52,7 +52,7 @@ import type { TidyItem, TidyScan } from '../../../src/commands/tidy/find.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 // C2: the pure screens of init, update and trust, from their results (#1115).
-import { initScreen } from '../../../src/commands/more/setup/init.ts';
+import { initListScreen, initScreen } from '../../../src/commands/more/setup/init.ts';
 import { TRUST_NEEDS_A_PERSON, updateScreen } from '../../../src/commands/more/setup/update.ts';
 import { init, type UpdateResult } from '../../../src/setup/init.ts';
 import { setUpPlanning } from '../../../src/setup/plan.ts';
@@ -350,26 +350,31 @@ function c1Partly(platform: C1Platform): SetupResult {
   return result;
 }
 
-/** What uninstall took back after a first install. */
-const C1_REMOVED: SetupResult = {
+/** What uninstall took back after a first install on one system. */
+const c1Removed = (platform: C1Platform): SetupResult => ({
   ok: true,
   changes: [
-    ...c1Install('linux').changes.filter((change) => change.state !== 'skipped').map((change): Change => ({ ...change, state: 'removed' })),
-    { state: 'kept', kind: 'file', path: c1Path('linux', '.config', 'yokoten'), yours: true, note: 'your keys and private marks' },
+    ...c1Install(platform).changes.filter((change) => change.state !== 'skipped').map((change): Change => ({ ...change, state: 'removed' })),
+    { state: 'kept', kind: 'file', path: c1Path(platform, '.config', 'yokoten'), yours: true, note: 'your keys and private marks' },
   ],
   problems: [],
   notes: [],
-};
+});
 
-/** The C1 screens, as screensOf lists them. */
-const c1Screens = (): ScreenRun[] => [
-  ...(['linux', 'win32', 'darwin'] as const).map((platform): ScreenRun => ({ key: `install, fresh, ${platform}`, words: ['install'], lines: installScreen(c1Install(platform), c1Place(platform)), platform })),
-  { key: 'install, already set up', words: ['install'], lines: installScreen(c1Install('linux', 'kept'), c1Place('linux')), platform: 'linux' },
-  ...(['linux', 'win32'] as const).map((platform): ScreenRun => ({ key: `install, partly set up with a PATH note, ${platform}`, words: ['install'], lines: installScreen(c1Partly(platform), c1Place(platform, { launcherOnPath: false })), platform })),
-  { key: 'uninstall, with removals', words: ['uninstall'], lines: uninstallScreen(C1_REMOVED), platform: 'linux' },
-  { key: 'uninstall, nothing to remove', words: ['uninstall'], lines: uninstallScreen({ ok: true, changes: [], problems: [], notes: [] }), platform: 'linux' },
-  { key: 'install --list', words: ['install', '--list'], lines: listScreen('install', c1Install('linux'), c1Place('linux')), platform: 'linux' },
-];
+/** The systems a pure screen is rendered for, in the case order: Linux, Windows, then macOS (plan D6, record 0052). */
+const PLATFORMS = ['linux', 'win32', 'darwin'] as const;
+
+/** The C1 screens, as screensOf lists them: each one for every system. */
+const c1Screens = (): ScreenRun[] =>
+  PLATFORMS.flatMap((platform): ScreenRun[] => [
+    { key: `install, fresh, ${platform}`, words: ['install'], lines: installScreen(c1Install(platform), c1Place(platform)), platform },
+    { key: `install, already set up, ${platform}`, words: ['install'], lines: installScreen(c1Install(platform, 'kept'), c1Place(platform)), platform },
+    { key: `install, partly set up with a PATH note, ${platform}`, words: ['install'], lines: installScreen(c1Partly(platform), c1Place(platform, { launcherOnPath: false })), platform },
+    { key: `install --list, ${platform}`, words: ['install', '--list'], lines: listScreen('install', c1Install(platform), c1Place(platform)), platform },
+    { key: `uninstall, with removals, ${platform}`, words: ['uninstall'], lines: uninstallScreen(c1Removed(platform)), platform },
+    { key: `uninstall, nothing to remove, ${platform}`, words: ['uninstall'], lines: uninstallScreen({ ok: true, changes: [], problems: [], notes: [] }), platform },
+    { key: `uninstall --list, ${platform}`, words: ['uninstall', '--list'], lines: listScreen('uninstall', c1Removed(platform), c1Place(platform)), platform },
+  ]);
 // C1 end
 
 // C8: three open pull requests, two of them on one file, for the train's plan and the conflicts report.
@@ -462,8 +467,12 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'kanban --text, sessions in every group', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_BUSY) },
     { key: 'kanban --text, an empty board', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_EMPTY) },
     { key: 'kanban --text, gh signed out (state)', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_SIGNED_OUT) },
-    { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
-    { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // The kanban serves until it is stopped: its banner, rendered for every system (#1070).
+    ...PLATFORMS.flatMap((platform): ScreenRun[] => [
+      { key: `kanban --no-open, ${platform}`, words: ['kanban', '--no-open'], platform, lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
+      { key: `kanban, opening the browser, ${platform}`, words: ['kanban'], platform, lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+      { key: `kanban, no browser could start, ${platform}`, words: ['kanban'], platform, lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false, couldNotOpen: true }) },
+    ]),
     // C5: stops, worker, anchor, the desk's start and the stop hook's notes, each built from its data (#1115).
     { key: 'stops, on with stops logged', words: ['stops'], lines: stopsScreen({ isOff: false, count: 3, file: '~/.config/yokoten/stops.jsonl' }) },
     { key: 'stops, off', words: ['stops'], lines: stopsScreen({ isOff: true, count: 0, file: '~/.config/yokoten/stops.jsonl' }) },
@@ -494,7 +503,7 @@ function screensOf(repo: string): ScreenRun[] {
     ...c1Screens(),
     // C1 end
     // C2: init, update and trust, built from their results (#1115). The init screens end with
-    // the commit command, which differs on Windows, so they are rendered for both.
+    // the commit command, which differs on Windows, so they are rendered for each system.
     ...c2Screens(),
     // C16: the first run, from install's and init's results and doctor's report, and upgrade's screens (#1115).
     ...c16Screens(),
@@ -570,7 +579,7 @@ function screensOf(repo: string): ScreenRun[] {
 }
 
 // C16: the first run and upgrade, built from their results (#1115). The first run ends with
-// init's commit command, which differs on Windows, so it is rendered for both.
+// init's commit command, which differs on Windows, so it is rendered for each system.
 function c16Screens(): ScreenRun[] {
   const sandbox = makeSandbox();
   const added = init(sandbox.repo, sandbox.env, () => '', { platform: 'linux' });
@@ -582,20 +591,18 @@ function c16Screens(): ScreenRun[] {
     notes: [],
   };
   const plugin = { id: 'yokoten-beta@yokoten', marketplace: 'yokoten', channel: 'beta' };
-  return [
-    ...(['linux', 'win32'] as const).flatMap((platform): ScreenRun[] => [
-      { key: `first run, both parts done, ${platform}`, words: [], platform, lines: startScreen({ install: c1Install(platform), init: added, report, place: c1Place(platform) }) },
-      { key: `first run, install failed, ${platform}`, words: [], platform, lines: startScreen({ install: c1Partly(platform), init: added, report, place: c1Place(platform) }) },
-    ]),
-    { key: 'upgrade, not a plugin', words: ['upgrade'], platform: 'linux', lines: upgradeScreen({ ok: true, plugin: null, steps: [], next: 'npx yokoten@latest' }) },
+  return PLATFORMS.flatMap((platform): ScreenRun[] => [
+    { key: `first run, both parts done, ${platform}`, words: [], platform, lines: startScreen({ install: c1Install(platform), init: added, report, place: c1Place(platform) }) },
+    { key: `first run, install failed, ${platform}`, words: [], platform, lines: startScreen({ install: c1Partly(platform), init: added, report, place: c1Place(platform) }) },
+    { key: `upgrade, not a plugin, ${platform}`, words: ['upgrade'], platform, lines: upgradeScreen({ ok: true, plugin: null, steps: [], next: 'npx yokoten@latest' }) },
     {
-      key: 'upgrade, a failed step',
+      key: `upgrade, a failed step, ${platform}`,
       words: ['upgrade'],
-      platform: 'linux',
+      platform,
       lines: upgradeScreen({ ok: false, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: false, said: 'Error: could not reach github.com' }], next: 'claude plugin update yokoten-beta@yokoten' }),
     },
-    { key: 'upgrade, ok', words: ['upgrade'], platform: 'linux', lines: upgradeScreen({ ok: true, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: true }], next: 'restart Claude Code; a session already running keeps the old copy' }) },
-  ];
+    { key: `upgrade, ok, ${platform}`, words: ['upgrade'], platform, lines: upgradeScreen({ ok: true, plugin, steps: [{ label: 'the marketplace yokoten', ok: true }, { label: 'the plugin yokoten-beta@yokoten', ok: true }], next: 'restart Claude Code; a session already running keeps the old copy' }) },
+  ]);
 }
 // C16 end
 
@@ -631,7 +638,8 @@ function c2Screens(): ScreenRun[] {
     ],
   };
   return [
-    ...inits.flatMap(([key, words, result]): ScreenRun[] => (['linux', 'win32'] as const).map((platform) => ({ key: `${key}, ${platform}`, words, platform, lines: initScreen(result, { platform }) }))),
+    ...inits.flatMap(([key, words, result]): ScreenRun[] => PLATFORMS.map((platform) => ({ key: `${key}, ${platform}`, words, platform, lines: initScreen(result, { platform }) }))),
+    ...PLATFORMS.map((platform): ScreenRun => ({ key: `init --list, ${platform}`, words: ['init', '--list'], platform, lines: initListScreen(fresh, { platform }) })),
     { key: 'update preview', words: ['update'], platform: 'linux', lines: updateScreen(preview) },
     { key: 'update --write', words: ['update', '--write'], platform: 'linux', lines: updateScreen({ ...preview, state: 'written', backup: 'AGENTS.md.before-yokoten' }) },
     { key: 'trust not at a terminal', words: ['trust'], platform: 'linux', lines: failure('trust', TRUST_NEEDS_A_PERSON.what, TRUST_NEEDS_A_PERSON.next) },
@@ -725,6 +733,11 @@ test('screens: every screen the command list reaches keeps the limits of record 
     const keys = new Set(runs.map((run) => run.key));
     const stale = Object.keys(WAIVED).filter((key) => !keys.has(key)).map((key) => `${key}: no such screen; take it off WAIVED`);
     assert.equal(keys.size, runs.length, 'each screen has its own key');
+    // The pure screens are drawn for every system (plan D6): a family with one system missing fails here.
+    const families = ['install', 'install --list', 'uninstall', 'uninstall --list', 'init', 'init --list', 'upgrade', 'first run', 'kanban'];
+    const familyOf = (run: ScreenRun): string => (run.words.length ? run.words.filter((word) => word !== '--no-open').join(' ') : 'first run');
+    const missing = families.flatMap((family) => PLATFORMS.filter((platform) => !runs.some((run) => run.lines && run.platform === platform && familyOf(run) === family)).map((platform) => `${family}: no screen for ${platform}`));
+    assert.deepEqual(missing, [], 'each pure screen is rendered for linux, win32 and darwin (#1115)');
     assert.deepEqual([...broken, ...healed, ...stale], [], 'build the screen with src/rules/text/screen.ts (record 0049)');
     assert.ok(Object.values(WAIVED).every((reason) => reason.includes('#1115')), 'each waiver names issue #1115');
     assert.ok(Object.keys(WAIVED).length <= WAIVED_MOST, `WAIVED holds ${Object.keys(WAIVED).length}; the most is ${WAIVED_MOST}, and it only goes down`);

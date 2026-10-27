@@ -56,7 +56,7 @@ export interface RenderWaiver {
 }
 
 /** How many keys RENDER_WAIVED may hold. Only the integrator changes it, and only down. */
-export const RENDER_WAIVED_MOST = 33;
+export const RENDER_WAIVED_MOST = 22;
 
 /**
  * Old screens that break a rule today, keyed by renderKey (`<command> <sorted flags>`). The
@@ -65,38 +65,27 @@ export const RENDER_WAIVED_MOST = 33;
  * `RENDER_REPORT=<file> nice npm test`, then `node test/repo/invoke.ts <file>`.
  */
 export const RENDER_WAIVED: Record<string, RenderWaiver> = {
-  'changelog --write': { rules: ['next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'check': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --all --staged': { rules: ['label-columns', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --history': { rules: ['widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --issue': { rules: ['fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'check --staged': { rules: ['next-step', 'label-columns', 'fix-line'], reason: 'an old screen, built before the layout kit; group C4 moves it onto screen.ts (#1115)' },
-  'doctor --agent --session': { rules: ['width', 'widest', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
-  'doctor --all': { rules: ['width', 'widest', 'next-step', 'spaced-items', 'fix-line'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
-  'doctor --session': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
-  'explain': { rules: ['widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C3 moves it onto screen.ts (#1115)' },
-  'hook': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
-  'hook --agent': { rules: ['width', 'widest', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
-  'hook --agent --commands-only': { rules: ['width', 'widest', 'next-step', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
-  'hook --agent --stop': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
-  'hook --stop': { rules: ['width', 'widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C5 moves it onto screen.ts (#1115)' },
-  'learn': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --area --fix --upstream': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --done --upstream': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --export': { rules: ['width', 'widest', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --export --out': { rules: ['width'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --import': { rules: ['width', 'widest', 'prose', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --import --write': { rules: ['width', 'widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --list --upstream': { rules: ['width', 'widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --upstream': { rules: ['widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'learn --write': { rules: ['widest'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'mcp': { rules: ['width', 'widest', 'next-step'], reason: 'an old screen, built before the layout kit; group C9 moves it onto screen.ts (#1115)' },
-  'msg': { rules: ['width', 'widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
-  'tidy': { rules: ['width', 'widest', 'label-columns', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
-  'tidy --empty': { rules: ['widest', 'next-step', 'spaced-items'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
-  'tidy --local': { rules: ['width', 'widest', 'next-step', 'label-columns', 'spaced-items', 'no-internal-path'], reason: 'an old screen, built before the layout kit; group C7 moves it onto screen.ts (#1115)' },
+  'check': { rules: ['width', 'widest', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/commands/more/check.test.ts and test/run/check.test.ts still break these rules (#1115)' },
+  'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/commands/more/check.test.ts and the bot tests still break these rules (#1115)' },
+  'check --all --staged': { rules: ['label-columns', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/run/check.test.ts still break these rules (#1115)' },
+  'check --history': { rules: ['widest', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/run/check.test.ts still break these rules (#1115)' },
+  'check --issue': { rules: ['fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/commands/more/check.test.ts and test/run/check.test.ts still break this rule (#1115)' },
+  'check --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/run/check.test.ts still break these rules (#1115)' },
+  'check --staged': { rules: ['label-columns', 'fix-line'], reason: 'group C4 moved check onto screen.ts; renders in test/run/check.test.ts and the conflicts tests still break these rules (#1115)' },
+  'doctor --agent --session': { rules: ['width', 'widest', 'spaced-items'], reason: 'group C3 moved doctor onto screen.ts; renders in the hook and Muse tests still break these rules (#1115)' },
+  'doctor --all': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'group C3 moved doctor onto screen.ts; renders in the agent, init and install tests still break these rules (#1115)' },
+  'doctor --session': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'group C3 moved doctor onto screen.ts; renders in the doctor, hook and init tests still break these rules (#1115)' },
+  'hook': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'group C5 moved the hook\'s own text onto screen.ts; renders in test/commands/hook.test.ts and test/run/hook.test.ts still break these rules (#1115)' },
+  'hook --agent': { rules: ['width', 'widest', 'no-internal-path'], reason: 'group C5 moved the hook\'s own text onto screen.ts; renders in the hook and agent tests still break these rules (#1115)' },
+  'hook --agent --commands-only': { rules: ['width', 'widest', 'next-step', 'spaced-items', 'no-internal-path'], reason: 'group C5 moved the hook\'s own text onto screen.ts; renders in test/commands/hook.test.ts still break these rules (#1115)' },
+  'hook --agent --stop': { rules: ['widest', 'next-step'], reason: 'group C5 moved the hook\'s own text onto screen.ts; renders in the hook and msg tests still break these rules (#1115)' },
+  'hook --stop': { rules: ['width', 'widest', 'next-step'], reason: 'group C5 moved the hook\'s own text onto screen.ts; renders in the hook and msg tests still break these rules (#1115)' },
+  'learn --export': { rules: ['width', 'widest', 'spaced-items'], reason: 'group C9 moved learn onto screen.ts; renders in test/commands/more/learn.test.ts still break these rules (#1115)' },
+  'learn --import': { rules: ['width', 'widest', 'prose'], reason: 'group C9 moved learn onto screen.ts; renders in test/commands/more/learn.test.ts still break these rules (#1115)' },
+  'msg': { rules: ['width'], reason: 'group C7 moved msg onto screen.ts; renders in test/commands/more/advice/messages.test.ts still break this rule (#1115)' },
+  'tidy': { rules: ['width', 'widest', 'no-internal-path'], reason: 'group C7 moved tidy onto screen.ts; renders in test/commands/tidy/tidy.test.ts still break these rules (#1115)' },
+  'tidy --empty': { rules: ['spaced-items'], reason: 'group C7 moved tidy onto screen.ts; renders in test/commands/tidy/tidy.test.ts still break this rule (#1115)' },
+  'tidy --local': { rules: ['width', 'widest', 'no-internal-path'], reason: 'group C7 moved tidy onto screen.ts; renders in test/commands/tidy/tidy.test.ts still break these rules (#1115)' },
   'trust': { rules: ['no-internal-path'], reason: 'the agents\' own text names a folder outside the home folder; group C2 moved the rest onto screen.ts (#1115)' },
 };
 
