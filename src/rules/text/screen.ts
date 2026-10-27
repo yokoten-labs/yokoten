@@ -32,20 +32,68 @@ export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string
 /** A screen's first line: `yokoten <command> · <what is true now>`. */
 export const title = (command: string, summary: string): string[] => wrap(`yokoten ${command} · `, summary);
 
-/** The state words a row starts with; `print` draws ✔ ● ✘ ⚠ ? for them on a terminal. */
-export type RowMark = 'ok' | 'done' | 'next' | 'to do' | 'MISSING' | 'note' | "can't check" | 'skipped';
+// A title's first line, as `title` and `failure` make it: `yokoten · ` for the bare command.
+const TITLE_HEAD = /^yokoten(?: [a-z][a-z -]*)? · /;
+
+/** How many lines of `block` are its title (the first line and the lines wrapped under it), 0 when it has none. */
+function titleLength(block: readonly string[]): number {
+  const head = TITLE_HEAD.exec(block[0] ?? '');
+  if (!head) return 0;
+  const indent = ' '.repeat(head[0].length);
+  let length = 1;
+  while (length < block.length && (block[length] ?? '').startsWith(indent) && /^\S/.test((block[length] ?? '').slice(indent.length))) length++;
+  return length;
+}
+
+// ---- Marks and columns (record 0049, issue #1115) ----
+
+// The state words a row starts with. `print` draws ✔ ● ✘ ⚠ ? for them on a terminal.
+const ROW_MARKS = ['ok', 'done', 'next', 'to do', 'MISSING', 'note', "can't check", 'skipped'] as const;
+// What a setup step did to one file or setting, and `not now` for a step left for later.
+const CHANGE_MARKS = ['wrote', 'updated', 'linked', 'added', 'removed', 'kept', 'not now'] as const;
+
+/**
+ * Every word a line may start with as its mark: the ones `row` takes, then the change states.
+ * The one list: `styleLine` reads its marks from here, and so does the kanban's state.
+ */
+export const MARKS = [...ROW_MARKS, ...CHANGE_MARKS] as const;
+/** Any mark of MARKS. */
+export type Mark = (typeof MARKS)[number];
+/** The state words a row starts with. */
+export type RowMark = (typeof ROW_MARKS)[number];
+/** What a setup step did, as the mark its row starts with. */
+export type ChangeMark = (typeof CHANGE_MARKS)[number];
+
+/** Whether a mark says a thing is done and fine (`print` draws it green): `ok`, `done`, and a change that was made. */
+export const isDoneMark = (mark: Mark): boolean => mark === 'ok' || mark === 'done' || ((CHANGE_MARKS as readonly string[]).includes(mark) && mark !== 'not now');
+
+/** Where a row starts: two spaces in from the left edge. */
+export const ROW_INDENT = 2;
+/** The mark's field: the widest mark, `can't check`, and one space. */
+export const MARK_COLUMN = 12;
+/** A label's field, after the mark or alone in a `field` row. */
+export const LABEL_COLUMN = 12;
+/** Where a labelled row's text starts, so every text of one screen starts in one column. */
+export const ROW_TEXT_COLUMN = ROW_INDENT + MARK_COLUMN + LABEL_COLUMN;
 
 /** One row: the mark, an optional label in a 12-column field, then the text, wrapped under itself. */
 export function row(mark: RowMark, text: string, label?: string): string[] {
+  const indent = ' '.repeat(ROW_INDENT);
+  const marked = `${indent}${mark.padEnd(MARK_COLUMN - 1)} `;
   // A label wider than its column (a long path) takes its own line, so every text starts in one column.
-  if (label !== undefined && label.length > 11) return [`  ${mark.padEnd(11)} ${label}`, ...wrap(' '.repeat(26), text)];
-  const head = `  ${mark.padEnd(11)} ${label === undefined ? '' : `${label.padEnd(11)} `}`;
-  return wrap(head, text);
+  if (label !== undefined && label.length > LABEL_COLUMN - 1) return [`${marked}${label}`, ...underRow(text)];
+  return wrap(`${marked}${label === undefined ? '' : `${label.padEnd(LABEL_COLUMN - 1)} `}`, text);
 }
+
+/**
+ * More text under a row's text, wrapped under it: under a labelled row's text, or with
+ * `hasLabel` false under the text of a row with no label (a why, a fix, a path).
+ */
+export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.repeat(hasLabel ? ROW_TEXT_COLUMN : ROW_INDENT + MARK_COLUMN), text);
 
 /** One row with no mark: a label, then the text, wrapped under itself (#1027). */
 export function field(label: string, text: string): string[] {
-  return wrap(`  ${label.padEnd(12)}`, text);
+  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(LABEL_COLUMN)}`, text);
 }
 
 /** The last line: the one command to type next. */
@@ -53,6 +101,27 @@ export const nextLine = (command: string): string[] => wrap('Next: ', `\`${comma
 
 /** Where the rest is: the flag that shows it all. */
 export const moreLine = (text: string): string[] => wrap('More: ', text);
+
+/** A note to the person, on stderr: `note: <text>`, wrapped under its text. */
+export const noteLine = (text: string): string[] => wrap('note: ', text);
+
+/** A count or a total at the left edge under rows (`28 files written`), a block of its own on a screen. */
+export const summaryLine = (text: string): string[] => wrap('', text);
+
+/** The one question form: the question, then `[Y/n]` (Enter alone is yes). A question already ending in it is kept. */
+export const askLine = (question: string): string => (/\[Y\/n\]$/.test(question.trimEnd()) ? question.trimEnd() : `${question.trimEnd()} [Y/n]`);
+
+/**
+ * A failure to run, a refusal or a usage error (record 0052 draft, issue #1115): the title says
+ * what is wrong, then one `Next:` line, a blank line between. `command` is the word after
+ * `yokoten`, undefined for the bare command. `next` is the command to type, or a sentence that
+ * holds its command in backticks; with no `next`, the title stands alone.
+ */
+export function failure(command: string | undefined, what: string, next?: string): string[] {
+  const head = wrap(command === undefined || command === '' ? 'yokoten · ' : `yokoten ${command} · `, what.trim().replace(/\.$/, ''));
+  if (next === undefined || next.trim() === '') return head;
+  return screen(head, next.includes('`') ? wrap('Next: ', next.trim()) : nextLine(next.trim()));
+}
 
 /** A label and its text, as a table row. */
 export type TableRow = readonly [label: string, text: string];
@@ -65,11 +134,12 @@ export const columnFor = (labels: readonly string[]): number => Math.min(Math.ma
 
 /**
  * Items one under the other. When any item wraps onto a second line, a blank line goes between
- * every two, so a wrapped item and the next never read as one (issue #1115).
+ * every two, so a wrapped item and the next never read as one (issue #1115). A title item is
+ * always followed by a blank line: a title never reads as one of the rows under it.
  */
 export const spaced = (items: readonly (readonly string[])[]): string[] => {
   const isLoose = items.length > 1 && items.some((item) => item.length > 1);
-  return items.flatMap((item, index) => (isLoose && index ? ['', ...item] : [...item]));
+  return items.flatMap((item, index) => (index && (isLoose || titleLength(items[index - 1] ?? []) > 0) ? ['', ...item] : [...item]));
 };
 
 /**
@@ -89,8 +159,26 @@ export function table(rows: readonly TableRow[], column = columnFor(rows.map(([l
 /** A section: its heading on a line of its own, then its lines. Empty when it has none. */
 export const section = (heading: string, lines: readonly string[]): string[] => (lines.length ? [`${heading}:`, ...lines] : []);
 
-/** A whole screen from its blocks, one blank line between them; an empty block is left out. */
-export const screen = (...blocks: readonly (readonly string[])[]): string[] => blocks.filter((block) => block.length).flatMap((block, index) => (index ? ['', ...block] : [...block]));
+/**
+ * A block that starts with a title, split into the title and the rest, so the rest is a block
+ * of its own: a caller that passes a title and its rows as one block still gets the blank line.
+ * A block whose title is already followed by a blank line is left as it is.
+ */
+function titleApart(block: readonly string[]): (readonly string[])[] {
+  const length = titleLength(block);
+  if (length === 0 || length === block.length || block[length] === '') return [block];
+  return [block.slice(0, length), block.slice(length)];
+}
+
+/**
+ * A whole screen from its blocks, one blank line between them; an empty block is left out. A
+ * title is a block of its own, even when it came in one block with its rows (issue #1115).
+ */
+export const screen = (...blocks: readonly (readonly string[])[]): string[] =>
+  blocks
+    .filter((block) => block.length)
+    .flatMap(titleApart)
+    .flatMap((block, index) => (index ? ['', ...block] : [...block]));
 
 /** One example of a help page: the command, and what it does. */
 export interface HelpExample {

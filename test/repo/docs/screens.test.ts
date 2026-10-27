@@ -10,7 +10,10 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { field, helpScreen, moreLine, nextLine, row, screen, SCREEN_WIDTH, section, table, title, wrap } from '../../../src/rules/text/screen.ts';
+import {
+  askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
+  spaced, summaryLine, table, title, underRow, wrap,
+} from '../../../src/rules/text/screen.ts';
 import { limitOf, SCREEN_RULES, screenProblems } from './screen-rules.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
@@ -103,6 +106,55 @@ test('layout: a help page is usage, summary, examples, options, sections, then M
     'More: https://example.com/demo',
   ]);
   assert.deepEqual(screenProblems({ text: lines.join('\n'), isHelp: true }), []);
+});
+
+test('layout: screen() never glues a title to its rows, even when they come in one block (#1115)', () => {
+  const rows = [...row('ok', 'none old'), ...row('next', 'put away 2 desks')];
+  assert.deepEqual(screen([...title('tidy', 'nothing to put away'), ...rows]), ['yokoten tidy · nothing to put away', '', ...rows], 'a title and its rows in one block get the blank line');
+  assert.deepEqual(screen([...title('tidy', 'x'), '', ...rows]), ['yokoten tidy · x', '', ...rows], 'a title already followed by a blank line keeps one');
+  const long = title('install', 'one two three four five six seven eight nine ten eleven twelve thirteen fourteen');
+  assert.ok(long.length > 1, 'the title wraps');
+  assert.deepEqual(screen([...long, ...rows]), [...long, '', ...rows], 'a wrapped title stays whole, the blank line after its last line');
+  assert.deepEqual(screen(['yokoten · not set up yet', ...rows]), ['yokoten · not set up yet', '', ...rows], 'the bare command too');
+  assert.deepEqual(screen(['Branches:', ...rows]), ['Branches:', ...rows], 'a block with no title is left as it is');
+  assert.deepEqual(screen(title('tidy', 'x')), ['yokoten tidy · x'], 'a title alone is one line');
+  assert.deepEqual(spaced([title('tidy', 'x'), row('ok', 'a'), row('ok', 'b')]), ['yokoten tidy · x', '', '  ok          a', '  ok          b'], 'spaced() puts a blank line after a title item, not between short rows');
+  assert.deepEqual(spaced([row('ok', 'a'), [...row('ok', 'b'), 'more']]), ['  ok          a', '', '  ok          b', 'more'], 'spaced() still separates when any item has two lines');
+});
+
+test('layout: failure() is the title, then one Next line, a blank line between (#1115)', () => {
+  assert.deepEqual(failure('desk', 'no desk named demo.', 'yokoten desk'), ['yokoten desk · no desk named demo', '', 'Next: `yokoten desk`']);
+  assert.deepEqual(failure(undefined, 'git is not installed', 'install git, then run `yokoten` again'), ['yokoten · git is not installed', '', 'Next: install git, then run `yokoten` again'], 'the bare command; a sentence with its command in backticks stays a sentence');
+  assert.deepEqual(failure('check', 'nothing to check'), ['yokoten check · nothing to check'], 'with no next, the title stands alone');
+  const lines = failure('check', 'the commit message has no issue number, so the change is not linked to its task', 'yokoten check --help');
+  assert.ok(lines.every((line) => line.length <= SCREEN_WIDTH));
+  assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), []);
+});
+
+test('layout: noteLine, summaryLine and askLine, the one form each (#1115)', () => {
+  assert.deepEqual(noteLine('the GitHub read is slow today'), ['note: the GitHub read is slow today']);
+  const long = noteLine('one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen');
+  assert.ok(long.length > 1 && long.slice(1).every((line) => line.startsWith('      ') && line[6] !== ' '), 'a long note wraps under its text');
+  assert.deepEqual(summaryLine('28 files written'), ['28 files written']);
+  const rows = row('ok', 'skills');
+  assert.deepEqual(screen(rows, summaryLine('28 files written')), [...rows, '', '28 files written'], 'a summary line is a block of its own');
+  assert.equal(askLine('Set up yokoten here?'), 'Set up yokoten here? [Y/n]');
+  assert.equal(askLine('Set up yokoten here? [Y/n]'), 'Set up yokoten here? [Y/n]', 'a question that has it already is kept');
+});
+
+test('layout: MARKS is every row mark and change state, and the columns are named (#1115)', () => {
+  for (const mark of ['ok', 'done', 'next', 'to do', 'MISSING', 'note', "can't check", 'skipped', 'wrote', 'updated', 'linked', 'added', 'removed', 'kept', 'not now']) assert.ok((MARKS as readonly string[]).includes(mark), mark);
+  assert.equal(new Set(MARKS).size, MARKS.length, 'one word once');
+  assert.ok(MARKS.every((mark) => mark.length < MARK_COLUMN), 'every mark fits its field');
+  assert.deepEqual(MARKS.filter(isDoneMark), ['ok', 'done', 'wrote', 'updated', 'linked', 'added', 'removed', 'kept']);
+  assert.equal(ROW_TEXT_COLUMN, 26);
+  assert.equal(LABEL_COLUMN, 12);
+  assert.equal(row('ok', 'text', 'label')[0]?.indexOf('text'), ROW_TEXT_COLUMN, 'a labelled row starts its text at ROW_TEXT_COLUMN');
+  assert.equal(row('ok', 'text')[0]?.indexOf('text'), ROW_INDENT + MARK_COLUMN);
+  assert.equal(field('trash', 'text')[0]?.indexOf('text'), ROW_INDENT + LABEL_COLUMN);
+  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_TEXT_COLUMN)}text`], 'a long label stands on its own line');
+  assert.deepEqual(underRow('why'), [`${' '.repeat(ROW_TEXT_COLUMN)}why`]);
+  assert.deepEqual(underRow('why', false), [`${' '.repeat(ROW_INDENT + MARK_COLUMN)}why`]);
 });
 
 // ---- Each limit, with a positive control ----

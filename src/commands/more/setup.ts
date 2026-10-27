@@ -1,6 +1,6 @@
 // `yokoten` with no command, `init`, `update`, `install`, `uninstall` and `upgrade`: they write yokoten into a project or a machine, or bring it up to date.
 
-import { existsSync, readSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { Writable } from 'node:stream';
@@ -12,7 +12,7 @@ import { type Ask, agentsHere, install, isMachineSetUp, isYes, launcherDir, skil
 import { readOriginUrl, setUpPlanning } from '../../setup/plan.ts';
 import { VERSION } from '../../setup/files.ts';
 import { enabledPlugin } from '../../setup/advice/marketplace.ts';
-import { count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, type Output, parse, print, requireRoot, rootOf, row, screen, spaced, title, usage, wrap } from '../shared.ts';
+import { askOnTerminal, count, type Invocation, moreLine, nextLine, noRootFinding, noRootScreen, parse, print, requireRoot, rootOf, row, screen, spaced, title, usage, wrap } from '../shared.ts';
 
 /**
  * `yokoten` with no command: the one command that gets a project running (#548). It installs
@@ -580,27 +580,8 @@ export function updateScreen({ ok, lines, isWrite }: { ok: boolean; lines: strin
   ];
 }
 
-/**
- * Ask one question on the terminal and read one line back, or null at end of input. Install
- * is synchronous, so it reads stdin a byte at a time; it is used only when stdin is a terminal.
- */
-const askOnTerminal = (stdout: Output, fd: number): Ask => (question) => {
-  stdout.write(`${question} `);
-  const byte = Buffer.alloc(1);
-  const bytes: number[] = [];
-  for (;;) {
-    let count: number;
-    try {
-      count = readSync(fd, byte, 0, 1, null);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EAGAIN') continue;
-      return null;
-    }
-    if (count === 0) return bytes.length ? Buffer.from(bytes).toString('utf8') : null;
-    if (byte[0] === 10) return Buffer.from(bytes).toString('utf8').replace(/\r$/, '');
-    bytes.push(byte[0]);
-  }
-};
+// The question writer lives in shared.ts (issue #1115); it is named here too for older importers.
+export { askOnTerminal } from '../shared.ts';
 
 export function runInstall(invocation: Invocation): number {
   const options = parse('install', invocation.args);
