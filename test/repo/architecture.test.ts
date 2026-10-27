@@ -13,7 +13,7 @@ import { findDeclarations, findNameProblems, splitWords, type Token, tokenize } 
 import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
-import fileTimes, { fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
+import fileTimes, { fileBlock, fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, tapLines, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
 import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
@@ -2249,15 +2249,16 @@ test('suite time: each test job prints a line when a file finishes, and one a mi
   assert.deepEqual(progress.slow(30_000), [], 'under a minute: quiet');
   assert.deepEqual(progress.slow(75_000), ['still running test/a.test.ts: 75 s'], 'a finished file is not still running');
   see(file('test:complete', 'test/a.test.ts'), 80);
-  // Each file's block prints at once: its line, then its tests indented, and a failure's error indented again.
+  // Each file's block prints at once: its line, then its tests lined up under the file name
+  // (the [n/N] column left blank), and a failure's error indented under it.
   assert.deepEqual(lines, [
     '[1/2] test/b.test.ts 3 s, 2 failing',
-    '    ✖ a case',
-    '    ✖ a bad case (1.0 ms)',
-    '        expected 1',
-    '        to be 2',
+    '      ✖ a case',
+    '      ✖ a bad case (1.0 ms)',
+    '          expected 1',
+    '          to be 2',
     '[2/2] test/a.test.ts 80 s',
-    '    ✔ a good case (2.3 ms)',
+    '      ✔ a good case (2.3 ms)',
   ]);
   assert.deepEqual(progress.slow(200_000), []);
 });
@@ -2401,7 +2402,17 @@ test('windows known: each file says ok, waived, NEW or FIXED, so a waiver reads 
 });
 
 test('windows known: the log shows progress, then the verdict first, with passed files folded in Actions (#1119)', () => {
-  assert.equal(progressLine('test\\setup\\init.test.ts', 54, 62, 480), '[54/62] test/setup/init.test.ts (cap 480 s)');
+  assert.equal(progressLine('test\\setup\\init.test.ts', 54, 62, 12, 480), '[54/62] test/setup/init.test.ts 12 s (cap 480 s)');
+  // The windows job prints the same block as the other test jobs: tests under the file name (#1115).
+  const tap = ['ok 1 - a good case', '  ---', '  duration_ms: 2.25', '  ...', '    ok 1 - a step', 'not ok 2 - a bad case', '  ---', '  duration_ms: 1', '  error: |-', '    expected 1', '  ...', 'ok 3 - a skipped case # SKIP not here'].join('\n');
+  assert.deepEqual(fileBlock(progressLine('test/a.test.ts', 7, 46, 3, 240), tapLines(tap, (test) => (test === 'a bad case' ? 'expected 1\nto be 2' : undefined))), [
+    '[7/46] test/a.test.ts 3 s (cap 240 s)',
+    '       ✔ a good case (2.3 ms)',
+    '       ✖ a bad case (1.0 ms)',
+    '           expected 1',
+    '           to be 2',
+    '       - a skipped case',
+  ]);
   assert.equal(slowLine('test/setup/init.test.ts', 120, 480), 'still running test/setup/init.test.ts: 120 s / 480 s');
   const times = [{ name: 'a', seconds: 3 }, { name: 'c', seconds: 90 }, { name: 'b', seconds: 90 }, { name: 'd', seconds: 1 }];
   assert.deepEqual(slowestFiles(times, 3), [{ name: 'b', seconds: 90 }, { name: 'c', seconds: 90 }, { name: 'a', seconds: 3 }]);

@@ -119,7 +119,7 @@ jobs:
       # A docs-only pull request runs only the tests that read the docs (#1051). A push to
       # main runs the whole suite after the merge, so a miss shows on main the same hour.
       - if: needs.changes.outputs.docs_only == 'true'
-        run: node --test --test-reporter=spec test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
+        run: node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination=/dev/null test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
       - if: needs.changes.outputs.docs_only != 'true'
         run: node --test --test-concurrency=4 --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" --test-shard="$SHARD/$OF"
         env:
