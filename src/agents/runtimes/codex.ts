@@ -613,7 +613,7 @@ export function trustProject(root: string, env: Env, platform: NodeJS.Platform =
   // nothing is written, hooks included (#984).
   if (folder.choice) {
     const level = JSON.stringify(String(folder.choice.level));
-    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder.choice.key, env, { platform })} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+    return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
   }
   const kept: { what: string; fix: string }[] = [];
   if (!folder.trusted) {
