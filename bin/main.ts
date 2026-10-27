@@ -117,13 +117,13 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'adopt':
       return import('../src/commands/more/advice/doctor.ts').then((m) => m.runAdopt(invocation));
     case 'init':
-      return import('../src/commands/more/setup.ts').then((m) => m.runInit(invocation));
+      return import('../src/commands/more/setup/init.ts').then((m) => m.runInit(invocation));
     case 'trust':
-      return import('../src/commands/more/setup.ts').then((m) => m.runTrust(invocation));
+      return import('../src/commands/more/setup/update.ts').then((m) => m.runTrust(invocation));
     case 'update':
-      return import('../src/commands/more/setup.ts').then((m) => m.runUpdate(invocation));
+      return import('../src/commands/more/setup/update.ts').then((m) => m.runUpdate(invocation));
     case 'upgrade':
-      return import('../src/commands/more/setup.ts').then((m) => m.runUpgrade(invocation));
+      return import('../src/commands/more/setup/upgrade.ts').then((m) => m.runUpgrade(invocation));
     case 'bot':
       return import('../src/commands/more/merge/bot.ts').then((m) => m.runBot(invocation));
     case 'pr':
@@ -135,9 +135,9 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     case 'kanban':
       return import('../src/commands/kanban/server.ts').then((m) => m.runBoard(invocation));
     case 'install':
-      return import('../src/commands/more/setup.ts').then((m) => m.runInstall(invocation));
+      return import('../src/commands/more/setup/install.ts').then((m) => m.runInstall(invocation));
     case 'uninstall':
-      return import('../src/commands/more/setup.ts').then((m) => m.runUninstall(invocation));
+      return import('../src/commands/more/setup/install.ts').then((m) => m.runUninstall(invocation));
     case 'version': {
       const options = parse('version', args);
       if (typeof options === 'string') return usage(invocation, options);
@@ -163,7 +163,7 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     }
     case undefined:
       // No command in a project is not an error: it is the start (#548).
-      return import('../src/commands/more/setup.ts').then((m) => m.runStart(invocation));
+      return import('../src/commands/more/setup/start.ts').then((m) => m.runStart(invocation));
     case '--help':
     case '-h':
       break;
