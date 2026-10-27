@@ -7,8 +7,8 @@
 // holds 7 entries, the cap, so it has no test/platform/ folder.
 import '../home.ts';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { field, helpScreen, moreLine, nextLine, row, screen, SCREEN_WIDTH, section, table, title, wrap } from '../../../src/rules/text/screen.ts';
 import { limitOf, SCREEN_RULES, screenProblems } from './screen-rules.ts';
@@ -215,11 +215,6 @@ function screensOf(repo: string): ScreenRun[] {
   ];
 }
 
-/**
- * Today's offenders (issue #1099, stage 1). Each is a screen built before the layout; stage 2
- * moves it onto src/rules/text/screen.ts and takes it off. The list only shrinks: a waived
- * screen that passes fails the test until its line is removed, and a new screen is never waived.
- */
 // The owner's screen walk-throughs read the same screens this test checks: with SCREENS_OUT
 // set to a file (not a YOKOTEN_ name, which test/repo/home.ts clears), the test also writes
 // each one there as JSON. A capture never drifts from what the rules see, and needs no script.
@@ -228,13 +223,24 @@ const CAPTURE_FILE = process.env.SCREENS_OUT;
 /** One screen in the capture: the piped text the rules check, and the same screen at a terminal. */
 interface Captured { key: string; command: string; exit: number | null; text: string; problems: string[]; colour?: string }
 
+/** The checked screens, kept for the capture test below, which adds its own and writes the file. */
+const captured: Captured[] = [];
+
+/**
+ * Today's offenders (issue #1099, stage 1). Each is a screen built before the layout; stage 2
+ * moves it onto src/rules/text/screen.ts and takes it off. The list only shrinks: a waived
+ * screen that passes fails the test until its line is removed, and a new screen is never waived.
+ */
 /** How many screens WAIVED may hold. Lower it in the same change that takes a screen off. */
 const WAIVED_MOST = 0;
 const WAIVED: Record<string, string> = {
 };
 
-test('screens: every screen the command list reaches keeps the limits of record 0049; WAIVED only shrinks (#1099)', async () => {
-  const started = performance.now();
+/**
+ * Renders every screen of the list, in order, on sandboxes of its own. The colour copy for the
+ * capture is a second call with new sandboxes, so the screens the test checks never depend on it.
+ */
+async function renderScreens(isTTY?: boolean) {
   const sandbox = makeSandbox();
   const plain = join(sandbox.home, 'plain');
   mkdirSync(plain);
@@ -250,12 +256,9 @@ test('screens: every screen the command list reaches keeps the limits of record 
   mkdirSync(join(deepseek.home, '.dsh', 'profiles', 'work'), { recursive: true });
   sandbox.write('notes.txt', 'hello\n');
   sandbox.git('add', 'notes.txt');
-  const runs = screensOf(sandbox.repo);
-  const broken: string[] = [];
-  const healed: string[] = [];
-  const captured: Captured[] = [];
   const boxOf = (place: ScreenRun['place']) => (place === 'dirty' ? dirty : place === 'signed-out' ? signedOut : place === 'deepseek' ? deepseek : place === 'fresh' ? makeSandbox() : sandbox);
-  for (const run of runs) {
+  const rendered: { run: ScreenRun; status: number | null; text: string }[] = [];
+  for (const run of screensOf(sandbox.repo)) {
     const where =
       run.place === 'plain' ? { cwd: plain, extra: { GIT_CEILING_DIRECTORIES: dirname(plain) } }
       : run.place === 'dirty' ? { cwd: dirty.repo }
@@ -263,23 +266,29 @@ test('screens: every screen the command list reaches keeps the limits of record 
       : run.place === 'deepseek' ? { cwd: deepseek.repo }
       : run.place === 'zoned' ? { extra: { GIT_AUTHOR_DATE: '2026-10-18T09:00:00+0700', SHELL: '/bin/bash' } }
       : {};
-    const box = boxOf(run.place);
-    const result = await box.call(run.words, { input: run.stdin ?? '', ...where });
+    const result = await boxOf(run.place).call(run.words, { input: run.stdin ?? '', ...where, isTTY });
     // Both streams in the order written, as a terminal shows them: a moved note comes first.
-    const text = run.isStderrOnly ? result.stderr : result.output;
+    rendered.push({ run, status: result.status, text: run.isStderrOnly ? result.stderr : result.output });
+  }
+  return rendered;
+}
+
+test('screens: every screen the command list reaches keeps the limits of record 0049; WAIVED only shrinks (#1099)', async () => {
+  const started = performance.now();
+  const rendered = await renderScreens();
+  const runs = rendered.map(({ run }) => run);
+  const broken: string[] = [];
+  const healed: string[] = [];
+  for (const { run, status, text } of rendered) {
     if (run.key === 'init, a DeepSeek Harness profile') assert.match(text, /note {8}DeepSeek Harness/, `init shows the DeepSeek Harness note: ${text}`);
     if (run.place === 'zoned') assert.match(text, /Fix: `export TZ=UTC`/, `the commit check stops on the time zone: ${text}`);
     if (run.place === 'signed-out') assert.match(text, /\n- the pull requests and the Actions runs: gh is not signed in\n {2}Fix: `gh auth login`\n/, `the fake gh answered: ${text}`);
-    const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: result.status !== 0, isHelp: run.isHelp });
-    // The capture also keeps the screen as a terminal shows it, in colour. init on the DeepSeek
-    // home runs twice on purpose, so a third run would change what the next screen sees.
-    const colour = CAPTURE_FILE && run.place !== 'deepseek' ? await box.call(run.words, { input: run.stdin ?? '', ...where, isTTY: true }) : undefined;
-    captured.push({ key: run.key, command: ['yokoten', ...run.words].join(' '), exit: result.status, text, problems, colour: colour && (run.isStderrOnly ? colour.stderr : colour.output) });
+    const problems = text.trim() === '' ? [] : screenProblems({ text, isFailure: status !== 0, isHelp: run.isHelp });
+    captured.push({ key: run.key, command: ['yokoten', ...run.words].join(' '), exit: status, text, problems });
     const isWaived = run.key in WAIVED;
     if (problems.length && !isWaived) broken.push(`${run.key} (yokoten ${run.words.join(' ')}): ${problems.join('; ')}`);
     if (!problems.length && isWaived) healed.push(`${run.key}: it keeps the limits now; take it off WAIVED`);
   }
-  if (CAPTURE_FILE) writeFileSync(CAPTURE_FILE, `${JSON.stringify(captured, null, 2)}\n`);
   const keys = new Set(runs.map((run) => run.key));
   const stale = Object.keys(WAIVED).filter((key) => !keys.has(key)).map((key) => `${key}: no such screen; take it off WAIVED`);
   assert.equal(keys.size, runs.length, 'each screen has its own key');
@@ -292,8 +301,15 @@ test('screens: every screen the command list reaches keeps the limits of record 
 // Screens the check above leaves out, for the walk-through only: install, upgrade and uninstall
 // change the home, kanban serves until it is stopped, and the rest are states the owner judged
 // in v4. Each runs in a sandbox of its own, so the real home is never touched. Linux only: the
-// "gh missing" PATH is built from links to node and git.
+// "gh missing" PATH is built from links to node and git. kanban --no-open has no colour copy.
 test('screens: the capture adds the screens that change the home or serve (#1115)', { skip: !CAPTURE_FILE || process.platform !== 'linux' }, async () => {
+  // The checked screens come from the test above; run alone (--test-name-pattern), there are none.
+  assert.ok(captured.length > 0, 'run the whole file: the capture starts with the screens the test above checks');
+  // The colour copy: the same list again on new sandboxes, as a terminal shows it. The sandbox
+  // paths differ from the plain copy's, so a screen that prints a path shows another one there.
+  const colour = await renderScreens(true);
+  assert.deepEqual(colour.map(({ run }) => run.key), captured.map(({ key }) => key), 'the colour copy is the same list');
+  colour.forEach(({ text }, index) => (captured[index].colour = text));
   const extras: Captured[] = [];
   const keep = (key: string, words: string[], result: { status: number | null; output: string }, colour?: { output: string }) =>
     extras.push({ key, command: ['yokoten', ...words].join(' '), exit: result.status, text: result.output, problems: result.output.trim() === '' ? [] : screenProblems({ text: result.output, isFailure: result.status !== 0 }), colour: colour?.output });
@@ -304,11 +320,14 @@ test('screens: the capture adds the screens that change the home or serve (#1115
     keep(key, words, result, await tty.call(words, { ...setup(tty), isTTY: true }));
   };
   // A GitHub repo on a machine with no gh: PATH holds node and git only.
+  const git = (process.env.PATH ?? '').split(delimiter).map((dir) => join(dir, 'git')).find((path) => existsSync(path));
+  assert.ok(git, 'git is on PATH');
   const noGh = (box: ReturnType<typeof makeSandbox>) => {
     box.git('remote', 'add', 'origin', 'https://github.com/octo/demo.git');
     const bin = join(box.home, 'no-gh');
     mkdirSync(bin, { recursive: true });
-    for (const name of ['node', 'git']) symlinkSync(name === 'node' ? process.execPath : '/usr/bin/git', join(bin, name));
+    symlinkSync(process.execPath, join(bin, 'node'));
+    symlinkSync(git, join(bin, 'git'));
     return { extra: { PATH: bin } };
   };
   await both('first run', []);
@@ -325,11 +344,11 @@ test('screens: the capture adds the screens that change the home or serve (#1115
     return {};
   });
   // kanban serves until it is stopped: the child is stopped after a few seconds, and what it
-  // printed by then is the screen.
+  // printed by then is the screen. Its exit is null (stopped); a server that never started fails here.
   const served = makeSandbox().run(['kanban', '--no-open'], { timeout: 5000 });
   const output = `${served.stdout ?? ''}${served.stderr ?? ''}`;
-  keep('kanban --no-open', ['kanban', '--no-open'], { status: 0, output });
-  const captured = JSON.parse(readFileSync(CAPTURE_FILE!, 'utf8')) as Captured[];
+  assert.match(output, /The team is live at /, `kanban served: ${output}`);
+  keep('kanban --no-open', ['kanban', '--no-open'], { status: served.status, output });
   writeFileSync(CAPTURE_FILE!, `${JSON.stringify([...captured, ...extras], null, 2)}\n`);
 });
 
