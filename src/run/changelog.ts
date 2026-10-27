@@ -10,6 +10,7 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Finding, finding } from '../rules/text/message.ts';
+import { moreLine, nextLine, row, screen, spaced, table, title, underRow } from '../rules/text/screen.ts';
 import { CHANGES_DIR, isChangeFile } from '../rules/pr.ts';
 
 /** The sections, in Keep a Changelog's order, and Internal for work users do not see. */
@@ -181,4 +182,34 @@ export function writeChanges(root: string): { changes: Change[]; problems: Findi
   writeFileSync(path, merged);
   for (const change of changes) rmSync(join(root, change.file));
   return { changes, problems: [] };
+}
+
+const plural = (amount: number, one: string, many = `${one}s`): string => `${amount} ${amount === 1 ? one : many}`;
+
+/**
+ * The screen when a change file is wrong (issue #1027): the count, each file with its fix,
+ * and that nothing was written. The same rows as `yokoten check`.
+ */
+export const changelogProblemsScreen = (problems: readonly Finding[]): string[] =>
+  screen(
+    title('changelog', `${plural(problems.length, 'problem')}; nothing was written`),
+    spaced(problems.map((problem) => {
+      const where = problem.file === undefined ? undefined : `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
+      return [...row('MISSING', problem.what, where), ...underRow(problem.fix, where !== undefined)];
+    })),
+    nextLine('yokoten changelog'),
+  );
+
+/**
+ * The screen of `yokoten changelog`: one row per entry, with its section as the label (issue
+ * #1027). An entry written over several lines reads as one sentence here; CHANGELOG.md keeps its lines.
+ */
+export function changelogScreen(changes: readonly Change[], isWrite: boolean): string[] {
+  if (!changes.length) return title('changelog', 'no change files in changes/, nothing to add');
+  const entries = plural(changes.length, 'entry', 'entries');
+  return screen(
+    title('changelog', isWrite ? `wrote ${entries} under [Unreleased]` : `${entries} for the next release`),
+    table(changes.map((change): [string, string] => [change.section, change.lines.map((line) => line.replace(/^[-*+]\s+/, '').trim()).filter(Boolean).join(' ')])),
+    isWrite ? [] : moreLine('before a release: `yokoten changelog --write`'),
+  );
 }

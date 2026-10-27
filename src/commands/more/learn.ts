@@ -1,17 +1,18 @@
 // `yokoten learn` and `yokoten changelog`: what the project learned, and what it changed.
 
 import { ghIn, readIncident, readLocalLogins, repoOf, repoPageOf } from '../../host/github/index.ts';
-import { readChanges, releaseNotes, writeChanges } from '../../run/changelog.ts';
+import { changelogProblemsScreen, changelogScreen, readChanges, releaseNotes, writeChanges } from '../../run/changelog.ts';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { loadConfig } from '../../rules/config.ts';
 import { loadMarks, NO_HOME } from '../../rules/privacy.ts';
-import { draftLesson, exportLesson, formatDraft, formatLessonPack, importLesson, KIT_LESSONS_DIR, LESSONS_TABLE, listNotes, makeNoteCleaner, NOTE_ID, type NotePlace, originParts, redactNote, removeNote, shipLesson, terminalText, upstreamDir, writeDraft, writeLessonFiles, writeNote } from '../../run/learn.ts';
+import { draftLesson, draftScreen, draftWrittenScreen, exportedScreen, exportLesson, importedScreen, importLesson, importScreen, problemsScreen, shipScreen, upstreamDoneScreen, upstreamKeptScreen, upstreamListScreen, listNotes, makeNoteCleaner, NOTE_ID, type NotePlace, originParts, redactNote, removeNote, shipLesson, upstreamDir, writeDraft, writeLessonFiles, writeNote } from '../../run/learn.ts';
 import { HOME_DIR, VERSION } from '../../setup/files.ts';
 import { isSelf } from '../../setup/init.ts';
 import { machineMarks, machineUserNames } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
-import { count, field, type Invocation, moreLine, nextLine, parse, type Parsed, print, rootOf, row, title, usage, wrap } from '../shared.ts';
+import { nextLine, screen, title } from '../../rules/text/screen.ts';
+import { count, fail, field, type Invocation, parse, type Parsed, print, rootOf, usage } from '../shared.ts';
 
 /**
  * A usage error for --upstream that repeats nothing typed (#392): a stray word or a note
@@ -37,8 +38,7 @@ export function runChangelog(invocation: Invocation): number {
     const path = join(root, 'CHANGELOG.md');
     const notes = existsSync(path) ? releaseNotes(readFileSync(path, 'utf8'), notesFor.replace(/^v/, ''), githubPage(readOriginUrl(root, invocation.env))) : null;
     if (notes === null) {
-      print(invocation, [`yokoten changelog: CHANGELOG.md has no section for ${notesFor}; run \`yokoten changelog --write\` and add its heading first`], invocation.stderr);
-      return 1;
+      return fail(invocation, `CHANGELOG.md has no section for ${notesFor}`, 'run `yokoten changelog --write`, add its heading, then ask again');
     }
     invocation.stdout.write(notes);
     return 0;
@@ -46,29 +46,10 @@ export function runChangelog(invocation: Invocation): number {
   const isWrite = options.flags.has('--write');
   const { changes, problems } = isWrite ? writeChanges(root) : readChanges(root);
   if (problems.length) {
-    // The same screen as `yokoten check` (issue #1027): the count, each file with its fix, and
-    // nothing was written, so the title says that too.
-    const lines = [...title('changelog', `${count(problems.length, 'problem')}; nothing was written`), ''];
-    for (const problem of problems) {
-      const where = problem.file === undefined ? undefined : `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
-      lines.push(...row('MISSING', problem.what, where), ...wrap(' '.repeat(where === undefined ? 14 : 26), problem.fix));
-    }
-    print(invocation, lines, invocation.stderr);
+    print(invocation, changelogProblemsScreen(problems), invocation.stderr);
     return 1;
   }
-  if (!changes.length) {
-    print(invocation, title('changelog', 'no change files in changes/, nothing to add'));
-    return 0;
-  }
-  // One row per entry, with its section as the label (issue #1027). An entry that was written
-  // over several lines reads as one sentence on the screen; CHANGELOG.md keeps its lines.
-  const lines = [...title('changelog', isWrite ? `wrote ${count(changes.length, 'entry', 'entries')} under [Unreleased]` : `${count(changes.length, 'entry', 'entries')} for the next release`), ''];
-  for (const change of changes) {
-    const text = change.lines.map((line) => line.replace(/^[-*+]\s+/, '').trim()).filter(Boolean).join(' ');
-    lines.push(...wrap(`  ${change.section.padEnd(11)} `, text));
-  }
-  lines.push('', ...moreLine('before a release: `yokoten changelog --write`'));
-  print(invocation, lines);
+  print(invocation, changelogScreen(changes, isWrite));
   return 0;
 }
 
@@ -107,46 +88,24 @@ export function runLearn(invocation: Invocation): number {
     if (reference === undefined) return usage(invocation, 'name the lesson to ship, by its id or its issue number');
     const shipped = shipLesson(root, reference, VERSION, invocation.env);
     if ('problems' in shipped) {
-      print(invocation, [`yokoten learn --ship: ${shipped.problems.length} problem(s); nothing was moved:`, ...shipped.problems.map((problem) => `- ${problem}`)], invocation.stderr);
+      print(invocation, problemsScreen('learn --ship', shipped.problems, 'nothing was moved', 'fix them, then run `yokoten learn --ship` again'), invocation.stderr);
       return 1;
     }
-    const { id, folder, url } = shipped.lesson;
-    // A project runs the lessons of the yokoten that runs its doctor, so say how each one gets it (#77).
-    print(invocation, [
-      `yokoten learn --ship: ${id} is in ${KIT_LESSONS_DIR}/${folder}/, with a row in ${KIT_LESSONS_DIR}/${LESSONS_TABLE} (from ${url}, yokoten ${VERSION}).`,
-      'Commit it in a pull request. Other projects get it from the yokoten that runs their doctor:',
-      "- now: run this copy's bin/yokoten.ts doctor in the project",
-      "- this machine: run install from this copy, so `yokoten doctor` has it",
-      "- a project's .yokoten/: run init again from this copy, then commit .yokoten/",
-      '- everyone else: the next yokoten release',
-    ]);
+    print(invocation, shipScreen(shipped.lesson, VERSION));
     return 0;
   }
   if (reference === undefined) return usage(invocation, 'name an incident issue, by its number or its URL');
   const incident = readIncident(ghIn(root, invocation.env), reference);
   if (typeof incident === 'string') {
-    print(invocation, [`yokoten learn: ${incident}`], invocation.stderr);
-    return 1;
+    return fail(invocation, incident, 'check the issue number and that gh is signed in, then run `yokoten learn <issue>` again');
   }
   const draft = draftLesson(incident);
-  const [first, ...rest] = formatDraft(incident, draft);
   if (!options.flags.has('--write')) {
     // One screen by default; `--all` keeps every field and the files' text (issue #1027).
-    if (!options.flags.has('--all')) {
-      print(invocation, learnScreen(incident, draft, reference));
-      return 0;
-    }
-    print(invocation, [`yokoten learn: ${first}`, ...rest, '', `Nothing was written. \`yokoten learn ${reference} --write\` adds these files for review.`]);
+    print(invocation, options.flags.has('--all') ? draftScreen(incident, draft, reference) : learnScreen(incident, draft, reference));
     return 0;
   }
-  const { written, kept } = writeDraft(root, draft);
-  print(invocation, [
-    `yokoten learn: ${first}`,
-    ...rest.slice(0, rest.indexOf('')),
-    ...(written.length ? ['Wrote:', ...written.map((path) => `- ${path}`)] : []),
-    ...(kept.length ? ['Kept, already there:', ...kept.map((path) => `- ${path}`)] : []),
-    'Review the draft: fill in each TODO, write the check, and make its test pass.',
-  ]);
+  print(invocation, draftWrittenScreen(incident, draft, writeDraft(root, draft)));
   return 0;
 }
 
@@ -155,20 +114,23 @@ export function runLearn(invocation: Invocation): number {
  * its files go, and the command that writes them. `--all` shows every field and the files.
  */
 export function learnScreen(incident: { number: number }, draft: ReturnType<typeof draftLesson>, reference: string): string[] {
-  const lines = [...title('learn', `a check draft from issue #${incident.number}`), ''];
-  lines.push(...field('rule', draft.finding.what));
-  for (const file of draft.files.slice(0, 2)) lines.push(...field('file', `${file.path} (not written yet)`));
-  if (draft.files.length > 2) lines.push(...field('files', `${count(draft.files.length - 2, 'more file')}`));
-  if (draft.todos.length) lines.push('', ...field('open', `${count(draft.todos.length, 'field')} still to fill in, listed by \`--all\``));
-  lines.push('', ...nextLine(`yokoten learn ${reference} --write`));
-  return lines;
+  return screen(
+    title('learn', `a check draft from issue #${incident.number}`),
+    [
+      ...field('rule', draft.finding.what),
+      ...draft.files.slice(0, 2).flatMap((file) => field('file', `${file.path} (not written yet)`)),
+      ...(draft.files.length > 2 ? field('files', count(draft.files.length - 2, 'more file')) : []),
+      ...(draft.todos.length ? field('open', `${count(draft.todos.length, 'field')} still to fill in, listed by \`--all\``) : []),
+    ],
+    nextLine(`yokoten learn ${reference} --write`),
+  );
 }
 
 /** `learn --export`: a lesson as one small file, for another project. It writes only with --out. */
 function runExport(invocation: Invocation, root: string, reference: string, out: string | undefined): number {
   const exported = exportLesson(root, reference, invocation.env);
   if ('problems' in exported) {
-    print(invocation, [`yokoten learn --export: ${exported.problems.length} problem(s); nothing was written:`, ...exported.problems.map((problem) => `- ${problem}`)], invocation.stderr);
+    print(invocation, problemsScreen('learn --export', exported.problems, 'nothing was written', 'fix them, then run `yokoten learn --export` again'), invocation.stderr);
     return 1;
   }
   const { pack, text } = exported;
@@ -180,11 +142,7 @@ function runExport(invocation: Invocation, root: string, reference: string, out:
   const path = isAbsolute(out) ? out : join(invocation.cwd, out);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, text);
-  print(invocation, [
-    `yokoten learn --export: ${pack.id} is in ${out}.`,
-    'It holds the incident, the check and its positive control, and no private detail the check found.',
-    'Import it in another project with `yokoten learn --import <file>`, then review it there.',
-  ]);
+  print(invocation, exportedScreen(pack, out));
   return 0;
 }
 
@@ -195,32 +153,19 @@ function runImport(invocation: Invocation, root: string, file: string, isWrite: 
   try {
     text = readFileSync(path, 'utf8');
   } catch (err) {
-    print(invocation, [`yokoten learn --import: ${file} could not be read: ${((err as Error).message ?? String(err)).split('\n')[0]}`], invocation.stderr);
-    return 1;
+    return fail(invocation, `${file} could not be read: ${((err as Error).message ?? String(err)).split('\n')[0]}`, 'check the path, then run `yokoten learn --import <file>` again');
   }
   const imported = importLesson(text, invocation.env);
   if ('problems' in imported) {
-    print(invocation, [`yokoten learn --import: ${imported.problems.length} problem(s); nothing was written:`, ...imported.problems.map((problem) => `- ${problem}`)], invocation.stderr);
+    print(invocation, problemsScreen('learn --import', imported.problems, 'nothing was written', 'ask the lesson\'s author for a new file, then run `yokoten learn --import <file>` again'), invocation.stderr);
     return 1;
   }
   const { pack, files } = imported;
-  const first = `yokoten learn --import: ${formatLessonPack(pack)}`;
   if (!isWrite) {
-    print(invocation, [
-      first,
-      ...files.flatMap((file) => ['', `--- ${terminalText(file.path)}`, terminalText(file.text.trimEnd())]),
-      '',
-      `Nothing was written. \`yokoten learn --import ${file} --write\` adds these files for review.`,
-    ]);
+    print(invocation, importScreen(pack, files, file));
     return 0;
   }
-  const { written, kept } = writeLessonFiles(root, files);
-  print(invocation, [
-    first,
-    ...(written.length ? ['Wrote:', ...written.map((file) => `- ${file}`)] : []),
-    ...(kept.length ? ['Kept, already there:', ...kept.map((file) => `- ${file}`)] : []),
-    `Review it and run its test: node --test lessons/${pack.id}/lesson.test.ts. Then, in yokoten, \`yokoten learn --ship ${pack.id}\` adds it to the kit every project gets.`,
-  ]);
+  print(invocation, importedScreen(pack, writeLessonFiles(root, files)));
   return 0;
 }
 
@@ -269,20 +214,9 @@ function runUpstream(invocation: Invocation, options: Parsed): number {
   if (isList) {
     if (text !== undefined || isDone) return usage(invocation, '--list takes nothing more');
     const notes = listNotes(env);
-    if (!notes.length) {
-      print(invocation, ['yokoten learn --upstream: no lessons wait; the inbox is empty.']);
-      return 0;
-    }
     // Cleaned again as they are shown: a file in the inbox may have been edited by hand.
     const clean = makeNoteCleaner(notePlace(invocation, rootOf(cwd, invocation.env), { withProject: false }), env);
-    print(invocation, [
-      `yokoten learn --upstream: ${notes.length} ${notes.length === 1 ? 'lesson waits' : 'lessons wait'} to become an issue in the yokoten repo:`,
-      ...notes.flatMap((note) => [
-        `- ${note.id} (${clean(note.when.replace('T', ' ').replace(/:\d\dZ$/, ''))} UTC, part: ${clean(note.part)}): ${clean(note.what)}`,
-        ...(note.fix ? [`  fix idea: ${clean(note.fix)}`] : []),
-      ]),
-      'Open an issue for each, then remove its note: yokoten learn --upstream --done <id>',
-    ]);
+    print(invocation, upstreamListScreen(notes.map((note) => ({ ...note, when: clean(note.when), part: clean(note.part), what: clean(note.what), ...(note.fix ? { fix: clean(note.fix) } : {}) }))));
     return 0;
   }
   if (isDone) {
@@ -290,16 +224,14 @@ function runUpstream(invocation: Invocation, options: Parsed): number {
     // The argument is never repeated back: it may be anything that was typed.
     if (!NOTE_ID.test(text)) return usage(invocation, 'that is not a note id; see the ids with `yokoten learn --upstream --list`');
     if (!removeNote(env, text)) {
-      print(invocation, ['yokoten learn --upstream: there is no note with that id. See the ids with: yokoten learn --upstream --list'], invocation.stderr);
-      return 1;
+      return fail(invocation, 'there is no note with that id', 'yokoten learn --upstream --list');
     }
-    print(invocation, [`yokoten learn --upstream: removed note ${text}.`]);
+    print(invocation, upstreamDoneScreen(text));
     return 0;
   }
   if (text === undefined || !text.trim()) return usage(invocation, 'say what happened, in a few words: yokoten learn --upstream "<what happened>"');
   if (!inbox) {
-    print(invocation, [`yokoten learn --upstream: the note was not kept, because ${NO_HOME}. Set HOME to your home folder, and try again.`], invocation.stderr);
-    return 1;
+    return fail(invocation, `the note was not kept, because ${NO_HOME}`, 'set HOME to your home folder, then run `yokoten learn --upstream` again');
   }
   const area = options.values['--area'];
   if (area !== undefined) {
@@ -314,16 +246,10 @@ function runUpstream(invocation: Invocation, options: Parsed): number {
   if (problems.length || !('text' in what)) {
     // The kind of detail only: the value itself is never printed (core rule 11).
     const kinds = [...new Set(problems.map((problem) => (problem.id === 'private-mark' ? 'a line of your private-marks file' : problem.what)))];
-    print(invocation, [`yokoten learn --upstream: the note was not kept, because it holds ${kinds.join(' and ')}. Say what happened without it, and try again.`], invocation.stderr);
-    return 1;
+    return fail(invocation, `the note was not kept, because it holds ${kinds.join(' and ')}`, 'say what happened without it, and run `yokoten learn --upstream "<what happened>"` again');
   }
   const fix = fixIdea && 'text' in fixIdea && fixIdea.text ? fixIdea.text : undefined;
   const note = writeNote(env, { part: part && 'text' in part ? part.text : 'unknown', what: what.text, ...(fix ? { fix } : {}) });
-  print(invocation, [
-    `yokoten learn --upstream: kept note ${note.id} in ${inbox}, outside every repo. It reads:`,
-    `  ${note.what}`,
-    ...(note.fix ? [`  fix idea: ${note.fix}`] : []),
-    'In the yokoten repo, the session start counts it until you open an issue for it.',
-  ]);
+  print(invocation, upstreamKeptScreen(note, inbox));
   return 0;
 }

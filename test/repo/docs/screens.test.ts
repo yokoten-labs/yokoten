@@ -19,6 +19,11 @@ import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, 
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
+import { learnScreen } from '../../../src/commands/more/learn.ts';
+import { mcpScreen } from '../../../src/commands/more/advice/mcp.ts';
+import { changelogScreen } from '../../../src/run/changelog.ts';
+import { draftLesson } from '../../../src/run/learn.ts';
+import { finding } from '../../../src/rules/text/message.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -276,6 +281,19 @@ function screensOf(repo: string): ScreenRun[] {
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // C9: learn, changelog and mcp, built from data.
+    { key: 'learn, a check draft', words: ['learn', '7'], lines: learnScreen({ number: 7 }, draftLesson({ number: 7, title: 'repo: a test fails behind a proxy', body: '## What happened\n\nA test failed.\n\n## Fix\n\nThe test sets NO_PROXY.\n', url: 'https://example.com/issues/7', labels: ['incident'] }), '7') },
+    { key: 'changelog, a preview', words: ['changelog'], lines: changelogScreen([{ file: 'changes/1-a.md', section: 'Added', lines: ['- A thing.'] }, { file: 'changes/2-b.md', section: 'Fixed', lines: ['- A fix.'] }], false) },
+    {
+      key: 'mcp, two tools and one problem',
+      words: ['mcp'],
+      lines: mcpScreen({
+        reports: [{ name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] }],
+        problems: [finding('mcp-schema', 'tool "read" inputSchema has a root anyOf', 'put the branches under one property of a root object')],
+        warnings: [],
+        toolCount: 2,
+      }),
+    },
   ];
 }
 

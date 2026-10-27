@@ -13,6 +13,8 @@ import {
   lintServerEntry,
   lintStdout,
   lintTools,
+  mcpNoneScreen,
+  mcpScreen,
   needsWindowsShell,
   readMcpConfig,
   readServerTools,
@@ -205,7 +207,8 @@ test('mcp command: each trap is reported with what, why and fix, and the command
   const text = await sandbox.call(['mcp']);
   assert.equal(text.status, 1);
   assert.match(text.stderr, /write logs to stderr/i);
-  assert.match(text.stderr, /docs: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#shipping-an-mcp-server-that-works-in-every-agent/);
+  assert.match(text.stderr, /More: the docs link of each problem: `yokoten mcp --json`/);
+  assert.ok(report.findings.every((item: { docs?: string }) => item.docs === undefined || /^https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#shipping-an-mcp-server-that-works-in-every-agent$/.test(item.docs)));
 });
 
 test('commandWords: a part in double quotes is one word, a backslash is kept (#1027)', () => {
@@ -240,4 +243,18 @@ test('mcp command: a project with no MCP server is skipped, not failed', async (
   const report = JSON.parse(result.stdout);
   assert.equal(report.ok, true);
   assert.match(report.skipped, /no MCP server found/);
+});
+
+// The screen is a pure function of its result (issue #1115).
+test('mcpScreen: two tools and one problem, from data', () => {
+  const report = { name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] };
+  const problem = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
+  const lines = mcpScreen({ reports: [report], problems: [problem], warnings: [], toolCount: 2 });
+  assert.match(lines[0], /^yokoten mcp · 1 problem in 1 server$/);
+  assert.ok(lines.includes('Next: `yokoten mcp`'));
+  assert.ok(lines.some((line) => /^ {2}MISSING {5}\s*tool "read" inputSchema has a root anyOf/.test(line)));
+  const ready = mcpScreen({ reports: [report], problems: [], warnings: [problem], toolCount: 2 });
+  assert.deepEqual(ready.slice(0, 1), ['yokoten mcp --check · 2 tools ready']);
+  assert.ok(ready.some((line) => /note +1 warning; run yokoten mcp --json/.test(line)));
+  assert.deepEqual(mcpNoneScreen('.mcp.json')[0], 'yokoten mcp · no MCP server found in .mcp.json');
 });
