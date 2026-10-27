@@ -1,143 +1,105 @@
-// Tests for src/commands/kanban/page/text.ts.
+// Tests for src/commands/kanban/page/text.ts: the one renderer of `kanban --text`, from a KanbanState.
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EMPTY_DESK } from '../../../../src/commands/kanban/feed/read/desk.ts';
-import { renderBoardScreen, renderBoardText } from '../../../../src/commands/kanban/page/text.ts';
-import { type AgentView, type BoardData, pullView, vendorOf } from '../../../../src/commands/kanban/view.ts';
+import { renderBoardScreen } from '../../../../src/commands/kanban/page/text.ts';
+import type { KanbanSession, KanbanState } from '../../../../src/commands/kanban/page/browser/types.ts';
+import { healthReadFailed } from '../../../../src/commands/more/check.ts';
+import { stateOf, type StateSources } from '../../../../src/commands/kanban/state.ts';
+import { type AgentView, type BoardData } from '../../../../src/commands/kanban/view.ts';
+import { screenProblems } from '../../../repo/docs/screen-rules.ts';
 
-const agent = (fields: Partial<AgentView>): AgentView => ({ key: '', name: 'a', nickname: '', isMain: false, vendor: vendorOf(''), model: '', effort: '', role: '', dot: 'idle', task: '', title: '', ref: null, doing: '', checks: '', age: '', updated: '', started: '', branch: '', ...fields });
-
-// #933: the board is a preview, and the first line of --text says so.
-test('board text: the first line says the board is a preview (#933)', () => {
-  const board: BoardData = { repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' };
-  const [first] = renderBoardText(board);
-  assert.match(first, /preview/);
-  assert.match(first, /it may change/);
-  assert.match(first, /v0\.1\.2/);
-  assert.match(first, /#823/);
+const NOW = Date.parse('2026-10-26T12:00:00Z');
+const ago = (minutes: number) => new Date(NOW - minutes * 60000).toISOString();
+const board = (agents: AgentView[]): BoardData => ({ repo: '~/r', repoName: 'r', repoUrl: '', agents, needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' });
+const NO_GITHUB: StateSources = { remote: null, pulls: 'no remote', runs: [], defaultBranch: 'main' };
+const EMPTY: KanbanState = stateOf(board([]), { ...NO_GITHUB, pulls: [], runs: [] }, new Set(), NOW);
+const session = (fields: Partial<KanbanSession>): KanbanSession => ({
+  id: 'a', agent: 'Claude', model: 'opus', task: { kind: 'text', title: 'a task' }, state: 'working', startedAt: ago(30), updatedAt: ago(1),
+  evidence: { fence: 'guard', commitCheck: 'none', platforms: [] }, cost: { tokens: 0, usd: null }, ...fields,
 });
 
-test('board text: needs, agents, pulls and worktrees in plain words; a part that cannot be read says why', () => {
-  const board: BoardData = {
-    repo: '/repo',
-    repoName: 'repo',
-    repoUrl: '',
-    agents: [
-      agent({ key: '/repo/.worktrees/601', name: 'worker-1', nickname: 'Swift Lovelace', vendor: vendorOf('claude-code'), role: 'engineer', task: 'issue 601', doing: 'writing tests', age: '2 min ago' }),
-      agent({ name: 'Calm', vendor: vendorOf('grok'), dot: 'waiting', doing: 'asks to add a package' }),
-      agent({ name: 'plain' }),
+/** Every line of a screen is fine for the screen rules. */
+const assertScreen = (lines: string[]) => assert.deepEqual(screenProblems({ text: `${lines.join('\n')}\n` }), [], lines.join('\n'));
+
+test('kanban text: sessions in every group, pull requests and Actions, from the state', () => {
+  const state: KanbanState = {
+    ...EMPTY,
+    repo: { name: 'repo', url: 'https://example.com/octo/repo' },
+    sessions: [
+      session({ id: '1', state: 'stuck', stuckMinutes: 20, task: { kind: 'issue', number: 3, title: 'a' } }),
+      session({ id: '2', state: 'waiting', agent: 'Grok', model: '', waitingFor: 'an answer from you' }),
+      session({ id: '3', task: { kind: 'text', title: 'b' } }),
+      session({ id: '4', state: 'done', task: { kind: 'pr', number: 9, title: 'shipped' } }),
     ],
-    needs: [{ kind: 'approve', title: 'Approve PR #1', why: 'team page. All checks pass. Tier A needs your approval.', agentKey: '', pull: 1 }],
-    pulls: [pullView({ number: 1, title: 'team page', branch: 'board', url: '', stage: 'open', checks: 'pass', tier: 'A', review: 'waiting', isApprovedOnHead: false, mergedAt: '' })],
-    merged: [{ number: 2, title: 'old work', url: '', mergedAt: '2026-10-22T09:00:00Z' }],
-    worktrees: [
-      { path: '/repo', branch: 'main' },
-      { path: '/repo/.worktrees/601', branch: '' },
+    pulls: [
+      { number: 4, title: 't', url: '', author: '', waitsOnYou: true, notReadyBecause: [], checks: 'pass' },
+      { number: 5, title: 'draft work', url: '', author: '', waitsOnYou: false, notReadyBecause: ['still a draft'], checks: 'none' },
+      { number: 6, title: 'old', url: '', author: '', waitsOnYou: false, notReadyBecause: [], checks: 'pass', mergedAt: ago(60) },
     ],
-    desk: EMPTY_DESK,
-    updated: '',
+    actions: { main: { state: 'fail', failingSince: ago(60) }, queuedOver15Min: [{ name: 'CI', minutes: 20, url: '' }], flaky: [{ name: 'Lint', passFailLast10: 'PFPF', url: '' }] },
   };
-  assert.deepEqual(renderBoardText(board), [
-    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
-    '3 agents, 1 open pull request, 2 worktrees.',
-    '',
-    'Needs you:',
-    '- Approve PR #1: team page. All checks pass. Tier A needs your approval.',
-    '',
-    'Agents:',
-    '- Swift Lovelace (Claude) [engineer]: issue 601, in /repo/.worktrees/601, writing tests, 2 min ago',
-    '- Calm (Grok): asks to add a package, waiting',
-    '- plain',
-    '',
-    'Pull requests:',
-    '- #1 team page [board]: Needs your approval, tier A',
-    '- #2 old work: merged',
-    '',
-    'Worktrees:',
-    '- /repo (main)',
-    '- /repo/.worktrees/601',
-  ]);
-  assert.deepEqual(renderBoardText({ repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: 'gh failed', merged: [], worktrees: 'git failed', desk: EMPTY_DESK, updated: '' }), [
-    'yokoten board: /repo (preview: it may change, and team commands come in v0.1.2, #823)',
-    '0 agents, 0 open pull requests, 0 worktrees.',
-    '',
-    'Needs you:',
-    '- nothing.',
-    '',
-    'Agents:',
-    '- none. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself.',
-    '',
-    'Pull requests:',
-    '- gh failed',
-    '',
-    'Worktrees:',
-    '- git failed',
-  ]);
+  const lines = renderBoardScreen(state);
+  assert.equal(lines[0], 'yokoten kanban · repo: 4 sessions, 3 pull requests, read only');
+  assert.deepEqual(lines.filter((line) => /^[A-Z][^:]*:$/.test(line)), ['Stuck:', 'Waiting for you:', 'Working:', 'Done:', 'Pull requests:', 'Actions:']);
+  const text = lines.join('\n');
+  assert.match(text, /MISSING\s+Claude\s+issue #3 a \(opus\), no output for 20 min/);
+  assert.match(text, /next\s+Grok\s+a task, waits for an answer from you/);
+  assert.match(text, /ok\s+Claude\s+PR #9 shipped \(opus\)/);
+  assert.match(text, /next\s+PR #4\s+t: waits on you/);
+  assert.match(text, /to do\s+PR #5\s+draft work: still a draft/);
+  assert.match(text, /MISSING\s+main\s+failing since 2026-10-26T11:00:00.000Z/);
+  assert.match(text, /to do\s+CI\s+waits for a runner, 20 min/);
+  assert.match(text, /note\s+Lint\s+flaky: PFPF/);
+  assert.equal(lines.at(-1), 'More: `yokoten kanban` opens the live page');
+  assertScreen(lines);
+});
+
+test('kanban text: an empty board says how to start a session and that nothing waits', () => {
+  const lines = renderBoardScreen(EMPTY, 'http://repo.localhost:4815/');
+  assert.equal(lines[0], 'yokoten kanban · this repo: 0 sessions, 0 pull requests, read only');
+  const text = lines.join('\n');
+  assert.match(text, /Sessions:\n {2}none yet\. Start one with `yokoten desk`/);
+  assert.match(text, /Pull requests:\n {2}none waits on you\./);
+  assert.match(text, /Actions:\n {2}note\s+main\s+not read/);
+  assert.doesNotMatch(text, /Not read:/);
+  assert.equal(lines.at(-1), 'More: the live page at http://repo.localhost:4815/');
+  assertScreen(lines);
+});
+
+test('kanban text: gh signed out says the cause once, with one Fix line (#1115)', () => {
+  const signedOut = { stderr: 'To get started with GitHub CLI, please run:  gh auth login\n' };
+  const state = { ...EMPTY, problems: [healthReadFailed(signedOut, 'pull requests'), healthReadFailed(signedOut, 'Actions runs')] };
+  const lines = renderBoardScreen(state);
+  assert.equal(lines.filter((line) => line.includes('Fix: `gh auth login`')).length, 1);
+  assert.ok(lines.includes('Not read:'));
+  assertScreen(lines);
+});
+
+test('kanban text: a long group folds, but stuck and waiting sessions are never folded', () => {
+  const many = (state: KanbanSession['state']) => Array.from({ length: 7 }, (_, index) => session({ id: `${state}${index}`, state, task: { kind: 'text', title: `${state} ${index}` } }));
+  const text = renderBoardScreen({ ...EMPTY, sessions: [...many('working'), ...many('stuck'), ...many('waiting')] }).join('\n');
+  assert.match(text, /to do\s+2 more rows, all of them with `yokoten kanban --json`/);
+  assert.equal(text.match(/stuck \d/g)?.length, 7);
+  assert.equal(text.match(/waiting \d/g)?.length, 7);
 });
 
 // #603: agents write the status files, so --text never sends their control codes to the terminal.
-test('board text: control and bidi characters in agent text show escaped', () => {
-  const board: BoardData = { repo: '/repo', repoName: 'repo', repoUrl: '', agents: [agent({ name: 'bad\u001b]0;owned\u0007', doing: 'x\u202ey' })], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' };
-  const text = renderBoardText(board).join('\n');
-  assert.ok(!/[\u001b\u0007\u202e]/.test(text), 'no raw control or bidi character');
+test('kanban text: control and bidi characters in agent text show escaped', () => {
+  const text = renderBoardScreen({ ...EMPTY, sessions: [session({ agent: 'bad\u001b]0;owned\u0007', task: { kind: 'text', title: 'x‮y' } })] }).join('\n');
+  assert.ok(!/[\u001b\u0007‮]/.test(text), 'no raw control or bidi character');
   assert.match(text, /bad\\u001b/, 'the code shows as text');
 });
 
-// #603 findings: board --text showed none of the waiting and runs data.
-test('board text: the waiting list and the started runs', () => {
-  const board: BoardData = { repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '' };
-  const lines = renderBoardText(
-    board,
-    {
-      waiting: [{ kind: 'approve', agent: 'w', role: 'engineer', wait: '5 min ago', why: 'tier A, checks pass, needs the owner go-ahead: #7 work', link: '' }],
-      runs: [{ name: 'issue-12-claude-code', issue: '12', vendor: 'claude-code', model: 'model-a', worktree: '/repo/.worktrees/12', pid: 1000, status: 'running', startedAt: '', stoppedAt: '', exitCode: null, output: [] }],
-    },
-  );
-  assert.ok(lines.some((line) => line.includes('Waiting for you:')), 'the waiting list');
-  assert.ok(lines.some((line) => line.includes('#7 work')), 'the waiting row');
-  assert.ok(lines.some((line) => line.includes('issue-12-claude-code')), 'the started run');
-  const empty = renderBoardText(board, { waiting: [], runs: [] });
-  assert.ok(empty.some((line) => line.includes('Nothing waits for you.')), 'an empty waiting list says so');
-  assert.ok(empty.some((line) => line.includes('No agents started here yet.')), 'empty runs say so');
-  const legacy = renderBoardText(board);
-  assert.ok(!legacy.some((line) => line.includes('Waiting for you:')), 'no extra, no new sections');
+test('kanban text: no line says the old name', () => {
+  assert.doesNotMatch(renderBoardScreen(EMPTY).join('\n'), /yokoten board/);
 });
 
-// #611: the usage view gives each agent, model and day its tokens and an estimate.
-test('board text: the usage view says tokens and an API price in plain words', () => {
-  const board: BoardData = {
-    repo: '/repo', repoName: 'repo', repoUrl: '', agents: [], needs: [], pulls: [], merged: [], worktrees: [], desk: EMPTY_DESK, updated: '',
-    usage: {
-      cells: [{ agent: 'Ada', vendor: 'Claude', model: 'claude-opus-5-5', role: 'engineer', day: '2026-10-22', input: 2_000_000, cached: 1_000_000, output: 100_000, usd: 39, isPartial: false, isLocal: false }],
-      days: ['2026-10-22'],
-      partial: ['mystery-9: no price in the table'],
-      checked: '2026-10-23',
-      sources: [],
-    },
-  };
-  const text = renderBoardText(board).join('\n');
-  assert.match(text, /Usage \(estimates from the last 7 days of local session logs; nothing leaves this machine\):/);
-  assert.match(text, /- Claude Ada \[engineer\] · claude-opus-5-5 · 2026-10-22: 2,000,000 in, 1,000,000 cached, 100,000 out: about \$39.00 if paid by API/);
-  assert.match(text, /- Total: 2,000,000 in, 1,000,000 cached, 100,000 out: about \$39.00 if paid by API/);
-  assert.match(text, /Partial:\n- mystery-9: no price in the table\./);
-  assert.match(text, /Prices checked 2026-10-23/);
-});
-
-// #1027: the default `board --text` is one screen: a title with counts, groups, one row each.
-test('board text: the default screen is one screen of 80 columns or less', () => {
-  const board: BoardData = {
-    repo: '/repo', repoName: 'repo', repoUrl: '', agents: [agent({ nickname: 'lead', vendor: vendorOf('claude-code'), role: 'engineer', doing: 'reviewing PR #1033' }), agent({ nickname: 'worker-42', vendor: vendorOf('deepseek'), dot: 'waiting' })],
-    needs: [], pulls: [pullView({ number: 1031, title: 'one screen', branch: 'screen', url: '', stage: 'open', checks: 'pass', tier: 'A', review: 'approved', isApprovedOnHead: true, mergedAt: '' })], merged: [],
-    worktrees: [{ path: '/repo', branch: 'main' }], desk: EMPTY_DESK, updated: '',
-  };
-  const lines = renderBoardScreen(board, undefined, 'http://repo.localhost:4815/');
-  assert.equal(lines[0], 'yokoten board · 2 agents, 1 pull request, 1 worktree');
-  assert.ok(lines.includes('Agents'), 'the agents group');
-  assert.ok(lines.some((line) => line.startsWith('  skipped     lead')), 'an agent row');
-  assert.ok(lines.some((line) => line.includes('waiting for you')), 'what an agent waits for');
-  assert.ok(lines.includes('Pull requests') && lines.includes('Worktrees'), 'the other two groups');
-  assert.match(lines.at(-1) ?? '', /^More: the live page at http:\/\/repo\.localhost:4815\/$/, 'the page last');
-  for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
+test('kanban text: a long agent name fits the label field, so every text starts in one column', () => {
+  const lines = renderBoardScreen({ ...EMPTY, sessions: [session({ id: '1', agent: 'Claude Code' }), session({ id: '2', agent: 'A Very Long Agent Name' })] });
+  assert.ok(lines.some((line) => /^ {2}note\s{8}Claude {6}a task/.test(line)), lines.join('\n'));
+  assert.ok(lines.some((line) => /^ {2}note\s{8}A Very Lo…\s+a task/.test(line)), lines.join('\n'));
+  assertScreen(lines);
 });

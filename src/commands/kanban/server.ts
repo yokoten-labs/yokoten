@@ -13,12 +13,13 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { basename, extname, join } from 'node:path';
-import { startAndLetGo } from '../../platform/process.ts';
-import { type ActionsRun, type CommandRun, defaultBranchOf, type GhCallLater, ghRunner, ghRunnerLater, type KanbanEnv, originUrl, parseWords, printLines, projectRoot, readFailedText, readPulls, readPullsLater, readRuns, repoNameOf, runsPage, runsQuery, screenLines, titleLines, usageError, wrapLines, yokotenHome } from './ports.ts';
+import { findProgram, startAndLetGo } from '../../platform/process.ts';
+import { type ActionsRun, type CommandRun, defaultBranchOf, type GhCallLater, ghRunner, ghRunnerLater, type KanbanEnv, originUrl, parseWords, failRun, printData, printLines, projectRoot, readFailedText, readPulls, readPullsLater, readRuns, repoNameOf, runsPage, runsQuery, screenLines, titleLines, usageError, wrapLines, yokotenHome } from './ports.ts';
 import { BOARD_READ_TIMEOUT_MS } from './agents.ts';
 import { makeBoardMask, makeFeedStreams, sessionAnswer } from './feed/route.ts';
 import { type StreamAnswer } from './feed/tail.ts';
-import { collectState, renderStateText } from './state.ts';
+import { collectState } from './state.ts';
+import { renderBoardScreen } from './page/text.ts';
 import type { KanbanState } from './page/browser/types.ts';
 import { BOARD_NO_REMOTE_PULLS, BOARD_READING_GITHUB, type BoardGitHub, createBoardGitHub, refreshBoardGitHub } from './view.ts';
 
@@ -405,22 +406,35 @@ export function browserCommand(url: string, platform: NodeJS.Platform, env: Kanb
   return null;
 }
 
-/** Open the link in the browser, and never wait or fail. */
-function openInBrowser(url: string, env: KanbanEnv): void {
-  const command = browserCommand(url, process.platform, env);
-  // No browser to open: the printed line says how to try again.
-  if (command) startAndLetGo(command[0], command.slice(1), env);
+/**
+ * Open the link in the browser, and never wait or fail. Answers whether a browser was
+ * started: false where no program is known for the system, or the one it names is not
+ * installed (issue #1070). `find` and `start` are the system's, a test passes its own.
+ */
+export function openInBrowser(
+  url: string,
+  env: KanbanEnv,
+  platform: NodeJS.Platform,
+  { find = findProgram, start = startAndLetGo }: { find?: typeof findProgram; start?: typeof startAndLetGo } = {},
+): boolean {
+  const command = browserCommand(url, platform, env);
+  if (!command || !find(command[0], env.PATH ?? env.Path, platform, env)) return false;
+  start(command[0], command.slice(1), env);
+  return true;
 }
 
-/** The screen the kanban shows once it serves: the link without its token, and how it stops (#1115). */
-export function servingScreen({ url, isOpening }: { url: string; isOpening: boolean }): string[] {
-  return screenLines(
-    titleLines('kanban', 'preview, read only; it may change'),
-    [
-      `The team is live at ${url}`,
-      ...wrapLines('', isOpening ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.' : 'The sign-in link goes only to your browser: `yokoten kanban` without --no-open opens it. Stop it with Ctrl-C.'),
-    ],
-  );
+/**
+ * The screen the kanban shows once it serves: the link without its token, and how it stops
+ * (#1115). `isOpening` is true only when a browser was started (issue #1070); `couldNotOpen`
+ * is true when one was asked for and none could start.
+ */
+export function servingScreen({ url, isOpening, couldNotOpen = false }: { url: string; isOpening: boolean; couldNotOpen?: boolean }): string[] {
+  const how = isOpening
+    ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.'
+    : couldNotOpen
+      ? 'No browser could start here, so the page is not signed in. Stop it with Ctrl-C.'
+      : 'The sign-in link goes only to your browser: `yokoten kanban` without --no-open opens it. Stop it with Ctrl-C.';
+  return screenLines(titleLines('kanban', 'preview, read only; it may change'), [`The team is live at ${url}`, ...wrapLines('', how)]);
 }
 
 export function runBoard(invocation: CommandRun, options: BoardServerOptions = {}): number | Promise<number> {
@@ -428,27 +442,25 @@ export function runBoard(invocation: CommandRun, options: BoardServerOptions = {
   if (typeof parsed === 'string') return usageError(invocation, parsed);
   const root = projectRoot(invocation, invocation.cwd);
   if (!root) return 1;
-  if (parsed.flags.has('--text')) {
+  if (parsed.flags.has('--text') || parsed.flags.has('--json')) {
     const gh = ghRunner(root, invocation.env, BOARD_READ_TIMEOUT_MS);
     const remote = repoNameOf(originUrl(root, invocation.env));
     const sources = remote
       ? { remote, pulls: readPulls(gh, remote), runs: readRuns(gh, remote, 100), defaultBranch: defaultBranchOf(gh, remote) }
       : { remote: null, pulls: BOARD_NO_REMOTE_PULLS, runs: [], defaultBranch: 'main' };
     const state = maskBoardPayload(collectState(root, invocation.env, sources), makeBoardMask(invocation.env, root));
-    printLines(invocation, renderStateText(state as KanbanState));
+    if (parsed.flags.has('--json')) printData(invocation, state);
+    else printLines(invocation, renderBoardScreen(state as KanbanState));
     return 0;
   }
   return startBoardServer(root, invocation.env, ghRunnerLater(root, invocation.env, BOARD_READ_TIMEOUT_MS), options).then(
     ({ url }) => {
-      const isOpening = !parsed.flags.has('--no-open');
+      const wantsBrowser = !parsed.flags.has('--no-open');
       // The link with its token goes only to the browser; the screen shows it without (#1045).
-      printLines(invocation, servingScreen({ url: printableLink(url), isOpening }));
-      if (isOpening) openInBrowser(url, invocation.env);
+      const isOpening = wantsBrowser && openInBrowser(url, invocation.env, invocation.platform ?? 'linux');
+      printLines(invocation, servingScreen({ url: printableLink(url), isOpening, couldNotOpen: wantsBrowser && !isOpening }));
       return new Promise<number>(() => {});
     },
-    () => {
-      printLines(invocation, ['yokoten kanban: the page could not start: run it again.'], invocation.stderr);
-      return 1;
-    },
+    () => failRun(invocation, 'the page could not start', 'yokoten kanban'),
   );
 }

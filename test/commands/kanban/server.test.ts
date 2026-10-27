@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import { CLI, makeSandbox, makeTempDir, ROOT } from '../../repo/helpers.ts';
 import { sessionId } from '../../../src/commands/kanban/agents.ts';
 import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
-import { boardHostName, boardPort, browserCommand, PAGE_NOT_BUILT, printableLink, startBoardServer } from '../../../src/commands/kanban/server.ts';
+import { boardHostName, boardPort, browserCommand, openInBrowser, PAGE_NOT_BUILT, printableLink, servingScreen, startBoardServer } from '../../../src/commands/kanban/server.ts';
 import { stateOf } from '../../../src/commands/kanban/state.ts';
 import { createBoardGitHub } from '../../../src/commands/kanban/view.ts';
 import { startAndLetGo } from '../../../src/platform/process.ts';
@@ -364,11 +364,16 @@ test('kanban --text: the sessions, pull requests and Actions, and the usage erro
   const sandbox = makeSandbox();
   const started = sandbox.run(['kanban', '--text']);
   assert.equal(started.status, 0, started.stderr);
-  assert.match(started.stdout, /^yokoten kanban · this repo: sessions, pull requests and Actions, read only\n\nSessions:\n- none yet\. [^\n]+\n\nPull requests:\n- none waits on you\.\n\nActions: main unknown\n\nNot read:\n- this repo has no GitHub remote, so the board shows no pull requests\n$/);
+  assert.match(started.stdout, /^yokoten kanban · this repo: 0 sessions, 0 pull requests, read only\n\nSessions:\n {2}none yet\. [^\n]+\n\nPull requests:\n {2}none waits on you\.\n\nActions:\n {2}note\s+main\s+not read\n\nNot read:\n- this repo has no GitHub remote, so the board shows no pull requests\n\nMore: `yokoten kanban` opens the live page\n$/);
   writeFileSync(join(sandbox.repo, '.yokoten-agent.json'), JSON.stringify({ name: 'w', vendor: 'claude', model: 'opus', task: 'issue 601 board', updated: new Date().toISOString() }));
   const joined = await sandbox.call(['board', '--text']);
   assert.equal(joined.status, 0, joined.stderr);
-  assert.match(joined.stdout, /\nWorking:\n- Claude \(opus\): issue #601 board\n/);
+  assert.match(joined.stdout, /\nWorking:\n {2}note\s+Claude\s+issue #601 board \(opus\)\n/);
+  const asData = await sandbox.call(['kanban', '--json']);
+  assert.equal(asData.status, 0, asData.stderr);
+  const state = JSON.parse(asData.stdout);
+  assert.deepEqual(Object.keys(state).sort(), ['actions', 'problems', 'pulls', 'readAt', 'repo', 'sessions', 'usage', 'version']);
+  assert.equal(state.sessions[0].task.title, 'board', '--json prints the object the page reads');
   assert.equal((await sandbox.call(['kanban', '--bogus'])).status, 1, 'an unknown option is refused');
   assert.equal((await sandbox.call(['kanban', '--text', '--all'])).status, 1, 'the old --all is gone');
   const outside = await sandbox.call(['kanban', '--text'], { cwd: sandbox.home });
@@ -388,9 +393,9 @@ test('kanban --text: pull requests and Actions from gh', async () => {
   chmodSync(join(bin, 'gh'), 0o755);
   const result = await sandbox.call(['kanban', '--text'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten kanban · repo: sessions, pull requests and Actions, read only\n/);
-  assert.match(result.stdout, /\nPull requests:\n- #7 team page: checks failing\n/);
-  assert.match(result.stdout, /\nActions: main fail since 2026-10-26T10:00:00Z\n/);
+  assert.match(result.stdout, /^yokoten kanban · repo: 0 sessions, 1 pull request, read only\n/);
+  assert.match(result.stdout, /\nPull requests:\n {2}to do\s+PR #7\s+team page: checks failing\n/);
+  assert.match(result.stdout, /\n {2}MISSING\s+main\s+failing since 2026-10-26T10:00:00Z\n/);
 });
 
 // #1045: the access key goes only to the browser; the screen shows the link without it.
@@ -446,4 +451,24 @@ test('startAndLetGo: a program starts and is let go; one that cannot start is le
   for (let tries = 0; tries < 100 && !existsSync(done); tries++) await new Promise((wake) => setTimeout(wake, 50));
   assert.ok(existsSync(done), 'the program ran');
   assert.doesNotThrow(() => startAndLetGo(join(sandbox.home, 'no-such-program'), [], sandbox.env));
+});
+
+// Issue #1070: the screen says the page opens in the browser only when a browser was started.
+test('kanban: openInBrowser answers whether a browser started; the screen says so only then (#1070)', () => {
+  const url = 'http://repo.localhost:9/?token=abc';
+  const started: string[][] = [];
+  const start = (file: string, args: string[]) => void started.push([file, ...args]);
+  const found = () => '/usr/bin/xdg-open';
+  assert.equal(openInBrowser(url, {}, 'linux', { find: found, start }), true);
+  assert.deepEqual(started, [['xdg-open', url]], 'the browser got the link');
+  started.length = 0;
+  assert.equal(openInBrowser(url, {}, 'linux', { find: () => null, start }), false, 'the program is not installed');
+  assert.equal(openInBrowser(url, {}, 'aix', { find: found, start }), false, 'no program is known for the system');
+  assert.deepEqual(started, [], 'nothing started in either case');
+  const link = 'http://repo.localhost:9/';
+  assert.match(servingScreen({ url: link, isOpening: true }).join('\n'), /It opens in your browser now/);
+  const failed = servingScreen({ url: link, isOpening: false, couldNotOpen: true }).join('\n');
+  assert.doesNotMatch(failed, /opens in your browser/);
+  assert.match(failed, /No browser could start here/);
+  assert.doesNotMatch(servingScreen({ url: link, isOpening: false }).join('\n'), /It opens in your browser now/);
 });

@@ -31,6 +31,8 @@ import { refusalScreen, utcRefusal } from '../../../src/commands/more/merge/bot.
 import { summaryLines } from '../../../src/commands/more/merge/conflicts/report.ts';
 import type { ConflictMap } from '../../../src/commands/more/merge/conflicts/types.ts';
 import { planLines } from '../../../src/commands/more/merge/train.ts';
+import { renderBoardScreen } from '../../../src/commands/kanban/page/text.ts';
+import type { KanbanSession, KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 // C2: the pure screens of init, update and trust, from their results (#1115).
@@ -364,6 +366,24 @@ const C8_MAP: ConflictMap = {
   leased: {},
   hot: [],
 };
+// C6: kanban --text, rendered from state objects (the live state of src/commands/kanban/state.ts).
+const KANBAN_EMPTY: KanbanState = { version: '0.1.2', readAt: '2026-10-26T12:00:00.000Z', repo: { name: 'demo', url: 'https://github.com/octo/demo' }, sessions: [], pulls: [], actions: { main: { state: 'unknown' }, queuedOver15Min: [], flaky: [] }, usage: { quotas: [], costs: [] }, problems: [] };
+const kanbanSession = (fields: Partial<KanbanSession>): KanbanSession => ({
+  id: 'a', agent: 'Claude Code', model: 'opus', task: { kind: 'text', title: 'a task' }, state: 'working', startedAt: '2026-10-26T11:00:00.000Z', updatedAt: '2026-10-26T11:59:00.000Z',
+  evidence: { fence: 'guard', commitCheck: 'none', platforms: [] }, cost: { tokens: 0, usd: null }, ...fields,
+});
+const KANBAN_BUSY: KanbanState = {
+  ...KANBAN_EMPTY,
+  sessions: [
+    kanbanSession({ id: '1', state: 'stuck', stuckMinutes: 20, task: { kind: 'issue', number: 3, title: 'fix the login' } }),
+    kanbanSession({ id: '2', state: 'waiting', agent: 'Codex', model: 'gpt', waitingFor: 'an answer from you' }),
+    kanbanSession({ id: '3', task: { kind: 'issue', number: 4, title: 'write the guide' } }),
+    kanbanSession({ id: '4', state: 'done', task: { kind: 'pr', number: 9, title: 'one screen' } }),
+  ],
+  pulls: [{ number: 9, title: 'one screen', url: '', author: '', waitsOnYou: true, notReadyBecause: [], checks: 'pass' }],
+  actions: { main: { state: 'fail', failingSince: '2026-10-26T10:00:00.000Z' }, queuedOver15Min: [], flaky: [] },
+};
+const KANBAN_SIGNED_OUT: KanbanState = { ...KANBAN_EMPTY, problems: ["gh can't list the pull requests (To get started with GitHub CLI, please run:  gh auth login): run `gh auth login`, and check the repo", "gh can't list the Actions runs (To get started with GitHub CLI, please run:  gh auth login): run `gh auth login`, and check the repo"] };
 
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
@@ -393,6 +413,10 @@ function screensOf(repo: string): ScreenRun[] {
     // The first run, and each command with no words, as a newcomer types it: the captured screens S040 to S049 (#1115).
     { key: 'first run', words: [], place: 'fresh' },
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
+    // C6
+    { key: 'kanban --text, sessions in every group', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_BUSY) },
+    { key: 'kanban --text, an empty board', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_EMPTY) },
+    { key: 'kanban --text, gh signed out (state)', words: ['kanban', '--text'], lines: renderBoardScreen(KANBAN_SIGNED_OUT) },
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
     // C5: stops, worker, anchor, the desk's start and the stop hook's notes, each built from its data (#1115).
