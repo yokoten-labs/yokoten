@@ -7,7 +7,7 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, title, usage } from '../shared.ts';
+import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, spaced, title, usage } from '../shared.ts';
 import { section } from '../../rules/text/screen.ts';
 import { scanTidy, sizeOf, tidyStateDir, type TidyItem, type TidyScan } from './find.ts';
 import { archiveItems, deleteTrash, makeTrashFolder, moveItem, readTrash, safeName, type TrashFolder, type TrashIndex, writeTrashIndex } from './put-away.ts';
@@ -26,23 +26,26 @@ export function formatSize(bytes: number): string {
 
 const isToPutAway = (item: TidyItem): boolean => item.judged.verdict === 'old' || item.judged.verdict === 'keep-first';
 
-/** What one row says about an item: its kind and place, why, and its size. */
+/** The short word in an item's label column: what kind of thing it is. */
+const kindWord = (item: TidyItem): string => (item.kind === 'log' ? 'logs' : item.kind);
+
+/** What one row says about an item: its name and place, why, and its size. A long name wraps in the text, not the label. */
 function itemText(item: TidyItem): string {
   const size = item.kind === 'branch' ? (item.commits ? `${count(item.commits, 'commit')} not in the main branch` : 'no commit of its own') : formatSize(item.size);
-  const place = item.kind === 'branch' ? 'branch' : `${item.kind === 'log' ? 'logs' : item.kind} at ${item.path}`;
+  const place = item.kind === 'branch' ? item.name : `${item.name} at ${item.path}`;
   return `${place}: ${item.judged.why}; ${size}.`;
 }
 
-const rows = (items: TidyItem[], mark: Parameters<typeof row>[0]): string[] => items.flatMap((item) => row(mark, itemText(item), item.name));
+const rows = (items: TidyItem[], mark: Parameters<typeof row>[0]): string[] => spaced(items.map((item) => row(mark, itemText(item), kindWord(item))));
 
 /** The trash part of a screen: what is there, and what `--empty` would delete. */
 function trashBlock(trash: TrashFolder[]): string[] {
   if (!trash.length) return [];
   const old = trash.filter((folder) => folder.isOld);
-  return section('Trash', [
-    ...row('ok', `${count(trash.length, 'folder')}, ${formatSize(trash.reduce((sum, folder) => sum + folder.size, 0))}. Each stays 7 days.`),
-    ...(old.length ? row('note', `${count(old.length, 'folder')} over 7 days old, ${formatSize(old.reduce((sum, folder) => sum + folder.size, 0))}: \`yokoten tidy --empty\` deletes them.`) : []),
-  ]);
+  return section('Trash', spaced([
+    row('ok', `${count(trash.length, 'folder')}, ${formatSize(trash.reduce((sum, folder) => sum + folder.size, 0))}. Each stays 7 days.`, 'trash'),
+    ...(old.length ? [row('note', `${count(old.length, 'folder')} over 7 days old, ${formatSize(old.reduce((sum, folder) => sum + folder.size, 0))}: \`yokoten tidy --empty\` deletes them.`, 'old trash')] : []),
+  ]));
 }
 
 /** Bare `yokoten tidy`: the list, in groups by what the person can do. A pure function of the scan and the trash. */
@@ -58,10 +61,11 @@ export function listScreen(scan: TidyScan, trash: TrashFolder[]): string[] {
     section('Can put away', rows(old, 'next')),
     section('Can put away with a saved copy', rows(first, 'note')),
     section('In use, never touched', rows(inUse, 'skipped')),
-    section('On the remote, only listed', scan.remote.flatMap((branch) => row('skipped', `${branch.why}.`, branch.name))),
+    section('On the remote, only listed', spaced(scan.remote.map((branch) => row('skipped', `${branch.name}: ${branch.why}.`, 'branch')))),
     trashBlock(trash),
-    kept.length ? row('ok', `${count(kept.length, 'more thing')} still in work: tidy leaves them.`) : [],
-    ready ? [...moreLine('`--local` saves each one (a bundle and a patch), then moves it into the trash.'), ...nextLine('yokoten tidy --local')] : [],
+    kept.length ? row('ok', `${count(kept.length, 'more thing')} still in work: tidy leaves them.`, 'in work') : [],
+    ready ? moreLine('`--local` saves each one (a bundle and a patch), then moves it into the trash.') : [],
+    ready ? nextLine('yokoten tidy --local') : [],
   );
 }
 
@@ -100,25 +104,25 @@ function putAway(invocation: Invocation, root: string, trash: string, platform: 
   }
   // A thing may have changed while it was saved: an agent started, or committed. It stays.
   const fresh = scanTidy({ root, cwd, env, platform, now: Date.now() });
-  const lines: string[] = [];
+  const lines: string[][] = [];
   let problem = '';
   for (const [position, item] of targets.entries()) {
     const entry = saved.entries[position];
     if (problem || !isUnchanged(item, fresh)) {
-      lines.push(...row('skipped', problem ? 'not moved: a move before it failed.' : 'it changed while tidy saved it, so it stays.', item.name));
+      lines.push(row('skipped', `${item.name}: ${problem ? 'not moved, a move before it failed.' : 'it changed while tidy saved it, so it stays.'}`, kindWord(item)));
       continue;
     }
     try {
       moveItem(item, entry, `${String(position + 1).padStart(2, '0')}-${safeName(item.name)}`, folder, root, env, platform);
-      lines.push(...row('done', `${itemText(item)} Put away.`, item.name));
+      lines.push(row('done', `${itemText(item)} Put away.`, kindWord(item)));
     } catch (err) {
       problem = (err as Error).message.split('\n')[0] ?? 'the move failed';
-      lines.push(...row('MISSING', `not moved: ${problem}`, item.name));
+      lines.push(row('MISSING', `${item.name}: not moved, ${problem}`, kindWord(item)));
     }
   }
   writeTrashIndex(folder, index);
   const moved = saved.entries.filter((entry) => entry.isMoved).length;
-  print(invocation, screen(title('tidy --local', `put away ${count(moved, 'thing')} in ${folder}`), lines, [...moreLine('index.json there says how to bring each one back. It stays 7 days.'), ...nextLine('yokoten tidy')]));
+  print(invocation, screen(title('tidy --local', `put away ${count(moved, 'thing')} in ${folder}`), spaced(lines), moreLine('index.json there says how to bring each one back. It stays 7 days.'), nextLine('yokoten tidy')));
   return problem ? 1 : 0;
 }
 
@@ -141,10 +145,10 @@ async function emptyTrash(invocation: Invocation, trash: string, platform: NodeJ
     return 0;
   }
   const size = formatSize(old.reduce((sum, folder) => sum + folder.size, 0));
-  const head = screen(title('tidy --empty', `${count(old.length, 'trash folder')} over 7 days old, ${size}`), old.flatMap((folder) => row('next', `${formatSize(folder.size)}, put away ${new Date(folder.created).toISOString().slice(0, 10)}.`, folder.path.slice(trash.length + 1))));
+  const head = screen(title('tidy --empty', `${count(old.length, 'trash folder')} over 7 days old, ${size}`), spaced(old.map((folder) => row('next', `${folder.path.slice(trash.length + 1)}: ${formatSize(folder.size)}, put away ${new Date(folder.created).toISOString().slice(0, 10)}.`, 'trash'))));
   const done = () => {
     const deleted = deleteTrash(trash, old, platform);
-    return row('done', `deleted ${count(deleted.length, 'folder')}, ${size}.`);
+    return row('done', `deleted ${count(deleted.length, 'folder')}, ${size}.`, 'trash');
   };
   if (isYes) {
     print(invocation, screen(head, done()));
@@ -156,7 +160,7 @@ async function emptyTrash(invocation: Invocation, trash: string, platform: NodeJ
   const answer = (await readAnswer(invocation)).trim().toLowerCase();
   // Only an explicit yes deletes: Enter alone does not, whatever the question's default looks like.
   if (answer !== 'y' && answer !== 'yes') {
-    print(invocation, row('ok', 'nothing was deleted.'));
+    print(invocation, row('ok', 'nothing was deleted.', 'trash'));
     return 0;
   }
   print(invocation, done());

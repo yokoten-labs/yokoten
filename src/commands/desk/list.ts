@@ -5,7 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { count, nextLine, row, screen, title, wrap } from '../shared.ts';
+import { count, nextLine, row, screen, spaced, title, wrap } from '../shared.ts';
 import type { DeskTask } from './brief.ts';
 
 /** One desk, as its record says. Times are UTC ISO. */
@@ -128,7 +128,7 @@ export function listScreen({ desks }: DeskListResult, now: Date): string[] {
   const next = stopped[0] ?? desks.find((desk) => desk.state === 'kept');
   return screen(
     title('desk', `${count(desks.length, 'desk')}${stopped.length ? `, ${stopped.length} stopped mid-task` : ''}`),
-    desks.flatMap((desk) => deskRows(desk, now)),
+    spaced(desks.map((desk) => deskRows(desk, now))),
     nextLine(next === undefined ? 'yokoten desk <issue>' : next === stopped[0] ? `yokoten desk ${next.name}` : `yokoten desk ${next.name} --pr`),
   );
 }

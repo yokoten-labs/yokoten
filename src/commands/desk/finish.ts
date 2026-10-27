@@ -10,7 +10,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { showPath } from '../../setup/advice/unsaved.ts';
-import { count, field, nextLine, ROW_TEXT_COLUMN, row, SCREEN_WIDTH, screen, title, underRow } from '../shared.ts';
+import { count, nextLine, ROW_TEXT_COLUMN, row, SCREEN_WIDTH, screen, spaced, title, underRow } from '../shared.ts';
 import type { DeskTask } from './brief.ts';
 import { type Ran, type Run } from './clone.ts';
 import { briefFile, type DeskRecord, recordFile } from './list.ts';
@@ -145,20 +145,18 @@ const under = (tail: string[]): string[] => tail.slice(-5).flatMap((line) => und
 const RESULT = { pass: 'passed', fail: 'failed', none: 'none here' } as const;
 
 /** The one screen for an ending. `shown` is the desk's folder as the person sees it. */
-export function endingScreen(name: string, ending: Ending, e: Evidence, shown: string, extra: string[] = []): string[] {
+export function endingScreen(name: string, ending: Ending, e: Evidence, shown: string, extra: string[][] = []): string[] {
   const summary = ending === 'clean' ? `desk ${name} is clean: nothing left to push` : ending === 'unpushed' ? `desk ${name} has work that is not pushed` : `desk ${name} failed its checks`;
   const work = e.commits.length ? `${count(e.commits.length, 'commit')}, last: ${e.commits[0]?.replace(/^\S+ /, '')}` : 'no commits';
   return screen(
     title('desk', summary),
-    [
-      ...row(e.check === 'fail' ? 'MISSING' : e.check === 'pass' ? 'ok' : 'skipped', RESULT[e.check], 'check'),
-      ...under(e.tail.check),
-      ...row(e.test === 'fail' ? 'MISSING' : e.test === 'pass' ? 'ok' : 'skipped', RESULT[e.test], 'tests'),
-      ...under(e.tail.test),
-      ...row(ending === 'unpushed' ? 'next' : 'ok', `${work}${e.dirty ? `; ${count(e.dirty, 'file')} not committed` : ''}${ending === 'unpushed' ? '; not pushed' : ''}`, 'work'),
+    spaced([
+      [...row(e.check === 'fail' ? 'MISSING' : e.check === 'pass' ? 'ok' : 'skipped', RESULT[e.check], 'check'), ...under(e.tail.check)],
+      [...row(e.test === 'fail' ? 'MISSING' : e.test === 'pass' ? 'ok' : 'skipped', RESULT[e.test], 'tests'), ...under(e.tail.test)],
+      row(ending === 'unpushed' ? 'next' : 'ok', `${work}${e.dirty ? `; ${count(e.dirty, 'file')} not committed` : ''}${ending === 'unpushed' ? '; not pushed' : ''}`, 'work'),
       ...extra,
-      ...(ending === 'clean' ? [] : field('kept', shown)),
-    ],
+      ...(ending === 'clean' ? [] : [row('note', shown, 'kept')]),
+    ]),
     nextLine(ending === 'unpushed' ? `yokoten desk ${name} --pr` : ending === 'failed' ? `yokoten desk ${name}` : 'yokoten desk'),
   );
 }

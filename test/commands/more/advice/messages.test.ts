@@ -67,7 +67,7 @@ test('msg send: a secret, a private mark or an unknown name is refused with the 
   const { sandbox, team } = teamSandbox();
   let result = await sandbox.call(['msg', 'send', 'g1', `the token is ${TOKEN}`]);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /not sent: the message holds a secret \(GitHub token\)\. Fix: remove it/);
+  assert.match(result.stderr, /yokoten msg · not sent: the message holds a secret \(GitHub token\)\n\nNext: remove it/);
   assert.doesNotMatch(result.stderr, new RegExp(TOKEN));
   sandbox.write('../home/.config/yokoten/private-marks', 'secret-box\n');
   result = await sandbox.call(['msg', 'send', 'g1', 'ship it to Secret-Box']);
@@ -192,4 +192,18 @@ test('the Stop hook: a worker whose count can\'t be saved is still checked after
   } finally {
     chmodSync(sandbox.home, 0o755);
   }
+});
+
+test('msg screens: inbox, who and log are pure functions of their data (#1115)', async () => {
+  const { inboxScreen, logScreen, sentScreen, whoScreen } = await import('../../../../src/commands/more/advice/messages.ts');
+  assert.deepEqual(inboxScreen({ name: 'lead', messages: [], problems: [], waiting: 0, reply: 'lead' }), ['yokoten msg · no new messages for lead']);
+  const lines = inboxScreen({ name: 'lead', messages: [{ from: 'g1', time: '11:42Z', text: 'rebased', claims: false }, { from: 'g2', time: '11:50Z', text: 'x', withheld: 'it holds a secret', claims: false }], problems: [], waiting: 3, reply: 'g2' });
+  assert.deepEqual(lines.slice(0, 2), ['yokoten msg · 2 new messages', '']);
+  assert.ok(lines.some((line) => /^  g1 +11:42Z +rebased$/.test(line)), lines.join('\n'));
+  assert.ok(lines.some((line) => line.includes('[withheld: it holds a secret; tell the lead]')));
+  assert.equal(lines.at(-1), 'Reply: `yokoten msg send g2 "…"`');
+  assert.deepEqual(whoScreen({ name: 'g1', lead: 'lead (the lead session, not the owner)', members: [] }).slice(0, 1), ['yokoten msg · you are g1 on the team']);
+  assert.match(whoScreen({ name: 'g1', lead: 'l', members: [] }).join('\n'), /no desk has joined yet/);
+  assert.deepEqual(logScreen({ entries: [], problems: [] }), ['yokoten msg · no messages on the team yet']);
+  assert.deepEqual(sentScreen('lead-1', 'g1').slice(0, 2), ['yokoten msg · sent lead-1 to g1', '']);
 });

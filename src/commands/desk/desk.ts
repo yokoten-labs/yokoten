@@ -11,7 +11,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findProgram } from '../../platform/process.ts';
 import { hasBot } from '../../host/github/bot.ts';
-import { fail, type Invocation, nextLine, noteLine, parse, print, printJson, requireRoot, row, screen, title, usage, wrap } from '../shared.ts';
+import { fail, type Invocation, nextLine, noteLine, parse, print, printJson, requireRoot, row, screen, spaced, title, usage, wrap } from '../shared.ts';
 import { briefText, type DeskTask, readIssue, readTaskWord, textTask } from './brief.ts';
 import { deskBranch, desksHome, makeClone, type Ran, type Run, runWith } from './clone.ts';
 import { commitsSince, deskGitProblem, endingOf, endingScreen, type Fenced, gatherEvidence, moveAside, openPullRequest, refusedLine, saveWork, shownPath } from './finish.ts';
@@ -138,7 +138,7 @@ async function startOrGoOn(invocation: Invocation, world: DeskDeps, root: string
   }
   if (others.length) {
     const { desks } = deskListOf(others, world.alive, (one) => (existsSync(join(home, one.name)) ? commitsSince(world.run, join(home, one.name), one.base) : []));
-    print(invocation, screen(title('desk', `${others.length} other desk${others.length === 1 ? '' : 's'} stopped mid-task`), desks.flatMap((one) => deskRows(one, now)), nextLine(`yokoten desk ${others[0]?.name ?? ''}`)), invocation.stderr);
+    print(invocation, screen(title('desk', `${others.length} other desk${others.length === 1 ? '' : 's'} stopped mid-task`), spaced(desks.map((one) => deskRows(one, now))), nextLine(`yokoten desk ${others[0]?.name ?? ''}`)), invocation.stderr);
   }
   const running: DeskRecord = { ...record, agent: agent.runtime, pid: world.pid, activeAt: utc(now), state: 'working' };
   writeRecord(home, running);
@@ -178,25 +178,25 @@ async function finish(invocation: Invocation, world: DeskDeps, root: string, rec
     return fail(invocation, refusedLine(refused), `look at the desk by hand: it is kept in \`${shownPath(invocation.cwd, desk, invocation.env.HOME)}\``);
   }
   const saved = await saveWork(fenced, world.run, desk, record.task);
-  const extra: string[] = typeof saved === 'object' ? row('MISSING', saved.problem, 'save') : saved === 'saved' ? row('ok', 'the work left uncommitted, in one commit', 'saved') : [];
+  const extra: string[][] = typeof saved === 'object' ? [row('MISSING', saved.problem, 'save')] : saved === 'saved' ? [row('ok', 'the work left uncommitted, in one commit', 'saved')] : [];
   let evidence = await gatherEvidence(fenced, world.run, desk, record, [process.execPath, invocation.script, 'check']);
   let ending = endingOf(evidence);
   let pushed = record.pushed;
   if (pr && ending === 'unpushed' && evidence.dirty === 0) {
     const opened = openPullRequest({ run: world.run, root, desk, record, bot: world.bot, evidence });
-    if ('problem' in opened) extra.push(...row('MISSING', opened.problem, 'pull'));
+    if ('problem' in opened) extra.push(row('MISSING', opened.problem, 'pull'));
     else {
       pushed = evidence.head;
-      extra.push(...row('done', `${opened.url} (${world.bot ? 'as the bot' : 'with your gh login'})`, 'pull'));
+      extra.push(row('done', `${opened.url} (${world.bot ? 'as the bot' : 'with your gh login'})`, 'pull'));
       evidence = { ...evidence, unpushed: false };
       ending = endingOf(evidence);
     }
-  } else if (pr && ending === 'failed') extra.push(...row('note', 'nothing was pushed: the checks failed', 'pull'));
+  } else if (pr && ending === 'failed') extra.push(row('note', 'nothing was pushed: the checks failed', 'pull'));
   const kept: DeskRecord = { ...record, pushed, state: ending === 'clean' ? 'done' : 'kept', activeAt: utc(world.now()) };
   writeRecord(home, kept);
   if (ending === 'clean') {
     const moved = moveAside(world.run, home, record.name, world.now());
-    extra.push(...('problem' in moved ? row('note', moved.problem, 'moved') : row('done', `to ${shownPath(invocation.cwd, moved.to, invocation.env.HOME)}, with a bundle`, 'moved')));
+    extra.push('problem' in moved ? row('note', moved.problem, 'moved') : row('done', `to ${shownPath(invocation.cwd, moved.to, invocation.env.HOME)}, with a bundle`, 'moved'));
   }
   print(invocation, endingScreen(record.name, ending, evidence, shownPath(invocation.cwd, desk, invocation.env.HOME), extra));
   return ending === 'failed' ? 1 : 0;
