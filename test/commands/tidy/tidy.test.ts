@@ -152,6 +152,20 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
   for (const line of text.split('\n')) assert.ok(line.length <= 80 || Math.max(...line.trim().split(/\s+/).map((word) => word.length)) > 50, `within 80 columns: ${line}`);
 });
 
+test('tidy --json: the facts the list is built from, and --json with --local or --empty is refused (#1115)', async () => {
+  const messy = makeMessyRepo();
+  const before = snapshot(messy.base);
+  const listed = await messy.call(['tidy', '--json']);
+  assert.equal(listed.status, 0, listed.stderr);
+  const data = JSON.parse(listed.stdout) as { items: { name: string; judged: { verdict: string } }[]; remote: unknown[]; trash: unknown[] };
+  assert.ok(data.items.some((item) => item.name === 'merged-one' && item.judged.verdict === 'old'));
+  assert.ok(Array.isArray(data.remote) && Array.isArray(data.trash));
+  assert.deepEqual(snapshot(messy.base), before, '--json writes nothing');
+  const refused = await messy.call(['tidy', '--json', '--local']);
+  assert.equal(refused.status, 1);
+  assert.deepEqual(snapshot(messy.base), before);
+});
+
 test('tidy --local: saves, then moves; the bundle and the patch bring the work back; a desk in use stays (#1055)', async () => {
   const messy = makeMessyRepo();
   const goneHead = messy.ok('rev-parse', 'gone-one');
@@ -224,7 +238,7 @@ test('tidy --local: when one save fails, nothing at all is moved (#1055)', async
   const before = outsideHome();
   const result = await messy.call(['tidy', '--local']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten tidy: a save failed, so nothing was moved\.\n +MISSING +zz-broken +git bundle failed/);
+  assert.match(result.stderr, /^yokoten tidy · saving zz-broken failed, so nothing was moved: git bundle failed[^]*\n\nNext: `yokoten tidy`\n$/);
   assert.deepEqual(outsideHome(), before, 'nothing moved, the merged branch included');
   assert.deepEqual(readdirSync(trashIn(messy.home)), [], 'the half-made trash folder is gone');
 });
@@ -257,13 +271,17 @@ test('tidy --empty: deletes only trash over 7 days old, after one question; no t
   assert.equal(piped.status, 1);
   assert.ok(piped.stdout.startsWith(`yokoten tidy --empty · 1 trash folder over 7 days old, ${size}\n\n`), piped.stdout);
   assert.match(piped.stdout, /\n\n +next +2026-10-10T000000Z\n +[\d.]+ KB, put away \d{4}-\d{2}-\d{2}\.\n/);
-  assert.match(piped.stderr, /no terminal to ask in\. Nothing was deleted\. Run it in a terminal, or add --yes\./);
+  assert.match(piped.stderr, /^yokoten tidy · --empty asks before it deletes, and there is no terminal to ask\n +in\. Nothing was deleted\n\nNext: run it in a terminal, or add `--yes`\n$/);
   assert.deepEqual(left(), all);
 
   const no = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'n\n', extra: { NO_COLOR: '1' } });
   assert.equal(no.status, 0);
-  assert.ok(no.stdout.includes(`Delete 1 folder (${size}) for good? [y/N] \n`), no.stdout);
-  assert.match(no.stdout, /\[y\/N\] \n +ok +nothing was deleted\./);
+  assert.ok(no.stdout.includes(`Delete 1 folder (${size}) for good? [Y/n] `), no.stdout);
+  assert.match(no.stdout, /\[Y\/n\] +ok +nothing was deleted\./);
+  assert.deepEqual(left(), all);
+
+  const enter = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: '\n', extra: { NO_COLOR: '1' } });
+  assert.match(enter.stdout, /nothing was deleted\./, 'Enter alone deletes nothing');
   assert.deepEqual(left(), all);
 
   const yes = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'y\n', extra: { NO_COLOR: '1' } });
