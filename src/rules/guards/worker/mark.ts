@@ -242,11 +242,20 @@ function mayBeGitPath(path: string): boolean {
 }
 
 /**
- * Whether a command names a git folder or the mark, in text or by a glob that can match one.
- * A glob for the mark needs a letter of its own: a bare `*` names nothing.
+ * The part of a command that names a git folder or the mark, in text or by a glob that can
+ * match one, or null. A glob for the mark needs a letter of its own: a bare `*` names nothing.
+ * The part is what a refusal shows, so an agent sees the word to change (#1021).
  */
-const namesGitDir = (command: string) =>
-  NAMES_GIT_DIR.test(command) || command.split(PATH_BREAKS).some((part) => mayBeDotGit(part) || (/[a-z]/i.test(part) && globMatches(part, WORKER_MARK)));
+function gitDirNamedBy(command: string): string | null {
+  const named = NAMES_GIT_DIR.exec(command);
+  if (named) return named[0].replace(/^[\s'"=:/\\(`;&|<>]/, '');
+  return command.split(PATH_BREAKS).find((part) => mayBeDotGit(part) || (/[a-z]/i.test(part) && globMatches(part, WORKER_MARK))) ?? null;
+}
+
+/** What a refusal says about the part that names a git folder or the mark (#1021). */
+const namedWhat = (part: string) => `names '${part}', which can point at a git folder or the worker mark`;
+/** Whether a command names a git folder or the mark (see gitDirNamedBy). */
+const namesGitDir = (command: string) => gitDirNamedBy(command) !== null;
 
 /** A target on Windows the guard can't place: a Git Bash folder of its own (`/usr/x`), or a climb past the drive (#1015). */
 const unplacedWhat = (written: string) => `this command changes ${written}, a Git Bash path yokoten can't place on Windows, so it may hold a git folder, where the worker mark is kept`;
@@ -311,7 +320,8 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
   const isConfigNamed = () => namesConfigFolder(command) || namesConfigFolder(words.join(' '));
   // A find the guard can read, and that keeps `.git` out of the action, is not blind (#744).
   const findIsRead = folder !== null && !codeRuns && !fedWrite && finds.length > 0 && finds.every(({ args: findArgs }) => findSparesGitTree(findArgs, folder, home));
-  if (blind && !findIsRead && namesGitDir(command)) return markFinding("this command names a git folder, and yokoten can't read which files it changes there");
+  const gitDirPart = gitDirNamedBy(command);
+  if (blind && !findIsRead && gitDirPart !== null) return markFinding(`this command ${namedWhat(gitDirPart)}, and yokoten can't read which files it changes there`);
   if (blind && isConfigNamed()) return configFinding("this command names yokoten's config folder, where the worker list is kept, and yokoten can't read which files it changes there");
   const config = configFolder(env);
   const context: ConfigContext = { folder, command, words, home, forms: config === null ? [] : configForms(config) };
@@ -345,7 +355,7 @@ export function checkWorkerWrites(words: string[], { folder, near = folder, comm
     // `$PWD` and `~+` are the folder the command runs in, `~` and `$HOME` the home folder (#672).
     const target = folder === null ? written : withHomeRead(written.replace(/^(\$PWD|\$\{PWD\})(?=[\\/]|$)/, folder), home, folder);
     if (/[$`]/.test(target)) {
-      if (namesGitDir(command)) return markFinding(`this command changes ${written}, a path yokoten can't read, and names a git folder`);
+      if (gitDirPart !== null) return markFinding(`this command changes ${written}, a path yokoten can't read, and ${namedWhat(gitDirPart)}`);
       continue;
     }
     // Git Bash's `/c/x` is `C:\x` on Windows (#1015); one the guard can't place is refused.
