@@ -1670,13 +1670,14 @@ test('marks: every action is a screen of its result, never a value, and passes t
   assert.deepEqual(marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }), [
     'yokoten marks · removed the mark from your private marks',
     '',
-    '  note        it came from this machine (your git name), so install adds it again',
+    '  note        it came from this machine (your git name), so install adds it',
+    '              again',
     '',
     '  stop it     `yokoten marks off git-name`',
   ]);
   assert.deepEqual(marksScreen({ action: 'fill', found: 3, kinds: ['git name', 'git email'], file }), ['yokoten marks · added your git name and git email from this machine (not shown)', '', `  file        ${file}`]);
   assert.match(marksScreen({ action: 'fill', found: 0, kinds: [], file })[0] ?? '', /this machine has none to add/);
-  assert.match(marksScreen({ action: 'fill', found: 2, kinds: [], file })[0] ?? '', /already have what this machine gives/);
+  assert.match(marksScreen({ action: 'fill', found: 2, kinds: [], file })[0] ?? '', /nothing new from this machine/);
   assert.deepEqual(marksScreen({ action: 'here', isRemoving: false, isChanged: false }), ['yokoten marks · that mark is already allowed here, so nothing changed']);
   const all = [
     marksScreen({ action: 'add', isAdded: false }),
@@ -1698,7 +1699,7 @@ test('marks fill: adds the git name this machine has, says the kind and the file
   assert.match(marks(), new RegExp(`# added by yokoten from this machine: git name\\n${NAME}\\n$`));
   const again = await call(['marks', 'fill']);
   assert.equal(again.status, 0, again.stderr);
-  assert.match(again.stdout, /^yokoten marks · your private marks already have what this machine gives, so nothing changed$/m);
+  assert.match(again.stdout, /^yokoten marks · nothing new from this machine, so nothing changed$/m);
   // A kind that is off is never filled: off takes the git name out, and fill does not put it back.
   assert.equal((await call(['marks', 'off', 'git-name'])).status, 0);
   const off = await call(['marks', 'fill']);

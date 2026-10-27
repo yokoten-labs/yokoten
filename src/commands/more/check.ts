@@ -792,7 +792,7 @@ export function marksScreen(result: MarksResult): string[] {
           field('file', result.file),
         );
       }
-      return title('marks', result.found ? 'your private marks already have what this machine gives, so nothing changed' : `this machine has none to add (${MACHINE_KINDS}), so nothing changed`);
+      return title('marks', result.found ? 'nothing new from this machine, so nothing changed' : `this machine has none to add (${MACHINE_KINDS}), so nothing changed`);
     case 'here':
       if (!result.isChanged) return title('marks', result.isRemoving ? 'that mark is not allowed here, so nothing changed' : 'that mark is already allowed here, so nothing changed');
       return result.isRemoving
