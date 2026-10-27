@@ -21,7 +21,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { docsLink } from '../../../rules/text/message.ts';
+import { docsLink, type Finding } from '../../../rules/text/message.ts';
 import { homeIn, homeOf } from '../../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../../run/cli.ts';
 import { type Added, addHook, checkHooksFile, type HookState, hookState } from '../../hooks-file.ts';
@@ -135,17 +135,19 @@ export function profilesWithBridge(env: Env): { found: string[]; all: string[] }
 export const pluginAddCommands = (profile: string): string[] => PACKAGES.map((pkg) => `dsh plugin --profile ${profile} add @deepseek-ai/${pkg}@${VERSION}`);
 
 /**
- * What `init` prints after writing the files, after the lines it wrote for them. On Windows
- * it says the calls are not checked yet, instead of how to turn on a guard that would let
- * every call through.
+ * What `init` says after writing the files, as data (#1115): the files' changes as they came,
+ * the `notes` it always shows, and the `steps` that turn the guard on, which init shows only
+ * when dsh is on this computer. On Windows the note says the calls are not checked yet,
+ * instead of how to turn on a guard that would let every call through. `profiles` are the
+ * profiles without the bridge: with one, the commands name it, so each fits one line to copy
+ * (#1040); otherwise they say `<profile>`. A step's `fix` holds one command per line.
  */
-export function initLines(files: string[], platform: string = process.platform): string[] {
-  if (platform === 'win32') return [...files, WINDOWS_GAP];
-  return [
-    ...files,
-    `DeepSeek Harness runs it only with the bridge in the profile (needs pnpm): ${pluginAddCommands('<profile>').join(' && ')}`,
-    `then start dsh at the repo root with the patch: dsh <profile> --patch ${PATCH_FILE}`,
-  ];
+export function initLines<T>(files: T[], platform: NodeJS.Platform, profiles: readonly string[] = []): { changes: T[]; notes: Finding[]; steps: Finding[] } {
+  if (platform === 'win32') return { changes: files, notes: [{ id: 'deepseek-harness-hook', what: WINDOWS_GAP, why: '', fix: '' }], steps: [] };
+  const profile = profiles.length === 1 ? (profiles[0] ?? '<profile>') : '<profile>';
+  const commands = [...pluginAddCommands(profile), `dsh ${profile} --patch ${PATCH_FILE}`];
+  const what = 'DeepSeek Harness checks calls only with its bridge in the profile (needs pnpm): add it, then start dsh with the patch';
+  return { changes: files, notes: [], steps: [{ id: 'deepseek-harness-hook', what, why: '', fix: commands.join('\n') }] };
 }
 
 /** The names this runtime's agent gets on top of the shared ones (#613). DeepSeek Harness takes a DeepSeek API key. */
