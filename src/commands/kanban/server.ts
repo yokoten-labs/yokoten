@@ -14,7 +14,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { basename, extname, join } from 'node:path';
 import { startAndLetGo } from '../../platform/process.ts';
-import { type ActionsRun, type CommandRun, defaultBranchOf, type GhCallLater, ghRunner, ghRunnerLater, type KanbanEnv, originUrl, parseWords, printLines, projectRoot, readFailedText, readPulls, readPullsLater, readRuns, repoNameOf, runsPage, runsQuery, usageError, yokotenHome } from './ports.ts';
+import { type ActionsRun, type CommandRun, defaultBranchOf, type GhCallLater, ghRunner, ghRunnerLater, type KanbanEnv, originUrl, parseWords, printLines, projectRoot, readFailedText, readPulls, readPullsLater, readRuns, repoNameOf, runsPage, runsQuery, screenLines, titleLines, usageError, wrapLines, yokotenHome } from './ports.ts';
 import { BOARD_READ_TIMEOUT_MS } from './agents.ts';
 import { makeBoardMask, makeFeedStreams, sessionAnswer } from './feed/route.ts';
 import { type StreamAnswer } from './feed/tail.ts';
@@ -412,6 +412,17 @@ function openInBrowser(url: string, env: KanbanEnv): void {
   if (command) startAndLetGo(command[0], command.slice(1), env);
 }
 
+/** The screen the kanban shows once it serves: the link without its token, and how it stops (#1115). */
+export function servingScreen({ url, isOpening }: { url: string; isOpening: boolean }): string[] {
+  return screenLines(
+    titleLines('kanban', 'preview, read only; it may change'),
+    [
+      `The team is live at ${url}`,
+      ...wrapLines('', isOpening ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.' : 'The sign-in link goes only to your browser: `yokoten kanban` without --no-open opens it. Stop it with Ctrl-C.'),
+    ],
+  );
+}
+
 export function runBoard(invocation: CommandRun, options: BoardServerOptions = {}): number | Promise<number> {
   const parsed = parseWords('kanban', invocation.args);
   if (typeof parsed === 'string') return usageError(invocation, parsed);
@@ -431,11 +442,7 @@ export function runBoard(invocation: CommandRun, options: BoardServerOptions = {
     ({ url }) => {
       const isOpening = !parsed.flags.has('--no-open');
       // The link with its token goes only to the browser; the screen shows it without (#1045).
-      printLines(invocation, [
-        'yokoten kanban: preview, read only. It may change.',
-        `The team is live at ${printableLink(url)}`,
-        isOpening ? 'It opens in your browser now, signed in. Stop it with Ctrl-C.' : 'The sign-in link goes only to your browser: run `yokoten kanban` without --no-open to open it. Stop it with Ctrl-C.',
-      ]);
+      printLines(invocation, servingScreen({ url: printableLink(url), isOpening }));
       if (isOpening) openInBrowser(url, invocation.env);
       return new Promise<number>(() => {});
     },

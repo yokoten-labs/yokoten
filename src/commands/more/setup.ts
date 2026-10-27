@@ -171,20 +171,20 @@ function guardedAgents(lines: string[]): string[] {
 function remaining(lines: string[], { isProblemsOnly = false } = {}): string[] {
   const notes = lines.filter((line) => /^skipped the global git setting mailmap\.file/.test(line) || /^your edits stay/.test(line));
   const problems = lines.filter(isProblem);
-  const out: string[] = [];
+  // Each row is one item: a blank line goes between them once one wraps (#1115).
+  const items: string[][] = [];
   for (const note of notes) {
     if (isProblemsOnly) continue;
     if (/^your edits stay/.test(note)) {
-      out.push(...row('note', 'your own edits stay; the newest copies are in the kit', 'kept'));
+      items.push(row('note', 'your own edits stay; the newest copies are in the kit', 'kept'));
       continue;
     }
     const fix = /`(git config[^`]+)`/.exec(note)?.[1];
-    out.push(...row('note', 'hide your email in git logs: not on yet', 'email'));
     // The command stays whole on a line of its own, so it fits 80 columns and copies as one.
-    if (fix) out.push(`${ROW_TEXT_INDENT}to turn it on:`, `${' '.repeat(14)}\`${fix}\``);
+    items.push([...row('note', 'hide your email in git logs: not on yet', 'email'), ...(fix ? [`${ROW_TEXT_INDENT}to turn it on:`, `${' '.repeat(14)}\`${fix}\``] : [])]);
   }
-  for (const problem of problems) out.push(...handRow(problem));
-  return out;
+  for (const problem of problems) items.push(handRow(problem));
+  return spaced(items);
 }
 
 /** The one screen `yokoten install` shows, from the report it wrote (#1027). */
@@ -195,21 +195,24 @@ function installScreen(invocation: Invocation, lines: string[], ok: boolean, isF
   const out = title(isFirstRun ? VERSION : 'install', isFirstRun ? 'first run' : ok ? 'this computer is set up' : 'this computer is partly set up');
   out.push('');
   const guarded = guardedAgents(lines);
+  // Each row is one item: a blank line goes between them once one wraps (#1115).
+  const items: string[][] = [];
   // No agent guarded is never "ok": the row says so, and the problem rows below say why (#1027 review).
-  out.push(...(guarded.length ? row('ok', `on for ${guarded.join(', ')}`, 'guard') : row('MISSING', 'not on for any agent yet', 'guard')));
+  items.push(guarded.length ? row('ok', `on for ${guarded.join(', ')}`, 'guard') : row('MISSING', 'not on for any agent yet', 'guard'));
   const skills = reportedSkills(lines);
-  if (skills.length) out.push(...row('ok', skills.join(', '), 'skills'));
+  if (skills.length) items.push(row('ok', skills.join(', '), 'skills'));
   const absent = absentAgents(lines);
-  if (absent.length) out.push(...row("can't check", `${absent.length} not installed here; run install again later`, 'other AIs'));
+  if (absent.length) items.push(row("can't check", `${absent.length} not installed here; run install again later`, 'other AIs'));
   const pathLine = lines.find((line) => / is not on your PATH/.test(line));
   if (pathLine) {
-    out.push(...row('note', `${shownPath(invocation, /^(\S+) is not on your PATH/.exec(pathLine)?.[1] ?? launcherDir(homeOf(invocation.env) ?? ''))} is not on your PATH yet`, 'command'));
-    out.push(
+    items.push([
+      ...row('note', `${shownPath(invocation, /^(\S+) is not on your PATH/.exec(pathLine)?.[1] ?? launcherDir(homeOf(invocation.env) ?? ''))} is not on your PATH yet`, 'command'),
       ...(invocation.platform === 'win32'
         ? wrap(ROW_TEXT_INDENT, 'Windows: "Edit environment variables for your account"')
         : wrap(ROW_TEXT_INDENT, 'add this line to your shell profile: export PATH="$HOME/.local/bin:$PATH"')),
-    );
+    ]);
   }
+  out.push(...spaced(items));
   const rest = remaining(lines);
   if (rest.length) out.push('', ...rest);
   // In a first run the project's screen follows, so this one has no next command of its own.
