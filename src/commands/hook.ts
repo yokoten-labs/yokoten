@@ -1,7 +1,7 @@
 // `yokoten hook`: the tool-call guard, and with --stop the end-of-turn check.
 
 import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { isPathInside, isSamePath } from '../platform/paths.ts';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
@@ -10,7 +10,6 @@ import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from 
 import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
-import { hideHome } from '../rules/privacy.ts';
 import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
 import { checkChanged, readGit } from '../run/check.ts';
@@ -56,7 +55,7 @@ import {
   wasRefusedRecently,
   writeAgentChecks,
 } from '../run/hook.ts';
-import { bullets, count, field, type Invocation, nextLine, type Output, parse, type Parsed, print, printJson, readInput, rootOf, row, say, title, usage, wrap } from './shared.ts';
+import { count, fail, field, type Invocation, nextLine, noteLine, type Output, parse, type Parsed, print, printJson, readInput, requireRoot, rootOf, row, say, screen, show, spaced, title, usage, wrap } from './shared.ts';
 
 // Each runtime sends its tool call in its own shape; its adapter turns it into an Action.
 // The table below asks the adapters' contract (#395), never a runtime's name.
@@ -191,7 +190,7 @@ async function stopHook(invocation: Invocation, json: boolean, read: (input: unk
     const workerEnv = isWorker ? { ...marked, YOKOTEN_ROLE: 'worker' } : marked;
     findings = root ? checkChanged(root, { config: loadConfig(root), env: workerEnv, notes }) : [];
   } catch (err) {
-    say(invocation, `yokoten hook --stop: skipped, ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
+    print(invocation, skippedNote(err), invocation.stderr);
     if (json) printJson(invocation, { blocked: false, stop: true, skipped: 'the check failed', findings: [] });
     return 0;
   }
@@ -208,7 +207,7 @@ async function stopHook(invocation: Invocation, json: boolean, read: (input: unk
         const ran = await runDoneWhen(command, ranIn, { ...env, YOKOTEN_ROLE: 'worker' });
         doneWhen = { command, ...ran };
       } catch (err) {
-        say(invocation, `yokoten hook --stop: skipped, ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
+        print(invocation, skippedNote(err), invocation.stderr);
         if (json) printJson(invocation, { blocked: false, stop: true, skipped: 'the check failed', findings });
         return 0;
       }
@@ -226,9 +225,9 @@ async function stopHook(invocation: Invocation, json: boolean, read: (input: unk
       const passing = doneWhen?.ok === true ? doneWhen.command : 'the changed-file check';
       const outcome = root ? recordAnchor(ranIn, { ...env, YOKOTEN_ROLE: 'worker' }, passing) : null;
       anchor = outcome && (outcome.kind === 'recorded' || outcome.kind === 'already') ? outcome.anchor : null;
-      if (!json) print(invocation, [anchorMessage(outcome)], invocation.stderr);
+      if (!json) print(invocation, anchorNote(outcome), invocation.stderr);
     } else noteLeadStop(folder, agent);
-    if (!json && notes.length) print(invocation, [`yokoten: ${notes.length} warning(s) in the changed files:`, ...bullets(notes)], invocation.stderr);
+    if (!json && notes.length) print(invocation, warningNotes(notes), invocation.stderr);
     // The checks pass: unread messages send the turn on once, and the next stop is checked again.
     const messages = event.active || afterMessages ? '' : await takeMessages();
     if (messages) {
@@ -243,7 +242,7 @@ async function stopHook(invocation: Invocation, json: boolean, read: (input: unk
   if (!isWorker) {
     logTurnStop(invocation, agent, false, findings, doneWhen, 'refused');
     if (json) printJson(invocation, { blocked: true, stop: true, findings, ...(notes.length ? { notes } : {}) });
-    print(invocation, [...refusalLines(findings), ...(notes.length ? [`yokoten: ${notes.length} warning(s) in the changed files:`, ...bullets(notes)] : [])], invocation.stderr);
+    print(invocation, screen(refusalLines(findings), warningNotes(notes)), invocation.stderr);
     return withMessages(invocation, 2, await takeMessages());
   }
   const bumped = bumpDoneTries(env, key);
@@ -266,23 +265,32 @@ async function stopHook(invocation: Invocation, json: boolean, read: (input: unk
   return withMessages(invocation, refuseFailingStop(invocation, json, findings, notes, doneWhen, bumped, true), await takeMessages());
 }
 
-/** What a passing worker hears about its anchor. Only a dirty tree asks for a commit (#792). */
-function anchorMessage(outcome: AnchorOutcome | null): string {
-  if (outcome === null) return 'yokoten: tests pass. No anchor: there is no project root here.';
+/** What a passing worker hears about its anchor, as a note on stderr. Only a dirty tree asks for a commit (#792). */
+export function anchorNote(outcome: AnchorOutcome | null): string[] {
+  if (outcome === null) return noteLine('tests pass. No anchor: there is no project root here.');
   if (outcome.kind === 'dirty') {
-    return 'yokoten: tests pass. Make a checkpoint commit now; that commit is your anchor. If you get lost, go back with: git switch -c try-2 <anchor>';
+    return noteLine('tests pass. Make a checkpoint commit now; that commit is your anchor. If you get lost, go back with `git switch -c try-2 <anchor>`');
   }
-  if (outcome.kind === 'no-checkout') return 'yokoten: tests pass. No anchor: this folder is not a git checkout.';
-  if (outcome.kind === 'no-commit') return 'yokoten: tests pass. No anchor: this checkout has no commit yet.';
+  if (outcome.kind === 'no-checkout') return noteLine('tests pass. No anchor: this folder is not a git checkout.');
+  if (outcome.kind === 'no-commit') return noteLine('tests pass. No anchor: this checkout has no commit yet.');
   if (outcome.kind === 'write-failed') {
-    return 'yokoten: tests pass. No anchor: the anchor file could not be written. A checkpoint commit still holds your work.';
+    return noteLine('tests pass. No anchor: the anchor file could not be written. A checkpoint commit still holds your work.');
   }
   const { commit } = outcome.anchor;
   if (outcome.kind === 'already') {
-    return `yokoten: tests pass. HEAD ${commit.slice(0, 12)} is already your anchor; go back with: git switch -c try-2 ${commit}`;
+    return noteLine(`tests pass. HEAD ${commit.slice(0, 12)} is already your anchor; go back with \`git switch -c try-2 ${commit}\``);
   }
-  return `yokoten: tests pass. Anchor ${commit.slice(0, 12)} saved; go back with: git switch -c try-2 ${commit}`;
+  return noteLine(`tests pass. Anchor ${commit.slice(0, 12)} saved; go back with \`git switch -c try-2 ${commit}\``);
 }
+
+/** The first line of an error, for a failure title. */
+const firstLine = (error: unknown): string => ((error as Error).message ?? String(error)).split('\n')[0] ?? '';
+
+/** The one note when the end-of-turn check could not run: the turn ends, and the first line of the error says why. */
+export const skippedNote = (error: unknown): string[] => noteLine(`the end-of-turn check was skipped: ${firstLine(error)}`);
+
+/** The warnings in the changed files: one note each, never a refusal. Empty when there are none. */
+export const warningNotes = (notes: readonly Finding[]): string[] => spaced(notes.map((note) => noteLine(`a warning in the changed files: ${formatFinding({ ...note, docs: undefined })}${note.docs === undefined ? '' : ` More: ${note.docs}`}`)));
 
 /** A refusal at the end of a turn, with the unread team messages after it (#674). */
 function withMessages(invocation: Invocation, code: number, messages: string): number {
@@ -413,21 +421,23 @@ function refuseFailingStop(
   tries: number,
   saved: boolean,
 ): number {
-  const lines: string[] = [];
-  if (findings.length) lines.push(...refusalLines(findings));
-  if (notes.length) lines.push(`yokoten: ${notes.length} warning(s) in the changed files:`, ...bullets(notes));
-  if (doneWhen?.ok === false) {
-    lines.push('yokoten: the done-when check failed. Fix what it reports, then end the task again:');
-    if (doneWhen.output) lines.push(doneWhen.output);
-  }
-  // The last refusal is the one the worker can still read. The allowed stop's stderr reaches nobody.
-  if (!saved || tries >= DONE_TRY_LIMIT) {
-    lines.push(`This was try ${tries} of ${DONE_TRY_LIMIT}. The next stop is let through.`);
-    lines.push('Your final message to the lead must start with "NOT DONE: checks failing" and quote the failing output.');
-  } else lines.push(`This was try ${tries} of ${DONE_TRY_LIMIT}.`);
   if (json) printJson(invocation, { blocked: true, stop: true, findings, ...(notes.length ? { notes } : {}), ...(doneWhen ? { doneWhen: { ok: false, output: doneWhen.output, tries, limit: DONE_TRY_LIMIT } } : {}) });
-  print(invocation, lines, invocation.stderr);
+  // The last refusal is the one the worker can still read. The allowed stop's stderr reaches nobody.
+  print(invocation, failingStopLines({ findings, notes, doneWhen, tries, isLast: !saved || tries >= DONE_TRY_LIMIT }), invocation.stderr);
   return 2;
+}
+
+/**
+ * What a worker sent back at the end of its turn reads (#614): each refusal as the guard
+ * gives it, the warnings, the done-when output, then the try count. On the last try it says
+ * what the final message to the lead must start with.
+ */
+export function failingStopLines({ findings, notes, doneWhen, tries, isLast }: { findings: readonly Finding[]; notes: readonly Finding[]; doneWhen?: { ok: boolean; output: string }; tries: number; isLast: boolean }): string[] {
+  const failed = doneWhen?.ok === false ? [...wrap('', 'The done-when check failed. Fix what it reports, then end the task again:'), ...(doneWhen.output ? [doneWhen.output] : [])] : [];
+  const tried = isLast
+    ? [`This was try ${tries} of ${DONE_TRY_LIMIT}. The next stop is let through.`, ...wrap('', 'Your final message to the lead must start with "NOT DONE: checks failing" and quote the failing output.')]
+    : [`This was try ${tries} of ${DONE_TRY_LIMIT}.`];
+  return screen(refusalLines([...findings]), warningNotes(notes), failed, tried);
 }
 
 /** Let the worker stop, and leave a record the lead can read. The try count starts again. */
@@ -447,7 +457,7 @@ function allowFailingStop(
   forgetDoneTries(env, key);
   const payload = { blocked: false, stop: true, findings, ...(notes.length ? { notes } : {}), skipped: 'stopped with failing checks', ...(doneWhen ? { doneWhen: { ok: false, output: doneWhen.output, tries, limit: DONE_TRY_LIMIT } } : {}) };
   if (json) printJson(invocation, payload);
-  print(invocation, ['yokoten: stopped with failing checks. The done-when check still fails. Tell the lead this task is not done.'], invocation.stderr);
+  print(invocation, noteLine('stopped with failing checks: the done-when check still fails. Tell the lead this task is not done.'), invocation.stderr);
   return 0;
 }
 
@@ -689,6 +699,21 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
 const WORKER_RULES = new Set(['lead-only', 'worker-push', 'worker-mark']);
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
+/** What `yokoten stops` shows: whether the log is written, where it is, and how to turn it the other way. */
+export function stopsScreen(state: { isOff: boolean; count: number; file: string }): string[] {
+  return screen(
+    title('stops', state.isOff ? 'off: no stops logged' : `on: ${count(state.count, 'stop')} logged on this computer`),
+    [...field('log', state.file), ...row('note', state.isOff ? 'yokoten writes no line while it is off' : 'Nothing is sent anywhere; the log stays on this computer')],
+    state.isOff ? wrap('Turn on: ', '`yokoten stops on` starts the writing again') : wrap('Turn off: ', '`yokoten stops off` stops the writing and deletes the log'),
+  );
+}
+
+/** What `yokoten stops off` shows once the log is off and gone. */
+export const stopsOffScreen = (): string[] => screen(title('stops', 'off, and the log is deleted'), wrap('Turn on: ', '`yokoten stops on` starts it again'));
+
+/** What `yokoten stops on` shows once the log is written again. */
+export const stopsOnScreen = (file: string): string[] => screen(title('stops', 'on, and the log is written again'), field('log', file));
+
 /**
  * `yokoten stops`: the stop log's state, and the way back. `off` stops the writing and
  * deletes the log; `on` starts it again. The log stays in the user's config folder, never
@@ -701,22 +726,10 @@ export function runStops(invocation: Invocation): number {
   const { env } = invocation;
   const file = stopsFile(env);
   const offFile = stopsOffFile(env);
-  if (!file || !offFile) {
-    say(invocation, "yokoten stops: no home folder, so there is no stop log to manage. Set HOME to your home folder's full path.\n", invocation.stderr);
-    return 1;
-  }
+  if (!file || !offFile) return fail(invocation, 'no home folder, so there is no stop log to manage', "set HOME to your home folder's full path, then run `yokoten stops` again");
   if (action === undefined) {
     const state = stopsState(env);
-    const stops = `${state.count} ${state.count === 1 ? 'stop' : 'stops'}`;
-    const summary = state.isOff ? 'off: no stops logged' : `on: ${stops} logged on this computer`;
-    print(invocation, [
-      ...title('stops', summary),
-      '',
-      ...field('log', hideHome(state.file ?? file, env)),
-      ...row('note', state.isOff ? 'yokoten writes no line while it is off' : 'Nothing is sent anywhere; the log stays on this computer'),
-      '',
-      ...(state.isOff ? wrap('Turn on: ', '`yokoten stops on` starts the writing again') : wrap('Turn off: ', '`yokoten stops off` stops the writing and deletes the log')),
-    ]);
+    show(invocation, stopsScreen({ isOff: state.isOff, count: state.count, file: state.file ?? file }));
     return 0;
   }
   if (action === 'off') {
@@ -725,20 +738,18 @@ export function runStops(invocation: Invocation): number {
       writeFileSync(offFile, 'off\n');
       rmSync(file, { force: true });
     } catch (err) {
-      say(invocation, `yokoten stops: the log cannot be turned off: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
-      return 1;
+      return fail(invocation, `the log cannot be turned off: ${firstLine(err)}`, `check that you can write to ${dirname(offFile)}, then run \`yokoten stops off\` again`);
     }
-    print(invocation, [...title('stops', 'off, and the log is deleted'), '', ...wrap('Turn on: ', '`yokoten stops on` starts it again')]);
+    show(invocation, stopsOffScreen());
     return 0;
   }
   if (action === 'on') {
     try {
       rmSync(offFile, { force: true });
     } catch (err) {
-      say(invocation, `yokoten stops: the log cannot be turned on: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
-      return 1;
+      return fail(invocation, `the log cannot be turned on: ${firstLine(err)}`, `check that you can write to ${dirname(offFile)}, then run \`yokoten stops on\` again`);
     }
-    print(invocation, [...title('stops', 'on, and the log is written again'), '', ...field('log', hideHome(file, env))]);
+    show(invocation, stopsOnScreen(file));
     return 0;
   }
   return usage(invocation, `unknown action ${shownValue(action)}; use off or on`);
@@ -754,55 +765,76 @@ export function runStops(invocation: Invocation): number {
  * checkout is the lead's, so it is never marked.
  */
 
+/** Why `markWorktree` marked nothing: `fail` the whole sentence (the desk quotes it), `what` and `next` for a failure screen. */
+export interface MarkFailure {
+  fail: string;
+  what: string;
+  next: string;
+}
+
+/** A folder as a screen names it: from `cwd` when that is short (`../task`), else in full (the home shows as ~). */
+export function shownFolder(cwd: string, folder: string): string {
+  const path = relative(cwd, folder);
+  if (path === '') return '.';
+  return !isAbsolute(path) && path.split(/[\\/]/).filter((part) => part === '..').length <= 2 ? path : folder;
+}
+
 /**
  * Mark the worktree at `dir` (from `cwd`) as a worker's, exactly as `yokoten worker
  * mark` does: the mark file in its own git folder, and its path on the worker list.
  * The board calls this for the worktree it makes or reuses, so runtimes that drop
  * YOKOTEN_ROLE still run as workers. Returns the worktree root, or the plain reason.
  */
-export function markWorktree(cwd: string, dir: string, callerEnv: Env): { top: string; kind: 'worktree' | 'clone' } | { fail: string } {
+export function markWorktree(cwd: string, dir: string, callerEnv: Env): { top: string; kind: 'worktree' | 'clone' } | MarkFailure {
   const folder = resolve(cwd, dir);
+  const shown = (path: string) => shownFolder(cwd, path);
+  // In a sentence, the folder the lead is in reads as "this folder"; a command keeps `.`.
+  const named = (path: string) => (shown(path) === '.' ? 'this folder' : shown(path));
   // Git reads the folder from the caller's GIT_DIR before the path: dropped, so the mark goes where `dir` is (#672).
   const env = withoutGitPlace(callerEnv);
   let isFolder = false;
   try {
     isFolder = statSync(folder).isDirectory();
   } catch {}
-  if (!isFolder) return { fail: `${dir} is not a folder. Make the worktree first: \`git worktree add ${dir} -b <branch>\`, then \`yokoten worker mark ${dir}\`.` };
+  if (!isFolder) return { fail: `${dir} is not a folder. Make the worktree first: \`git worktree add ${dir} -b <branch>\`, then \`yokoten worker mark ${dir}\`.`, what: `${named(folder)} is not a folder`, next: `make the worktree first with \`git worktree add ${shown(folder)} -b <branch>\`, then mark it` };
   let answer: string[];
   try {
     // --show-superproject-working-tree prints nothing outside a submodule, so it comes last.
     answer = readGit(folder, ['rev-parse', '--show-toplevel', '--absolute-git-dir', '--git-common-dir', '--show-superproject-working-tree'], { env }).toString('utf8').trim().split('\n');
   } catch {
-    return { fail: formatFinding(notRepoFinding(folder)) };
+    return { fail: formatFinding(notRepoFinding(folder)), what: `${named(folder)} is not inside a git repo`, next: `make a worktree with \`git worktree add <dir> -b <branch>\`, then mark it` };
   }
   const [top, gitDir, common, superproject] = answer;
   const kind = isSamePath(realPath(gitDir), realPath(resolve(folder, common ?? ''))) ? 'clone' : 'worktree';
+  const makeOne = 'mark a worktree instead: make one with `git worktree add <dir> -b <branch>`';
   if (kind === 'clone') {
-    if (superproject) return { fail: `${top} is a submodule's checkout, not a worktree. Mark a worktree: \`git worktree add <dir> -b <branch>\`, then \`yokoten worker mark <dir>\`.` };
+    if (superproject) return { fail: `${top} is a submodule's checkout, not a worktree. Mark a worktree: \`git worktree add <dir> -b <branch>\`, then \`yokoten worker mark <dir>\`.`, what: `${named(top)} is a submodule's checkout, not a worktree`, next: makeOne };
     // A plain clone is a worker's desk (#672), unless the lead works in it: the session runs
     // there, or worktrees hang off it. Those are the main checkout, never marked.
     const isLeadHere = isPathInside(realPath(cwd), realPath(top));
-    if (isLeadHere || hasLinkedWorktrees(folder, env)) return { fail: `${top} is the main checkout, the lead's. Mark a worktree (\`git worktree add <dir> -b <branch>\`) or a clone of its own (\`git clone <repo> <dir>\`), then \`yokoten worker mark <dir>\`.` };
+    if (isLeadHere || hasLinkedWorktrees(folder, env)) return { fail: `${top} is the main checkout, the lead's. Mark a worktree (\`git worktree add <dir> -b <branch>\`) or a clone of its own (\`git clone <repo> <dir>\`), then \`yokoten worker mark <dir>\`.`, what: `${named(top)} is the main checkout, the lead's`, next: makeOne };
     // The lead marks a clone from its own checkout, so that checkout is never the one marked.
-    if (leadCheckout(cwd, env) === null) return { fail: `run \`yokoten worker mark ${dir}\` from your own checkout, the lead's: yokoten then knows that ${top} is not it.` };
+    if (leadCheckout(cwd, env) === null) return { fail: `run \`yokoten worker mark ${dir}\` from your own checkout, the lead's: yokoten then knows that ${top} is not it.`, what: `yokoten can't tell that ${named(top)} is not your own checkout`, next: `go to your own checkout, the lead's, and run \`yokoten worker mark\` from there` };
   }
   // Git and the guard must name the same git folder, or the mark lands where the guard never looks.
   const link = gitLinkAbove(folder);
-  if (link === null || link.kind === 'broken' || !isSamePath(realPath(link.gitDir), realPath(gitDir))) return { fail: `git names ${gitDir} as the git folder of ${top}, but its .git does not. Nothing is marked.` };
+  const again = `then run \`yokoten worker mark ${shown(folder)}\` again`;
+  if (link === null || link.kind === 'broken' || !isSamePath(realPath(link.gitDir), realPath(gitDir))) return { fail: `git names ${gitDir} as the git folder of ${top}, but its .git does not. Nothing is marked.`, what: `git and the .git in ${named(top)} name two git folders, so nothing is marked`, next: `fix the .git file in that folder, ${again}` };
   try {
     const note = kind === 'clone' ? "A worker's clone: yokoten's guard treats every agent here as a worker. Removing the clone removes this mark.\n" : "A worker's worktree: yokoten's guard treats every agent here as a worker. `git worktree remove` removes this mark.\n";
     writeFileSync(join(gitDir, WORKER_MARK), note);
   } catch (error) {
-    return { fail: `can't write the mark in ${gitDir} (${(error as NodeJS.ErrnoException).code ?? 'error'}). Check that the lead can write there, then run it again.` };
+    const code = (error as NodeJS.ErrnoException).code ?? 'error';
+    return { fail: `can't write the mark in ${gitDir} (${code}). Check that the lead can write there, then run it again.`, what: `can't write the mark in ${named(gitDir)} (${code})`, next: `check that you can write there, ${again}` };
   }
   try {
     addWorkerPath(env, top);
   } catch (error) {
-    return { fail: `the mark is written in ${gitDir}, but the worker list can't be written (${(error as Error).message.split('\n')[0]}). Clear it with \`yokoten worker unmark ${top}\` once the list is writable, then mark again.` };
+    const said = (error as Error).message.split('\n')[0];
+    return { fail: `the mark is written in ${gitDir}, but the worker list can't be written (${said}). Clear it with \`yokoten worker unmark ${top}\` once the list is writable, then mark again.`, what: `the mark is written, but the worker list can't be written (${said})`, next: `once the list is writable, run \`yokoten worker unmark ${shown(top)}\`, then mark it again` };
   }
   // The guard finds the mark without git; check that it finds the file itself, not the list.
-  if (!existsSync(join(link.gitDir, WORKER_MARK)) || workerMarkAt(folder, env) !== 'mark') return { fail: `the mark is written in ${gitDir}, but the guard can't find it from ${top}.` };
+  if (!existsSync(join(link.gitDir, WORKER_MARK)) || workerMarkAt(folder, env) !== 'mark') return { fail: `the mark is written in ${gitDir}, but the guard can't find it from ${top}.`, what: `the mark is written in ${named(gitDir)}, but the guard can't find it from ${named(top)}`, next: `check the .git file in that folder, ${again}` };
   return { top, kind };
 }
 
@@ -830,6 +862,16 @@ function hasLinkedWorktrees(folder: string, env: Env): boolean {
   }
 }
 
+/** What `yokoten anchor` shows: the checkpoints, newest first, and the way back to one. */
+export function anchorScreen(anchors: readonly Anchor[]): string[] {
+  if (!anchors.length) return screen(title('anchor', 'no checkpoints yet'), row('to do', 'A worker records one when its checks pass and its tree is clean'));
+  return screen(
+    title('anchor', `${count(anchors.length, 'checkpoint')}, newest first`),
+    spaced(anchors.map((anchor) => row('ok', `${anchor.commit.slice(0, 12)} saved ${anchor.at}, after ${anchor.check} passed`))),
+    nextLine('git switch -c try-2 <commit>'),
+  );
+}
+
 /**
  * `anchor`: list the checkpoints a worker's passing checks recorded (#711). An anchor is
  * a commit, so going back is `git switch -c <new> <anchor>`: nothing is reset or deleted.
@@ -838,26 +880,51 @@ export function runAnchor(invocation: Invocation): number {
   const options = parse('anchor', invocation.args);
   if (typeof options === 'string') return usage(invocation, options);
   if (options.positional.length) return usage(invocation, 'anchor takes no arguments');
-  const root = rootOf(invocation.cwd, invocation.env);
-  if (!root) {
-    print(invocation, [formatFinding(notRepoFinding(invocation.cwd))], invocation.stderr);
-    return 1;
-  }
+  if (!requireRoot(invocation, invocation.cwd)) return 1;
   const anchors = listAnchors(invocation.cwd);
   if (options.flags.has('--json')) {
     printJson(invocation, { anchors });
     return 0;
   }
-  if (!anchors.length) {
-    print(invocation, [...title('anchor', 'no checkpoints yet'), '', ...row('to do', 'A worker records one when its checks pass and its tree is clean')]);
-    return 0;
-  }
-  const lines = [...title('anchor', `${count(anchors.length, 'checkpoint')}, newest first`), ''];
-  for (const anchor of anchors) lines.push(...row('ok', `${anchor.at} ${anchor.check}`, anchor.commit.slice(0, 12)));
-  lines.push('', ...nextLine('git switch -c try-2 <commit>'));
-  print(invocation, lines);
+  show(invocation, anchorScreen(anchors));
   return 0;
 }
+
+/** What `yokoten worker mark` shows: the folder it marked, what that means, and the two ways back. */
+export function workerMarkedScreen({ kind, folder }: { kind: 'worktree' | 'clone'; folder: string }): string[] {
+  return screen(
+    title('worker', `marked the ${kind} at ${folder}: every agent there is a worker`),
+    spaced([
+      field('lead-only', 'Files there are guarded.'),
+      field('way back', kind === 'clone' ? 'Removing the clone removes the mark.' : `\`git worktree remove ${folder}\` removes the mark.`),
+      field('sooner', `\`yokoten worker unmark ${folder}\` clears it now.`),
+    ]),
+  );
+}
+
+/** What `yokoten worker unmark` shows. */
+export const workerUnmarkedScreen = (folder: string): string[] => screen(title('worker', `${folder} is unmarked`), wrap('', 'The guard no longer treats agents there as workers.'));
+
+/** How many names `worker env` dropped, by why. */
+export type DroppedCounts = Record<DropReason, number>;
+
+/** What `yokoten worker env` shows: the names an agent gets, never a value, and how many are dropped and why. */
+export function workerEnvScreen({ runtime, kept, dropped }: { runtime?: string; kept: readonly string[]; dropped: DroppedCounts }): string[] {
+  const who = runtime === undefined ? 'an agent that yokoten starts' : `a ${runtime} agent that yokoten starts`;
+  return screen(
+    title('worker', `${who} would get ${count(kept.length, 'name')} from this shell`),
+    spaced([
+      field('kept', kept.join(', ') || 'none'),
+      field('dropped', `${dropped['secret name']} with a secret-looking name, ${dropped['secret value']} with a value shaped like a key or token, ${dropped['too long']} too long to check, ${dropped['not on the list']} not on the list`),
+      field('values', 'never shown'),
+      field('used by', '`yokoten desk`, when it starts an agent'),
+    ]),
+    runtime === undefined ? wrap('More: ', '`yokoten worker env claude-code` counts its own login names too') : [],
+  );
+}
+
+// Where the lead runs `worker mark` and `worker unmark`: inside a marked checkout, every session is a worker.
+const leadOutside = (action: 'mark' | 'unmark'): string => `a worker commits in its own checkout and reports. The lead runs \`yokoten worker ${action}\` from its own checkout, outside the marked one`;
 
 export function runWorker(invocation: Invocation): number | Promise<number> {
   const options = parse('worker', invocation.args);
@@ -865,22 +932,11 @@ export function runWorker(invocation: Invocation): number | Promise<number> {
   const [action, dir] = options.positional;
   if (action === 'env') return runEnv(invocation, dir);
   if ((action !== 'mark' && action !== 'unmark') || dir === undefined) return usage(invocation, `say what to do and where: yokoten worker ${action === 'unmark' ? 'unmark' : 'mark'} <dir>, or yokoten worker env [runtime]`);
-  const fail = (line: string) => {
-    print(invocation, [`yokoten worker: ${line}`], invocation.stderr);
-    return 1;
-  };
-  if (action === 'unmark') return runUnmark(invocation, dir, fail);
-  if (workerRole(invocation.env, [invocation.cwd]) !== null) {
-    return fail(`only the lead marks a worktree or a clone: this session is a worker. ${LEAD_OUTSIDE}`);
-  }
+  if (action === 'unmark') return runUnmark(invocation, dir);
+  if (workerRole(invocation.env, [invocation.cwd]) !== null) return fail(invocation, 'only the lead marks a worktree or a clone: this session is a worker', leadOutside('mark'));
   const marked = markWorktree(invocation.cwd, dir, invocation.env);
-  if ('fail' in marked) return fail(marked.fail);
-  const removes = marked.kind === 'clone' ? 'Removing the clone removes the mark.' : `\`git worktree remove ${marked.top}\` removes the mark.`;
-  print(invocation, [
-    ...title('worker', `marked the ${marked.kind} at ${marked.top}.`),
-    '',
-    ...wrap('  ', `Lead-only files are guarded there. ${removes} \`yokoten worker unmark ${marked.top}\` clears it sooner.`),
-  ]);
+  if ('fail' in marked) return fail(invocation, marked.what, marked.next);
+  show(invocation, workerMarkedScreen({ kind: marked.kind, folder: shownFolder(invocation.cwd, marked.top) }));
   return 0;
 }
 
@@ -898,14 +954,9 @@ async function runEnv(invocation: Invocation, runtime: string | undefined): Prom
   } catch (error) {
     return usage(invocation, `${(error as Error).message}. Example: yokoten worker env claude-code`);
   }
-  const count = (reason: DropReason) => sorted.dropped.filter((drop) => drop.reason === reason).length;
-  const who = runtime === undefined ? 'An agent that yokoten starts' : `A ${runtime} agent that yokoten starts`;
-  print(invocation, [
-    `yokoten worker: ${who} would get ${sorted.kept.length} names from this shell. Values are never shown. \`yokoten desk\` starts an agent with these.`,
-    ...(sorted.kept.length ? [`  ${sorted.kept.join(', ')}`] : []),
-    `Dropped: ${count('secret name')} with a secret-looking name, ${count('secret value')} with a value shaped like a key or token, ${count('too long')} too long to check, ${count('not on the list')} not on the list.`,
-    ...(runtime === undefined ? ['Add a runtime, such as `yokoten worker env claude-code`, to count its own login names too.'] : []),
-  ]);
+  const droppedFor = (reason: DropReason) => sorted.dropped.filter((drop) => drop.reason === reason).length;
+  const dropped: DroppedCounts = { 'secret name': droppedFor('secret name'), 'secret value': droppedFor('secret value'), 'too long': droppedFor('too long'), 'not on the list': droppedFor('not on the list') };
+  show(invocation, workerEnvScreen({ runtime, kept: sorted.kept, dropped }));
   return 0;
 }
 
@@ -915,13 +966,8 @@ async function runEnv(invocation: Invocation, runtime: string | undefined): Prom
  * It drops the worktree's path from the worker list, and the mark file when `.git` still
  * names it. Given a folder with no `.git` (moved away), it still clears by path.
  */
-// Where the lead runs `worker mark` and `worker unmark`: inside a marked checkout, every session is a worker.
-const LEAD_OUTSIDE = "A worker commits in its own checkout and reports. The lead runs this from its own checkout, outside the marked one.";
-
-function runUnmark(invocation: Invocation, dir: string, fail: (line: string) => number): number {
-  if (workerRole(invocation.env, [invocation.cwd]) !== null) {
-    return fail(`only the lead unmarks a worktree: this session is a worker. ${LEAD_OUTSIDE}`);
-  }
+function runUnmark(invocation: Invocation, dir: string): number {
+  if (workerRole(invocation.env, [invocation.cwd]) !== null) return fail(invocation, 'only the lead unmarks a worktree: this session is a worker', leadOutside('unmark'));
   const folder = resolve(invocation.cwd, dir);
   let top = folder;
   let gitDir: string | undefined;
@@ -936,9 +982,9 @@ function runUnmark(invocation: Invocation, dir: string, fail: (line: string) => 
   try {
     removeWorkerPath(invocation.env, top);
   } catch (error) {
-    return fail(`can't clear the worker list (${(error as Error).message.split('\n')[0]}). Check HOME, then run it again.`);
+    return fail(invocation, `can't clear the worker list (${firstLine(error)})`, `check HOME, then run \`yokoten worker unmark ${dir}\` again`);
   }
-  print(invocation, [...title('worker', `unmarked ${top}`), '', ...wrap('  ', 'The guard no longer treats agents there as workers.')]);
+  show(invocation, workerUnmarkedScreen(shownFolder(invocation.cwd, top)));
   return 0;
 }
 
@@ -956,12 +1002,19 @@ export async function runDesk(invocation: Invocation, options: Parsed): Promise<
   if (runtime === undefined || folder === undefined || !command.length) return usage(invocation, 'name the agent, the folder and the command: yokoten desk <agent> <folder> -- <command>');
   const list = (name: string) => (options.values[name] ?? '').split(',').map((word) => word.trim()).filter(Boolean);
   const started = await startFencedDesk(invocation, { runtime, folder, command, name: options.values['--name'], read: list('--read'), hosts: list('--host'), marks: options.flags.has('--marks') }, 'inherit');
-  if ('fail' in started) {
-    print(invocation, [`yokoten desk: ${started.fail}`], invocation.stderr);
-    return 1;
-  }
+  if ('fail' in started) return fail(invocation, started.fail, 'yokoten desk --help');
   if (started.stderr) invocation.stderr.write(started.stderr);
   return started.code;
+}
+
+/** The one screen before a desk's agent starts (#1027): where it writes, what it reaches, its fence and its role. */
+export function deskStartScreen({ runtime, folder, hosts, fence }: { runtime: string; folder: string; hosts: readonly string[]; fence: string }): string[] {
+  return screen(
+    title('desk', `${runtime} in ${folder}`),
+    // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
+    spaced([field('writes', `${folder} only`), field('network', hosts.join(', ') || 'none'), field('fence', fence), field('role', 'worker, TZ=UTC, no tokens')]),
+    wrap('', 'Starting… (stop with Ctrl+C)'),
+  );
 }
 
 /** What a fenced desk starts: the agent, its clone, the command, and the lead's few choices. */
@@ -988,7 +1041,7 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
   const notClone = cloneProblem(resolve(invocation.cwd, folder));
   if (notClone) return { fail: notClone };
   // srt never comes from the lead's project or the desk (P6 review).
-  const backend = chooseBackend(process.platform, invocation.env, [invocation.cwd, resolve(invocation.cwd, folder)]);
+  const backend = chooseBackend(invocation.platform ?? 'linux', invocation.env, [invocation.cwd, resolve(invocation.cwd, folder)]);
   if (typeof backend === 'string') return { fail: backend };
   const isShown = stdio === 'inherit';
   const installed = paths(invocation.env);
@@ -996,7 +1049,7 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
   // --name, or the desk folder's made into a name; a folder name that can't be one joins no team.
   const main = team.leadCheckout(invocation.cwd, invocation.env);
   const name = request.name ?? teamName(basename(resolve(invocation.cwd, folder)));
-  if (isShown && typeof main === 'string' && name === null) print(invocation, ['yokoten desk: the folder\'s name can\'t be a name on the team, so this desk joins none. Name it with --name to join.'], invocation.stderr);
+  if (isShown && typeof main === 'string' && name === null) print(invocation, noteLine('the folder\'s name can\'t be a name on the team, so this desk joins no team. Name it with `--name` to join one.'), invocation.stderr);
   let plan: ReturnType<typeof planDesk>;
   try {
     plan = planDesk({
@@ -1015,23 +1068,10 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
     return { fail: (error as Error).message };
   }
   // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
-  const shown = hideHome(relative(invocation.cwd, plan.desk) || plan.desk, invocation.env);
-  if (isShown) {
-    print(invocation, [
-      ...title('desk', `${runtime} in ${shown}`),
-      '',
-      ...field('writes', `${shown} only`),
-      // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
-      ...field('network', plan.hosts.join(', ') || 'none'),
-      ...field('fence', backend.name),
-      ...field('role', 'worker, TZ=UTC, no tokens'),
-      '',
-      'Starting… (stop with Ctrl+C)',
-    ], invocation.stderr);
-  }
+  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFolder(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name }), invocation.stderr);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
-  if (isShown && unlisted) print(invocation, [`yokoten desk: the board won't show this desk: ${unlisted}.`], invocation.stderr);
+  if (isShown && unlisted) print(invocation, noteLine(`the board won't show this desk: ${unlisted}.`), invocation.stderr);
   const refused = new Set<string>();
   const result = await startDesk(plan, backend, {
     stdio,
@@ -1039,6 +1079,6 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
       if (!event.isAllowed) refused.add(event.target);
     },
   });
-  if (isShown && refused.size) print(invocation, [`yokoten desk: the proxy refused ${[...refused].join(', ')}. Add an API host with --host if the agent needs it.`], invocation.stderr);
+  if (isShown && refused.size) print(invocation, noteLine(`the proxy refused ${[...refused].join(', ')}. Add an API host with \`--host\` if the agent needs it.`), invocation.stderr);
   return result;
 }

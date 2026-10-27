@@ -19,6 +19,7 @@ import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, 
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
+import { anchorNote, anchorScreen, deskStartScreen, stopsOffScreen, stopsOnScreen, stopsScreen, workerEnvScreen, workerMarkedScreen, workerUnmarkedScreen } from '../../../src/commands/hook.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -276,6 +277,30 @@ function screensOf(repo: string): ScreenRun[] {
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // C5: stops, worker, anchor, the desk's start and the stop hook's notes, each built from its data (#1115).
+    { key: 'stops, on with stops logged', words: ['stops'], lines: stopsScreen({ isOff: false, count: 3, file: '~/.config/yokoten/stops.jsonl' }) },
+    { key: 'stops, off', words: ['stops'], lines: stopsScreen({ isOff: true, count: 0, file: '~/.config/yokoten/stops.jsonl' }) },
+    { key: 'stops off', words: ['stops', 'off'], lines: stopsOffScreen() },
+    { key: 'stops on', words: ['stops', 'on'], lines: stopsOnScreen('~/.config/yokoten/stops.jsonl') },
+    { key: 'worker mark, a worktree', words: ['worker', 'mark', '../task'], lines: workerMarkedScreen({ kind: 'worktree', folder: '../task' }) },
+    { key: 'worker mark, a worktree on Windows', words: ['worker', 'mark', '..\\task'], lines: workerMarkedScreen({ kind: 'worktree', folder: '..\\task' }), platform: 'win32' },
+    { key: 'worker mark, a clone', words: ['worker', 'mark', '../desk-1'], lines: workerMarkedScreen({ kind: 'clone', folder: '../desk-1' }) },
+    { key: 'worker unmark', words: ['worker', 'unmark', '../task'], lines: workerUnmarkedScreen('../task') },
+    { key: 'worker env', words: ['worker', 'env'], lines: workerEnvScreen({ kept: ['HOME', 'LANG', 'PATH', 'TERM', 'TZ'], dropped: { 'secret name': 2, 'secret value': 1, 'too long': 0, 'not on the list': 14 } }) },
+    { key: 'worker env claude-code', words: ['worker', 'env', 'claude-code'], lines: workerEnvScreen({ runtime: 'claude-code', kept: ['ANTHROPIC_API_KEY', 'HOME', 'PATH'], dropped: { 'secret name': 1, 'secret value': 0, 'too long': 0, 'not on the list': 9 } }) },
+    { key: 'anchor, no checkpoints', words: ['anchor'], lines: anchorScreen([]) },
+    {
+      key: 'anchor, two checkpoints',
+      words: ['anchor'],
+      lines: anchorScreen([
+        { commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', at: '2026-10-28T09:12:00Z', check: 'npm test' },
+        { commit: '0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd', at: '2026-10-28T08:40:00Z', check: 'the changed-file check' },
+      ]),
+    },
+    { key: 'desk, the start screen', words: ['desk', 'claude-code', '../desk-1', '--', 'claude'], lines: deskStartScreen({ runtime: 'claude-code', folder: '../desk-1', hosts: ['api.anthropic.com', 'registry.npmjs.org'], fence: 'bwrap' }) },
+    { key: 'hook --stop, a passing worker', words: ['hook', '--stop'], lines: anchorNote({ kind: 'recorded', anchor: { commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', at: '2026-10-28T09:12:00Z', check: 'npm test' } }) },
+    { key: 'hook --stop, a dirty tree', words: ['hook', '--stop'], lines: anchorNote({ kind: 'dirty' }) },
+    // C5 end.
   ];
 }
 
