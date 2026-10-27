@@ -17,7 +17,8 @@
 // that moves to the Claude Code plugin (#300): the plugin brings the same pieces, and both
 // at once run every hook twice and show every skill twice.
 //
-// It puts a small `yokoten` launcher in ~/.local/bin (#433): every message says
+// It puts a small `yokoten` launcher in ~/.local/bin (#433), on Windows a .cmd and a .ps1
+// for PowerShell (#1038): every message says
 // `yokoten init`, and a clone install has no other command on the PATH (#208). That
 // folder is on the PATH on most setups. When it is not, install asks once before it adds
 // one marked line to the shell profile, and never edits the profile in a run with no terminal.
@@ -38,8 +39,9 @@ import * as antigravity from '../agents/runtimes/small/antigravity.ts';
 import * as grok from '../agents/runtimes/grok.ts';
 import * as muse from '../agents/runtimes/muse.ts';
 import * as opencode from '../agents/runtimes/small/opencode.ts';
-import { type Added, skippedBecause, UnreadableHooksFile } from '../agents/hooks-file.ts';
-import { copyRuntime, describeWrite, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, writeManaged, writeNew } from './files.ts';
+import { commentedFile, type Problem, UnreadableHooksFile } from '../agents/hooks-file.ts';
+import { type Change, changeOf, copyRuntime, describeWrite, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, type ReportState, type SetupResult, writeManaged, writeNew } from './files.ts';
+import { type Finding, finding, type RuleId } from '../rules/text/message.ts';
 import { type Gh, readLocalLogins, readLogin } from '../host/github/index.ts';
 import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
 
@@ -172,8 +174,12 @@ const realPath = (file: string): string | null => {
   }
 };
 
-/** The launcher's file name: a `.cmd` on Windows, a shell script everywhere else. */
-const launcherName = (platform: NodeJS.Platform): string => (platform === 'win32' ? 'yokoten.cmd' : 'yokoten');
+/**
+ * The launchers' file names: a shell script, or on Windows a `.cmd` for cmd.exe and Git Bash
+ * and a `.ps1` for PowerShell, which finds a script of its own before a .cmd (#1038).
+ */
+const LAUNCHER_NAMES: Record<'win32' | 'other', readonly string[]> = { win32: ['yokoten.cmd', 'yokoten.ps1'], other: ['yokoten'] };
+const launcherNames = (platform: NodeJS.Platform): readonly string[] => LAUNCHER_NAMES[platform === 'win32' ? 'win32' : 'other'];
 
 /** Whether `file` is a launcher yokoten wrote that runs one of `clis`. */
 const isOurLauncher = (file: string, clis: string[]): boolean => {
@@ -194,7 +200,7 @@ const isOurLauncher = (file: string, clis: string[]): boolean => {
 export function isOnPath(env: Env, runtime: string, platform: NodeJS.Platform = process.platform): boolean {
   const clis = [runtime, HOME_DIR].flatMap((dir) => [join(dir, 'bin', 'yokoten.mjs'), join(dir, 'bin', 'yokoten.ts')]);
   const ours = clis.map(realPath).filter(Boolean);
-  const names = platform === 'win32' ? ['yokoten.cmd', 'yokoten'] : ['yokoten'];
+  const names = platform === 'win32' ? [...launcherNames(platform), 'yokoten'] : launcherNames(platform);
   return (env.PATH ?? '').split(platform === 'win32' ? ';' : delimiter).filter(Boolean).some((dir) =>
     names.some((name) => {
       const found = realPath(join(dir, name));
@@ -219,16 +225,22 @@ const PROFILES = ['.bashrc', '.bash_profile', '.zshrc'];
 /** The folder the launcher goes in: ~/.local/bin, on the PATH on most setups. */
 export const launcherDir = (home: string): string => join(home, '.local', 'bin');
 
-/** The launcher file for this platform. */
-export const launcherFile = (home: string, platform: NodeJS.Platform = process.platform): string => join(launcherDir(home), launcherName(platform));
+/** The launcher file for this platform: on Windows the .cmd, the one cmd.exe and Git Bash run. */
+export const launcherFile = (home: string, platform: NodeJS.Platform = process.platform): string => join(launcherDir(home), launcherNames(platform)[0] ?? 'yokoten');
+
+/** Every launcher file for this platform: on Windows the .cmd and the .ps1 (#1038). */
+export const launcherFiles = (home: string, platform: NodeJS.Platform): string[] => launcherNames(platform).map((name) => join(launcherDir(home), name));
 
 /**
  * What the launcher holds: it runs the installed runtime with every argument, and carries the
  * managed mark. It runs bin/yokoten.mjs, the entry the user hooks run (USER_CLI), which turns on
  * the compile cache. Install rewrites a launcher from an older install that ran yokoten.ts.
+ * `name` picks one of the Windows pair: the .ps1 is PowerShell's (#1038).
  */
-export function launcherText(runtime: string, platform: NodeJS.Platform = process.platform): string {
+export function launcherText(runtime: string, platform: NodeJS.Platform, name = launcherNames(platform)[0]): string {
   const cli = join(runtime, 'bin', 'yokoten.mjs');
+  // Single quotes keep every character of the path in PowerShell too; a ' inside is doubled.
+  if (platform === 'win32' && name?.endsWith('.ps1')) return `# ${MANAGED}: \`yokoten uninstall\` removes this file.\r\n& node '${cli.replaceAll("'", "''")}' @args\r\nexit $LASTEXITCODE\r\n`;
   if (platform === 'win32') return `@echo off\r\nrem ${MANAGED}: \`yokoten uninstall\` removes this file.\r\nnode "${cli}" %*\r\n`;
   // Single quotes keep every character of the path as it is; a ' inside is closed, escaped and reopened.
   return `#!/bin/sh\n# ${MANAGED}: \`yokoten uninstall\` removes this file.\nexec node '${cli.replaceAll("'", "'\\''")}' "$@"\n`;
@@ -238,7 +250,7 @@ export function launcherText(runtime: string, platform: NodeJS.Platform = proces
  * The profile of the user's shell, from $SHELL: ~/.bashrc for bash, ~/.zshrc for zsh, else null.
  * macOS opens a login bash, which reads ~/.bash_profile and not ~/.bashrc (#983).
  */
-export function shellProfile(env: Env, home: string, platform: NodeJS.Platform = process.platform): string | null {
+export function shellProfile(env: Env, home: string, platform: NodeJS.Platform): string | null {
   const shell = basename(env.SHELL ?? '');
   if (shell === 'bash') return join(home, platform === 'darwin' ? '.bash_profile' : '.bashrc');
   if (shell === 'zsh') return join(home, '.zshrc');
@@ -263,83 +275,176 @@ export type Ask = (question: string) => string | null;
 /** Whether an answer to a [Y/n] question is yes: Enter alone, y or yes. */
 export const isYes = (answer: string | null): boolean => answer !== null && /^\s*(y|yes)?\s*$/i.test(answer);
 
+/** Whether ~/.local/bin, the launcher's folder, is on the PATH now: a screen says how to add it when it is not. */
+export const isLauncherOnPath = (env: Env, home: string, platform: NodeJS.Platform): boolean => isDirOnPath(env, launcherDir(home), platform);
+
+/** The step that puts a folder on the PATH for the account on Windows, where install never edits it (#1038). */
+export const WINDOWS_PATH_STEP = 'search Windows for "Edit environment variables for your account", add it to Path, then open a new terminal';
+
+/** What a profile change says to do next: the PATH counts in a new shell. */
+const NEW_SHELL = 'open a new shell, then run `yokoten`';
+
 /**
- * Write the launcher and make sure the shell finds it. A file at that place without the
- * managed mark is the user's: it stays and is named. When ~/.local/bin is not on the PATH,
- * it asks once (only with `ask`) before it adds PROFILE_LINE to the shell's profile; on no,
- * or with no terminal, it prints the line instead. Windows gets the steps, never an edit.
+ * Write the launcher (on Windows the .cmd and the .ps1, #1038) and make sure the shell finds
+ * it. A file at that place without the managed mark is the user's: it stays and is named. When
+ * ~/.local/bin is not on the PATH, it asks once (only with `ask`) before it adds PROFILE_LINE to
+ * the shell's profile; on no, or with no terminal, a note gives the line instead. Windows gets
+ * the steps, never an edit.
  */
-export function setUpLauncher(env: Env, runtime: string, home: string, { ask, platform = process.platform }: { ask?: Ask; platform?: NodeJS.Platform } = {}): string[] {
-  const file = launcherFile(home, platform);
+export function setUpLauncher(env: Env, runtime: string, home: string, { ask, platform = process.platform }: { ask?: Ask; platform?: NodeJS.Platform } = {}): Steps {
+  const steps = noSteps();
   const dir = launcherDir(home);
-  const written = writeManaged(file, launcherText(runtime, platform));
-  if (written === 'kept (yours)') {
-    const lines = [`kept ${file}: it is not yokoten's launcher, so install left it as it is`];
-    return isOnPath(env, runtime, platform) ? lines : [...lines, aliasLine(runtime)];
+  let isTheirs = false;
+  for (const file of launcherFiles(home, platform)) {
+    const written = writeManaged(file, launcherText(runtime, platform, basename(file)));
+    // The bytes of an edit stay, and so does its mode: a kept launcher is theirs to run or not.
+    if (platform !== 'win32' && written !== 'kept (yours)' && written !== 'kept (your edit)') chmodSync(file, 0o755);
+    isTheirs ||= written === 'kept (yours)';
+    const change = changeOf(written, 'launcher', file, written === 'kept (yours)' ? { note: "it is not yokoten's launcher, so install left it as it is" } : {});
+    if (change) steps.changes.push(change);
   }
-  // The bytes of an edit stay, and so does its mode: a kept launcher is theirs to run or not.
-  if (platform !== 'win32' && written !== 'kept (your edit)') chmodSync(file, 0o755);
-  const lines = [describeWrite(written, `the launcher ${file}`)];
-  if (isDirOnPath(env, dir, platform)) return lines;
-  if (platform === 'win32') return [...lines, `${dir} is not on your PATH. Add it to the Path for your account (search Windows for "environment variables for your account"), then open a new terminal`];
+  if (isTheirs) {
+    if (!isOnPath(env, runtime, platform)) steps.notes.push(finding('machine-runtime', 'no `yokoten` command on your PATH runs this copy', `add this line to your shell profile (~/.bashrc or ~/.zshrc), then open a new shell: alias yokoten='node ${join(runtime, 'bin', 'yokoten.ts')}'`));
+    return steps;
+  }
+  if (isDirOnPath(env, dir, platform)) return steps;
+  const notOnPath = (fix: string): Finding => finding('machine-runtime', `${dir} is not on your PATH`, fix);
+  if (platform === 'win32') {
+    steps.notes.push(notOnPath(WINDOWS_PATH_STEP));
+    return steps;
+  }
   const profile = shellProfile(env, home, platform);
-  if (!profile) return [...lines, `${dir} is not on your PATH. Add this line to your shell profile, then open a new shell: ${PROFILE_LINE}`];
-  if (hasProfileLine(profile)) return [...lines, `${profile} already adds ${dir} to the PATH; open a new shell, then run \`yokoten\``];
+  if (!profile) {
+    steps.notes.push(notOnPath(`add this line to your shell profile, then open a new shell: ${PROFILE_LINE}`));
+    return steps;
+  }
+  if (hasProfileLine(profile)) {
+    steps.changes.push({ state: 'kept', kind: 'profile', path: profile, note: NEW_SHELL });
+    return steps;
+  }
   const shown = (path: string): string => `~/${relative(home, path).split(sep).join('/')}`;
   if (ask && isYes(ask(`Add ${shown(dir)} to your PATH in ${shown(profile)}? [Y/n]`))) {
     const before = existsSync(profile) ? readFileSync(profile, 'utf8') : '';
     appendFileSync(profile, `${before === '' || before.endsWith('\n') ? '' : '\n'}${PROFILE_LINE}\n`);
-    return [...lines, `added ${dir} to the PATH in ${profile}; open a new shell, then run \`yokoten\``];
+    steps.changes.push({ state: 'added', kind: 'profile', path: profile, note: NEW_SHELL });
+    return steps;
   }
-  return [...lines, `${dir} is not on your PATH. Add this line to ${profile}, then open a new shell: ${PROFILE_LINE}`];
+  steps.notes.push(notOnPath(`add this line to ${profile}, then open a new shell: ${PROFILE_LINE}`));
+  return steps;
 }
 
 /** The shell profiles that still hold the line install added. */
 const profilesWithLine = (home: string): string[] => PROFILES.map((name) => join(home, name)).filter(hasProfileLine);
 
+/** The changes that name something, without the `not there` ones. */
+const named = (changes: (Change | null)[]): Change[] => changes.filter((change): change is Change => change !== null);
+
 /**
- * Take back the launcher and, when `profiles` is true, the marked profile lines: one report
- * line for each thing removed or kept. Only a command the user ran edits a profile; a session
+ * Take back the launchers and, when `profiles` is true, the marked profile lines: one change
+ * for each thing removed or kept. Only a command the user ran edits a profile; a session
  * start passes false (#983).
  */
-function removeLauncher(home: string, platform: NodeJS.Platform, profiles = true): string[] {
-  const file = launcherFile(home, platform);
-  const lines = [describeWrite(removeManaged(file), `the launcher ${file}`)];
-  if (!profiles) return lines;
+function removeLauncher(home: string, platform: NodeJS.Platform, profiles = true): Change[] {
+  const changes = named(launcherFiles(home, platform).map((file) => changeOf(removeManaged(file), 'launcher', file)));
+  if (!profiles) return changes;
   for (const name of PROFILES) {
     const profile = join(home, name);
     if (!hasProfileLine(profile)) continue;
     const text = readFileSync(profile, 'utf8');
     replaceFile(profile, text.split('\n').filter((line) => !line.trimEnd().endsWith(PROFILE_MARK)).join('\n'));
-    lines.push(`removed the PATH line from ${profile}`);
+    changes.push({ state: 'removed', kind: 'profile', path: profile });
   }
-  return lines;
+  return changes;
+}
+
+/** What one step of install or uninstall did: its changes, what went wrong, and what is worth a note. */
+export type Steps = Pick<SetupResult, 'changes' | 'problems' | 'notes'>;
+const noSteps = (): Steps => ({ changes: [], problems: [], notes: [] });
+
+/** Add a step's changes, problems and notes to `into`. */
+function addSteps(into: Steps, steps: Partial<Steps>): void {
+  into.changes.push(...(steps.changes ?? []));
+  into.problems.push(...(steps.problems ?? []));
+  into.notes.push(...(steps.notes ?? []));
+}
+
+/** A step that must not stop install: an error becomes one problem that says what was skipped and why. */
+function stepSafely(what: string, step: () => Partial<Steps>): Partial<Steps> {
+  try {
+    return step();
+  } catch (err) {
+    return { problems: [finding('machine-runtime', `install skipped ${what}: ${String((err as Error)?.message ?? err).split('\n')[0]}`, 'run `yokoten install` again')] };
+  }
+}
+
+/** The rule behind each agent's user hooks, so a problem with its file names it (`yokoten explain`). */
+const HOOK_RULES: Record<string, RuleId> = {
+  'Claude Code': 'user-guard',
+  'Codex CLI': 'codex-user-hook',
+  'Gemini CLI': 'gemini-user-hook',
+  'Antigravity CLI': 'antigravity-user-hook',
+  'Copilot CLI': 'copilot-user-hook',
+  'Grok CLI': 'grok-user-hook',
+  'Muse Code': 'muse-user-hook',
+  OpenCode: 'opencode-user-hook',
+};
+
+/** The note on Claude Code's hooks when the plugin brings them: the guard is on through the plugin. */
+export const PLUGIN_BRINGS = 'the yokoten plugin brings them';
+
+/** Why a hooks file stays as it was, as one problem: what is wrong, why it matters, and the command after the fix. */
+function unreadableHooks(agent: string, file: string, problem: Problem): Finding {
+  const id = HOOK_RULES[agent] ?? 'user-guard';
+  const why = `the guard is not on for ${agent} until`;
+  if (problem.kind === 'json') return finding(id, `${file} is not valid JSON`, 'run `yokoten install` again', { why: `${why} you make it valid JSON` });
+  if (problem.kind === 'shape') return finding(id, `${file} has an unexpected shape (${problem.hint.replaceAll('`', '')})`, 'run `yokoten install` again', { why: `${why} you fix that` });
+  // A file with comments is never rewritten (#258): doctor shows the hooks to add by hand.
+  return finding(id, commentedFile(file), 'run `yokoten doctor --all`, then add the hooks it shows by hand', { why: `${why} its hooks are added by hand` });
 }
 
 /**
- * One agent's two user hooks, or one skip line when its file won't parse or has the wrong
- * shape (#248, #254), or is a Gemini CLI file with comments, which yokoten never rewrites
- * (#258; the line then holds the hooks to add by hand): the file stays as it was, the
- * other steps go on, and `ok` is false until the hooks are there.
+ * One agent's user hooks as changes, or one skipped change and a problem when its file won't
+ * parse or has the wrong shape (#248, #254), or is a Gemini CLI file with comments, which
+ * yokoten never rewrites (#258): the file stays as it was, the other steps go on, and `ok` is
+ * false until the hooks are there.
  */
-function agentHooks(cliName: string, file: string, add: () => string[]): { ok: boolean; lines: string[] } {
+function agentHooks(agent: string, file: string, add: () => Record<string, HookState>): Steps & { ok: boolean } {
   try {
-    return { ok: true, lines: add() };
+    const changes = Object.entries(add()).map(([hook, state]): Change =>
+      // Antigravity's guard the user turned off stays off (#984): theirs, and not on.
+      state === antigravity.KEPT_OFF ? { state: 'kept', kind: 'hook', path: file, agent, yours: true, note: 'the command guard stays off, as you set it' } : (changeOf(state, 'hook', file, { agent, note: HOOK_NAMES[hook] ?? hook }) as Change),
+    );
+    return { ok: true, changes, problems: [], notes: [] };
   } catch (err) {
     if (!(err instanceof UnreadableHooksFile)) throw err;
-    return { ok: false, lines: [`skipped ${cliName}: ${skippedBecause(file, err.problem, 'install')}`] };
+    return { ok: false, changes: [{ state: 'skipped', kind: 'hook', path: file, agent }], problems: [unreadableHooks(agent, file, err.problem)], notes: [] };
   }
 }
 
-/** One line per thing done, kept or skipped; `ok` is false when a file was skipped (#248). */
-export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh?: Gh; ask?: Ask; platform?: NodeJS.Platform } = {}): { ok: boolean; lines: string[] } {
+/** What a runtime's hook step did: a write's state, or Antigravity's guard kept off as the user set it. */
+type HookState = ReportState | typeof antigravity.KEPT_OFF;
+
+/** What each hook a runtime adds is, in a change's note. */
+const HOOK_NAMES: Record<string, string> = { doctor: 'SessionStart doctor', guard: 'command guard' };
+
+/** An agent whose own folder is not on this computer: install never makes it, so nothing is guarded there yet. */
+const notInstalled = (agent: string, dir: string): Change => ({ state: 'skipped', kind: 'hook', path: dir, agent, note: NOT_INSTALLED });
+
+/** The note on an agent install found no folder of: run install again after installing it. */
+export const NOT_INSTALLED = 'not installed here';
+
+/**
+ * Put yokoten on this computer: its runtime, the entry skill, the agents, the user hooks of
+ * every agent here, the private marks, the mailmap and the launcher. The result names each
+ * thing as a change; `ok` is false when a hooks file was skipped (#248).
+ */
+export function install(env: Env, { cwd, gh, ask, platform = process.platform }: { cwd?: string; gh?: Gh; ask?: Ask; platform?: NodeJS.Platform } = {}): SetupResult {
   // Refuse before writing anything: with no home, every path below would be relative (#404).
-  if (!homeOf(env)) return { ok: false, lines: [`${NO_HOME}. Set HOME to your home folder's full path and run install again`] };
+  if (!homeOf(env)) return { ok: false, changes: [], problems: [noHomeProblem('install')], notes: [] };
   const target = paths(env);
   // Read before anything is written: uninstall later takes back only what install made (#985).
   const existedBefore = existingInstallPaths(env);
-  const report: string[] = [];
-  let ok = true;
+  const result: SetupResult = { ok: true, ...noSteps() };
   const plugin = hasPlugin(env);
   // With the plugin on, a machine that uses Claude Code alone needs no copy of yokoten:
   // the plugin brings the skills, the hooks and the runtime. Another tool's hook still
@@ -354,177 +459,112 @@ export function install(env: Env, { cwd, gh, ask, platform }: { cwd?: string; gh
   // own hook (#904).
   const hooks = plugin ? removeUserHooks(env) : undefined;
   const needsRuntime = !plugin || otherTool || isRunningFromRuntime || hooks === null || hookRunsYokoten(env);
-  const plan = installPlan(env, target.runtime, plugin, needsRuntime);
-  // Run from this copy, install keeps it (#204). The report shows the home folder as ~.
+  // Run from this copy, install keeps it (#204).
   if (needsRuntime) {
     const copied = copyRuntime(target.runtime, { withKit: true, platform });
-    report.push(copied === 'kept' ? `kept: ${target.runtime} is the copy running now` : `wrote ${target.runtime}`);
+    result.changes.push(copied === 'kept' ? { state: 'kept', kind: 'runtime', path: target.runtime, note: 'the copy running now' } : { state: 'wrote', kind: 'runtime', path: target.runtime });
   } else {
     const had = existsSync(target.runtime);
     rmSync(target.runtime, { recursive: true, force: true });
-    report.push(had ? `removed the runtime ${target.runtime}: the yokoten plugin brings its own` : 'kept out the runtime: the yokoten plugin brings its own');
+    result.changes.push({ state: had ? 'removed' : 'skipped', kind: 'runtime', path: target.runtime, note: 'the yokoten plugin brings its own' });
   }
 
-  // The files whose copy the user edited: install keeps them and names the new copies (0015).
-  const edited = new Set<string>();
-  const isKeptEdit = (result: string): boolean => result === 'kept (your edit)';
   const skills = join(KIT, 'user', 'skills');
   // The plugin brings every skill and agent, so a global copy would show each one twice
-  // (#904). Install then only takes back the copies it wrote before.
+  // (#904). Install then only takes back the copies it wrote before; a run on a machine with
+  // no copy names nothing per skill.
   for (const name of readdirSync(skills)) {
     const [claudeFile, sharedFile] = skillFiles(env, name);
     if (plugin || name !== ENTRY_SKILL) {
-      // Only what was there is named: a run on a machine with no copy says nothing per skill.
-      const removedClaude = removeManaged(claudeFile, { folder: true });
-      if (removedClaude !== 'not there') report.push(describeWrite(removedClaude, `skill ${name} in ${skillsDir(claudeFile)}`));
-      const removedShared = removeSharedSkill(sharedFile, claudeFile);
-      if (removedShared !== 'not there') report.push(describeWrite(removedShared, `skill ${name} in ${skillsDir(sharedFile)}`));
+      result.changes.push(...named([changeOf(removeManaged(claudeFile, { folder: true }), 'skill', dirname(claudeFile)), changeOf(removeSharedSkill(sharedFile, claudeFile), 'skill', dirname(sharedFile))]));
       continue;
     }
     const content = readFileSync(entryFile(), 'utf8');
-    const written = writeManaged(claudeFile, content);
-    if (isKeptEdit(written)) edited.add(`skill ${name}`);
-    report.push(describeWrite(written, `skill ${name} in ${skillsDir(claudeFile)}`));
-    const shared = writeSharedSkill(sharedFile, claudeFile, content, platform ?? process.platform);
-    if (isKeptEdit(shared)) edited.add(`skill ${name}`);
-    report.push(describeWrite(shared, `skill ${name} in ${skillsDir(sharedFile)}`));
+    result.changes.push(...named([changeOf(writeManaged(claudeFile, content), 'skill', dirname(claudeFile)), changeOf(writeSharedSkill(sharedFile, claudeFile, content, platform), 'skill', dirname(sharedFile))]));
   }
   const agents = join(KIT, 'user', 'agents');
   for (const file of readdirSync(agents)) {
-    if (plugin) {
-      const removed = removeManaged(agentFile(env, file));
-      if (removed !== 'not there') report.push(describeWrite(removed, `agent ${file.replace(/\.md$/, '')}`));
-      continue;
-    }
-    const result = writeManaged(agentFile(env, file), readFileSync(join(agents, file), 'utf8'));
-    if (isKeptEdit(result)) edited.add(`agent ${file.replace(/\.md$/, '')}`);
-    report.push(describeWrite(result, `agent ${file.replace(/\.md$/, '')}`));
+    const state = plugin ? removeManaged(agentFile(env, file)) : writeManaged(agentFile(env, file), readFileSync(join(agents, file), 'utf8'));
+    result.changes.push(...named([changeOf(state, 'agent', agentFile(env, file))]));
   }
-  if (edited.size) report.push(`your edits stay: install skipped ${[...edited].join(', ')}. The new ${edited.size === 1 ? 'copy is' : 'copies are'} in ~/.local/share/yokoten/kit/user.`);
 
   // With the plugin on, the user hooks went above, before the runtime (#904).
+  // A hooks file is named as the person names it: from ~, or from the folder setting they set ($CODEX_HOME).
+  const claudeSettings = claudeSettingsFile(env);
   if (plugin) {
     if (!hooks) {
       // The plugin check reads only enabledPlugins, so a file with a broken hooks shape gets here too.
-      report.push(`kept the Claude Code hooks in ${claudeSettingsFile(env)}: it is not JSON, or its hooks have an unexpected shape; fix it, then run \`yokoten install\` again`);
-      ok = false;
-    } else if (hooks.doctor === 'removed' || hooks.guard === 'removed') report.push('removed the Claude Code user hooks: the yokoten plugin brings them');
-    else report.push('skipped Claude Code hooks: the yokoten plugin brings them');
-  } else {
-    const claudeHooks = agentHooks('Claude Code', claudeSettingsFile(env), () => {
-      const hooks = addUserHooks(env, USER_CLI, USER_MISSING);
-      return [describeWrite(hooks.doctor, 'the SessionStart doctor'), describeWrite(hooks.guard, 'the user-level command guard')];
-    });
-    ok &&= claudeHooks.ok;
-    report.push(...claudeHooks.lines);
+      result.changes.push({ state: 'skipped', kind: 'hook', path: claudeSettings, agent: 'Claude Code' });
+      result.problems.push(finding('user-guard', `${claudeSettings} is not JSON, or its hooks have an unexpected shape`, 'run `yokoten install` again', { why: 'yokoten takes its old hooks out of it only when you fix it' }));
+      result.ok = false;
+    } else result.changes.push({ state: hooks.doctor === 'removed' || hooks.guard === 'removed' ? 'removed' : 'skipped', kind: 'hook', path: claudeSettings, agent: 'Claude Code', note: PLUGIN_BRINGS });
   }
   // Codex and Gemini CLI get the same two hooks (#211), but only when the CLI's folder is
   // already there: install never makes ~/.codex or ~/.gemini for someone who doesn't use it.
   // A file that won't parse, or has the wrong shape, is named and skipped, never rewritten (#248).
-  const otherHooks = (name: string, file: string, hooks: { doctor: Added; guard: Added }) => [describeWrite(hooks.doctor, `the ${name} SessionStart doctor in ${file}`), describeWrite(hooks.guard, `the ${name} command guard in ${file}`)];
-  if (codex.hasUserDir(env)) {
-    const codexHooks = agentHooks('Codex CLI', codex.userHooksFile(env), () => otherHooks('Codex', codex.userHooksFile(env), codex.addUserHooks(env, USER_CLI, USER_MISSING)));
-    ok &&= codexHooks.ok;
-    report.push(...codexHooks.lines);
-  } else report.push(`skipped Codex CLI: ${dirname(codex.userHooksFile(env))} not found (run \`yokoten install\` again after installing Codex)`);
-  if (gemini.hasUserDir(env)) {
-    const geminiHooks = agentHooks('Gemini CLI', '~/.gemini/settings.json', () => otherHooks('Gemini CLI', '~/.gemini/settings.json', gemini.addUserHooks(env, USER_CLI, USER_MISSING)));
-    ok &&= geminiHooks.ok;
-    report.push(...geminiHooks.lines);
-  } else report.push('skipped Gemini CLI: ~/.gemini not found (run `yokoten install` again after installing Gemini CLI)');
-  // Antigravity CLI and Copilot CLI have user-level hooks too: agy in ~/.gemini/config,
-  // Copilot in ~/.copilot/hooks. Either guards a repo without yokoten (#342). Both get the
-  // command guard alone: agy has no session-start event, and Copilot's file builds on
-  // Claude Code's shape but no real run has shown its SessionStart. Neither gets a stop
-  // check: agy's Stop has no `stop_hook_active`, and Copilot lets a timed-out hook go on.
-  if (antigravity.hasUserDir(env)) {
-    const file = antigravity.userHooksFile(env);
-    const agyHooks = agentHooks('Antigravity CLI', file, () => [((guard) => (guard === antigravity.KEPT_OFF ? antigravity.keptOffLine(file) : `${guard} the Antigravity CLI command guard in ${file}`))(antigravity.addUserHooks(env, USER_CLI, USER_MISSING).guard)]);
-    ok &&= agyHooks.ok;
-    report.push(...agyHooks.lines);
-  } else report.push('skipped Antigravity CLI: ~/.gemini/config not found (run `yokoten install` again after installing Antigravity CLI)');
-  if (copilot.hasUserDir(env)) {
-    const file = copilot.userHooksFile(env);
-    const copilotHooks = agentHooks('Copilot CLI', file, () => [`${copilot.addUserHooks(env, USER_CLI, USER_MISSING).guard} the Copilot CLI command guard in ${file}`]);
-    ok &&= copilotHooks.ok;
-    report.push(...copilotHooks.lines);
-  } else report.push('skipped Copilot CLI: ~/.copilot not found (run `yokoten install` again after installing Copilot CLI)');
-  // Grok CLI gets the command guard alone: it shows a session-start hook's output only to
-  // the user, never to the agent (#407).
-  if (grok.hasUserDir(env)) {
-    const file = grok.userHooksFile(env);
-    const grokHooks = agentHooks('Grok CLI', file, () => [describeWrite(grok.addUserHooks(env, USER_CLI, USER_MISSING).guard, `the Grok CLI command guard in ${file}`)]);
-    ok &&= grokHooks.ok;
-    report.push(...grokHooks.lines);
-  } else report.push('skipped Grok CLI: ~/.grok not found (run `yokoten install` again after installing Grok CLI)');
-  // Muse Code reads a `hooks` block in its user settings in every repo (checked with 1.4.11).
-  const museFile = muse.userSettingsFile(env);
-  if (muse.hasUserDir(env)) {
-    const museHooks = agentHooks('Muse Code', museFile, () => otherHooks('Muse Code', museFile, muse.addUserHooks(env, USER_CLI, USER_MISSING)));
-    ok &&= museHooks.ok;
-    report.push(...museHooks.lines);
-  } else report.push(`skipped Muse Code: ${dirname(museFile)} not found (run \`yokoten install\` again after installing Muse Code)`);
-  // OpenCode gets the command guard only, and only when its config folder is already there.
-  if (opencode.hasUserDir(env)) {
-    const file = opencode.userPluginFile(env);
-    const openCodeHooks = agentHooks('OpenCode', file, () => [openCodePluginLine(writeOpenCodePlugin(opencode.userPluginPath(env), opencode.userPluginSource(USER_CLI, USER_MISSING)), `the OpenCode command guard in ${file}`, 'install')]);
-    ok &&= openCodeHooks.ok;
-    report.push(...openCodeHooks.lines);
-  } else report.push(`skipped OpenCode: ${opencode.userPluginFile(env).replace(/\/plugins\/yokoten\.ts$/, '')} not found (run \`yokoten install\` again after installing OpenCode)`);
+  // Antigravity CLI and Copilot CLI get the command guard alone: agy has no session-start
+  // event, and no real run has shown Copilot's SessionStart (#342). Grok CLI gets the command
+  // guard alone: it shows a session-start hook's output only to the user (#407). Muse Code
+  // reads a `hooks` block in its user settings in every repo (checked with 1.4.11). OpenCode
+  // gets the command guard as a plugin file, only when its config folder is already there.
+  const home = homeIn(env);
+  // The folder an agent keeps its user files in, as the not-installed change names it.
+  const folderOf = (file: string, depth = 1): string => file.split('/').slice(0, -depth).join('/');
+  const tools: [agent: string, isHere: boolean, file: string, dir: string, add: () => Record<string, HookState>][] = [
+    ['Claude Code', !plugin, claudeSettings, userDir(env), () => addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Codex CLI', codex.hasUserDir(env), codex.userHooksFile(env), folderOf(codex.userHooksFile(env)), () => codex.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Gemini CLI', gemini.hasUserDir(env), GEMINI_SETTINGS, '~/.gemini', () => gemini.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Antigravity CLI', antigravity.hasUserDir(env), antigravity.userHooksFile(env), folderOf(antigravity.userHooksFile(env)), () => antigravity.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Copilot CLI', copilot.hasUserDir(env), copilot.userHooksFile(env), folderOf(copilot.userHooksFile(env), 2), () => copilot.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Grok CLI', grok.hasUserDir(env), grok.userHooksFile(env), folderOf(grok.userHooksFile(env), 2), () => grok.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['Muse Code', muse.hasUserDir(env), muse.userSettingsFile(env), folderOf(muse.userSettingsFile(env)), () => muse.addUserHooks(env, USER_CLI, USER_MISSING)],
+    ['OpenCode', opencode.hasUserDir(env), opencode.userPluginFile(env), folderOf(opencode.userPluginFile(env), 2), () => ({ guard: writeOpenCodePlugin(opencode.userPluginPath(env), opencode.userPluginSource(USER_CLI, USER_MISSING)) })],
+  ];
+  for (const [agent, isHere, file, dir, add] of tools) {
+    if (agent === 'Claude Code' && !isHere) continue;
+    if (!isHere) {
+      result.changes.push(notInstalled(agent, dir));
+      continue;
+    }
+    const added = agentHooks(agent, file, add);
+    result.ok &&= added.ok;
+    addSteps(result, added);
+  }
 
   const marks = writeNew(target.marks, MARKS_HEADER, { mode: 0o600 });
-  report.push(`${marks} ${target.marks}${marks === 'wrote' ? ' (`yokoten marks add` adds one of your own)' : ''}`);
+  result.changes.push({ state: marks, kind: 'file', path: target.marks });
   // The obvious marks come from the machine; the rest only the owner knows (#390).
   const found = machineMarks(env, { cwd, gh });
-  report.push(
-    ...trySafely('the marks from this machine', () => {
-      const lines = filledLines(fillMarks(env, found), target.marks);
-      // One answer, as doctor gives it (#522): no marks at all, or an optional offer.
-      // The next line is an example, and only install prints it (#525).
-      const marks = loadMarks(env);
-      const missing = missingMarkKinds(marks, found);
-      if (!marks.length) lines.push(`${target.marks} has no marks yet; ${EMPTY_MARKS_FIX}`, MARK_EXAMPLE);
-      else if (missing.length) lines.push(`${offerMarkKinds(missing)}; ${OFFER_MARKS_FIX}`, MARK_EXAMPLE);
-      return lines;
-    }),
-    ...trySafely('the git mailmap', () => [setUpMailmap(env, found, { ask })]),
-  );
-  // Last, so the way to call `yokoten` is the line the user reads at the end.
-  if (needsRuntime) report.push(...trySafely('the launcher', () => setUpLauncher(env, target.runtime, homeIn(env), { ask, platform })));
+  addSteps(result, stepSafely('the marks from this machine', () => marksSteps(env, found, target.marks)));
+  addSteps(result, stepSafely('the git mailmap', () => setUpMailmap(env, found, { ask })));
+  // Last, so the way to call `yokoten` is the step the user reads at the end.
+  if (needsRuntime) addSteps(result, stepSafely('the launcher', () => setUpLauncher(env, target.runtime, home, { ask, platform })));
   // Nothing is kept out silently: with the plugin on, a launcher that was never there is
-  // not worth a line, and one an older install left is named as removed.
-  else report.push(...trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform)).filter((line) => !line.startsWith('nothing to remove:')));
-  report.push(...trySafely('the list of what install made', () => {
+  // not worth a change, and one an older install left is named as removed.
+  else addSteps(result, stepSafely('the launcher', () => ({ changes: removeLauncher(home, platform) })));
+  addSteps(result, stepSafely('the list of what install made', () => {
     recordCreatedPaths(env, existedBefore);
-    return [];
+    return {};
   }));
-  return { ok, lines: [...plan, ...report] };
+  return result;
 }
 
-/** The files and settings keys install will touch, printed before it writes (#904). */
-function installPlan(env: Env, runtime: string, plugin: boolean, needsRuntime: boolean): string[] {
-  const shown = (path: string): string => path.split(homeIn(env)).join('~');
-  const plan = ['install will write these files and settings keys:'];
-  plan.push(needsRuntime ? `  ${shown(runtime)}` : '  no runtime: the yokoten plugin brings its own');
-  if (plugin) {
-    plan.push('  no global skills or agents: the yokoten plugin brings them');
-  } else {
-    for (const file of skillFiles(env, ENTRY_SKILL)) plan.push(`  ${shown(file)}`);
-    for (const file of readdirSync(join(KIT, 'user', 'agents'))) plan.push(`  ${shown(agentFile(env, file))}`);
-    plan.push(`  ${shown(join(userDir(env), 'settings.json'))}: hooks.SessionStart, hooks.PreToolUse`);
-  }
-  if (codex.hasUserDir(env)) plan.push(`  ${codex.userHooksFile(env)}: hooks.SessionStart, hooks.PreToolUse`);
-  if (gemini.hasUserDir(env)) plan.push('  ~/.gemini/settings.json: hooks.SessionStart, hooks.BeforeTool');
-  if (antigravity.hasUserDir(env)) plan.push(`  ${antigravity.userHooksFile(env)}: hooks.yokoten`);
-  if (copilot.hasUserDir(env)) plan.push(`  ${copilot.userHooksFile(env)}: hooks.yokoten`);
-  if (grok.hasUserDir(env)) plan.push(`  ${grok.userHooksFile(env)}: hooks.PreToolUse`);
-  if (muse.hasUserDir(env)) plan.push(`  ${muse.userSettingsFile(env)}: hooks.SessionStart, hooks.PreToolUse`);
-  if (opencode.hasUserDir(env)) plan.push(`  ${opencode.userPluginFile(env)}`);
-  if (needsRuntime) plan.push('  ~/.local/bin/yokoten');
-  plan.push(`  ${shown(paths(env).marks)}`, `  ${shown(join(paths(env).config, 'mailmap'))}`);
-  // The one change to the user's own config: it is listed, and asked for when it runs (#985).
-  if (mailmapState(env) === 'unset') plan.push(`  git config --global mailmap.file ${MAILMAP_SETTING} (install asks first)`);
-  return plan;
+/** Gemini CLI's user settings, as the person names the file. */
+const GEMINI_SETTINGS = '~/.gemini/settings.json';
+
+/** The one problem install and uninstall give with no home folder (#404). */
+const noHomeProblem = (command: 'install' | 'uninstall'): Finding => finding('machine-runtime', NO_HOME, `set HOME to your home folder's full path, then run \`yokoten ${command}\` again`);
+
+/** The marks from this machine in the private-marks file, and a note when the file has none (#522, #525). */
+function marksSteps(env: Env, found: MachineMark[], file: string): Partial<Steps> {
+  const kinds = fillMarks(env, found);
+  const changes: Change[] = kinds.length ? [{ state: 'added', kind: 'file', path: file, note: `${kinds.join(', ')} from this machine (the values are not shown)` }] : [];
+  // One answer, as doctor gives it (#522): no marks at all, or an optional offer.
+  const marks = loadMarks(env);
+  const missing = missingMarkKinds(marks, found);
+  if (!marks.length) return { changes, notes: [finding('private-marks', `${file} has no marks yet`, EMPTY_MARKS_FIX, { why: MARK_EXAMPLE })] };
+  if (missing.length) return { changes, notes: [finding('private-marks', offerMarkKinds(missing), OFFER_MARKS_FIX, { why: MARK_EXAMPLE })] };
+  return { changes };
 }
 
 const kitSkills = (): string[] => readdirSync(join(KIT, 'user', 'skills'));
@@ -692,9 +732,8 @@ export function cleanOlderInstall(env: Env, { platform = process.platform }: { p
     cleanup.files += 1;
   }
   // A session never edits a shell profile: the line stays, and the session names it (#983).
-  for (const line of trySafely('the launcher', () => removeLauncher(homeIn(env), platform ?? process.platform, false))) {
-    if (line.startsWith('removed the launcher')) cleanup.files += 1;
-  }
+  const launchers = stepSafely('the launcher', () => ({ changes: removeLauncher(homeIn(env), platform, false) })).changes ?? [];
+  cleanup.files += launchers.filter((change) => change.state === 'removed').length;
   if (cleanup.files) cleanup.profiles = profilesWithLine(homeIn(env));
   return cleanup;
 }
@@ -784,53 +823,52 @@ export function isMachineSetUp(env: Env): boolean {
  * Take back what install wrote: the skills and agents that carry the managed mark, the two
  * user-level hooks, the runtime, and the files install made that the user never added to
  * (the private marks' header, the mailmap). A key or a mark of theirs keeps its file and
- * folder. A second run finds nothing and changes nothing.
+ * folder. A second run finds nothing and changes nothing. `ok` is false when a hooks file
+ * could not be read, so its hooks stay for the person to take out.
  */
-export function uninstall(env: Env, { platform = process.platform }: { platform?: NodeJS.Platform } = {}): { ok: boolean; lines: string[] } {
+export function uninstall(env: Env, { platform }: { platform: NodeJS.Platform }): SetupResult {
   // As install: with no home, every path below would be relative (#404).
-  if (!homeOf(env)) return { ok: false, lines: [`${NO_HOME}. Set HOME to your home folder's full path and run uninstall again`] };
+  if (!homeOf(env)) return { ok: false, changes: [], problems: [noHomeProblem('uninstall')], notes: [] };
   const target = paths(env);
-  const report: string[] = [];
+  const result: SetupResult = { ok: true, ...noSteps() };
   for (const name of kitSkills()) {
     const [claudeFile, sharedFile] = skillFiles(env, name);
-    report.push(describeWrite(removeManaged(claudeFile, { folder: true }), `skill ${name} in ${skillsDir(claudeFile)}`));
-    report.push(describeWrite(removeSharedSkill(sharedFile, claudeFile), `skill ${name} in ${skillsDir(sharedFile)}`));
+    result.changes.push(...named([changeOf(removeManaged(claudeFile, { folder: true }), 'skill', dirname(claudeFile)), changeOf(removeSharedSkill(sharedFile, claudeFile), 'skill', dirname(sharedFile))]));
   }
-  for (const file of kitAgents()) report.push(describeWrite(removeManaged(agentFile(env, file)), `agent ${file.replace(/\.md$/, '')}`));
+  for (const file of kitAgents()) result.changes.push(...named([changeOf(removeManaged(agentFile(env, file)), 'agent', agentFile(env, file))]));
 
-  const settings = join(userDir(env), 'settings.json');
+  const settings = claudeSettingsFile(env);
   const hooks = removeUserHooks(env);
-  if (hooks) report.push(describeWrite(hooks.doctor, 'the SessionStart doctor'), describeWrite(hooks.guard, 'the user-level command guard'));
-  else report.push(`kept ${settings}: it is not JSON, so the two hooks are still in it; take them out by hand`);
+  if (hooks) result.changes.push(...named([changeOf(hooks.doctor, 'hook', settings, { agent: 'Claude Code', note: HOOK_NAMES.doctor }), changeOf(hooks.guard, 'hook', settings, { agent: 'Claude Code', note: HOOK_NAMES.guard })]));
+  else result.problems.push(handRemoval('Claude Code', settings));
   // The user-level guards outside Claude Code's settings (#342). Each is touched only
   // when its tool is on this machine; an unreadable file stays as it is.
-  const extras: [string, 'removed' | 'not there' | 'kept (yours)' | 'kept (your edit)' | null | { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' }][] = [
-    ['Antigravity CLI', antigravity.hasUserDir(env) ? antigravity.removeUserHooks(env) : 'not there'],
-    ['Copilot CLI', copilot.hasUserDir(env) ? copilot.removeUserHooks(env) : 'not there'],
-    ['Codex CLI', codex.hasUserDir(env) ? codex.removeUserHooks(env) : 'not there'],
-    ['Gemini CLI', gemini.hasUserDir(env) ? gemini.removeUserHooks(env) : 'not there'],
-    ['Grok CLI', grok.hasUserDir(env) ? grok.removeUserHooks(env) : 'not there'],
-    ['Muse Code', muse.hasUserDir(env) ? muse.removeUserHooks(env) : 'not there'],
-    ['OpenCode', opencode.hasUserDir(env) ? removeManaged(opencode.userPluginPath(env), { keepLink: true }) : 'not there'],
+  const home = homeIn(env);
+  const extras: [agent: string, file: string, removed: 'removed' | 'not there' | 'kept (yours)' | 'kept (your edit)' | null | { doctor: 'removed' | 'not there'; guard: 'removed' | 'not there' }][] = [
+    ['Antigravity CLI', antigravity.userHooksFile(env), antigravity.hasUserDir(env) ? antigravity.removeUserHooks(env) : 'not there'],
+    ['Copilot CLI', copilot.userHooksFile(env), copilot.hasUserDir(env) ? copilot.removeUserHooks(env) : 'not there'],
+    ['Codex CLI', codex.userHooksFile(env), codex.hasUserDir(env) ? codex.removeUserHooks(env) : 'not there'],
+    ['Gemini CLI', GEMINI_SETTINGS, gemini.hasUserDir(env) ? gemini.removeUserHooks(env) : 'not there'],
+    ['Grok CLI', grok.userHooksFile(env), grok.hasUserDir(env) ? grok.removeUserHooks(env) : 'not there'],
+    ['Muse Code', muse.userSettingsFile(env), muse.hasUserDir(env) ? muse.removeUserHooks(env) : 'not there'],
+    ['OpenCode', opencode.userPluginFile(env), opencode.hasUserDir(env) ? removeManaged(opencode.userPluginPath(env), { keepLink: true }) : 'not there'],
   ];
-  for (const [name, removed] of extras) {
-    if (removed === null) report.push(`kept the ${name} hooks: the file is not JSON; take them out by hand`);
+  for (const [agent, file, removed] of extras) {
+    if (removed === null) result.problems.push(handRemoval(agent, file));
     else if (typeof removed === 'object') {
-      if (removed.doctor === 'removed' || removed.guard === 'removed') report.push(`removed the ${name} user hooks`);
-    } else if (removed === 'removed') report.push(`removed the ${name} user hook`);
+      if (removed.doctor === 'removed' || removed.guard === 'removed') result.changes.push({ state: 'removed', kind: 'hook', path: file, agent });
+    } else if (removed === 'removed') result.changes.push({ state: 'removed', kind: 'hook', path: file, agent });
   }
 
-  report.push(...trySafely('the launcher', () => removeLauncher(homeIn(env), platform)));
-  const hadRuntime = existsSync(target.runtime);
+  addSteps(result, stepSafely('the launcher', () => ({ changes: removeLauncher(home, platform) })));
+  if (existsSync(target.runtime)) result.changes.push({ state: 'removed', kind: 'runtime', path: target.runtime });
   rmSync(target.runtime, { recursive: true, force: true });
-  report.push(describeWrite(hadRuntime ? 'removed' : 'not there', `the runtime ${target.runtime}`));
   // The stop log is yokoten's own, so uninstall takes it with the rest (#621).
   const stopLog = join(target.config, STOPS_FILE);
   const stopOff = join(target.config, STOPS_OFF_FILE);
-  const hadStopLog = existsSync(stopLog) || existsSync(stopOff);
+  if (existsSync(stopLog) || existsSync(stopOff)) result.changes.push({ state: 'removed', kind: 'file', path: stopLog, note: 'the stop log' });
   rmSync(stopLog, { force: true });
   rmSync(stopOff, { force: true });
-  report.push(`${hadStopLog ? 'removed' : 'not there'} the stop log`);
   // A file install wrote and the user never added to goes too, so the home folder is as
   // it was before install (#904). A mark or a mailmap line of their own keeps the file.
   const headerOnly = (file: string, header: string): boolean => {
@@ -842,15 +880,17 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
   };
   if (headerOnly(target.marks, MARKS_HEADER)) {
     rmSync(target.marks, { force: true });
-    report.push(`removed ${target.marks}`);
+    result.changes.push({ state: 'removed', kind: 'file', path: target.marks });
   }
   const mailmapFile = join(target.config, 'mailmap');
-  const mailmapHeader = '# yokoten: git prints the owner\'s emails as a placeholder. Kept outside every repo; never commit it.\n';
-  if (headerOnly(mailmapFile, mailmapHeader) && mailmapState(env) !== 'other') {
+  if (headerOnly(mailmapFile, MAILMAP_HEADER) && mailmapState(env) !== 'other') {
     rmSync(mailmapFile, { force: true });
-    report.push(`removed ${mailmapFile}`);
+    result.changes.push({ state: 'removed', kind: 'file', path: mailmapFile });
   }
-  if (mailmapState(env) === 'ours') readGitValue(env, ['config', '--global', '--unset', 'mailmap.file']);
+  if (mailmapState(env) === 'ours') {
+    readGitValue(env, ['config', '--global', '--unset', 'mailmap.file']);
+    result.changes.push({ state: 'removed', kind: 'setting', path: 'mailmap.file' });
+  }
   // Only what install made goes (#985). An install older than this record named nothing,
   // so its folders and git config file stay: a leftover empty folder is the safe side.
   const created = readCreatedPaths(env);
@@ -871,9 +911,17 @@ export function uninstall(env: Env, { platform = process.platform }: { platform?
       // the folder holds something of the user's: it stays
     }
   }
-  if (existsSync(target.config)) report.push(`kept ${target.config} (your keys and private marks)`);
-  return { ok: true, lines: report };
+  if (existsSync(target.config)) result.changes.push({ state: 'kept', kind: 'file', path: target.config, yours: true, note: 'your keys and private marks' });
+  result.ok = result.problems.length === 0;
+  return result;
 }
+
+/** A hooks file uninstall can't read: its hooks stay, and the person takes them out (#342). */
+const handRemoval = (agent: string, file: string): Finding =>
+  finding(HOOK_RULES[agent] ?? 'user-guard', `${file} is not JSON, so the ${agent} hooks are still in it`, 'run `yokoten uninstall` again', { why: 'uninstall never rewrites a file it cannot read, so take them out by hand first' });
+
+/** The first line of the mailmap install writes: a file with only this line is install's alone. */
+const MAILMAP_HEADER = "# yokoten: git prints the owner's emails as a placeholder. Kept outside every repo; never commit it.\n";
 
 // ---- What install made, so uninstall takes back only that (#985) ----
 
@@ -1443,7 +1491,7 @@ export const MAILMAP_QUESTION = 'Hide your email in git logs that agents read? [
  * with no terminal, or no yes, the setting stays unset and the line gives the command.
  * A mailmap.file the user set to another file is theirs: it stays and the line says so.
  */
-export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: Ask } = {}): string {
+export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: Ask } = {}): Partial<Steps> {
   const emails = [...new Set([...found.filter((mark) => mark.kind === 'git email').map((mark) => mark.value), ...loadMarks(env).filter((mark) => /^[^@\s]+@[^@\s]+$/.test(mark))].map((email) => email.toLowerCase()))];
   const file = join(paths(env).config, 'mailmap');
   // The file may hold lines the owner wrote: it only gets the lines it lacks.
@@ -1452,20 +1500,29 @@ export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: As
   const missing = emails.filter((email) => !mapped.has(email));
   if (before === null) {
     mkdirSync(dirname(file), { recursive: true });
-    writeFileSync(file, '# yokoten: git prints the owner\'s emails as a placeholder. Kept outside every repo; never commit it.\n', { mode: 0o600 });
+    writeFileSync(file, MAILMAP_HEADER, { mode: 0o600 });
   }
   if (missing.length) appendFileSync(file, `${before && !before.endsWith('\n') ? '\n' : ''}${missing.map((email) => `${MAILMAP_OWNER} <${email}>\n`).join('')}`);
+  const fileChange: Change = { state: before === null ? 'wrote' : missing.length ? 'added' : 'kept', kind: 'file', path: file, ...(missing.length && before !== null ? { note: `${missing.length} line(s)` } : {}) };
   const state = mailmapState(env);
-  if (state === 'other') return `kept your own git mailmap.file setting; add the lines of ${file} to that file`;
+  const turnOn = `run \`git config --global mailmap.file ${MAILMAP_SETTING}\``;
+  if (state === 'other') {
+    return { changes: [fileChange, { state: 'kept', kind: 'setting', path: 'mailmap.file', yours: true }], notes: [finding('mailmap', 'your own git mailmap.file setting stays', `add the lines of ${file} to that file`)] };
+  }
   if (state === 'unset' && !(ask && isYes(ask(MAILMAP_QUESTION)))) {
-    return `skipped the global git setting mailmap.file: install changes your git config only when you say yes. A mailmap makes git print a placeholder in place of your email. To turn it on, run \`git config --global mailmap.file ${MAILMAP_SETTING}\``;
+    // Install changes the user's git config only when they say yes (#985).
+    return { changes: [fileChange, { state: 'skipped', kind: 'setting', path: 'mailmap.file', note: 'install changes your git config only when you say yes' }], notes: [finding('mailmap', MAILMAP_NOT_ON, turnOn, { why: 'a mailmap makes git print a placeholder in place of your email' })] };
   }
   // git prints nothing when it sets a value, so the setting is read back to see it took.
   if (state === 'unset') readGitValue(env, ['config', '--global', 'mailmap.file', MAILMAP_SETTING]);
-  if (mailmapState(env) !== 'ours') return `skipped the git mailmap: git config could not set mailmap.file; run \`git config --global mailmap.file ${MAILMAP_SETTING}\`; a mailmap makes git print a private address in place of your email`;
-  if (state === 'ours') return missing.length ? `added ${missing.length} line(s) to ${file}` : `kept ${file}: it already maps your emails`;
-  return `${before === null ? 'wrote' : 'kept'} ${file}, and git log and git show now print your emails as a placeholder`;
+  if (mailmapState(env) !== 'ours') {
+    return { changes: [fileChange, { state: 'failed', kind: 'setting', path: 'mailmap.file' }], problems: [finding('mailmap', 'git config could not set mailmap.file', turnOn, { why: 'a mailmap makes git print a placeholder in place of your email' })] };
+  }
+  return { changes: [fileChange, { state: state === 'ours' ? 'kept' : 'added', kind: 'setting', path: 'mailmap.file', note: 'git log and git show print your emails as a placeholder' }] };
 }
+
+/** What install says when the global mailmap.file stays unset: git still prints the owner's email. */
+export const MAILMAP_NOT_ON = 'hide your email in git logs: not on yet';
 
 /**
  * One privacy step of install or doctor, which never stops them: an error becomes one plain
