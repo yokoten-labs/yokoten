@@ -40,7 +40,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   stopCheckoutWalk(sandbox.home);
   const away = join(sandbox.home, 'away');
   mkdirSync(away);
-  const said = (command: string) => new RegExp(`^yokoten ${command} · ~/away\\s+is\\s+not\\s+inside\\s+a\\s+git\\s+repo\\nNext: run \`git init\` here to start a project, or go to your project's folder\\.\\n$`);
+  const said = (command: string) => new RegExp(`^yokoten ${command} · this folder is not in a git repo\\n\\nNext: go to your project's folder, or start one here with \`git init\`\\n$`);
   const runs: [string[], string, Record<string, string>?][] = [
     [['doctor'], 'doctor'],
     [['check'], 'check'],

@@ -57,8 +57,8 @@ test('layers: no module imports from a layer above its own', () => {
 // the merge skill and record. docs.test.ts checks that prose agrees with the code: the
 // manifesto count against the guide (#487), and the open standard against the shapes (#755).
 // screens.test.ts checks the text every screen prints against record 0049, calibrated on the
-// owner's verdicts in captured-screens.ts (#1099). The real-home preload is a temp script home.ts writes, not a file here, so this folder stays at 7 (#739).
-const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/helpers.ts', 'repo/home.ts', 'repo/invoke.ts', 'repo/merge-utc.test.ts', 'repo/docs/docs.test.ts', 'repo/docs/readme-tables.test.ts', 'repo/docs/screens.test.ts', 'repo/docs/captured-screens.ts'];
+// owner's verdicts in captured-screens.ts (#1099), with the rules it measures in screen-rules.ts (#1115). The real-home preload is a temp script home.ts writes, not a file here, so this folder stays at 7 (#739).
+const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/helpers.ts', 'repo/home.ts', 'repo/invoke.ts', 'repo/merge-utc.test.ts', 'repo/docs/docs.test.ts', 'repo/docs/readme-tables.test.ts', 'repo/docs/screens.test.ts', 'repo/docs/screen-rules.ts', 'repo/docs/captured-screens.ts'];
 // Kit prose has no src module. This test reads the skill files (#531).
 const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 // Modules with no test file of their own. Keep it short: a new module gets its test file.

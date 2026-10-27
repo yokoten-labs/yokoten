@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { row, wrap } from '../rules/text/screen.ts';
+import { row, screen, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -160,8 +160,9 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
  */
 export function noRootScreen(command: string | undefined, missing: Finding): string[] {
   const words = command === undefined ? 'yokoten' : `yokoten ${command}`;
-  const next = missing.what.startsWith(GIT_MISSING) ? `install git, or add it to PATH, then run \`${words}\` again.` : `run \`git init\` here to start a project, or go to your project's folder.`;
-  return [...wrap(`${words} · `, missing.what), ...wrap('Next: ', next)];
+  // What happened in the reader's words, with no path: the folder is the one they are in (issue #1115).
+  if (missing.what.startsWith(GIT_MISSING)) return screen(wrap(`${words} · `, missing.what), wrap('Next: ', `install git, then run \`${words}\` again`));
+  return screen(wrap(`${words} · `, 'this folder is not in a git repo'), wrap('Next: ', `go to your project's folder, or start one here with \`git init\``));
 }
 
 // A person's terminal output (#707): colour and a shape that reads at a glance, like
