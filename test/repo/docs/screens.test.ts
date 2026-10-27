@@ -19,6 +19,11 @@ import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, 
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
+// C8: the bot, train and conflicts screens, built from data.
+import { refusalScreen, utcRefusal } from '../../../src/commands/more/merge/bot.ts';
+import { summaryLines } from '../../../src/commands/more/merge/conflicts/report.ts';
+import type { ConflictMap } from '../../../src/commands/more/merge/conflicts/types.ts';
+import { planLines } from '../../../src/commands/more/merge/train.ts';
 import { makeSandbox, ROOT, writeNodeProgram } from '../helpers.ts';
 import { CAPTURED_SCREENS } from './captured-screens.ts';
 
@@ -246,6 +251,21 @@ const GUARD_CALLS: [string, string][] = [
 const BARE = ['install', 'upgrade', 'uninstall', 'init', 'trust', 'update', 'doctor', 'worker', 'msg', 'train', 'ci-health', 'tidy', 'stops', 'version'];
 const CHANGES_HOME_OR_REPO = new Set(['install', 'upgrade', 'uninstall', 'init', 'trust', 'update', 'tidy', 'stops']);
 
+// C8: three open pull requests, two of them on one file, for the train's plan and the conflicts report.
+const C8_MAP: ConflictMap = {
+  version: 1,
+  builtAt: '2026-10-28T00:00:00.000Z',
+  main: '0123456789ab',
+  changes: [
+    { id: 'pr:12', label: 'PR #12', branch: 'add-login', head: '1111111', draft: false, files: ['src/app.ts', 'src/login.ts'], moves: [], mainConflicts: [] },
+    { id: 'pr:15', label: 'PR #15', branch: 'fix-menu', head: '2222222', draft: false, files: ['src/app.ts'], moves: [], mainConflicts: [] },
+    { id: 'pr:20', label: 'PR #20', branch: 'docs-guide', head: '3333333', draft: false, files: ['docs/guide.md'], moves: [], mainConflicts: [] },
+  ],
+  collisions: [{ first: 'pr:12', second: 'pr:15', files: ['src/app.ts'] }],
+  leased: {},
+  hot: [],
+};
+
 /** Every screen: each command's help and usage error from COMMANDS, then the screens of a state. */
 function screensOf(repo: string): ScreenRun[] {
   return [
@@ -276,6 +296,11 @@ function screensOf(repo: string): ScreenRun[] {
     ...BARE.map((word): ScreenRun => ({ key: `${word}, bare`, words: [word], place: CHANGES_HOME_OR_REPO.has(word) ? 'fresh' : 'repo' })),
     { key: 'kanban --no-open', words: ['kanban', '--no-open'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: false }) },
     { key: 'kanban, opening the browser', words: ['kanban'], lines: servingScreen({ url: 'http://repo.localhost:49152/', isOpening: true }) },
+    // C8: the bot's refusal of a push with a time zone, the train's plan for three pull
+    // requests, and the conflicts report, each rendered from data (#1115).
+    { key: 'bot, a push with a time zone', words: ['bot', '--', 'git', 'push'], platform: 'linux', lines: refusalScreen(utcRefusal([{ hash: 'a'.repeat(40), short: 'a1b2c3d', subject: 'feat(host): read the zone', isRoot: false }], 'a'.repeat(40))) },
+    { key: 'train, the plan for three pull requests', words: ['train'], platform: 'linux', lines: planLines(C8_MAP) },
+    { key: 'conflicts, two pull requests collide', words: ['conflicts'], platform: 'linux', lines: summaryLines(C8_MAP) },
   ];
 }
 
