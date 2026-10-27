@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { fileURLToPath } from 'node:url';
 import { renameRetrying } from '../platform/disk.ts';
 import { realPath } from '../platform/paths.ts';
+import type { Finding } from '../rules/text/message.ts';
 
 /**
  * The folder with package.json, kit/, bin/ and src/. This file is src/setup/files.ts in
@@ -290,4 +291,33 @@ export function managedState(path: string, content: string): 'wrote' | 'updated'
   if (managedMark(old) === null) return 'kept (yours)';
   if (old === sealManaged(content)) return 'same';
   return isEditedManaged(old) ? 'kept (your edit)' : 'updated';
+}
+
+/** What setup did to one thing (record of the CLI baseline, plan 6.3). */
+export type ChangeState = 'wrote' | 'updated' | 'linked' | 'added' | 'removed' | 'kept' | 'skipped' | 'failed';
+
+/** One thing install, uninstall or init changed, kept or left; a screen reads these, not prose. */
+export interface Change {
+  state: ChangeState;
+  kind: 'file' | 'skill' | 'agent' | 'hook' | 'launcher' | 'runtime' | 'profile' | 'setting' | 'git-hook';
+  path: string;
+  agent?: string;
+  yours?: boolean;
+  note?: string;
+}
+
+/** The result of a setup command: what changed, what went wrong, and what is worth a note. */
+export interface SetupResult {
+  ok: boolean;
+  changes: Change[];
+  problems: Finding[];
+  notes: Finding[];
+}
+
+/** The place a setup screen is drawn for; the platform is an argument, never read in place. */
+export interface Place {
+  platform: NodeJS.Platform;
+  home: string | null;
+  hasProjectRules: boolean;
+  launcherOnPath: boolean;
 }

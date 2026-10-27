@@ -1500,7 +1500,7 @@ const PLATFORM_READS: [string, number][] = [
   ['commands/more/check.ts', 1],
   ['commands/hook.ts', 1],
   ['commands/more/merge/train.ts', 1],
-  ['commands/more/setup.ts', 2],
+  ['commands/more/setup/upgrade.ts', 2],
   ['host/light.ts', 1],
   ['rules/guards/commands/no-wipe.ts', 2],
   ['rules/guards/hooks/read.ts', 1],

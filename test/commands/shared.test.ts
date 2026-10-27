@@ -19,7 +19,7 @@ import {
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { askOnTerminal, canColour, fail, isColourTerminal, MARKS, paint, problemRows, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
-import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup.ts';
+import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup/ask.ts';
 import type { Env } from '../../src/rules/config.ts';
 import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
