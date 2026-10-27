@@ -1004,13 +1004,14 @@ function cutForms(home: string): string[] {
  * system's (they differ under sudo, in CI, or with HOME=/tmp/x), each also by its real path
  * (on macOS a temp or home folder resolves to /private/...). A home is replaced only where
  * its path ends, so /data/u never touches /data/users. On Windows `\` and `/` match each
- * other, and case does not count. A home path cut short at the end of a line or the text
+ * other, and case does not count (nor does it when the platform is not given). A home path cut short at the end of a line or the text
  * (`/home/jonat`) becomes `~` too, when it keeps 4 or more characters of the last part (#404).
  */
-export function hideHome(text: string, env: Env, { platform = process.platform as string, systemHome: system = systemHome() } = {}): string {
+export function hideHome(text: string, env: Env, { platform, systemHome: system = systemHome() }: { platform?: string; systemHome?: string } = {}): string {
   const homes = [...new Set([...homeForms(env.HOME), ...homeForms(system)])].sort((a, b) => b.length - a.length);
   if (!homes.length) return text;
-  const isWindows = platform === 'win32';
+  // With no platform given, case does not count: hiding too much is the safe side (issue #1000).
+  const isWindows = platform === undefined || platform === 'win32';
   const asPattern = (paths: string[], slash = String.raw`[\\/]`) => paths.map((home) => escapeRegExp(home).replace(/\\\\|\//g, slash)).join('|');
   const flags = isWindows ? 'giu' : 'gu';
   const whole = text.replace(new RegExp(`${BEFORE_HOME}(?:${asPattern(homes)})${AFTER_HOME}`, flags), '~');

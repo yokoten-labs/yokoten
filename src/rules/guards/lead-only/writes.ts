@@ -1,7 +1,7 @@
 import nodePath from 'node:path';
 import { finding, type Finding } from '../../text/message.ts';
 import { type Env } from '../../config.ts';
-import { stripWorktreeRoot, LEAD_ONLY_FIX, isLeadOnly, isGranted } from './edit.ts';
+import { stripWorktreeRoot, LEAD_ONLY_FIX, foldsCase, isLeadOnly, isGranted } from './edit.ts';
 import { base, commandPlace, placedPath } from '../bash/read/words.ts';
 import { UNSURE_FOLDER_FIX, writeTargets, commitTargets, type WriteTarget, type FileRules } from './targets.ts';
 import { pathsFor } from '../../../platform/paths.ts';
@@ -26,15 +26,16 @@ function unsureFinding(target: WriteTarget, env: Env, does: string): Finding | n
   return null;
 }
 
-export function checkLeadOnlyWrites(words: string[], { env, rules, folder }: { env: Env; rules: FileRules; folder: string | null }): Finding | null {
+export function checkLeadOnlyWrites(words: string[], { env, rules, folder, platform }: { env: Env; rules: FileRules; folder: string | null; platform: NodeJS.Platform }): Finding | null {
   // A folder counts when a lead-only file may be in it: `rm -r .github`.
   // A file in a worker worktree matches from that worktree (#571), as an edit does; the message keeps the full path.
+  const folds = foldsCase(platform);
   const stopped = (target: WriteTarget): string | null => {
     const ruled = rules.ruled(target, env);
     if (!ruled) return null;
     const inWorktree = stripWorktreeRoot(ruled.path);
-    const matches = (path: string) => isLeadOnly(path, ruled.leadOnly);
-    return (matches(inWorktree) || matches(`${inWorktree}/-`)) && !isGranted(inWorktree, env) ? ruled.path : null;
+    const matches = (path: string) => isLeadOnly(path, ruled.leadOnly, folds);
+    return (matches(inWorktree) || matches(`${inWorktree}/-`)) && !isGranted(inWorktree, env, folds) ? ruled.path : null;
   };
   for (const target of writeTargets(words, folder, rules.rootOf)) {
     if (target.isUnread) {

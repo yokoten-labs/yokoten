@@ -2688,3 +2688,10 @@ test('timeZoneCommandFix: the command leads; cmd types its own, bash keeps it in
   assert.equal(timeZoneCommandFix({ SHELL: '/bin/bash' }), 'run `export TZ=UTC`, then keep the command in ~/.bashrc; yokoten init sets it for agent sessions');
   assert.equal(timeZoneCommandFix({ SHELL: 'C:\\Windows\\System32\\cmd.exe' }), 'run `set TZ=UTC`, then type setx TZ UTC once to keep it in new windows; yokoten init sets it for agent sessions');
 });
+
+test('hideHome: the platform decides whether case counts, and an unknown platform folds it (issue #1000)', () => {
+  const rows: [string | undefined, string][] = [['linux', '/HOME/jdoe/x'], ['darwin', '/HOME/jdoe/x'], ['win32', '~/x'], [undefined, '~/x']];
+  for (const [platform, shown] of rows) {
+    assert.equal(hideHome('/HOME/jdoe/x', { HOME: '/home/jdoe' }, { platform, systemHome: '' }), shown, String(platform));
+  }
+});

@@ -632,7 +632,7 @@ interface UncheckedHook {
 }
 
 /** The commit hooks here (pre-commit and pre-merge-commit) that do not run the check (#239); null when git runs none from this repo. */
-const uncheckedHooks = (root: string, env: Env): UncheckedHook[] | null => {
+export const uncheckedHooks = (root: string, env: Env, platform: NodeJS.Platform = process.platform): UncheckedHook[] | null => {
   const hooksPath = gitConfig(root, 'core.hooksPath', env);
   if (!hooksPath || commitHook(root, env) === null) return null;
   // husky 9's folder (.husky/_) runs .husky/pre-commit with `sh`, so that file needs no execute bit (#256).
@@ -642,7 +642,7 @@ const uncheckedHooks = (root: string, env: Env): UncheckedHook[] | null => {
     const file = hookFile(root, hooksPath, hook) as string;
     const path = join(root, file);
     if (!existsSync(path)) {
-      unchecked.push({ file, problem: 'missing', needsChmod: process.platform !== 'win32' && !runsWithSh });
+      unchecked.push({ file, problem: 'missing', needsChmod: platform !== 'win32' && !runsWithSh });
       continue;
     }
     const needsChmod = !runsWithSh && !isExecutable(path);
