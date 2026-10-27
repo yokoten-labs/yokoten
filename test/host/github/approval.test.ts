@@ -566,10 +566,10 @@ const approve = JSON.stringify({ verdict: 'APPROVE', summary: 'Looks right.', fi
 
 test('review: the verdict parser takes only the exact JSON shape; anything else fails closed (#1088)', () => {
   assert.deepEqual(parseVerdict(approve), { verdict: 'APPROVE', summary: 'Looks right.', findings: [] });
-  assert.deepEqual(parseVerdict(`  ${JSON.stringify({ findings: [{ severity: 'medium', text: 'a.ts: no test' }], verdict: 'REQUEST_CHANGES', summary: 'Needs a test.' })}\n`), {
+  assert.deepEqual(parseVerdict(`  ${JSON.stringify({ findings: [{ severity: 'high', text: 'a.ts: no test' }], verdict: 'REQUEST_CHANGES', summary: 'Needs a test.' })}\n`), {
     verdict: 'REQUEST_CHANGES',
     summary: 'Needs a test.',
-    findings: ['medium: a.ts: no test'],
+    findings: ['high: a.ts: no test'],
   });
   const refused: [string, string][] = [
     ['empty', ''],
@@ -629,7 +629,7 @@ test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-1
   for (const [name, answer, verdict, findings] of [
     ['a long summary', { verdict: 'APPROVE', summary: long, findings: [] }, 'APPROVE', 0],
     ['a long finding', { verdict: 'REQUEST_CHANGES', summary: 's', findings: [{ severity: 'high', text: long }] }, 'REQUEST_CHANGES', 1],
-    ['too many findings', { verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'medium', text: `f${i}` })) }, 'REQUEST_CHANGES', MAX_FINDINGS + 1],
+    ['too many findings', { verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'high', text: `f${i}` })) }, 'REQUEST_CHANGES', MAX_FINDINGS + 1],
   ] as [string, object, string, number][]) {
     const parsed = parseVerdict(JSON.stringify(answer));
     assert.ok(parsed, name);
@@ -637,26 +637,26 @@ test('review: a long answer is cut, not failed; its verdict stays (owner, 2026-1
     assert.ok([parsed.summary, ...parsed.findings].every((text) => text.length <= MAX_TEXT_CHARS), `${name}: every text fits`);
   }
   assert.match(parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: long, findings: [] }))?.summary ?? '', /…$/, 'a cut text is marked');
-  assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'medium', text: `f${i}` })) }))?.findings.at(-1), '15 more findings not shown.');
+  assert.equal(parseVerdict(JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 's', findings: Array.from({ length: 25 }, (_, i) => ({ severity: 'high', text: `f${i}` })) }))?.findings.at(-1), '15 more findings not shown.');
 });
 
-test('review: findings go most severe first, and a low one never blocks; the low ones are the first cut (Gemini review, 2026-10-26)', () => {
+test('review: findings go most severe first, and only a high one blocks; the low ones are the first cut (owner, 2026-10-27)', () => {
   const answer = (verdict: string, severities: string[]) => JSON.stringify({ verdict, summary: 's', findings: severities.map((severity, i) => ({ severity, text: `f${i}.ts: ${severity}` })) });
   for (const [name, verdict, severities, expected] of [
     ['only low notes, asked as changes: an approval', 'REQUEST_CHANGES', ['low', 'low'], 'APPROVE'],
     ['only low notes, approved', 'APPROVE', ['low'], 'APPROVE'],
-    ['a medium finding: changes', 'REQUEST_CHANGES', ['low', 'medium'], 'REQUEST_CHANGES'],
+    ['a medium finding: an approval, it does not block (owner, 2026-10-27)', 'REQUEST_CHANGES', ['low', 'medium'], 'APPROVE'],
     ['a high finding: changes', 'REQUEST_CHANGES', ['high'], 'REQUEST_CHANGES'],
   ] as [string, string, string[], string][]) {
     assert.equal(parseVerdict(answer(verdict, severities))?.verdict, expected, name);
   }
-  assert.deepEqual(parseVerdict(answer('REQUEST_CHANGES', ['low', 'high', 'medium']))?.findings, ['high: f1.ts: high', 'medium: f2.ts: medium', 'low, does not block: f0.ts: low']);
+  assert.deepEqual(parseVerdict(answer('REQUEST_CHANGES', ['low', 'high', 'medium']))?.findings, ['high: f1.ts: high', 'medium, does not block: f2.ts: medium', 'low, does not block: f0.ts: low']);
   const many = parseVerdict(answer('REQUEST_CHANGES', [...Array(MAX_FINDINGS).fill('low'), 'high']))?.findings ?? [];
   assert.deepEqual([many[0], many.at(-1)], [`high: f${MAX_FINDINGS}.ts: high`, '1 more findings not shown.'], 'a cut drops a low note, never the high one');
   const [system] = buildMessages('b', 'diff --git a/x b/x\n');
   assert.match(system.content, /"summary": "2 or 3 sentences"/);
   assert.match(system.content, /Report each problem once, at its first place/);
-  assert.match(system.content, /a low finding never blocks a merge/);
+  assert.match(system.content, /a medium or low finding never blocks a merge/);
   // A cut never splits a code point: no lone surrogate before the mark.
   const emoji = parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: '😀'.repeat(MAX_TEXT_CHARS), findings: [] }))?.summary ?? '';
   assert.ok(!/[\uD800-\uDBFF]…$/.test(emoji) && emoji.endsWith('😀…'));

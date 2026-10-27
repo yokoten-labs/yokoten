@@ -121,7 +121,7 @@ jobs:
       - if: needs.changes.outputs.docs_only == 'true'
         run: node --test --test-reporter=spec test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
       - if: needs.changes.outputs.docs_only != 'true'
-        run: node --test --test-concurrency=4 --test-reporter=spec --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" --test-shard="$SHARD/$OF"
+        run: node --test --test-concurrency=4 --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" --test-shard="$SHARD/$OF"
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           SHARD: ${{ matrix.shard }}

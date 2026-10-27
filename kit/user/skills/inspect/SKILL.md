@@ -46,8 +46,9 @@ when" command from the issue, and paste the output.
 - **Medium**: breaks behaviour someone depends on, or goes against a recorded decision.
 - **Low**: everything else. List at most five.
 
-High and medium findings each get an issue. A finding blocks the merge only when
-this PR causes it or makes it worse. A defect that was already there is
+High and medium findings each get an issue. Only a high finding blocks the merge,
+and only when this PR causes it or makes it worse; medium and low pass, since no code
+is perfect. A defect that was already there is
 **pre-existing**: it gets its issue, and does not block, unless it makes this PR's
 own promise false.
 
