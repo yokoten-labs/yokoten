@@ -9,6 +9,7 @@ import { test } from 'node:test';
 import { makeSandbox, makeTempDir, runChild } from '../../repo/helpers.ts';
 import { formatSize } from '../../../src/commands/tidy/tidy.ts';
 import type { TrashIndex } from '../../../src/commands/tidy/put-away.ts';
+import { tidyStateDir } from '../../../src/commands/tidy/find.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -111,9 +112,12 @@ function makeMessyRepo() {
   return { ...sandbox, base, ok, done, long, deskDone, deskBusy, desks };
 }
 
+/** The trash folder under a sandbox home, where tidy puts it on this system (#1109). */
+const trashIn = (home: string): string => join(tidyStateDir({ HOME: home, USERPROFILE: home }, process.platform), 'trash');
+
 /** The one trash folder a run made, and its index. */
 function readOnlyTrash(home: string): { folder: string; index: TrashIndex } {
-  const trash = join(home, '.local', 'state', 'yokoten', 'trash');
+  const trash = trashIn(home);
   const names = readdirSync(trash);
   assert.equal(names.length, 1, `one trash folder: ${names.join(', ')}`);
   assert.match(names[0], /^\d{4}-\d{2}-\d{2}T\d{6}Z$/);
@@ -157,7 +161,7 @@ test('tidy --local: saves, then moves; the bundle and the patch bring the work b
   const real = (path: string) => realBase + path.slice(messy.base.length);
   const result = await messy.call(['tidy', '--local']);
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.match(result.stdout, /^yokoten tidy --local · put away 6 things in\s+~[\\/]\.local[\\/]state[\\/]yokoten[\\/]trash[\\/]/);
+  assert.match(result.stdout, /^yokoten tidy --local · put away 6 things in\s+~[\\/](?:\.local[\\/]state|AppData[\\/]Local)[\\/]yokoten[\\/]trash[\\/]/);
   // Moved: the old branches, the worktrees and their git folders, the desk and its logs.
   assert.equal(messy.git('rev-parse', '-q', '--verify', 'refs/heads/merged-one').status, 1);
   assert.equal(messy.git('rev-parse', '-q', '--verify', 'refs/heads/gone-one').status, 1);
@@ -222,12 +226,12 @@ test('tidy --local: when one save fails, nothing at all is moved (#1055)', async
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^yokoten tidy: a save failed, so nothing was moved\.\n +MISSING +zz-broken +git bundle failed/);
   assert.deepEqual(outsideHome(), before, 'nothing moved, the merged branch included');
-  assert.deepEqual(readdirSync(join(messy.home, '.local', 'state', 'yokoten', 'trash')), [], 'the half-made trash folder is gone');
+  assert.deepEqual(readdirSync(trashIn(messy.home)), [], 'the half-made trash folder is gone');
 });
 
 test('tidy --empty: deletes only trash over 7 days old, after one question; no terminal needs --yes (#1055)', async () => {
   const sandbox = makeSandbox();
-  const trash = join(sandbox.home, '.local', 'state', 'yokoten', 'trash');
+  const trash = trashIn(sandbox.home);
   const put = (name: string, days: number) => {
     mkdirSync(join(trash, name, 'items'), { recursive: true });
     writeFileSync(join(trash, name, 'items', 'file'), 'x'.repeat(2048));

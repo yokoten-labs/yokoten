@@ -121,8 +121,8 @@ test/run/cli.test.ts :: plugin launcher: a safe cache copy runs, and any other p
 ? test/run/learn.test.ts :: lessons: the state file is in the git folder; missing, broken or unwritable state is empty, never an error
 test/run/learn.test.ts :: upstream: a note hides the project, home and owner, and refuses a secret or what is left
 test/run/learn.test.ts :: upstream: a symlink into the project, a relative path and a symlink into home are hidden too
-test/run/protocol.test.ts :: conformance: the OpenCode adapter is a thin translation into the protocol
-test/run/protocol.test.ts :: protocol: a refusal names the tool in the stop log, and carries the four parts
+# issue #1121: the conformance placeholder /conformance has no drive, and Windows refuses it (#1016).
+test/run/protocol.test.ts :: conformance: yokoten's own command line passes every case any tool runs
 ? test/setup/advice/unsaved.test.ts :: unsaved: a commit that carries .yokoten/ says what the copy is, and the commit check takes the message (#655)
 test/setup/advice/unsaved.test.ts :: unsaved: a repo on a tmpfs is gone after a restart (#365)
 ? test/setup/advice/unsaved.test.ts :: unsaved: a root reached through a link reads like the real one, as on macOS /var (#365)
