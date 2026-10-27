@@ -80,16 +80,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 ## 常用指令
 
-開始只要一條指令。同時用好幾個 AI 時，再多三條。
+開始只要一條指令。用起來之後，再多四條。
 
 | 指令 | 它做什麼 |
 |---|---|
 | `npx yokoten` | 補上缺的東西，再給出一屏：你在哪裡，下一步做什麼 |
+| `yokoten check` | 提交之前找出密鑰和被破壞的規則；提交檢查也會執行它 |
 | `yokoten desk` | 把一個任務交給一個 AI，在它自己的圍欄工位裡做 |
 | `yokoten kanban` | 一眼看到整個團隊，即時，唯讀（預覽版） |
 | `yokoten tidy` | 列出舊分支、worktree 和工位；加 `--local` 先存一份，再移進 yokoten 的回收資料夾 |
 
-`yokoten help --all` 列出其餘的指令。舊指令照樣能用，並會告訴你它搬到了哪裡。
+`yokoten help --all` 按用途分組列出其餘的指令：開始、工作、守衛、合併與 CI、維護。
 
 ## 支援範圍
 
@@ -131,7 +132,7 @@ npx yokoten doctor      # 走到了第幾關，下一步做什麼
 ## 路線圖
 
 - **已完成，v0.1.1**：五項保護對所有人開啟；一個儲存庫裡多個 AI 工作階段。
-- **現在，v0.1.2**：三條指令，`desk`、`kanban` 和 `tidy`；每個變更由和作者不同的模型來審。
+- **現在，v0.1.2**：前台五條指令，`yokoten`、`check`、`desk`、`kanban` 和 `tidy`；每個變更由和作者不同的模型來審。
 - **以後**：一個專案學到的教訓，變成每個專案的檢查。
 
 *橫展*（yokoten）是豐田工廠裡的說法：一條產線發現的問題，改到每條產線。
