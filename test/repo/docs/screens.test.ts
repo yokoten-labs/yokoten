@@ -304,7 +304,7 @@ const C4_SCREENS: ScreenRun[] = [
     words: ['provenance', 'HEAD'],
     lines: provenanceScreen([{ commit: 'a1b2c3d4e5f6', subject: 'feat(check): one screen per check (#1115)', writers: [{ vendor: 'Claude Code', model: 'claude-opus-5-5' }], reviewers: [{ vendor: 'Codex', model: 'gpt-5' }], approver: 'octo', tier: 'A', issues: [1115] } as unknown as Parameters<typeof provenanceScreen>[0][number]], 'HEAD'),
   },
-  { key: 'marks, the list', words: ['marks'], lines: marksScreen({ kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'git email', count: 0, isOff: true, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] }) },
+  { key: 'marks, the list', words: ['marks'], lines: marksScreen({ action: 'list', kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'git email', count: 0, isOff: true, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] }) },
   {
     key: 'pr sync, a conflict',
     words: ['pr', 'sync'],
@@ -575,6 +575,19 @@ function screensOf(repo: string): ScreenRun[] {
       }),
     },
     // C9 end
+    // F3: every `yokoten marks` action, rendered from its result; never a mark's value (#1115).
+    { key: 'marks add', words: ['marks', 'add'], lines: marksScreen({ action: 'add', isAdded: true }) },
+    { key: 'marks add, already there', words: ['marks', 'add'], lines: marksScreen({ action: 'add', isAdded: false }) },
+    { key: 'marks remove, a mark install found', words: ['marks', 'remove'], lines: marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }) },
+    { key: 'marks remove, not there', words: ['marks', 'remove'], lines: marksScreen({ action: 'remove', isRemoved: false, isSwitched: false }) },
+    { key: 'marks off git-name', words: ['marks', 'off', 'git-name'], lines: marksScreen({ action: 'off', kind: 'git name', removed: 1 }) },
+    { key: 'marks on git-name', words: ['marks', 'on', 'git-name'], lines: marksScreen({ action: 'on', kind: 'git name', found: 1, isAdded: true }) },
+    { key: 'marks fill, two kinds added', words: ['marks', 'fill'], lines: marksScreen({ action: 'fill', found: 3, kinds: ['git name', 'git email'], file: '~/.config/yokoten/private-marks' }) },
+    { key: 'marks fill, nothing new', words: ['marks', 'fill'], lines: marksScreen({ action: 'fill', found: 2, kinds: [], file: '~/.config/yokoten/private-marks' }) },
+    { key: 'marks fill, nothing on this machine', words: ['marks', 'fill'], lines: marksScreen({ action: 'fill', found: 0, kinds: [], file: '~/.config/yokoten/private-marks' }) },
+    { key: 'marks allow --here', words: ['marks', 'allow', '<mark>', '--here'], lines: marksScreen({ action: 'here', isRemoving: false, isChanged: true }) },
+    { key: 'marks allow --remove --here', words: ['marks', 'allow', '--remove', '<mark>', '--here'], lines: marksScreen({ action: 'here', isRemoving: true, isChanged: true }) },
+    // F3 end
   ];
 }
 

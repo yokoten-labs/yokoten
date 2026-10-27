@@ -26,7 +26,7 @@ import {
 } from '../../repo/helpers.ts';
 import { invoke } from '../../repo/invoke.ts';
 import { type ActionsHealth, cutPoint, failureWord, readActionsRuns, redactStream, runRedact, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
-import { borrowedIssue, borrowedScreen, checkScreen, ciHealthScreen, hasOpenIssue, marksScreen, prSyncEnv, prSyncScreen, provenanceScreen, pullLine, testEndScreen, testFilesOf, testPlanScreen } from '../../../src/commands/more/check.ts';
+import { borrowedIssue, borrowedJson, borrowedScreen, checkJson, checkScreen, ciHealthScreen, hasOpenIssue, marksScreen, prSyncEnv, prSyncScreen, provenanceJson, provenanceScreen, pullLine, testEndScreen, testFilesOf, testPlanScreen } from '../../../src/commands/more/check.ts';
 import { finding } from '../../../src/rules/text/message.ts';
 import { screenProblems } from '../../repo/docs/screen-rules.ts';
 import { type BorrowedHost, watchBorrowed } from '../../../src/run/check.ts';
@@ -1008,7 +1008,7 @@ test('marks: an unknown kind or action is refused without repeating the word; al
   assert.match(kind.stderr, /name the kind: git-name, git-email, forge-login/);
   const action = await call(['marks', HAND_MARK]);
   assert.equal(action.status, 1);
-  assert.match(action.stderr, /the action is add, remove, off, on or allow/);
+  assert.match(action.stderr, /the action is add, remove, fill, off, on or allow/);
   assert.match((await call(['marks', 'add', '--here'], HAND_MARK)).stderr, /--here and --remove go with allow only/);
   assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });
@@ -1556,7 +1556,7 @@ test('provenance: the screen is a title and fields per commit (#756, #1115)', ()
 });
 
 test('marks: the counts screen is fields, never a value; marks with no action reads only (#434, #1115)', async () => {
-  const lines = marksScreen({ kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] });
+  const lines = marksScreen({ action: 'list', kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] });
   assert.deepEqual(lines, ['yokoten marks · 3 private marks, values never shown', '', '  git-name    1, added by install', '  your own    2', '', 'Add one: `yokoten marks add`']);
   assert.deepEqual(broken(lines), []);
   const { sandbox, file } = marksSandbox();
@@ -1582,7 +1582,7 @@ test('pr sync: a conflict gets its files, hunks and brief as sections, then the 
 
 test('borrowed: a source that moved is a row with what became of its issue (record 0024, #1115)', () => {
   const change = { source: 'https://github.com/example/wheel', files: ['src/borrowed/a.ts'], borrowedCommit: 'abc', latestCommit: 'def', commits: [{ sha: 'def', message: 'fix' }], isSecurity: false } as unknown as Parameters<typeof borrowedIssue>[0];
-  const lines = borrowedScreen({ sources: 2, outcomes: [{ change, title: 'check: review borrowed code upstream', state: 'failed', reason: 'HTTP 403 `x`' }], unreadable: [] });
+  const lines = borrowedScreen({ sources: 2, outcomes: [{ change, title: 'check: review borrowed code upstream', body: 'x\n', labels: ['bug', 'tier B'], state: 'failed', reason: 'HTTP 403 `x`' }], unreadable: [] });
   assert.equal(lines[0], 'yokoten borrowed · 2 sources, 1 source moved');
   assert.match(lines.at(-1) ?? '', /^Next: /);
   assert.deepEqual(broken(lines, true), []);
@@ -1611,4 +1611,99 @@ test('test: the plan and the end are screens of their own (#461, #1115)', () => 
   assert.deepEqual(broken(plan), []);
   assert.deepEqual(testEndScreen(0), ['  done        tests passed']);
   assert.deepEqual(broken(testEndScreen(3), true), []);
+});
+
+// ---- --json is the result the screen is built from (#1115) ----
+
+/** What printJson writes for a value: the bytes a --json reader gets. */
+const printed = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+test('check --json: the result becomes the old {check, ok, findings, notes} shape, byte for byte (#1115)', async () => {
+  const problem = finding('email', 'an email address', 'remove it', { file: 'a.md', line: 1 });
+  const note = finding('long-sentence', 'a sentence of 30 words', 'split it', { file: 'b.md', line: 2 });
+  // The shapes the runner printed by hand before, on the same results.
+  assert.equal(printed(checkJson({ mode: 'tree', problems: [problem], notes: [note], hints: ['git restore --staged a.md'] })), printed({ check: 'tree', ok: false, findings: [problem], notes: [note] }));
+  assert.equal(printed(checkJson({ mode: 'pr', number: '12', problems: [], notes: [note], hints: [] })), printed({ check: 'pr', ok: true, findings: [], notes: [note] }));
+  assert.equal(printed(checkJson({ mode: 'issue', problems: [], notes: [note], hints: [], skipped: 'not an issue event' })), printed({ check: 'issue', ok: true, skipped: 'not an issue event', findings: [], notes: [] }));
+  // The command prints exactly that shape: no field more, none in another order.
+  const sandbox = makeSandbox();
+  sandbox.write('notes.md', `mail jane${at}personal-mail.dev\n`);
+  sandbox.git('add', '.');
+  const run = await sandbox.call(['check', '--json']);
+  assert.equal(run.status, 1, run.stderr);
+  const report = JSON.parse(run.stdout) as { findings: unknown[]; notes: unknown[] };
+  assert.ok(report.findings.length > 0, run.stdout);
+  assert.equal(run.stdout, printed({ check: 'tree', ok: false, findings: report.findings, notes: report.notes }));
+});
+
+test('provenance --json: the rows the screen shows, in the old shape, an unknown approver as null (#1115)', () => {
+  const record = { commit: 'a1b2c3d4e5', subject: 'feat(check): one screen (#12)', writers: [{ vendor: 'Claude Code', model: 'opus' }], reviewers: [], tier: 'B', issues: [12], approver: '' } as unknown as Parameters<typeof provenanceJson>[0][number];
+  const old = (row: typeof record) => ({ commit: row.commit, subject: row.subject, writers: row.writers, reviewers: row.reviewers, approver: row.approver || null, tier: row.tier, issues: row.issues });
+  const rows = [record, { ...record, commit: 'f0e1d2c3b4', approver: 'octo' }];
+  assert.equal(printed(provenanceJson(rows)), printed(rows.map(old)));
+  assert.equal(printed(provenanceJson([])), printed([]));
+});
+
+test('borrowed --json: the watch and the issues, in the old shape, from the result; nothing is opened (#1115)', async () => {
+  const source = 'https://github.com/example/upstream/blob/main/src/thing.ts';
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  const host: BorrowedHost = { commits: (from) => (from.includes('gone') ? null : [{ sha: 'fedcba9876543210fedcba9876543210fedcba98', message: 'fix: a bug' }, { sha, message: 'taken' }]) };
+  const watch = watchBorrowed([{ path: 'src/borrowed/thing.ts', source, commit: sha, license: 'MIT' }, { path: 'src/borrowed/gone.ts', source: `${source}/gone`, commit: sha, license: 'MIT' }], host);
+  assert.equal(watch.changed.length, 1);
+  assert.equal(watch.unreadable.length, 1);
+  // The old runner printed the watch, then each moved source with its issue.
+  const old = { borrowed: watch, issues: watch.changed.map((change) => ({ source: change.source, ...borrowedIssue(change) })) };
+  const result = { sources: 2, unreadable: watch.unreadable, outcomes: watch.changed.map((change) => ({ change, ...borrowedIssue(change), state: 'would open' as const })) };
+  assert.equal(printed(borrowedJson(result)), printed(old));
+  // A repo with no wheel: the empty shape, exit 0.
+  const sandbox = makeSandbox();
+  const run = await sandbox.call(['borrowed', '--json']);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, printed({ borrowed: { changed: [], unreadable: [] }, issues: [] }));
+});
+
+// ---- yokoten marks: one screen per action, from its result (#1115) ----
+
+test('marks: every action is a screen of its result, never a value, and passes the screen rules (#1115)', () => {
+  const file = '~/.config/yokoten/private-marks';
+  assert.deepEqual(marksScreen({ action: 'add', isAdded: true }), ['yokoten marks · added the mark to your private marks (not shown)']);
+  assert.deepEqual(marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }), [
+    'yokoten marks · removed the mark from your private marks',
+    '',
+    '  note        it came from this machine (your git name), so install adds it again',
+    '',
+    '  stop it     `yokoten marks off git-name`',
+  ]);
+  assert.deepEqual(marksScreen({ action: 'fill', found: 3, kinds: ['git name', 'git email'], file }), ['yokoten marks · added your git name and git email from this machine (not shown)', '', `  file        ${file}`]);
+  assert.match(marksScreen({ action: 'fill', found: 0, kinds: [], file })[0] ?? '', /this machine has none to add/);
+  assert.match(marksScreen({ action: 'fill', found: 2, kinds: [], file })[0] ?? '', /already have what this machine gives/);
+  assert.deepEqual(marksScreen({ action: 'here', isRemoving: false, isChanged: false }), ['yokoten marks · that mark is already allowed here, so nothing changed']);
+  const all = [
+    marksScreen({ action: 'add', isAdded: false }),
+    marksScreen({ action: 'remove', isRemoved: false, isSwitched: false }),
+    marksScreen({ action: 'off', kind: 'git name', removed: 2 }),
+    marksScreen({ action: 'on', kind: 'forge login', found: 0, isAdded: false }),
+    marksScreen({ action: 'fill', found: 1, kinds: ['private remote host'], file }),
+    marksScreen({ action: 'here', isRemoving: true, isChanged: true }),
+    marksScreen({ action: 'here', isRemoving: false, isChanged: true }),
+  ];
+  for (const lines of all) assert.deepEqual(broken(lines), [], lines.join('\n'));
+});
+
+test('marks fill: adds the git name this machine has, says the kind and the file, never the value; again, nothing changes (#1115)', async () => {
+  const { said, call, marks } = marksSandbox();
+  const first = await call(['marks', 'fill']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.stdout, 'yokoten marks · added your git name from this machine (not shown)\n\n  file        ~/.config/yokoten/private-marks\n');
+  assert.match(marks(), new RegExp(`# added by yokoten from this machine: git name\\n${NAME}\\n$`));
+  const again = await call(['marks', 'fill']);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /^yokoten marks · your private marks already have what this machine gives, so nothing changed$/m);
+  // A kind that is off is never filled: off takes the git name out, and fill does not put it back.
+  assert.equal((await call(['marks', 'off', 'git-name'])).status, 0);
+  const off = await call(['marks', 'fill']);
+  assert.equal(off.status, 0, off.stderr);
+  assert.ok(!marks().includes(NAME), 'the git name is off, so it is not added');
+  assert.equal((await call(['marks', 'fill', 'git-name'])).status, 1, 'fill takes no word');
+  assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });
