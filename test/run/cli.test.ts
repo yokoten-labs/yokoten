@@ -299,7 +299,7 @@ test('help: the help table and the parser list the same commands and options (#2
 test('usage: a typed option is shown escaped, never raw (#1115)', async () => {
   const sandbox = makeSandbox();
   const typed = '--\u001b[2J\nnext\u202eevil';
-  for (const words of [['tidy', typed], ['check', typed], ['hook', '--denial', typed.slice(2)], ['hook', '--agent', typed.slice(2)], ['tidy', 'extra\u001b[2J']]) {
+  for (const words of [['tidy', typed], ['check', typed], ['hook', '--denial', typed.slice(2)], ['hook', '--agent', typed.slice(2)], ['tidy', 'extra\u001b[2J'], ['stops', typed.slice(2)], ['worker', 'env', typed.slice(2)]]) {
     const r = await invoke(words, { env: sandbox.env, cwd: sandbox.repo });
     assert.equal(r.code, 1, words.join(' '));
     assert.doesNotMatch(r.stderr, /\u001b|\u202e/, `${words.join(' ')}: no raw ESC or U+202E`);
