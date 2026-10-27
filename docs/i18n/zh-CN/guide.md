@@ -72,12 +72,16 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 
 ```
 yokoten stopped this: creating the tag v1.2.0 [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner creates the tag, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner creates the tag, with the
+            steps in How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Do instead`
+第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Instead`
 给出安全的做法，不会读代码的人也能照着说。`More` 链接到规则全文。第五条保护里的改动
 只有主人能做；agent 要请主人来改。
 
@@ -184,9 +188,13 @@ AI 想推送发版 tag 时，会看到：
 
 ```
 yokoten stopped this: git push --tags pushes tags [release]
-Why: Only the owner decides when to release.
-Do instead: Stop and tell the owner: only the owner releases, with the steps in How to release; do not look for another way.
-More: https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner releases, with the steps in
+            How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
 每条提示都一样：让 agent 停下来，请主人发版。发版批准的办法、以及启动每个 agent 的命令，
@@ -197,7 +205,7 @@ Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它
 （提示用英文写，因为 AI 读英文最不容易出错。）
 
 每条提示都是同样的四行。第一行说**出了什么事**（what），行尾用方括号给出规则 id，形如
-`yokoten stopped this: <what> [<id>]`。**Why:** 一行说为什么要紧（why）。**Do instead:**
+`yokoten stopped this: <what> [<id>]`。**Why:** 一行说为什么要紧（why）。**Instead:**
 一行是怎么改（fix，一条命令或者一处改动）。**More:** 一行是规则完整说明的链接。问题出在
 某个文件里时，位置紧跟在标题后面：`yokoten stopped this: 文件:行号: <what> [<id>]`。查到问题时，只说是哪一类，不说内容：
 密钥、私有词表里的词，都不会打印出来。

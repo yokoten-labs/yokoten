@@ -303,7 +303,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
     [['docter'], 'yokoten: unknown command "docter"\nDid you mean `yokoten doctor`?\n'],
     [['help', 'chek'], 'yokoten: unknown command "chek"\nDid you mean `yokoten check`?\n'],
     [['check', '--stagd'], 'yokoten check: unknown option --stagd. Did you mean --staged? Run\n               `yokoten check --help`.\n'],
-    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\nyokoten doctor: unknown option --hepl. Did you mean --help? Run\n                `yokoten doctor --help`.\n'],
+    [['doctor', '--hepl'], 'note: yokoten doctor moved to yokoten. It runs as before this time.\n\nyokoten doctor: unknown option --hepl. Did you mean --help? Run\n                `yokoten doctor --help`.\n'],
   ];
   for (const [args, stderr] of cases) {
     const r = await run(args);
@@ -822,7 +822,7 @@ test('help: a moved command still runs, and its first line says where it went (#
   const old = await sandbox.call(['board', '--text', '--nope']);
   const now = await sandbox.call(['kanban', '--text', '--nope']);
   assert.equal(old.stderr.split('\n')[0], movedNote('board'));
-  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(1).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
+  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(2).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
   const worker = await sandbox.call(['worker']);
   assert.equal(worker.stderr.split('\n')[0], movedNote('worker'), 'a folded command says it first');
   assert.match(worker.stderr, /yokoten worker: say what to do/, 'and then runs as before');

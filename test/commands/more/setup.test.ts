@@ -13,7 +13,7 @@ test('update: a folder that does not exist is said plainly (#208)', () => {
   const sandbox = makeSandbox();
   // update's entry, through the real binary.
   const result = sandbox.run(['update', 'typo']);
-  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten update moved to yokoten. It runs as before this time.\nyokoten update: typo does not exist; nothing to update.\n']);
+  assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', 'note: yokoten update moved to yokoten. It runs as before this time.\n\nyokoten update: typo does not exist; nothing to update.\n']);
   assert.ok(!existsSync(join(sandbox.repo, 'typo')));
 });
 

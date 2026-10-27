@@ -662,7 +662,7 @@ export async function runTrain(invocation: Invocation): Promise<number> {
   }
   const map = isNext || !given.length ? readConflictMap(root, invocation.env) : null;
   if (typeof map === 'string') {
-    print(invocation, [`yokoten train: ${map}`], invocation.stderr);
+    print(invocation, wrap('yokoten train: ', map), invocation.stderr);
     return 1;
   }
   if (map && isNext) {

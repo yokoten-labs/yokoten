@@ -206,10 +206,6 @@ function screensOf(repo: string): ScreenRun[] {
 /** How many screens WAIVED may hold. Lower it when a screen comes off; never raise it. */
 const WAIVED_MOST = 5;
 const WAIVED: Record<string, string> = {
-  'worker, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
-  'msg, bare': 'spaced-items: the moved note and the wrapped usage error touch; stage 2 of #1115',
-  'train, bare': 'widest: the missing conflict map is one 120-column line; stage 2 of #1115',
-  'ci-health, bare': 'widest, next-step: the missing repo is one long line with no command; stage 2 of #1115',
 };
 
 test('screens: every screen the command list reaches keeps the limits of record 0049; WAIVED only shrinks (#1099)', async () => {
