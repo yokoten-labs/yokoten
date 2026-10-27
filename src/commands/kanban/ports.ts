@@ -216,8 +216,15 @@ export const runsQuery = (repo: string, page?: number): string[] => actionsRunsQ
 export const runsPage = (text: string): { runs: ActionsRun[]; rows: number } | string => actionsRunPage(text);
 /** Why a read of `what` failed, as one sentence. */
 export const readFailedText = (err: unknown, what: string): string => healthReadFailed(err, what);
-/** Why gh failed, in yokoten's words, from what gh printed: such as "gh is not signed in". */
-export const ghFailureCause = (said: string): string => unread({ stderr: said }).unread;
+/**
+ * Why gh failed, in yokoten's words, from what gh printed: such as "gh is not signed in".
+ * `fix` is the one command that mends it, and is left out when none does (a rate limit, the
+ * network, a repo gh can't see): then the board says the cause and no `Fix:` line.
+ */
+export function ghFailureCause(said: string): { text: string; fix?: string } {
+  const text = unread({ stderr: said }).unread;
+  return text === 'gh is not signed in' ? { text, fix: 'gh auth login' } : { text };
+}
 
 /** The failing runs and the unstable workflows, from the same summary as `yokoten ci-health`. */
 export function branchHealth(runs: ActionsRun[], defaultBranch: string): BranchHealth {

@@ -9,6 +9,7 @@ import { makeSandbox, runChild } from '../../repo/helpers.ts';
 import { sessionId } from '../../../src/commands/kanban/agents.ts';
 import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
 import { boardDataBody } from '../../../src/commands/kanban/server.ts';
+import { ghFailureCause } from '../../../src/commands/kanban/ports.ts';
 import { actionsOf, collectState, notReadLines, pullsOf, renderStateText, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
 import { healthReadFailed } from '../../../src/commands/more/check.ts';
 import type { KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
@@ -134,7 +135,16 @@ test('kanban state: Not read says each cause once, in yokoten words, with one Fi
   const problems = [healthReadFailed(signedOut, 'pull requests'), healthReadFailed(signedOut, 'Actions runs'), 'no remote'];
   assert.deepEqual(notReadLines(problems), ['- the pull requests and the Actions runs: gh is not signed in', '  Fix: `gh auth login`', '', '- no remote'], 'a blank line after the item with a Fix line');
   const refused = healthReadFailed({ stderr: 'HTTP 404: Not Found\n' }, 'Actions runs');
-  assert.deepEqual(notReadLines([refused]), ['- the Actions runs: GitHub said no (403 or 404)', '  Fix: `gh auth status`'], 'another cause, and the command that shows the account');
+  assert.deepEqual(notReadLines([refused]), ['- the Actions runs: GitHub said no (403 or 404)'], 'no single command mends it, so no Fix line');
+  // Each cause carries its own fix as data: only a signed-out gh has one.
+  const cause = (stderr: string) => ghFailureCause(stderr);
+  assert.deepEqual(cause('HTTP 401: Bad credentials'), { text: 'gh is not signed in', fix: 'gh auth login' });
+  assert.deepEqual(cause('You are not logged in to any hosts'), { text: 'gh is not signed in', fix: 'gh auth login' });
+  assert.deepEqual(cause('HTTP 403: API rate limit exceeded'), { text: 'GitHub said no (403 or 404)' }, 'a rate limit: no Fix');
+  assert.deepEqual(cause('HTTP 404: Not Found'), { text: 'GitHub said no (403 or 404)' });
+  assert.deepEqual(cause('Upgrade to GitHub Pro to use rulesets'), { text: 'rulesets need GitHub Pro on a private repo' });
+  assert.deepEqual(cause('dial tcp: lookup api.github.com: no such host'), { text: 'gh could not reach GitHub' }, 'the network: no Fix');
+  assert.deepEqual(cause('something gh has never said'), { text: 'gh could not reach GitHub' }, 'unrecognised: no Fix');
   const missing = healthReadFailed(Object.assign(new Error('spawn gh ENOENT'), { code: 'ENOENT' }), 'Actions runs');
   assert.deepEqual(notReadLines([missing]), ['- gh is not installed: get it from https://cli.github.com, then sign in to it']);
   // Unmatched gh wording (another phrase, a newline) is replaced by a fixed sentence: no path of gh's reaches the board.

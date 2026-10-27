@@ -25,6 +25,7 @@ import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/curr
 import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding, formatFinding, isWarningFinding } from '../../rules/text/message.ts';
+import { shownValue } from '../../rules/text/terminal.ts';
 import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
 import { parseChange } from '../../run/changelog.ts';
@@ -1388,8 +1389,8 @@ export function runCiHealth(invocation: Invocation): number {
   const repo = stated || repoOf(origin) || '';
   if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) {
     // Say which value was wrong, and show what the person typed (#1115); the remote's URL may name a machine path, so it is not shown.
-    const why = given ? `--repo ${given} is not owner/name`
-      : env.GITHUB_REPOSITORY ? `GITHUB_REPOSITORY is ${env.GITHUB_REPOSITORY}, not owner/name`
+    const why = given ? `--repo ${shownValue(given)} is not owner/name`
+      : env.GITHUB_REPOSITORY ? `GITHUB_REPOSITORY is ${shownValue(env.GITHUB_REPOSITORY)}, not owner/name`
       : origin ? 'the origin remote is not a GitHub repo, and no --repo was given'
       : 'no --repo, no GITHUB_REPOSITORY and no origin remote';
     print(invocation, [...title('ci-health', `no GitHub repo to read: ${why}`), '', 'Fix: `yokoten ci-health --repo owner/name`'], invocation.stderr);

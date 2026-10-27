@@ -74,18 +74,30 @@ export async function runStart(invocation: Invocation): Promise<number> {
   const held: string[] = [];
   const sink = new Writable({ write: (chunk, _, done) => { held.push(String(chunk)); done(); } });
   const code = await runDoctor({ ...invocation, stdout: sink });
-  const lines = held.join('').replace(/\n$/, '').split('\n');
-  const next = lines.findIndex((line) => line.startsWith('Next: '));
-  const moreAt = lines.findIndex((line) => line.startsWith('More: '));
-  const more = moreAt === -1 ? [] : lines.slice(moreAt);
-  const body = lines.slice(0, next === -1 ? (moreAt === -1 ? lines.length : moreAt) : next);
-  while (body.length && body.at(-1) === '') body.pop();
-  // The title says this run set things up, then where the road is.
-  const head = body[0]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
-  // Doctor's problems come first, as their own block (#1115): this run's rows stand apart from them.
-  const isProblemNext = doneRows.length > 0 && /^ {2}MISSING /.test(body[2] ?? '');
-  print(invocation, [head, ...body.slice(1, 2), ...doneRows, ...(isProblemNext ? [''] : []), ...body.slice(2), '', ...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
+  print(invocation, startScreen(held.join('').replace(/\n$/, '').split('\n'), doneRows));
   return code;
+}
+
+/**
+ * The first run's one screen (#1027) from doctor's lines and the rows of what this run did:
+ * doctor's title says it set things up, then this run's rows, then the rest of doctor's screen
+ * (its problems and the road, whatever that holds), one Next line to keep what was written, and
+ * doctor's More line last. Each block is told apart by one blank line (#1115), decided from the
+ * blocks themselves: doctor's own Next waits for that commit.
+ */
+export function startScreen(doctorLines: readonly string[], doneRows: readonly string[]): string[] {
+  const next = doctorLines.findIndex((line) => line.startsWith('Next: '));
+  const moreAt = doctorLines.findIndex((line) => line.startsWith('More: '));
+  const more = moreAt === -1 ? [] : doctorLines.slice(moreAt);
+  const body = doctorLines.slice(0, next === -1 ? (moreAt === -1 ? doctorLines.length : moreAt) : next);
+  while (body.length && body.at(-1) === '') body.pop();
+  // A broken self-test line may lead the title.
+  const titleAt = Math.max(0, body.findIndex((line) => line.startsWith('yokoten doctor · ')));
+  const lead = body.slice(0, titleAt).filter(Boolean);
+  const head = body[titleAt]?.replace(/^yokoten doctor · /, `yokoten ${VERSION} · set up; `) ?? '';
+  const rest = body.slice(titleAt + 1);
+  while (rest[0] === '') rest.shift();
+  return screen(lead, [head], doneRows, rest, [...nextLine('git add -A && git commit -m "chore: add yokoten"'), ...more]);
 }
 
 /** True when init has already put the rules in this project. */

@@ -600,7 +600,7 @@ test('check --history: a commit hidden by git replace is still scanned; a grafts
   result = await sandbox.call(['check', '--history']);
   assert.equal(result.status, 1, result.stdout);
   assert.ok(!/every commit on every branch/.test(result.stdout + result.stderr), result.stdout);
-  assert.match(flat(result.stderr), /1 problem MISSING this repo has a grafts file, so the history check can't see every commit .+\. Run `git replace --convert-graft-file`/);
+  assert.match(flat(result.stderr), /1 problem MISSING this repo has a grafts file, so the history check can't see every commit .+\. To turn .+, then run it again\. Fix: `git replace --convert-graft-file`/);
   assert.ok(!result.stderr.includes('notes.md'), 'nothing was scanned');
   result = await sandbox.call(['check', '--history', '--json']);
   assert.deepEqual(JSON.parse(result.stdout).findings.map((f: { id: string }) => f.id), ['shallow-history']);

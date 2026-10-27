@@ -962,6 +962,20 @@ export function leadingCommand(fix: string): LeadingCommand | null {
   return tail.split(/\s+/).filter(Boolean).length <= 3 && !tail.includes(',') ? { command, then: '' } : null;
 }
 
+/**
+ * The one rule for "this fix's command" on every screen (issue #1115): what `leadingCommand`
+ * finds, or else the command of a fix that starts with run `<command>` and then goes on
+ * with more words ("run `yokoten install` from this copy of yokoten"); those words stay as
+ * `then`. A fix with a second command in backticks stays a sentence.
+ */
+export function fixCommand(fix: string): LeadingCommand | null {
+  const direct = leadingCommand(fix);
+  if (direct) return direct;
+  const found = /^run `([^`]+)`(.*)$/i.exec(fix.trim());
+  if (!found || found[2]?.includes('`')) return null;
+  return { command: found[1] ?? '', then: (found[2] ?? '').trim().replace(/[.;]$/, '') };
+}
+
 /** A fix's command as its own line: `Fix: \`<command>\``, and the further step after it. */
 export const fixText = ({ command, then }: LeadingCommand): string => `\`${command}\`${then ? `, then ${then}.` : ''}`;
 

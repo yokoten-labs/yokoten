@@ -14,7 +14,7 @@ import { DEFAULTS, loadConfig } from '../../../rules/config.ts';
 import { gitConfig } from '../../../run/check.ts';
 import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
-import { docsLink, findingRow, leadingCommand, sentence } from '../../../rules/text/message.ts';
+import { docsLink, findingRow, fixCommand, sentence } from '../../../rules/text/message.ts';
 import { screen, spaced } from '../../../rules/text/screen.ts';
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Draft, draft, facts, table } from '../../../setup/advice/adopt.ts';
@@ -328,8 +328,7 @@ export function problemRows(problems: readonly Finding[]): string[][] {
   const plain: string[][] = [];
   for (const f of problems) {
     // A command only when the fix starts with one; "make `yokoten.json` valid JSON" is a sentence.
-    // A fix that starts with `run <command>` keeps it even when more advice follows it.
-    const command = leadingCommand(f.fix)?.command ?? /^run `([^`]+)`/i.exec(f.fix.trim())?.[1];
+    const command = fixCommand(f.fix)?.command;
     if (command === undefined) plain.push(row('MISSING', `${f.what}; ${f.fix}`));
     else byFix.set(command, [...(byFix.get(command) ?? []), f.what]);
   }

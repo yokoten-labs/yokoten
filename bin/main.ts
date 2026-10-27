@@ -30,8 +30,8 @@ const help = (all: boolean): string => [
 /** An unknown command: the closest one when it is near, or else the list. Exit 1. */
 async function unknownCommand(invocation: Invocation, name: string): Promise<number> {
   // The word is anyone's text: a plain word shows as typed; any other is quoted with control and bidi characters escaped.
-  const { terminalText } = await import('../src/run/learn.ts');
-  const shown = /^[\w.-]*$/.test(name) ? name : terminalText(JSON.stringify(name));
+  const { shownValue } = await import('../src/rules/text/terminal.ts');
+  const shown = shownValue(name);
   const near = closestWord(name, COMMANDS.map((command) => command.name));
   // A title with the word typed, then the one step last: the near command, or the help that lists them all (#1115).
   const next = near ? `\`yokoten ${near}\`, if you meant it; \`yokoten help\` lists every command` : '`yokoten help` lists every command';

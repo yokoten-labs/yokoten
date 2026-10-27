@@ -64,7 +64,7 @@ const FIX_LINE = /^\s*Fix: `[^`]+`/;
 // Windows paths count with either slash, and in Git Bash's form, /c/Users/... (#1115).
 const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|\/[a-zA-Z]\/(?:Users|Windows|ProgramData|Program Files)\/[^\s`'")]*|[A-Za-z]:[\\/][^\s`'")]*)/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
-const RUN_WORD = /\b[Rr]un [a-z][\w-]*/;
+const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
 
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {

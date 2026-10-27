@@ -1217,6 +1217,13 @@ test('ci-health: a repo that is not owner/name says which value was wrong (#1115
   const env = await sandbox.call(['ci-health'], { extra: { GITHUB_REPOSITORY: 'also-bad' } });
   assert.equal(env.status, 1);
   assert.match(env.stderr, /no GitHub repo to read: GITHUB_REPOSITORY is also-bad, not\s+owner\/name/);
+  // A value with control characters is quoted and escaped, never sent raw (it is anyone's text).
+  const odd = 'bad\u001b[2J\nnext\u202e';
+  const shown = (text: string) => assert.ok(!/[\u001b\u202e]/.test(text) && text.includes('\\u001b[2J\\nnext\\u202e'), JSON.stringify(text));
+  const oddFlag = await sandbox.call(['ci-health', '--repo', odd]);
+  shown(oddFlag.stderr);
+  const oddEnv = await sandbox.call(['ci-health'], { extra: { GITHUB_REPOSITORY: odd } });
+  shown(oddEnv.stderr);
 });
 
 test('ci-health refuses --write with --dry-run before it reads anything', async () => {

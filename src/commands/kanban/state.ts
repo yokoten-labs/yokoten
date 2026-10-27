@@ -222,7 +222,7 @@ const GH_MISSING = /^gh is not installed: get it from (\S+), then run `gh auth l
  */
 export function notReadLines(problems: readonly string[]): string[] {
   // Each item in the order its first problem came: a problem as it is, or one cause and its lists.
-  const items: ({ text: string; fix?: string } | { cause: string; whats: string[] })[] = [];
+  const items: ({ text: string; fix?: string } | { cause: string; fix?: string; whats: string[] })[] = [];
   for (const problem of problems) {
     const failed = GH_READ_FAILED.exec(problem);
     const missing = GH_MISSING.exec(problem);
@@ -238,14 +238,13 @@ export function notReadLines(problems: readonly string[]): string[] {
       continue;
     }
     const cause = ghFailureCause(failed[2] ?? '');
-    const group = items.find((item) => 'cause' in item && item.cause === cause);
+    const group = items.find((item) => 'cause' in item && item.cause === cause.text);
     if (group && 'whats' in group) group.whats.push(`the ${failed[1]}`);
-    else items.push({ cause, whats: [`the ${failed[1]}`] });
+    else items.push({ cause: cause.text, fix: cause.fix, whats: [`the ${failed[1]}`] });
   }
   // A blank line between items once one has a Fix line under it (#1115).
   return spacedLines(items.map((item) => {
     if ('text' in item) return [`- ${item.text}`, ...(item.fix ? [`  Fix: \`${item.fix}\``] : [])];
-    const fix = item.cause === 'gh is not signed in' ? 'gh auth login' : 'gh auth status';
-    return [`- ${item.whats.join(' and ')}: ${item.cause}`, `  Fix: \`${fix}\``];
+    return [`- ${item.whats.join(' and ')}: ${item.cause}`, ...(item.fix ? [`  Fix: \`${item.fix}\``] : [])];
   }));
 }

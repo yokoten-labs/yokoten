@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { test } from 'node:test';
-import { claudeCommand, previewLines, updateScreen } from '../../../src/commands/more/setup.ts';
+import { claudeCommand, previewLines, startScreen, updateScreen } from '../../../src/commands/more/setup.ts';
 import { VERSION } from '../../../src/setup/files.ts';
 import { makeSandbox } from '../../repo/helpers.ts';
 
@@ -326,4 +326,28 @@ test('update: one screen per core rule change (#1027)', () => {
     updateScreen({ ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one, then run `yokoten update` again after that.'], isWrite: false }),
     updateScreen({ ok: true, lines: [`replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: 1 line(s) added, 0 removed. "This project" and below are unchanged. The old file is kept as AGENTS.backup.md; delete it once the new AGENTS.md reads right`], isWrite: true }),
   ]) for (const line of one) assert.ok(line.length <= 80, `over 80: ${line}`);
+});
+
+// Issue #1115: one blank line between blocks, decided from the blocks, not from a line's place.
+test('start: one blank line between the title, this run, the problems and the road (#1115)', () => {
+  const done = ['  ok          guard on for Claude Code on this computer'];
+  const problem = ['  MISSING     no runtime installed', '              Fix: `yokoten install`'];
+  const road = ['  done        0 of 5 steps', '  next        add the rules'];
+  const doctor = (...blocks: string[][]) => blocks.flatMap((block, at) => (at ? ['', ...block] : block));
+  const text = (lines: string[]) => lines.join('\n');
+  const bar = `yokoten ${VERSION} · set up; stage 1 of 5, safety net`;
+  const title = 'yokoten doctor · stage 1 of 5, safety net';
+  // Problems first: a blank line between this run's rows and them, and one before the road.
+  assert.equal(text(startScreen(doctor([title], problem, road, ['Next: `x`'], ['More: y']), done)), text([bar, '', ...done, '', ...problem, '', ...road, '', 'Next: `git add -A && git commit -m "chore: add yokoten"`', 'More: y']));
+  // A broken self-test line leads the title: it stays first, and the problems still get their blank line.
+  const broken = '  MISSING     the self-test failed';
+  const led = startScreen(doctor([broken], [title], problem, road, ['More: y']), done);
+  assert.deepEqual(led.slice(0, 3), [broken, '', bar]);
+  assert.equal(led[led.indexOf(done[0] ?? '') + 1], '', 'a blank line between this run and the problems');
+  assert.equal(led.filter((line, at) => line === '' && led[at - 1] === '').length, 0, 'never two blank lines');
+  // A screen with no steps: only problems follow this run, still one blank line.
+  const bare = startScreen(doctor([title], problem, ['More: y']), done);
+  assert.deepEqual(bare.slice(0, 5), [bar, '', ...done, '', problem[0]]);
+  // Nothing after the title: no stray blank line.
+  assert.deepEqual(startScreen(doctor([title], ['More: y']), done).slice(0, 3), [bar, '', done[0]]);
 });

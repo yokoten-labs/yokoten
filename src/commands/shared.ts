@@ -6,7 +6,7 @@ import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
 import { row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
-import { finding, type Finding, formatFinding, leadingCommand, notRepoFinding } from '../rules/text/message.ts';
+import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
 import { gitRoot } from '../run/check.ts';
 import { closestWord, findCommand, HELP_OPTIONS } from '../run/cli.ts';
@@ -345,7 +345,7 @@ function locationOf(problem: Finding): string | undefined {
  * said once under the last problem it fixes (#1115). A blank line goes between rows that wrap.
  */
 export function problemRows(problems: Finding[]): string[] {
-  const commands = problems.map((problem) => leadingCommand(problem.fix));
+  const commands = problems.map((problem) => fixCommand(problem.fix));
   return spaced(
     problems.map((problem, at) => {
       const where = locationOf(problem);

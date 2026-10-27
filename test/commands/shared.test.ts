@@ -18,7 +18,7 @@ import {
 import { invoke } from '../repo/invoke.ts';
 import { canColour, isColourTerminal, paint, problemRows, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
 import type { Env } from '../../src/rules/config.ts';
-import { finding, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
+import { finding, fixCommand, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
 // #1017: a Windows triage saw a guard refusal name `C:Users<name>AppData...`: bash had
 // dropped the backslashes, and the home mask looked only for the written path.
@@ -361,13 +361,23 @@ test('screen helpers: 80 columns, the label column, plural counts, the old conso
 });
 
 // Issue #1115: a fix that starts with a command ends its row on a Fix line, said once.
-test('problem rows: a fix that starts with a command is its own last line, said once under the problems it fixes (#1115)', () => {
+test('problem rows: a fix that starts with a command is its own last line, said once under the problems it fixes (#1115)', async () => {
   assert.deepEqual(leadingCommand('`yokoten init` adds one'), { command: 'yokoten init', then: '' });
   assert.deepEqual(leadingCommand('run `yokoten marks add` and type your name'), { command: 'yokoten marks add', then: 'type your name' });
   assert.deepEqual(leadingCommand('run `export TZ=UTC`, then keep the command in ~/.bashrc'), { command: 'export TZ=UTC', then: 'keep the command in ~/.bashrc' });
   assert.equal(leadingCommand('Run `git fetch origin` and `git fetch origin pull/1/head`'), null, 'two commands stay one sentence');
   assert.equal(leadingCommand('`AGENTS.md` names no owner'), null, 'a file in backticks is no command');
   assert.equal(leadingCommand('run `yokoten install` again, or report it in an issue'), null, 'more advice after it stays a sentence');
+  // One rule for every screen: a command followed by more words is still the fix's command.
+  assert.deepEqual(fixCommand('run `yokoten install` from this copy of yokoten'), { command: 'yokoten install', then: 'from this copy of yokoten' });
+  assert.deepEqual(fixCommand('run `yokoten install` again, or report it in an issue'), { command: 'yokoten install', then: 'again, or report it in an issue' });
+  assert.equal(fixCommand('Run `git fetch origin` and `git fetch origin pull/1/head`'), null, 'two commands stay one sentence');
+  assert.equal(fixCommand('make `yokoten.json` valid JSON'), null);
+  const same = finding('time-zone', 'no runtime installed', 'run `yokoten install` from this copy of yokoten');
+  const checkFix = problemRows([same]).filter((line) => line.includes('Fix: '));
+  const doctorFix = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([same]).flat().filter((line) => line.includes('Fix: '));
+  assert.deepEqual(checkFix, doctorFix, 'check and doctor show the same Fix line');
+  assert.deepEqual(checkFix, ['              Fix: `yokoten install`']);
   const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
   const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
   assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');
