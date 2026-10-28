@@ -1,0 +1,60 @@
+# The release's checks (records 0009 and 0053), in one file for two callers. release.yml
+# runs them on a `v*` tag, before the owner is asked to approve. yokoten.yml runs them on
+# every pull request, so a tag never meets a step for the first time: the v0.1.2 tag
+# failed on a test line that no pull request had run (issue #1149).
+name: release checks
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 'A release tag: check it against package.json, and keep the package for publish.'
+        type: boolean
+        default: false
+# No job gets a permission it does not name.
+permissions: {}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      # The whole history, so a translation note can say how many commits it is behind.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '^22.23.4'
+          # A release never restores a cache another run could have written.
+          package-manager-cache: false
+      # The tag is read from the environment, never pasted into this shell line.
+      - name: The tag matches package.json
+        if: inputs.tag
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag is $GITHUB_REF_NAME, but package.json says $version. Fix: tag v$version, or release a pull request that sets the version first."
+            exit 1
+          fi
+      - run: npm ci
+      # A reporter writes to a file, never to /dev/null: Node syncs the file when it closes
+      # it, and a sync of /dev/null fails the run with EINVAL (issue #1149).
+      - run: node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl"
+      - run: npm run typecheck
+      - run: node bin/yokoten.ts check
+      # The npm package (record 0008): pack it, install it offline, run install, init and doctor.
+      - run: npm run check-package
+      # The publish job publishes this exact tarball, so it runs no build and no install.
+      - name: Pack the package
+        run: |
+          mkdir package
+          npm pack --pack-destination package
+      - if: inputs.tag
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package
+          path: package/*.tgz
+          if-no-files-found: error
+          retention-days: 7
