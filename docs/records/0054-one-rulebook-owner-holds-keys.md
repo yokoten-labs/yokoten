@@ -76,11 +76,17 @@ flowchart TB
     subgraph desk["Worker desk, in a narrow fence"]
       worker["Worker agent"] --> wguard["yokoten guard"]
     end
+    msg["yokoten msg: scanned both ways, wrapped as data, approval claims flagged"]
     settings["Guard, hook, sandbox and fence settings: written only on the owner's yes"]
   end
   lead -- "ask: leave the sandbox, change a setting" --> owner
-  worker -. "report (the path still to watch)" .-> lead
+  worker --> msg --> lead
+  worker -. "diff, commits, test output, final report: not through msg (still to watch)" .-> lead
 ```
+
+`yokoten msg` (issue #674) already guards its own channel. Its wrapper is a note to the
+model, not a lock, and the other channels reach the lead without it. So the owner-held keys
+are the real stop.
 
 ## Options not taken
 
