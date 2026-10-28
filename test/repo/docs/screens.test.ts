@@ -792,7 +792,14 @@ test('screens: every screen the command list reaches keeps the limits of record 
 // The first-run block of the README and its three translations is the screen the first run prints
 // (#1145). The version is normalized on both sides, so a release bump never breaks this.
 test('screens: the first-run block of every README is the screen the first run prints (#1145)', async () => {
-  const withoutVersion = (text: string): string => text.replace(/^yokoten \d+\.\d+\.\d+/, 'yokoten VERSION').trimEnd();
+  // The version, the desk-fence note (only where bwrap, rg or socat is missing) and the note count
+  // it changes depend on the machine, not on the screen's layout.
+  const withoutVersion = (text: string): string =>
+    text
+      .replace(/^yokoten \d+\.\d+\.\d+/, 'yokoten VERSION')
+      .replace(/^ {2}note {8}the desk fence can't start:.*\n/m, '')
+      .replace(/shows every check and \d+ notes?/, 'shows every check and N notes')
+      .trimEnd();
   const printed = withoutVersion((await makeSandbox().call([])).output);
   assert.match(printed, /^yokoten VERSION · /, `the first run prints its header: ${printed}`);
   for (const file of ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md']) {
