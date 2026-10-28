@@ -49,7 +49,7 @@ jobs:
           docs_only=false
           if [ "$EVENT" != pull_request ] && [ "$EVENT" != merge_group ]; then
             echo "Not a pull request or a merge queue group, so every job runs."
-          elif [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] || ! files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" --) || [ -z "$files" ]; then
+          elif [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ] || ! files=$(git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA" --) || [ -z "$files" ]; then
             echo "::warning::The pull request's changed files could not be read, so every job runs."
           else
             docs_only=true

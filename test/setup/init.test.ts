@@ -1897,6 +1897,8 @@ const withTestsJob = (yml: string): string =>
 /** The kit's yokoten.yml before #451, rebuilt from the newest: one of the versions init wrote. */
 const oldYokotenYml = () =>
   kitWorkflow('yokoten.yml')
+    // Before #1188, a moved file listed only its new path.
+    .replace(' --no-renames', '')
     // Before #1068, a merge queue group was a full run.
     .replace(
       "  # AGENTS.md (#1051). Then the jobs that Markdown can't break are skipped. A merge queue\n  # group reads its files the same way: the group's base to its head is the pull request's\n  # change (#1068). A push to main is a full run. So is a file list that can't be read:\n  # docs_only is true only when the list was read and every file fits.\n",
