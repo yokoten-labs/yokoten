@@ -15,7 +15,6 @@ import {
   spaced, summaryLine, table, title, underRow, wrap,
 } from '../../../src/rules/text/screen.ts';
 import { blankHitsIn, isScreenCode, limitOf, machinePathsIn, NOT_SCREEN, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
-import { makeSandbox } from '../helpers.ts';
 import { healedWaivers, invoke, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
