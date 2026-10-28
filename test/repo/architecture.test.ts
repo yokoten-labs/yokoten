@@ -196,7 +196,7 @@ const unpinned = (text: string) =>
   [...text.matchAll(/^\s*(?:-\s+)?uses:\s*(.+?)\s*$/gm)].map((m) => m[1]).filter((ref) => !/^[.$]\//.test(ref) && !PINNED.test(ref));
 
 test('workflows: every action is pinned to a commit, the version in a comment', () => {
-  assert.deepEqual(unpinned('      - uses: actions/checkout@v4\n        uses: a/b@main\n      - uses: $/local\n'), ['actions/checkout@v4', 'a/b@main']);
+  assert.deepEqual(unpinned('      - uses: actions/checkout@v4\n        uses: a/b@main\n      - uses: ./local\n'), ['actions/checkout@v4', 'a/b@main']);
   assert.deepEqual(unpinned(`      - uses: a/b@${'0'.repeat(40)}\n`), [`a/b@${'0'.repeat(40)}`], 'a pin with no version comment');
   let seen = 0;
   for (const dir of ['.github/workflows', 'kit/project/.github/workflows']) {
@@ -404,9 +404,9 @@ test('workflows: the one required check, `ci`, waits for every job (#36)', () =>
   assert.deepEqual(ciProblems(good.replace('jobs:\n', 'jobs:\n  b:\n    timeout-minutes: 5\n')), ['`ci` does not need `b`']);
   assert.deepEqual(ciProblems(good.replace('    if: always()\n', '')), ['`ci` has no `if: always()`']);
   // A job that calls a workflow file here has its time limit in that file; one from elsewhere does not.
-  const caller = good.replace('jobs:\n', 'jobs:\n  b:\n    uses: $/.github/workflows/b.yml\n').replace('needs: [a]', 'needs: [a, b]');
+  const caller = good.replace('jobs:\n', 'jobs:\n  b:\n    uses: ./.github/workflows/b.yml\n').replace('needs: [a]', 'needs: [a, b]');
   assert.deepEqual(ciProblems(caller), []);
-  assert.deepEqual(ciProblems(caller.replace('$/.github/workflows/b.yml', 'other/repo/.github/workflows/b.yml@v1')), ['`b` has no time limit']);
+  assert.deepEqual(ciProblems(caller.replace('./.github/workflows/b.yml', 'other/repo/.github/workflows/b.yml@v1')), ['`b` has no time limit']);
   for (const dir of ['.github/workflows', 'kit/project/.github/workflows']) {
     const text = readFileSync(join(ROOT, dir, 'yokoten.yml'), 'utf8');
     assert.ok(jobs(text).length > 1, `${dir}/yokoten.yml: no jobs found; the scan is broken`);
@@ -435,8 +435,9 @@ const workflowProblems = (text: string) => {
   // Node syncs a reporter's file when it closes it, and a sync of a device fails the run
   // with EINVAL: a release tag failed so (issue #1149).
   if (/--test-reporter-destination=\/dev\//.test(text)) problems.push('a test reporter writes to a device, which fails the run: write to a file, or to stdout');
-  // `$/` loads this repo at the running commit; `./` loads whatever the workspace holds (#1149).
-  if (/^\s*(?:-\s+)?uses:\s*\.\//m.test(text)) problems.push('a same-repo reference uses `./`: write `$/`, which reads the running commit');
+  // actionlint 1.7.12 refuses the `$/` self-repository syntax (rhysd/actionlint issue #711),
+  // so a same-repo reference stays `./` until it reads `$/` (#1149).
+  if (/^\s*(?:-\s+)?uses:\s*\$\//m.test(text)) problems.push('a same-repo reference uses `$/`, which actionlint refuses: write `./`');
   for (const c of text.matchAll(/uses: actions\/checkout@.*\n((?: {8,}.*\n)*)/g)) {
     if (!/persist-credentials: false/.test(c[1])) problems.push('a checkout keeps its token');
   }
@@ -448,12 +449,12 @@ test('workflows: every workflow, in the kit and here, meets the standard; a bad 
   const checkout = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1';
   const good = `permissions: {}\njobs:\n  a:\n    timeout-minutes: 10\n    steps:\n      - uses: ${checkout}\n        with:\n          persist-credentials: false\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n`;
   assert.deepEqual(workflowProblems(good), []);
-  const bad = 'permissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node --test --test-reporter=spec --test-reporter-destination=/dev/null\n      - uses: ./local\n      - uses: actions/checkout@v4\n  b:\n    timeout-minutes: 5\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n';
+  const bad = 'permissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node --test --test-reporter=spec --test-reporter-destination=/dev/null\n      - uses: $/local\n      - uses: actions/checkout@v4\n  b:\n    timeout-minutes: 5\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n';
   assert.deepEqual(workflowProblems(bad), [
     '`actions/checkout@v4` is not pinned to a commit with a version comment',
     '`a` has no time limit',
     'a test reporter writes to a device, which fails the run: write to a file, or to stdout',
-    'a same-repo reference uses `./`: write `$/`, which reads the running commit',
+    'a same-repo reference uses `$/`, which actionlint refuses: write `./`',
     'a checkout keeps its token',
     '`ci` does not need `b`',
   ]);

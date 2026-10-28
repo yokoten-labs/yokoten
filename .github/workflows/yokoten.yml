@@ -199,7 +199,7 @@ jobs:
   release:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group' }}
-    uses: $/.github/workflows/release-checks.yml
+    uses: ./.github/workflows/release-checks.yml
     permissions:
       contents: read
   # Types are checked here and nowhere else: Node runs the .ts files without them.
@@ -298,8 +298,8 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # `$/` is this repo at the running commit (#1149), the root action included.
-      - uses: $/
+      # `./`, not `$/`: actionlint does not read `$/` yet (zizmor.yml, #1149).
+      - uses: ./
         with:
           pr-check: false
   # The one required check. It runs even when a job it needs failed, and goes red if
