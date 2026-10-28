@@ -2,12 +2,12 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { claudeCommand, upgradeScreen } from '../../../../src/commands/more/setup/upgrade.ts';
 import { screenProblems } from '../../../repo/docs/screen-rules.ts';
-import { makeSandbox } from '../../../repo/helpers.ts';
+import { makeSandbox, writeNodeProgram } from '../../../repo/helpers.ts';
 
 // ---- upgrade (#950): a fake `claude` first on PATH writes its arguments and the git
 // variables it got. The real `claude` is never run. ----
@@ -22,30 +22,21 @@ interface FakeCall {
   first: string;
 }
 
-const FAKE_CLAUDE = [
-  '#!/bin/sh',
-  '{',
-  '  echo "CALL $*"',
-  '  echo "COUNT ${GIT_CONFIG_COUNT:-}"',
-  '  last=$(( ${GIT_CONFIG_COUNT:-0} - 1 ))',
-  '  echo "KEY $(printenv "GIT_CONFIG_KEY_$last")"',
-  '  echo "VALUE $(printenv "GIT_CONFIG_VALUE_$last")"',
-  '  echo "FIRST ${GIT_CONFIG_KEY_0:-}"',
-  '} >> "$FAKE_CLAUDE_LOG"',
-  'echo "ran: $*"',
-  // A call that starts with FAKE_CLAUDE_FAIL fails.
-  'case "$*" in "${FAKE_CLAUDE_FAIL:-none}"*) exit 1 ;; esac',
-].join('\n');
+// The fake claude, in Node so it runs on every system (writeNodeProgram): it logs each call's
+// words and the git config entries it was given, and fails a call that starts with FAKE_CLAUDE_FAIL.
+const FAKE_CLAUDE = `const fs = process.getBuiltinModule('node:fs');
+const env = process.env;
+const count = env.GIT_CONFIG_COUNT ?? '';
+const last = Number(count || 0) - 1;
+fs.appendFileSync(env.FAKE_CLAUDE_LOG, \`CALL \${args.join(' ')}\\nCOUNT \${count}\\nKEY \${env['GIT_CONFIG_KEY_' + last] ?? ''}\\nVALUE \${env['GIT_CONFIG_VALUE_' + last] ?? ''}\\nFIRST \${env.GIT_CONFIG_KEY_0 ?? ''}\\n\`);
+process.stdout.write(\`ran: \${args.join(' ')}\\n\`);
+if (args.join(' ').startsWith(env.FAKE_CLAUDE_FAIL ?? 'none')) process.exit(1);`;
 
 /** Puts a fake `claude` first on PATH, and gives back the extra env and a reader of its log. */
 function fakeClaude(sandbox: ReturnType<typeof makeSandbox>, failsOn = 'none') {
   const bin = join(sandbox.home, 'fake-bin');
-  mkdirSync(bin, { recursive: true });
-  const file = join(bin, 'claude');
-  writeFileSync(file, `${FAKE_CLAUDE}\nexit 0\n`);
-  chmodSync(file, 0o755);
   const log = join(sandbox.home, 'claude.log');
-  const extra = { PATH: `${bin}:${process.env.PATH}`, FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_FAIL: failsOn };
+  const extra = { ...writeNodeProgram(bin, 'claude', FAKE_CLAUDE, process.platform, process.env), FAKE_CLAUDE_LOG: log, FAKE_CLAUDE_FAIL: failsOn };
   const calls = (): FakeCall[] => {
     if (!existsSync(log)) return [];
     const lines = readFileSync(log, 'utf8').split('\n');

@@ -708,6 +708,9 @@ test('deskFenceCheck: on Linux, each missing fence program is named with the com
   // Full doctor shows it as a note, never a failure (the positive control: a PATH with none of them).
   const sandbox = makeSandbox();
   const noGh = () => { throw new Error('no network in this test'); };
+  // The whole-doctor control runs where PATH is a POSIX list: on Windows the list is Path and its folders
+  // are not POSIX-absolute, so a Linux check cannot read it; the check itself is tested above on every system.
+  if (process.platform === 'win32') return;
   const full = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh, platform: 'linux', isFile: onDisk([]) });
   const fine = doctor(sandbox.repo, { env: sandbox.env, config: DEFAULTS, gh: noGh, platform: 'linux', isFile: () => true });
   assert.ok(flat(full.lines.join('\n')).includes("  note        desk-fence: the desk fence can't start: bwrap, rg and socat are not installed; run `sudo apt install"), full.lines.join('\n'));

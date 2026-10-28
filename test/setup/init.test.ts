@@ -322,7 +322,8 @@ test('init: with no agent installed, the git hook change leads and no trust step
   assert.doesNotMatch(said(result), /Grok CLI runs the hooks/);
   assert.doesNotMatch(said(result), /dsh plugin --profile/);
   assert.doesNotMatch(said(result), /dsh <profile> --patch/);
-  assert.equal(noted(result, /DeepSeek Harness|trust/), undefined, 'no step for an agent that is not here');
+  // On Windows, init notes that DeepSeek Harness's PowerShell hooks are not guarded yet (issue #332), agent or no agent.
+  assert.equal(noted(result, process.platform === 'win32' ? /trust/ : /DeepSeek Harness|trust/), undefined, 'no step for an agent that is not here');
   for (const file of ['.codex/hooks.json', '.muse/hooks.json', '.claude/settings.json', '.gemini/settings.json', '.agents/hooks.json', '.grok/hooks/yokoten.json', '.dsh/hooks.json']) {
     assert.ok(existsSync(join(sandbox.repo, file)), file);
   }
@@ -2475,7 +2476,8 @@ test('init: the default screen is one screen of groups, and no line passes 80 (#
   assert.match(result.stdout, /^ {2}done +GitHub: issue and PR templates, CODEOWNERS, a security policy$/m);
   assert.match(result.stdout, /^ {2}done +agents: guard for Claude Code \(\d+ more ready\)$/m);
   assert.match(result.stdout, /^\d+ files written, none of yours changed$/m);
-  assert.match(result.stdout, /^Next: `git add -A && git commit -m "chore: add yokoten"`$/m);
+  // `;` joins the two steps on Windows, `&&` elsewhere (the shell the system has).
+  assert.match(result.stdout, new RegExp(`^Next: \`git add -A${process.platform === 'win32' ? ';' : ' &&'} git commit -m "chore: add yokoten"\`$`, 'm'));
   assert.match(result.stdout, /^More: `yokoten init --list` shows every file$/m);
   for (const line of lines) assert.ok(line.length <= 80, `over 80 columns: ${line}`);
   assert.ok(lines.length <= 20, `${lines.length} lines is more than one screen`);
