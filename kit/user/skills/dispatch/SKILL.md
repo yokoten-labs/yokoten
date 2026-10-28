@@ -34,6 +34,7 @@ instead (record 0019).
 4. Start the worker in the worktree, so its sandbox covers it. The project
    holds the sandbox settings. `yokoten init` writes them. `yokoten doctor`
    checks them in the `sandbox` step.
+5. Put the command rules of the guard in the brief (see "The brief").
 
 ## The brief
 
@@ -59,6 +60,17 @@ Stop: after the same step fails three times, or the guard refuses three times, s
       Go back to your last anchor, or write your report. Stopping is good work.
 Report: what you changed, the commands you ran with their output, what you are unsure of.
 ```
+
+A worker runs its commands under the guard. Say so in the brief:
+
+- Write `cd <worktree> && cmd && cmd`. The `cd` stands on its own, joined by `&&` or
+  `;`: not in a subshell, a pipe or the background. Use no pipe after it.
+- No `git -C`: `cd` into the worktree first.
+- No `VAR=value` before a command, except `TZ`, `CI`, `NODE_ENV`, `NO_COLOR`,
+  `FORCE_COLOR`, `DEBUG`, `LANG`, `LC_ALL` and the names `yokoten.json` lists in
+  `worker.settings`.
+- If the task needs another setting, such as a test's capture file, make it yourself
+  and hand the worker the file.
 
 The runner or the board gives every worker a time limit, three hours unless
 yokoten.json sets `worker.timeLimitMinutes`. Before it ends, commit and write the

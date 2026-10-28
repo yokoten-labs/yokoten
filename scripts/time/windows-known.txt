@@ -76,6 +76,7 @@ test/commands/shared.test.ts :: outside a git repo: every command that needs one
 test/host/github/bot.test.ts :: config: a keys file value reads as a shell profile line gives it (#405)
 test/host/github/planning.test.ts :: ghIn: reads a gh answer larger than 1 MiB
 test/repo/architecture.test.ts :: child processes: runChild never starts a shell (#813)
+test/repo/docs/screens.test.ts :: screens: the first-run block of every README is the screen the first run prints (#1145)
 test/rules/guards/commands/check.test.ts :: redteam #865: git --git-dir still shows the tag and push.followTags
 test/rules/guards/commands/commit-privacy.test.ts :: commit: a change the guard cannot read is refused, not let through (#824)
 test/rules/guards/commands/no-wipe.test.ts :: guard: a project one or two folders below the root is the project (#969)

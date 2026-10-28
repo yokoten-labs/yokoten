@@ -55,3 +55,22 @@ test('explain <id> is one screen: the stage, the four labels and a link (#1027)'
   assert.match(result.stdout, /^More: https:\/\//m);
   for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, line);
 });
+
+test('explain tests shows the job it asks for on several lines, and ends with the next step (#1145)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('package.json', JSON.stringify({ scripts: { test: 'node --test' } }));
+  sandbox.write('package-lock.json', '{}');
+  sandbox.write('.github/workflows/yokoten.yml', `on: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@${'a'.repeat(40)} # v1\n  ci:\n    needs: [check]\n    runs-on: ubuntu-latest\n    steps:\n      - run: 'true'\n`);
+  const result = await sandbox.call(['explain', 'tests']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /^ {18}runs-on: ubuntu-latest$/m, 'the job is shown, not only named');
+  assert.match(result.stdout, /^ {18}steps: \[\{uses: <your checkout step>\},$/m);
+  assert.match(result.stdout, /\nNext: `yokoten doctor`\nMore: https:\/\//, 'the screen ends with the next step');
+  assert.ok(result.stdout.split('\n').length <= 25, 'one screen');
+  for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80 || line.startsWith('More:'), line);
+});
+
+test('explain <rule> ends with a Next line (#1145)', async () => {
+  const result = await makeSandbox().call(['explain', 'secret']);
+  assert.match(result.stdout, /\nNext: `yokoten check`\nMore: https:\/\//);
+});

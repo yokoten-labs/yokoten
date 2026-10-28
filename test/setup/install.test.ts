@@ -40,7 +40,7 @@ import { hasHook } from '../../src/agents/hooks-file.ts';
 import { RENAME_WAITS_MS, renameRetrying } from '../../src/platform/disk.ts';
 import { copyRuntime, isEditedManaged, isSameOrInside, sealManaged, type SetupResult, writeManaged } from '../../src/setup/files.ts';
 import { addOwnMark, cleanOlderInstall, countMarkKinds, filledLines, fillMarks, hasMarks, install, isMachineSetUp, isOnPath, launcherText, machineStateFile, machineUserNames, migrateMarks, paths, PROFILE_LINE, setUpLauncher, shellProfile, type Steps, uninstall, USER_CLI, type UserNameProbe, writeFileAtomic } from '../../src/setup/install.ts';
-import { autoLogins, loadMarkKinds, makeRedactor } from '../../src/rules/privacy.ts';
+import { autoLogins, loadMarkKinds, loadMarks, makeRedactor, useRealHome } from '../../src/rules/privacy.ts';
 
 shareGuardMeasure();
 shareSelfTest();
@@ -1124,6 +1124,26 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   assertRows(result, sandbox.home, 'kept setting mailmap.file yours');
   assert.match(findingsOf(result, sandbox.home), /^mailmap: your own git mailmap\.file setting stays; .*; add the lines of ~\/\.config\/yokoten\/mailmap to that file$/m);
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '/elsewhere/mailmap\n');
+});
+
+test("install: the mailmap never takes an email from the real home's marks (#1145)", () => {
+  const sandbox = makeSandbox();
+  const real = makeTempDir('yokoten-real-');
+  mkdirSync(join(real, '.config', 'yokoten'), { recursive: true });
+  writeFileSync(join(real, '.config', 'yokoten', 'private-marks'), `someone${at}real-mail.dev\n`);
+  // The sandbox home has a marks file with no mark in it: checking falls back to the real home.
+  mkdirSync(join(sandbox.home, '.config', 'yokoten'), { recursive: true });
+  writeFileSync(join(sandbox.home, '.config', 'yokoten', 'private-marks'), '# no marks yet\n');
+  const restore = useRealHome(() => real);
+  try {
+    assert.ok(loadMarks(sandbox.env).includes(`someone${at}real-mail.dev`), 'the check reads the real home');
+    installIn(sandbox);
+    const mailmap = readFileSync(join(sandbox.home, '.config', 'yokoten', 'mailmap'), 'utf8');
+    assert.ok(!mailmap.includes('real-mail'), 'the mailmap holds an email from the real home');
+    assert.ok(!/^owner /m.test(mailmap), 'the mailmap has a line for an email nobody wrote here');
+  } finally {
+    restore();
+  }
 });
 
 test("install names git's global mailmap.file as a setting it asks for, and a no leaves it unset (#985)", async () => {

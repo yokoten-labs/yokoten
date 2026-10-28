@@ -121,3 +121,22 @@ export function loadMarks(env: Env): string[] {
     .map((line) => line.toLowerCase());
   return [...new Set(marks)];
 }
+
+/**
+ * The owner's marks from this machine's own marks files (`marksFiles`), lowercased, with no
+ * fallback to the real home's marks (#739). That fallback is right for checking and wrong for
+ * writing: a private mark from another home would be copied into this one (#1145). A missing
+ * file is empty; any other error throws.
+ */
+export function loadWrittenMarks(env: Env): string[] {
+  const texts = marksFiles(env).map((file) => {
+    try {
+      return readFileSync(file, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      return '';
+    }
+  });
+  const marks = texts.join('\n').split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')).map((line) => line.toLowerCase());
+  return [...new Set(marks)];
+}

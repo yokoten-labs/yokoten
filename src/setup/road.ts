@@ -313,7 +313,7 @@ const describeNoTestRun = (root: string) => {
 const workspacesTest = (root: string) => (existsSync(join(root, 'pnpm-workspace.yaml')) ? '`pnpm -r test`' : '`npm test --workspaces`');
 /** Why the tests step is not done, worded by what the project is: package.json only when there is one. */
 const noTests = (root: string) => {
-  if (testScript(root)) return 'CI does not run the tests';
+  if (testScript(root)) return 'CI does not run the tests yet; this does not mean they fail';
   if (isWorkspaces(root)) return `no workflow runs each package's tests (e.g. ${workspacesTest(root)})`;
   if (packageJson(root)) return 'no test command: no "test" script in package.json, and no workflow runs a test runner';
   return describeNoTestRun(root);

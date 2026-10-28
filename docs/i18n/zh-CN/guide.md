@@ -108,12 +108,29 @@ flowchart LR
 项目还没用上 yokoten 时，会话一开始，AI 会看到：
 
 ```
-yokoten: stage 1 of 5, safety net. Next: no AGENTS.md, so the agents have no written rules here; `yokoten init` adds one.
-Why: an agent follows the rules it can read, and only those.
-Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).
+yokoten: stage 1 of 5, safety net
+
+  Next      No AGENTS.md, so the agents have no written rules here.
+
+  Why       An agent follows the rules it can read, and only those.
+
+  Fix       `yokoten init`
+
+Tell the user in plain words, one step at a time, and offer to do it (as-is,
+lighter, or not now with a reason).
+
+yokoten: ~/.config/yokoten/private-marks is missing or has no marks
+
+  Why       Without your marks, the privacy check knows only email addresses, IP
+            addresses and secrets.
+
+  Fix       `yokoten marks add`, then type your name, your city or a domain; it
+            is not shown.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#privacy
 ```
 
-会话里一次只说一步：在第几关、下一步做什么、为什么要做。第几关不存在哪里，每次都是看项目
+会话里一次只说一步：在第几关、下一步做什么、为什么要做。第二块讲私密标记，只在还没存任何标记时才出现。第几关不存在哪里，每次都是看项目
 里有哪些文件现算的。你说过「暂不」的步骤会跳过。顺序只是建议：后面关里的步骤提前做了，也算
 做完。所有步骤都做完了，或者都说了「暂不」，会话里就只有一行，告诉你路走完了。
 某个文件这里没有、但默认分支上有，提示会写明是默认分支上的，不再让你 `init`。
@@ -204,9 +221,9 @@ Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它
 
 （提示用英文写，因为 AI 读英文最不容易出错。）
 
-每条提示都是同样的四行。第一行说**出了什么事**（what），行尾用方括号给出规则 id，形如
-`yokoten stopped this: <what> [<id>]`。**Why:** 一行说为什么要紧（why）。**Instead:**
-一行是怎么改（fix，一条命令或者一处改动）。**More:** 一行是规则完整说明的链接。问题出在
+每条提示都是同样的四部分。第一行说**出了什么事**（what），行尾用方括号给出规则 id，形如
+`yokoten stopped this: <what> [<id>]`。**Why** 一行说为什么要紧（why）。**Instead**
+一行是怎么改（fix，一条命令或者一处改动）。**More** 一行是规则完整说明的链接。问题出在
 某个文件里时，位置紧跟在标题后面：`yokoten stopped this: 文件:行号: <what> [<id>]`。查到问题时，只说是哪一类，不说内容：
 密钥、私有词表里的词，都不会打印出来。
 
@@ -491,8 +508,8 @@ Windows 上请用 Git Bash。
 守卫才会打开。
 
 大多数人只需要一条命令：`npx yokoten`。它做了 `install`、`init` 和 `doctor` 的活：
-补上缺的东西，再给出一屏：你在哪里，下一步做什么。`trust` 和 `update` 仍是各自独立的步骤。除它之外，新手只会看到三条命令：
-`desk`、`kanban` 和 `tidy`（[记录 0043](../../records/0043-v012-three-commands.md)）。
+补上缺的东西，再给出一屏：你在哪里，下一步做什么。`trust` 和 `update` 仍是各自独立的步骤。除它之外，`yokoten help` 只列四条命令：
+`desk`、`kanban`、`check` 和 `tidy`（[记录 0043](../../records/0043-v012-three-commands.md)）。
 旧命令照样能用，并会告诉你它搬到了哪里。`yokoten help --all` 把它们都列出来，下面「命令」里的表一条条讲清。
 
 ### 装哪个版本
@@ -797,10 +814,10 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `conflicts [--json] [--rebuild <id>]` | 读取每个打开的 PR；没有代码托管时，读取每个本地分支。用平实的话说明哪些改动和 main 冲突、哪些改动互相冲突。它会说出只碰同一个文件的那几对，以及这一对里先合哪个。它不检出、不合并。结果放在 git 目录里，guard 不用跑 git 就能读到。加 `--json` 打印整张地图；加 `--rebuild` 打印一段提示，让 AI 在最新的 main 上重做某个改动 |
 
 每个命令后面加 `--help` 或 `-h`，就会打出它自己的说明：做什么、有哪些选项、一个例子。
-`yokoten help <命令>` 打出的也一样。`yokoten help` 只列开头要用的三个命令 `desk`、`kanban`、`tidy`，`help --all` 列出所有命令；搬走的命令照样能跑，先在 stderr 打一行说搬到了哪里。`yokoten version`（或者
+`yokoten help <命令>` 打出的也一样。`yokoten help` 只列开头要用的四个命令 `desk`、`kanban`、`check`、`tidy`，`help --all` 列出所有命令；搬走的命令照样能跑，先在 stderr 打一行说搬到了哪里。`yokoten version`（或者
 `--version`、`-v`）打出版本号。看说明不会改任何东西，
-退出码是 0。命令或选项打错了，yokoten 会提示最接近的那个，比如 `yokoten docter` 会问
-你是不是想打 "doctor"。`bot --` 后面的词都交给要运行的命令，所以
+退出码是 0。命令或选项打错了，yokoten 会提示最接近的那个，比如 `yokoten docter` 会说
+`unknown command docter`，再给一行 `Next: \`yokoten doctor\`, if you meant it; \`yokoten help\` lists every command`。`bot --` 后面的词都交给要运行的命令，所以
 `yokoten bot -- gh --help` 运行的是 `gh --help`。
 
 `check`、`doctor`、`hook`、`explain`、`adopt` 都可以加 `--json`。加了以后，标准输出里只有 JSON，
@@ -822,7 +839,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 - `explain --json`：`{ found, id, kind, what, why, check, docs, stage, standard }`。id 不存在时是
   `{ id, found: false, ids }`，退出码 1；没写 id 时是 `{ ids }`，退出码 0。
 
-输出的规矩只有一条：结果写到标准输出（stdout），问题、拒绝和出错写到标准错误（stderr）。
+输出的规矩只有一条：结果写到标准输出（stdout）；拒绝、出错和 `check` 查出的问题写到标准错误（stderr）；`doctor` 那条路上的一行（比如 MISSING）是结果的一部分，仍在 stdout。
 不认识的选项会直接拒绝，不会悄悄忽略。
 
 `init`、`update`、`doctor`、`check`、`adopt` 和 `bot` 都要在 git 仓库里跑。不在仓库里，
@@ -1224,11 +1241,11 @@ issue 里没写的那一节，对应的字段就留一个 `TODO(reviewer)`，绝
 | 用项目自带的：`node .yokoten/bin/yokoten.ts doctor` | 用这份再跑一次 `init`，再把 `.yokoten/` 提交上去以后 |
 | 别人用 npm 或插件装的 | 等 yokoten 发下一个版本，他们升级以后 |
 
-`learn --ship` 跑完也会打出这几条。查到问题，就给一条提醒：
+`learn --ship` 跑完也会打出这几条。查到问题，就在 `doctor` 的报告里给一行 note：
 
 ```
-project:
-  note    lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+Project:
+  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
 ```
 
 项目里第一次跑完整的 `doctor` 碰到一课新的，会单独说一次，哪怕没查出问题：
@@ -1398,6 +1415,15 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
 - **bot** 是装在仓库上的 GitHub App，负责开 PR。就算给了它 Workflows 权限，改 CI 的 PR
   也会经 CODEOWNERS 交给你审；发版要在受保护的 `release` 环境里等你批准。规则集要求你审查，
   所以它开的 PR，你不点头就合不进去。
+
+worker 在守卫之下运行命令，所以任务书要照这些规则写：
+
+- 命令以 `cd <worktree> && cmd && cmd` 的形式写。`cd` 要单独成句，用 `&&` 或 `;` 连接：
+  不能放在子 shell、管道或后台里。`cd` 之后不要接管道。
+- 不要用 `git -C`：先 `cd` 进 worktree。
+- 命令前面不要加 `VAR=value`，只有 `TZ`、`CI`、`NODE_ENV`、`NO_COLOR`、`FORCE_COLOR`、
+  `DEBUG`、`LANG`、`LC_ALL`，以及 `yokoten.json` 的 `worker.settings` 里列出的名字可以。
+- 任务需要别的设置（比如测试的输出文件）时，由 lead 自己做好，把文件交给 worker。
 
 这套方法靠七个技能来做。`dispatch` 给 worker 派活。`inspect` 分三轮审查某一个具体提交。
 `rca` 找根因，加检查，再推广到其他项目。`record` 把决定写下来。`release` 定下一个版本号，并准备更新日志。

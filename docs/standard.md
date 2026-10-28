@@ -134,7 +134,7 @@ A writer does not change an earlier line.
 The lock file is not a log line.
 A controller does not write the status file.
 Who reads. The status view reads the log.
-The board, the timeline, the daily counts and provenance read it too.
+The kanban, the timeline, the daily counts and provenance read it too.
 The view reads the log and does not append to it.
 How yokoten checks it. Each line must be one JSON object.
 The first line's `yokoten.event.previous_hash` is 64 zeros.
@@ -148,23 +148,23 @@ Version 1. The log has no version field.
 
 The hook that will append is [src/run/hook.ts](../src/run/hook.ts), and its test is [test/run/hook.test.ts](../test/run/hook.test.ts).
 
-## The board feed
+## The kanban feed
 
-The board keeps a short list of what each agent just did.
+The kanban keeps a short list of what each agent just did.
 This list is not a vendor transcript.
 A vendor does not write it, and does not map a stream onto it.
-The board builds the list in memory while `yokoten board` runs.
+The kanban builds the list in memory while `yokoten kanban` runs.
 A restart starts from empty.
 
 Each event has `kind`, `text` and `time`.
-The board keeps at most `50` events for one agent.
+The kanban keeps at most `50` events for one agent.
 The page folds a run of `step` or `pass` when that run has at least `3` events.
 `wait`, `fail` and `done` stay as their own rows.
 The newest event in a folded run still shows on its own.
 The first sight of `waiting` or `done` adds no event.
 An agent that leaves drops its feed.
 
-| Kind | Text | When the board adds it |
+| Kind | Text | When the kanban adds it |
 | --- | --- | --- |
 | `step` | the new `doing` | `doing` changed |
 | `pass` | `Checks passed` | `checks` became `passing` |
@@ -172,8 +172,8 @@ An agent that leaves drops its feed.
 | `wait` | `Waiting for you` | the dot became `waiting` after the agent was already shown |
 | `done` | `Finished` | the dot became `done` after the agent was already shown |
 
-Who writes. The board process, while `yokoten board` runs.
-Who reads. The board's old page, through `feedsJson`, until the new page replaces it.
+Who writes. The kanban process, while `yokoten kanban` runs.
+Who reads. The kanban page, through `feedsJson`.
 How yokoten checks it. `recordFeed` compares the last view with the new one.
 Version 1. The event has no version field.
 
@@ -274,7 +274,7 @@ It then applies the `role` rule in the table.
 It leaves `effort`, `task`, `doing`, `state`, `checks`, `blocked`, `question`, `link` and `updated` as the last writer left them.
 
 A value that is not text becomes empty, except `alive` and `outcome`, which are objects or absent.
-The board skips a file that is not a JSON object.
+The kanban skips a file that is not a JSON object.
 
 | Field | Who writes it | What is kept |
 | --- | --- | --- |
@@ -287,17 +287,17 @@ The board skips a file that is not a JSON object.
 | `task` | the agent | text |
 | `worktree` | the agent | text |
 | `doing` | the agent | text |
-| `log` | the agent | text. An absolute path to a plain text log inside the worktree or a runtime's log folder. The board reads it when it finds no session log. |
+| `log` | the agent | text. An absolute path to a plain text log inside the worktree or a runtime's log folder. The kanban reads it when it finds no session log. |
 | `updated` | the agent, and the stop hook | text. The hook writes UTC time with no milliseconds, such as `2026-10-23T00:00:00Z`. |
-| `started` | the agent | text, the same form as `updated`: when this work started. The board falls back to the file's birth time, then to `updated`. |
+| `started` | the agent | text, the same form as `updated`: when this work started. The kanban falls back to the file's birth time, then to `updated`. |
 | `role` | the agent | `lead`, `engineer`, `reviewer`, `verifier` or `helper`. Any other word, including `worker`, becomes empty. |
 | `state` | the agent | `working`, `waiting` or `done` |
 | `checks` | the stop hook | `passing` or `failing` |
-| `blocked` | the agent | text. The board keeps the first line, at most `140` characters, as kind `guard`. |
-| `question` | the agent | text. The board keeps the first line, at most `140` characters, as kind `question`. |
+| `blocked` | the agent | text. The kanban keeps the first line, at most `140` characters, as kind `guard`. |
+| `question` | the agent | text. The kanban keeps the first line, at most `140` characters, as kind `question`. |
 | `link` | the agent | only `http://` or `https://`. Anything else is dropped. |
 
-The board row also keeps `kind` and `why`.
+The kanban row also keeps `kind` and `why`.
 `why` is that first line.
 The dot beside an agent is `working`, `waiting`, `failing`, `idle` or `done`.
 `done` and `waiting` come from `state`.
@@ -305,7 +305,7 @@ The dot beside an agent is `working`, `waiting`, `failing`, `idle` or `done`.
 Any other `updated` time within `15 minutes` shows `working`.
 A missing or invalid `updated` time shows `idle`.
 Quiet for `15 minutes` shows `idle` only when `state` is not `done` or `waiting`, and `checks` is not `failing`.
-These dot rules are what the board does today.
+These dot rules are what the kanban does today.
 The dot does not read `alive` or `outcome` yet.
 
 The stop hook writes `checks` and `updated` only in a linked worktree.
@@ -323,7 +323,7 @@ The warning is one line on stderr.
 It never includes the file text.
 The hook writes by a temp file and a rename, so a new symlink is replaced and not followed.
 
-The board's own read follows a symlink.
+The kanban's own read follows a symlink.
 That read has no size cap.
 
 Who writes. Only the view writes this file.
@@ -331,11 +331,11 @@ The code does not do that yet.
 Today the agent writes the file, and deletes it to leave.
 The stop hook writes `checks` and `updated` in a linked worktree.
 A controller does not write this file.
-Who reads. The lead, and the board.
+Who reads. The lead, and the kanban.
 How yokoten checks it. The view is rebuilt from the log.
 A broken hash leaves the file unchanged.
 The hook, today, refuses a non-file, a file over the cap, a file it cannot read, and a file that changes while it is read.
-The board skips a missing, broken or non-object file.
+The kanban skips a missing, broken or non-object file.
 Version 1. The file has no version field.
 
 - [src/run/hook.ts](../src/run/hook.ts) and [test/run/hook.test.ts](../test/run/hook.test.ts).

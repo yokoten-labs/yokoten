@@ -43,7 +43,7 @@ import { commentedFile, type Problem, UnreadableHooksFile } from '../agents/hook
 import { type Change, changeOf, copyRuntime, HOME_DIR, isEditedManaged, isManagedText, isNewerKitCopy, KIT, MANAGED, managedState, type ReportState, type SetupResult, writeManaged, writeNew } from './files.ts';
 import { type Finding, finding, type RuleId } from '../rules/text/message.ts';
 import { type Gh, readLocalLogins, readLogin } from '../host/github/index.ts';
-import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
+import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, loadWrittenMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
 
 /**
  * Where yokoten keeps its runtime, its config and the private marks. With no absolute home
@@ -1495,7 +1495,7 @@ export const MAILMAP_QUESTION = 'Hide your email in git logs that agents read? [
  * A mailmap.file the user set to another file is theirs: it stays and the line says so.
  */
 export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: Ask } = {}): Partial<Steps> {
-  const emails = [...new Set([...found.filter((mark) => mark.kind === 'git email').map((mark) => mark.value), ...loadMarks(env).filter((mark) => /^[^@\s]+@[^@\s]+$/.test(mark))].map((email) => email.toLowerCase()))];
+  const emails = [...new Set([...found.filter((mark) => mark.kind === 'git email').map((mark) => mark.value), ...loadWrittenMarks(env).filter((mark) => /^[^@\s]+@[^@\s]+$/.test(mark))].map((email) => email.toLowerCase()))];
   const file = join(paths(env).config, 'mailmap');
   // The file may hold lines the owner wrote: it only gets the lines it lacks.
   const before = existsSync(file) ? readFileSync(file, 'utf8') : null;

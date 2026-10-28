@@ -20,10 +20,10 @@ import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from '
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
 import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
-import { loadMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
+import { loadMarks, loadWrittenMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
 import { GLOBAL_VALUES, postKind, unreadPost } from './privacy/posts.ts';
 
-export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, marksFile, marksFiles, writtenMarksOnly };
+export { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome, loadMarks, loadWrittenMarks, marksFile, marksFiles, writtenMarksOnly };
 
 /**
  * The marks a project allows in its own repo (#424): those its yokoten.json "privacy.allow"

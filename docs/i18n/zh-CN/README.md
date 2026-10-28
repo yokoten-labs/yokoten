@@ -29,23 +29,25 @@ npx yokoten
 ```text
 yokoten 0.1.1 · set up; stage 1 of 5, safety net
 
-  ok          computer    guard on for Claude Code
-  ok          project     18 files written, none of yours changed
+  ok          guard on for Claude Code on this computer
+  ok          37 files written in this project, none of yours changed
+
+  MISSING     ~/.config/yokoten/private-marks is missing or has no marks
+              Type your name, your city or a domain; it is not shown.
+              Fix: `npx yokoten marks add`
+
   done        12 of 26 steps
-  MISSING     ~/.config/yokoten/private-marks is missing or has no marks; run
-              `npx yokoten marks add` and type your name, your city or a domain;
-              it is not shown
   next        Run your tests on every push
   to do       Put the project on GitHub or Gitea
   to do       Name the owner (CODEOWNERS)
   to do       Set up the bot account
   to do       Add a license and a security policy
   can't check 9 steps read the code host; doctor checks them after a push
-  note        this project has 16 uncommitted files, the oldest changed 1 minute
-              ago
+
+  note        16 uncommitted files, the oldest changed 1 minute ago
 
 Next: `git add -A && git commit -m "chore: add yokoten"`
-More: `yokoten doctor --all` shows every check and 5 notes
+More: `npx yokoten doctor --all` shows every check and 5 notes
 ```
 
 ## 它拦住什么
