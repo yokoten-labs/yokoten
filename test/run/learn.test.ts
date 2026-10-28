@@ -667,6 +667,9 @@ test('upstream: a note hides the project, home and owner, and refuses a secret o
   assert.ok('problems' in refused && refused.problems.every((problem) => problem.id === 'secret' && !JSON.stringify(problem).includes(token)));
   // An IP address is not hidden by redact, so the scan refuses it.
   assert.deepEqual(kindsOf(redactNote(`the server ${[100, 64, 2, 3].join('.')} was down`, place, env)), ['ip']);
+  // A note goes upstream as an issue, so a private address is refused too; loopback is not (#1169).
+  assert.deepEqual(kindsOf(redactNote(`the box ${[192, 168, 1, 20].join('.')} was down`, place, env)), ['ip']);
+  assert.ok('text' in redactNote(`the hook calls ${[127, 0, 0, 1].join('.')}:8080`, place, env), 'loopback passes');
   // A mark with a - is found as a part: redact hides it where the scan would find it (#434).
   assert.deepEqual(redactNote('at secret-cityhall', place, env), { text: 'at <mark>hall' });
   // An email address is kept as <email>, not refused.

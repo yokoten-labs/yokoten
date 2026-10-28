@@ -5,7 +5,7 @@
 import { posix } from 'node:path';
 import type { Config } from './config.ts';
 import { matcher } from './config.ts';
-import { type Finding, finding } from './text/message.ts';
+import { type Finding, finding, layoutFoldNote } from './text/message.ts';
 import { CHANGES_DIR, codeOwnersWords, compileCodeOwnersPattern, isCodeOwnersHeader } from './pr.ts';
 
 export { codeOwnersPatternMatches } from './pr.ts';
@@ -106,9 +106,8 @@ export function foldLayoutHits(hits: Finding[], { layout }: Pick<Config, 'layout
   if (!folders.length) return null;
   const named = folders.slice(0, FOLDED_NAMES).join(', ');
   const more = folders.length > FOLDED_NAMES ? `, and ${folders.length - FOLDED_NAMES} more` : '';
-  return finding('layout', `${folders.length} ${folders.length === 1 ? 'folder holds' : 'folders hold'} more than ${layout.maxEntries} entries: ${named}${more}`, `to hold this repo to the cap, add \`"layout": { "maxEntries": ${layout.maxEntries} }\` to yokoten.json; \`yokoten init\` adds it`, {
-    why: 'the folder cap is a house rule a repo chooses; this one has no "layout" key in yokoten.json, so its hits are one note',
-  });
+  const { what, fix, why } = layoutFoldNote(folders.length, layout.maxEntries, `${named}${more}`);
+  return finding('layout', what, fix, { why });
 }
 
 // Build output and binaries (#56). Build output is made from the source, so a copy in the

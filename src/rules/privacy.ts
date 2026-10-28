@@ -16,7 +16,7 @@ import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
 import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
-import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
+import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
 import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
@@ -583,9 +583,6 @@ function contactPlaces(file: string, lines: string[]): ((index: number) => boole
   return (index) => persons[index] === true;
 }
 
-/** The note for an address at a place where it is public on purpose (#1169). */
-const CONTACT_FIX = 'nothing to do if it is this project\'s public contact (add it to "privacy.allow" in yokoten.json to drop the note); if it is a personal address, use a team or noreply address';
-
 // A match starts only where a word starts, so a long run with no @ is read once, not once per letter.
 const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 // A browser version in a user agent (Chrome/120.0.0.0) is not an address. Only the
@@ -1001,12 +998,13 @@ export function loadIgnores(root: string): { entries: IgnoreDirective[]; problem
  */
 export function scanText(
   text: string,
-  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true, hasContactPlaces = true, allowsLocalNetwork = true }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean; hasContactPlaces?: boolean; allowsLocalNetwork?: boolean },
+  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true, hasContactPlaces = true, allowsLocalNetwork = false }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean; hasContactPlaces?: boolean; allowsLocalNetwork?: boolean },
 ): Finding[] {
   const problems: Finding[] = [];
   const lines = text.split('\n');
   // `hasContactPlaces: false` for text that is not a repo file, which only borrows a name (a gh post's body file).
-  // `allowsLocalNetwork: false` for text an agent posts: a private address there names the owner's own network (#1169).
+  // `allowsLocalNetwork`: false, the default, for any text that may leave the machine (a post, a note, a prompt), where a
+  // private address names the owner's own network; true only for a scan of the repo's own source (#1169).
   const contacts = hasContactPlaces ? contactPlaces(file, lines) : null;
   // `logins`: the forge logins yokoten added to the marks, fine where a file names accounts (#410).
   const places = logins.length && marks.length ? loginPlaces(file, lines) : null;
@@ -1048,7 +1046,7 @@ export function scanText(
     for (const [hit] of line.matchAll(EMAIL)) {
       if (!isPersonalEmail(hit, allow)) continue;
       // A contact address public on purpose (#1169) is graded `unknown`: shown as a note, never a failure.
-      if (contacts?.(index)) problems.push(finding('email', 'a contact email address, public on purpose here', CONTACT_FIX, { ...where, grade: 'unknown', ...ignoreFields('email', [hit], true) }));
+      if (contacts?.(index)) problems.push(finding('email', CONTACT_EMAIL_NOTE.what, CONTACT_EMAIL_NOTE.fix, { ...where, grade: 'unknown', ...ignoreFields('email', [hit], true) }));
       else problems.push(finding('email', 'an email address', EMAIL_FIX, { ...where, grade: 'sure', ...ignoreFields('email', [hit], true) }));
     }
     for (const { 0: hit, index } of line.matchAll(IPV4)) {

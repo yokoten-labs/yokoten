@@ -6,6 +6,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   mkdirSync,
+  readdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -183,11 +185,11 @@ test('IPs: spec section numbers and versions are not addresses (#382)', () => {
 
 test('IPs: loopback and the three RFC 1918 ranges pass; the addresses just outside them are caught (#1169)', () => {
   for (const ok of [ip(127, 0, 0, 1), ip(127, 1, 2, 3), ip(10, 0, 0, 5), ip(10, 255, 255, 255), ip(172, 16, 0, 1), ip(172, 24, 1, 1), ip(172, 31, 255, 254), ip(192, 168, 0, 1), ip(192, 168, 255, 255), '::1', `listen on [::1]:8080`]) {
-    assert.deepEqual(scanText(`addr = "${ok}"`, { file: 'src/config.rs' }), [], ok);
+    assert.deepEqual(scanText(`addr = "${ok}"`, { file: 'src/config.rs', allowsLocalNetwork: true }), [], ok);
   }
   // Positive controls: public addresses next to each range, and the shared range ISPs and VPNs use.
   for (const bad of [ip(9, 255, 255, 255), ip(11, 0, 0, 1), ip(172, 15, 255, 255), ip(172, 32, 0, 1), ip(192, 167, 1, 1), ip(192, 169, 0, 1), ip(100, 64, 0, 5), ip(126, 0, 0, 1), ip(128, 0, 0, 1)]) {
-    assert.deepEqual(scanText(`addr = "${bad}"`, { file: 'src/config.rs' }).map((f) => f.id), ['ip'], bad);
+    assert.deepEqual(scanText(`addr = "${bad}"`, { file: 'src/config.rs', allowsLocalNetwork: true }).map((f) => f.id), ['ip'], bad);
   }
 });
 
@@ -739,9 +741,30 @@ const ADDRESS_CASES: { address: string; inSource: 'pass' | 'stop'; inPost: 'pass
 
 test('IPs in source: loopback and the private ranges pass, a public address fails (#1169)', () => {
   for (const { address, inSource } of ADDRESS_CASES) {
-    const found = scanText(`const HOST: &str = "${address}";`, { file: 'src/config.rs' }).map((f) => f.id);
+    const found = scanText(`const HOST: &str = "${address}";`, { file: 'src/config.rs', allowsLocalNetwork: true }).map((f) => f.id);
     assert.deepEqual(found, inSource === 'pass' ? [] : ['ip'], address);
   }
+});
+
+// The strict side is the default, so a new caller can't let a private address leave the machine
+// by forgetting the option. Only the scans of the repo's own source opt in, and this list names them.
+const SOURCE_SCANS = ['src/rules/guards/commands/commit-privacy.ts', 'src/run/check.ts'];
+
+test('IPs: scanText is strict by default; only the source scans opt in to private addresses (#1169)', () => {
+  for (const { address, inPost } of ADDRESS_CASES) {
+    assert.deepEqual(scanText(`host ${address}`, { file: 'a' }).map((f) => f.id), inPost === 'pass' ? [] : ['ip'], address);
+  }
+  const root = join(import.meta.dirname, '../..');
+  const optIns: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(join(root, dir), { withFileTypes: true })) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) walk(path);
+      else if (path.endsWith('.ts') && /allowsLocalNetwork: true/.test(readFileSync(join(root, path), 'utf8'))) optIns.push(path);
+    }
+  };
+  walk('src');
+  assert.deepEqual(optIns.sort(), SOURCE_SCANS);
 });
 
 test('IPs in a post: loopback passes, a private or public address is stopped (#1169)', () => {

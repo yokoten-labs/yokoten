@@ -218,7 +218,8 @@ export function checkCommitPrivacy(
   const allow = privacy?.allow ?? [];
   const isSkipped = matcher(privacy?.skip ?? []);
   const ignores = root === null ? [] : loadIgnores(root).entries;
-  const options = { marks: found.map((mark) => mark.value), logins: autoLogins(found), allow, kinds: mapMarkKinds(found), ignores, env, inlineIgnores: false };
+  // What a commit adds is the repo's source, as the commit check reads it: a private address is a local default (#1169).
+  const options = { marks: found.map((mark) => mark.value), logins: autoLogins(found), allow, kinds: mapMarkKinds(found), ignores, env, inlineIgnores: false, allowsLocalNetwork: true };
   for (const block of blocks) {
     if (block.file === '' || isSkipped(block.file)) continue;
     const hit = scanText(block.lines.join('\n'), { ...options, file: block.file }).find(isFailingFinding);

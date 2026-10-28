@@ -58,6 +58,19 @@ const guide = (section: string) => `${DOCS_URL}#${section}`;
 /** The desk start screen's line when the agent starts with its own sandbox off (#1171). */
 export const DESK_OWN_SANDBOX_NOTE = "this agent's own sandbox can't start in a desk; the desk's sandbox covers the whole agent instead";
 
+/** The note for an email address in a place where it is public on purpose: a security policy or a manifest's people fields (#1169). */
+export const CONTACT_EMAIL_NOTE = {
+  what: 'a contact email address, public on purpose here',
+  fix: 'nothing to do if it is this project\'s public contact (add it to "privacy.allow" in yokoten.json to drop the note); if it is a personal address, use a team or noreply address',
+};
+
+/** The one note for the wide folders of a repo that has not chosen the folder cap (#1169). `folders` is how many, `named` the list to show. */
+export const layoutFoldNote = (folders: number, maxEntries: number, named: string) => ({
+  what: `${folders} ${folders === 1 ? 'folder holds' : 'folders hold'} more than ${maxEntries} entries: ${named}`,
+  fix: `to hold this repo to the cap, add \`"layout": { "maxEntries": ${maxEntries} }\` to yokoten.json; \`yokoten init\` adds it`,
+  why: 'the folder cap is a house rule a repo chooses; this one has no "layout" key in yokoten.json, so its hits are one note',
+});
+
 const RELEASE_WHY = 'only the owner decides when to release';
 const PR_CHECK = '`yokoten check --pr` in CI reads the pull request';
 const UNSAVED_CHECK = '`doctor` and the session note read git and the file system, never change them, and give a note, never a failure';

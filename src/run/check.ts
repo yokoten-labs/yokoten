@@ -536,7 +536,7 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
   problems.push(...ignoreFile.problems);
   const privacy = (path: string, buf: Buffer) => {
     if (skip(path) || looksBinary(buf)) return;
-    const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env });
+    const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true });
     for (const hit of found) (isFailingFinding(hit) ? problems : notes).push(hit);
   };
   if (staged) {
@@ -658,7 +658,7 @@ export function checkChanged(root: string, { config, env, notes = [] }: { config
     if (skip(path)) continue;
     const buf = readEntry(root, path); // none if deleted, or a folder (a submodule)
     if (buf && !looksBinary(buf)) {
-      const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env });
+      const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true });
       for (const hit of found) (isFailingFinding(hit) ? problems : notes).push(hit);
       problems.push(...borrowedProblems(path, buf.toString('utf8')));
     }
@@ -720,7 +720,8 @@ export function checkHistory(root: string, { config, env, notes = [] }: { config
   const skip = matcher(config.privacy.skip);
   const ignoreFile = loadIgnores(root);
   add(ignoreFile.problems);
-  const opts = { marks, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env };
+  // The history is the repo's source too: a private address there is a local default (#1169).
+  const opts = { marks, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true };
 
   const log = git(root, env, ['log', '--all', '--format=%h%x00%ae%x00%ce%x00%B%x1e']);
   for (const entry of log.split('\x1e')) {
