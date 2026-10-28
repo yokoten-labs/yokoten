@@ -615,21 +615,26 @@ const OK_EMAIL = [
 const isForgeRemote = (hit: string): boolean => hit.slice(0, 4).toLowerCase() === 'git@' && PUBLIC_FORGES.includes(hit.slice(4).toLowerCase());
 // A retina image name (logo@2x.png) looks like an email address at the domain 2x.png.
 const RETINA = /@\d+x\.(png|jpe?g|gif|webp|svg|avif)$/i;
-// Loopback (127.0.0.0/8), "any", the three ranges RFC 5737 keeps for documentation, and the
-// three private ranges of RFC 1918 (#1169). A private address is the same on every local
-// network, so it leads to no one: source code uses them as local defaults. Any other
-// address, the shared range ISPs and VPNs use (RFC 6598) included, is still caught. The
-// commit check, CI, the post guard and an ignore's reason all read this one list.
-const OK_IP = [
-  /^127\./,
-  /^0\.0\.0\.0$/,
-  /^192\.0\.2\./,
-  /^198\.51\.100\./,
-  /^203\.0\.113\./,
-  /^10\./,
-  /^172\.(?:1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
+// The addresses that point at no one, in one table (#1169). Loopback (127.0.0.0/8), "any",
+// and the three ranges RFC 5737 keeps for documentation pass everywhere. The three private
+// ranges of RFC 1918 are `isLocalNetwork`: in code they are local defaults, the same on every
+// network, so the commit check, CI and `--history` pass them. Text an agent posts describes
+// the owner's own machine (a home network, a WSL host), so the post guard still stops them.
+// Any other address, the shared range ISPs and VPNs use (RFC 6598) included, is caught everywhere.
+const OK_IP: { pattern: RegExp; isLocalNetwork: boolean }[] = [
+  { pattern: /^127\./, isLocalNetwork: false },
+  { pattern: /^0\.0\.0\.0$/, isLocalNetwork: false },
+  { pattern: /^192\.0\.2\./, isLocalNetwork: false },
+  { pattern: /^198\.51\.100\./, isLocalNetwork: false },
+  { pattern: /^203\.0\.113\./, isLocalNetwork: false },
+  { pattern: /^10\./, isLocalNetwork: true },
+  { pattern: /^172\.(?:1[6-9]|2\d|3[01])\./, isLocalNetwork: true },
+  { pattern: /^192\.168\./, isLocalNetwork: true },
 ];
+
+/** Whether a dotted quad points at no one: loopback or a documentation range, and with `allowsLocalNetwork` a private range too. */
+const isHarmlessAddress = (hit: string, { allowsLocalNetwork }: { allowsLocalNetwork: boolean }): boolean =>
+  OK_IP.some((entry) => (allowsLocalNetwork || !entry.isLocalNetwork) && entry.pattern.test(hit));
 
 // A dotted quad in a spec citation or a version is not an address (#382). The words next to
 // it decide, read only around a hit, so a large file gets no extra pass:
@@ -926,7 +931,8 @@ const LEAD_IGNORE_FIX = (rule: string) => `if it is not real, ask the lead to ad
 function hideInReason(redact: (text: string) => string, reason: string, env: Env, values: string[] = []): string {
   return redact(makeSafeIgnoreReason(reason, env, values)).replace(IPV4, (hit) => {
     const octets = hit.split('.').map(Number);
-    return octets.every((n) => n <= 255) && !OK_IP.some((re) => re.test(hit)) ? SECRET : hit;
+    // Shown output may be pasted anywhere, so a private address in a reason is hidden too (#1169).
+    return octets.every((n) => n <= 255) && !isHarmlessAddress(hit, { allowsLocalNetwork: false }) ? SECRET : hit;
   });
 }
 
@@ -995,11 +1001,12 @@ export function loadIgnores(root: string): { entries: IgnoreDirective[]; problem
  */
 export function scanText(
   text: string,
-  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true, hasContactPlaces = true }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean; hasContactPlaces?: boolean },
+  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true, hasContactPlaces = true, allowsLocalNetwork = true }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean; hasContactPlaces?: boolean; allowsLocalNetwork?: boolean },
 ): Finding[] {
   const problems: Finding[] = [];
   const lines = text.split('\n');
   // `hasContactPlaces: false` for text that is not a repo file, which only borrows a name (a gh post's body file).
+  // `allowsLocalNetwork: false` for text an agent posts: a private address there names the owner's own network (#1169).
   const contacts = hasContactPlaces ? contactPlaces(file, lines) : null;
   // `logins`: the forge logins yokoten added to the marks, fine where a file names accounts (#410).
   const places = logins.length && marks.length ? loginPlaces(file, lines) : null;
@@ -1046,7 +1053,7 @@ export function scanText(
     }
     for (const { 0: hit, index } of line.matchAll(IPV4)) {
       const octets = hit.split('.').map(Number);
-      if (octets.some((n) => n > 255) || OK_IP.some((re) => re.test(hit)) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
+      if (octets.some((n) => n > 255) || isHarmlessAddress(hit, { allowsLocalNetwork }) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
       problems.push(finding('ip', 'an IP address', 'use a placeholder from 192.0.2.0/24', { ...where, grade: 'sure', ...ignoreFields('ip', [hit], true) }));
     }
     const marked = stopped.length && unglue ? unglue(line) : line;
@@ -2052,7 +2059,7 @@ export function checkPost(
   const own = isHere ? [...ownMarks(all, [...allow, ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];
   const marks = all.filter((mark) => !own.includes(mark));
   for (const piece of posted.pieces) {
-    const hit = scanText(piece.text, { file: piece.source, marks, allow, ownAllow: [], kinds, env, inlineIgnores: false, hasContactPlaces: false }).find(isFailingFinding);
+    const hit = scanText(piece.text, { file: piece.source, marks, allow, ownAllow: [], kinds, env, inlineIgnores: false, hasContactPlaces: false, allowsLocalNetwork: false }).find(isFailingFinding);
     if (!hit) continue;
     const more = { why: postWhy(hit.why) };
     if (piece.isFile) return finding(hit.id as RuleId, hit.what, postFix(hit), { ...more, file: shownPath(piece.source, env, marks), line: hit.line });

@@ -369,3 +369,15 @@ test('an ignore in an HTML comment ends at --> and at --!>', () => {
     assert.deepEqual(findLineIgnores(line, { commentsOnly: true }), [{ rule: 'secret', reason: 'a sample key' }], line);
   }
 });
+
+// #1169: shown output may be pasted into a post, so an ignore's reason hides a private
+// address too, as the post guard stops one. Loopback stays as written.
+test('ignore reasons: a private or public address is hidden, loopback is kept (#1169)', () => {
+  const marker = ['yokoten', 'ignore'].join('-');
+  const quad = (...parts: number[]) => parts.join('.');
+  const reason = (address: string) => scanText(`host ${quad(8, 8, 4, 4)} // ${marker} ip: same as ${address}`, { file: 'a' })[0]?.ignored;
+  assert.equal(reason(quad(192, 168, 1, 20)), 'same as <secret>');
+  assert.equal(reason(quad(172, 16, 0, 9)), 'same as <secret>');
+  assert.equal(reason(quad(8, 8, 8, 8)), 'same as <secret>');
+  assert.equal(reason(quad(127, 0, 0, 1)), `same as ${quad(127, 0, 0, 1)}`);
+});

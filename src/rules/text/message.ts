@@ -222,7 +222,7 @@ export const RULES = {
   ip: {
     rule: 'no IP address in the repo (core rule 11)',
     why: 'an IP address can lead to your server or your home network',
-    check: 'the commit check, CI and `check --history` look for IPv4 addresses; loopback, the three private ranges of RFC 1918 and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for IPv4 addresses; loopback, the three private ranges of RFC 1918 and the documentation ranges pass there, but in a post only loopback and the documentation ranges pass, because a private address there describes your own network; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'private-mark': {

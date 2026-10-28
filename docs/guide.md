@@ -2488,8 +2488,10 @@ package manifest: `author`, `contributors`, `maintainers` and `bugs` in `package
 
 The IP check covers IPv4 only; IPv6 is not checked. Loopback (`127.x`), the three private
 ranges of RFC 1918 (`10.x`, `172.16.x` to `172.31.x`, `192.168.x`) and the documentation
-ranges (`192.0.2.0/24` and its two siblings) are fine: they lead to no one. Every other
-address is caught, in a file and in what an agent posts. Browser version strings such as `Chrome/120.0.0.0` are not
+ranges (`192.0.2.0/24` and its two siblings) are fine in a file: code uses them as local
+defaults. In what an agent posts, only loopback and the documentation ranges are fine. A
+private address there describes your own network, such as your home network or the WSL
+host, so the post is stopped. Every other address is caught everywhere. Browser version strings such as `Chrome/120.0.0.0` are not
 addresses, and neither is a retina image name such as `logo@2x.png`. An address after
 `http://` or in a path such as `api/` is still caught.
 

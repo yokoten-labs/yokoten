@@ -720,13 +720,40 @@ test('a --body-file with a private mark is stopped, by file and line; the mark i
   }
 });
 
-// #1169: the post guard reads the same address list as the commit check, so a bot can report
-// a local default; a public address is still stopped. A body file named like a security
-// policy is not a repo file, so a personal address in it is still stopped.
-test('a post may name loopback and private addresses; a public one, or an email in a body named SECURITY.md, is stopped (#1169)', () => {
-  assert.equal(post(`gh issue create --title "check: a" --body "the default is ${ip(127, 0, 0, 1)} or ${ip(10, 0, 0, 5)} or ${ip(192, 168, 1, 1)}"`), null);
-  assert.equal(post(`gh issue create --title "check: a" --body "the server is ${ip(8, 8, 8, 8)}"`)?.id, 'ip');
-  assert.equal(post(`gh issue create --title "check: a" --body "the VPN is ${ip(100, 64, 0, 5)}"`)?.id, 'ip');
+// #1169, owner decision 2026-10-29: one address table, two sides. Code may hold loopback and
+// the private ranges as local defaults; a post may name loopback, but a private address there
+// describes the owner's own network (a home LAN, a WSL host), so it is stopped.
+const ADDRESS_CASES: { address: string; inSource: 'pass' | 'stop'; inPost: 'pass' | 'stop' }[] = [
+  { address: ip(127, 0, 0, 1), inSource: 'pass', inPost: 'pass' },
+  { address: ip(127, 1, 2, 3), inSource: 'pass', inPost: 'pass' },
+  { address: ip(192, 0, 2, 10), inSource: 'pass', inPost: 'pass' },
+  { address: ip(10, 0, 0, 5), inSource: 'pass', inPost: 'stop' },
+  { address: ip(172, 16, 0, 9), inSource: 'pass', inPost: 'stop' },
+  { address: ip(172, 31, 255, 254), inSource: 'pass', inPost: 'stop' },
+  { address: ip(192, 168, 1, 20), inSource: 'pass', inPost: 'stop' },
+  // Positive controls on both sides: a public address, and the shared range ISPs and VPNs use.
+  { address: ip(8, 8, 8, 8), inSource: 'stop', inPost: 'stop' },
+  { address: ip(172, 32, 0, 1), inSource: 'stop', inPost: 'stop' },
+  { address: ip(100, 64, 0, 5), inSource: 'stop', inPost: 'stop' },
+];
+
+test('IPs in source: loopback and the private ranges pass, a public address fails (#1169)', () => {
+  for (const { address, inSource } of ADDRESS_CASES) {
+    const found = scanText(`const HOST: &str = "${address}";`, { file: 'src/config.rs' }).map((f) => f.id);
+    assert.deepEqual(found, inSource === 'pass' ? [] : ['ip'], address);
+  }
+});
+
+test('IPs in a post: loopback passes, a private or public address is stopped (#1169)', () => {
+  for (const { address, inPost } of ADDRESS_CASES) {
+    assert.equal(post(`gh issue create --title "check: a" --body "the host is ${address}"`)?.id ?? 'pass', inPost === 'pass' ? 'pass' : 'ip', address);
+    writeFileSync(join(postDir, 'host.md'), `the host is ${address}\n`);
+    assert.equal(post('gh pr comment 3 --body-file host.md')?.id ?? 'pass', inPost === 'pass' ? 'pass' : 'ip', `${address} in a body file`);
+  }
+});
+
+// A body file named like a security policy is not a repo file, so a personal address in it is still stopped.
+test('a post body named SECURITY.md is no contact place: a personal address in it is stopped (#1169)', () => {
   writeFileSync(join(postDir, 'SECURITY.md'), `write to ${email}\n`);
   assert.equal(post('gh issue create --title "check: a" --body-file SECURITY.md')?.id, 'email');
 });
