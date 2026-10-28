@@ -7,7 +7,7 @@
 import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, spaced, title, usage } from '../shared.ts';
+import { askLine, count, fail, type Invocation, moreLine, nextLine, parse, print, printJson, requireRoot, row, say, screen, spaced, terminalOf, title, usage } from '../shared.ts';
 import { section } from '../../rules/text/screen.ts';
 import { scanTidy, sizeOf, tidyStateDir, type TidyItem, type TidyScan } from './find.ts';
 import { archiveItems, deleteTrash, makeTrashFolder, moveItem, readTrash, safeName, type TrashFolder, type TrashIndex, writeTrashIndex } from './put-away.ts';
@@ -81,7 +81,7 @@ function putAway(invocation: Invocation, root: string, trash: string, platform: 
   const now = Date.now();
   const targets = scanTidy({ root, cwd, env, platform, now }).items.filter(isToPutAway);
   if (!targets.length) {
-    print(invocation, title('tidy --local', 'nothing to put away; nothing was changed'));
+    print(invocation, tidyScreen({ kind: 'local', folder: null, moves: [] }));
     return 0;
   }
   let folder: string;
@@ -104,26 +104,88 @@ function putAway(invocation: Invocation, root: string, trash: string, platform: 
   }
   // A thing may have changed while it was saved: an agent started, or committed. It stays.
   const fresh = scanTidy({ root, cwd, env, platform, now: Date.now() });
-  const lines: string[][] = [];
+  const moves: TidyMove[] = [];
   let problem = '';
   for (const [position, item] of targets.entries()) {
     const entry = saved.entries[position];
     if (problem || !isUnchanged(item, fresh)) {
-      lines.push(row('skipped', `${item.name}: ${problem ? 'not moved, a move before it failed.' : 'it changed while tidy saved it, so it stays.'}`, kindWord(item)));
+      moves.push({ item, outcome: problem ? 'after-failure' : 'changed' });
       continue;
     }
     try {
       moveItem(item, entry, `${String(position + 1).padStart(2, '0')}-${safeName(item.name)}`, folder, root, env, platform);
-      lines.push(row('done', `${itemText(item)} Put away.`, kindWord(item)));
+      moves.push({ item, outcome: 'moved' });
     } catch (err) {
       problem = (err as Error).message.split('\n')[0] ?? 'the move failed';
-      lines.push(row('MISSING', `${item.name}: not moved, ${problem}`, kindWord(item)));
+      moves.push({ item, outcome: 'failed', problem });
     }
   }
   writeTrashIndex(folder, index);
-  const moved = saved.entries.filter((entry) => entry.isMoved).length;
-  print(invocation, screen(title('tidy --local', `put away ${count(moved, 'thing')} in ${folder}`), spaced(lines), moreLine('index.json there says how to bring each one back. It stays 7 days.'), nextLine('yokoten tidy')));
+  print(invocation, tidyScreen({ kind: 'local', folder, moves }));
   return problem ? 1 : 0;
+}
+
+/** What happened to one thing `--local` set out to put away. */
+export interface TidyMove {
+  item: TidyItem;
+  /** Moved into the trash; changed while it was saved, so it stays; left because a move before it failed; or its own move failed. */
+  outcome: 'moved' | 'changed' | 'after-failure' | 'failed';
+  /** Why its move failed, for 'failed'. */
+  problem?: string;
+}
+
+/**
+ * What `tidy --local` or `tidy --empty` did, as data (plan D1): the screen is built from it.
+ * `--local`: the trash folder it made (null when there was nothing to put away) and each move.
+ * `--empty`: the trash folder, everything in it, and the folders deleted (undefined while the
+ * question waits, or when nothing old is there).
+ */
+export type TidyResult = { kind: 'local'; folder: string | null; moves: TidyMove[] } | EmptyResult;
+
+/** What `tidy --empty` found and did: the trash folder, everything in it, and the folders deleted. */
+export interface EmptyResult {
+  kind: 'empty';
+  trash: string;
+  folders: TrashFolder[];
+  /** The folders deleted; undefined while the question waits, or when the answer was no. */
+  deleted?: string[];
+}
+
+/** One move as its row: put away, left as it is, or not moved and why. */
+function moveRow({ item, outcome, problem }: TidyMove): string[] {
+  if (outcome === 'moved') return row('done', `${itemText(item)} Put away.`, kindWord(item));
+  if (outcome === 'failed') return row('MISSING', `${item.name}: not moved, ${problem ?? 'the move failed'}`, kindWord(item));
+  return row('skipped', `${item.name}: ${outcome === 'after-failure' ? 'not moved, a move before it failed.' : 'it changed while tidy saved it, so it stays.'}`, kindWord(item));
+}
+
+/** The size of trash folders, as a person reads it. */
+const trashSize = (folders: readonly TrashFolder[]): string => formatSize(folders.reduce((sum, folder) => sum + folder.size, 0));
+
+/**
+ * The screen of `tidy --local` or `tidy --empty`, a pure function of the result. For
+ * `--empty` with old trash and nothing deleted yet, it is what the question is asked under.
+ */
+export function tidyScreen(result: TidyResult): string[] {
+  if (result.kind === 'local') {
+    if (result.folder === null) return title('tidy --local', 'nothing to put away; nothing was changed');
+    const moved = result.moves.filter((move) => move.outcome === 'moved').length;
+    // A failed move stops the rest: the title says so, so 0 put away never reads as done.
+    const isStopped = result.moves.some((move) => move.outcome === 'failed');
+    return screen(title('tidy --local', `put away ${count(moved, 'thing')} in ${result.folder}${isStopped ? '; a move failed, so the rest stayed' : ''}`), spaced(result.moves.map(moveRow)), moreLine('index.json there says how to bring each one back. It stays 7 days.'), nextLine('yokoten tidy'));
+  }
+  const old = result.folders.filter((folder) => folder.isOld);
+  if (!old.length) return screen(title('tidy --empty', 'nothing in the trash is over 7 days old; nothing was deleted'), trashBlock(result.folders));
+  return screen(
+    title('tidy --empty', `${count(old.length, 'trash folder')} over 7 days old, ${trashSize(old)}`),
+    spaced(old.map((folder) => row('next', `${folder.path.slice(result.trash.length + 1)}: ${formatSize(folder.size)}, put away ${new Date(folder.created).toISOString().slice(0, 10)}.`, 'trash'))),
+    result.deleted ? deletedRow(result) : [],
+  );
+}
+
+/** The answer's row under the question of `--empty`: what was deleted, or that nothing was. */
+export function deletedRow(result: EmptyResult): string[] {
+  if (result.deleted === undefined) return row('ok', 'nothing was deleted.', 'trash');
+  return row('done', `deleted ${count(result.deleted.length, 'folder')}, ${trashSize(result.folders.filter((folder) => folder.isOld))}.`, 'trash');
 }
 
 /** One line from the terminal, or '' at its end. */
@@ -140,30 +202,23 @@ async function readAnswer(invocation: Invocation): Promise<string> {
 async function emptyTrash(invocation: Invocation, trash: string, platform: NodeJS.Platform, isYes: boolean): Promise<number> {
   const folders = readTrash(trash, Date.now());
   const old = folders.filter((folder) => folder.isOld);
+  const result: EmptyResult = { kind: 'empty', trash, folders };
   if (!old.length) {
-    print(invocation, screen(title('tidy --empty', 'nothing in the trash is over 7 days old; nothing was deleted'), trashBlock(folders)));
+    print(invocation, tidyScreen(result));
     return 0;
   }
-  const size = formatSize(old.reduce((sum, folder) => sum + folder.size, 0));
-  const head = screen(title('tidy --empty', `${count(old.length, 'trash folder')} over 7 days old, ${size}`), spaced(old.map((folder) => row('next', `${folder.path.slice(trash.length + 1)}: ${formatSize(folder.size)}, put away ${new Date(folder.created).toISOString().slice(0, 10)}.`, 'trash'))));
-  const done = () => {
-    const deleted = deleteTrash(trash, old, platform);
-    return row('done', `deleted ${count(deleted.length, 'folder')}, ${size}.`, 'trash');
-  };
+  const size = trashSize(old);
+  const done = (): EmptyResult => ({ ...result, deleted: deleteTrash(trash, old, platform) });
   if (isYes) {
-    print(invocation, screen(head, done()));
+    print(invocation, tidyScreen(done()));
     return 0;
   }
-  print(invocation, head);
-  if (!invocation.stdin.stream.isTTY) return fail(invocation, '--empty asks before it deletes, and there is no terminal to ask in. Nothing was deleted', 'run it in a terminal, or add `--yes`');
+  print(invocation, tidyScreen(result));
+  if (!terminalOf(invocation).isPerson) return fail(invocation, '--empty asks before it deletes, and there is no terminal to ask in. Nothing was deleted', 'run it in a terminal, or add `--yes`');
   say(invocation, `${askLine(`Delete ${count(old.length, 'folder')} (${size}) for good?`)} `, invocation.stdout);
   const answer = (await readAnswer(invocation)).trim().toLowerCase();
   // Only an explicit yes deletes: Enter alone does not, whatever the question's default looks like.
-  if (answer !== 'y' && answer !== 'yes') {
-    print(invocation, row('ok', 'nothing was deleted.', 'trash'));
-    return 0;
-  }
-  print(invocation, done());
+  print(invocation, deletedRow(answer === 'y' || answer === 'yes' ? done() : result));
   return 0;
 }
 

@@ -11,20 +11,29 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { findProgram } from '../../platform/process.ts';
 import { hasBot } from '../../host/github/bot.ts';
-import { fail, type Invocation, nextLine, noteLine, parse, print, printJson, requireRoot, row, screen, spaced, title, usage, wrap } from '../shared.ts';
+import { failure } from '../../rules/text/screen.ts';
+import { count, fail, type Invocation, nextLine, noteLine, parse, print, printJson, requireRoot, row, screen, spaced, title, usage } from '../shared.ts';
 import { briefText, type DeskTask, readIssue, readTaskWord, textTask } from './brief.ts';
 import { deskBranch, desksHome, makeClone, type Ran, type Run, runWith } from './clone.ts';
 import { commitsSince, deskGitProblem, endingOf, endingScreen, type Fenced, gatherEvidence, moveAside, openPullRequest, refusedLine, saveWork, shownPath } from './finish.ts';
-import { briefFile, deskListOf, deskRows, type DeskRecord, type IsAlive, isAlive, listScreen, readRecord, readRecords, stateNow, writeRecord } from './list.ts';
+import { briefFile, deskListOf, deskRows, type DeskRecord, type DeskView, type IsAlive, isAlive, listScreen, readRecord, readRecords, stateNow, writeRecord } from './list.ts';
 import { pickAgent } from './pick-agent.ts';
 import { isWaiting, lastActivity, watchDesk } from './stall.ts';
 
 /** What native Windows prints: the desk runs in WSL, nothing was started, and the next step. */
-export const DESK_USE_WSL: string[] = screen(
-  wrap('yokoten desk · ', 'on Windows, a desk runs in WSL, where it has a sandbox'),
-  wrap('', 'Nothing was started.'),
-  wrap('Next: ', 'open WSL and run `yokoten desk` there.'),
-);
+export const DESK_USE_WSL: string[] = failure('desk', 'on Windows, a desk runs in WSL, where it has a sandbox; nothing was started', 'open WSL and run `yokoten desk` there');
+
+/**
+ * The desks that stopped or stalled mid-task, shown before a new one starts (#1056): one row
+ * group each, then the one to go on with. Pure: the same desks and time give the same screen.
+ */
+export function stoppedDesksScreen(desks: readonly DeskView[], now: Date): string[] {
+  return screen(
+    title('desk', `${count(desks.length, 'other desk')} stopped mid-task`),
+    spaced(desks.map((one) => deskRows(one, now))),
+    desks[0] ? nextLine(`yokoten desk ${desks[0].name}`) : [],
+  );
+}
 
 /** What the desk does to the world, so a test can stand in for each part. */
 export interface DeskDeps {
@@ -138,7 +147,7 @@ async function startOrGoOn(invocation: Invocation, world: DeskDeps, root: string
   }
   if (others.length) {
     const { desks } = deskListOf(others, world.alive, (one) => (existsSync(join(home, one.name)) ? commitsSince(world.run, join(home, one.name), one.base) : []));
-    print(invocation, screen(title('desk', `${others.length} other desk${others.length === 1 ? '' : 's'} stopped mid-task`), spaced(desks.map((one) => deskRows(one, now))), nextLine(`yokoten desk ${others[0]?.name ?? ''}`)), invocation.stderr);
+    print(invocation, stoppedDesksScreen(desks, now), invocation.stderr);
   }
   const running: DeskRecord = { ...record, agent: agent.runtime, pid: world.pid, activeAt: utc(now), state: 'working' };
   writeRecord(home, running);

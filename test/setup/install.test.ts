@@ -325,7 +325,7 @@ test('install: with CLAUDE_CONFIG_DIR, every Claude Code file goes there, never 
   // A session with the plugin on takes back what install left, in the same folder.
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   writeFileSync(settingsFile, JSON.stringify(settings));
-  const cleaned = cleanOlderInstall({ ...sandbox.env, ...extra });
+  const cleaned = cleanOlderInstall({ ...sandbox.env, ...extra }, { platform: 'linux' });
   assert.ok(cleaned.files > 0, 'it found the older files');
   assert.ok(!existsSync(join(config, 'agents', 'worker.md')));
   assert.equal(JSON.parse(readFileSync(settingsFile, 'utf8')).hooks, undefined, 'the hooks went from CLAUDE_CONFIG_DIR');

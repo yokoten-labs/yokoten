@@ -275,7 +275,7 @@ test('doctor --session: another agent tool keeps the runtime and the launcher (#
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   writeFileSync(settingsFile, JSON.stringify({ ...JSON.parse(readFileSync(settingsFile, 'utf8')), enabledPlugins: { 'yokoten@yokoten': true } }));
   mkdirSync(join(sandbox.home, '.codex'), { recursive: true });
-  assert.ok(cleanOlderInstall(sandbox.env).files > 0, 'the skills and agents are cleaned');
+  assert.ok(cleanOlderInstall(sandbox.env, { platform: 'linux' }).files > 0, 'the skills and agents are cleaned');
   assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays for Codex');
   assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays with the runtime');
   assert.ok(!existsSync(join(sandbox.home, '.claude/skills/yokoten')), 'the skills still go');
@@ -301,7 +301,7 @@ test("doctor --session: a user's own hook that runs the runtime keeps it (#935)"
   settings.enabledPlugins = { 'yokoten@yokoten': true };
   settings.hooks.Stop = [{ hooks: [{ type: 'command', command: 'yokoten check' }] }];
   writeFileSync(settingsFile, JSON.stringify(settings));
-  cleanOlderInstall(sandbox.env);
+  cleanOlderInstall(sandbox.env, { platform: 'linux' });
   assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays while the hook runs it');
   assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays with it');
 });
@@ -311,7 +311,7 @@ test('doctor --session: without the plugin, an install stays as it is (#935)', a
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   const settingsFile = join(sandbox.home, '.claude', 'settings.json');
   const before = readFileSync(settingsFile, 'utf8');
-  assert.deepEqual(cleanOlderInstall(sandbox.env), { files: 0, edits: [], profiles: [] });
+  assert.deepEqual(cleanOlderInstall(sandbox.env, { platform: 'linux' }), { files: 0, edits: [], profiles: [] });
   assert.ok(existsSync(join(sandbox.home, '.claude/skills/yokoten/SKILL.md')), 'the entry skill stays');
   assert.ok(existsSync(join(sandbox.home, '.local/share/yokoten', 'bin', 'yokoten.mjs')), 'the runtime stays');
   assert.ok(existsSync(join(launcherDir(sandbox.home), 'yokoten')), 'the launcher stays');
@@ -630,25 +630,28 @@ test('doctor: a note when no yokoten on the PATH runs the installed copy (#433)'
   const runtime = join(home, '.local', 'share', 'yokoten');
   const env = { HOME: home, PATH: dirname(process.execPath) };
   // No runtime installed: install's own checks say so, not this note.
-  assert.equal(launcherCheck(env), null);
+  assert.equal(launcherCheck(env, 'linux'), null);
   mkdirSync(join(runtime, 'bin'), { recursive: true });
   writeFileSync(join(runtime, 'bin', 'yokoten.ts'), '\n');
-  const note = launcherCheck(env);
+  const note = launcherCheck(env, 'linux');
   assert.equal(note?.what, 'the yokoten launcher is not on your PATH, so a bare yokoten command is not found');
   // No launcher yet: the one fix is install, run the way that works now. No line says to type the runtime's path (#500).
   assert.match(note?.fix ?? '', /^run \`npx yokoten install\`; it puts a launcher in .*\.local[\\/]bin/);
   // The launcher in ~/.local/bin, with that folder on the PATH: no note.
-  setUpLauncher(env, runtime, home);
-  const off = launcherCheck(env);
+  setUpLauncher(env, runtime, home, { platform: 'linux' });
+  const off = launcherCheck(env, 'linux');
   assert.notEqual(off, null, 'a launcher off the PATH still gets the note');
   // The launcher is there: the fix is the one line for the PATH, and says npx works meanwhile.
   assert.match(off?.fix ?? '', /^add this line to your shell profile .* then open a new terminal: export PATH=.*; until then, \`npx yokoten\` runs yokoten$/);
   assert.doesNotMatch(`${off?.what} ${off?.fix} ${off?.why}`, /yokoten\.ts/);
-  assert.equal(launcherCheck({ ...env, PATH: `${launcherDir(home)}:${env.PATH}` }), null);
+  assert.equal(launcherCheck({ ...env, PATH: `${launcherDir(home)}:${env.PATH}` }, 'linux'), null);
+  // The platform is an argument (record 0040): the Windows launcher gets the Windows fix, on any system.
+  setUpLauncher(env, runtime, home, { platform: 'win32' });
+  assert.match(launcherCheck(env, 'win32')?.fix ?? '', /^add .*\.local[\\/]bin to the Path for your account/);
   // With the plugin on, its own commands are used: no note.
   mkdirSync(join(home, '.claude'));
   writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': true } }));
-  assert.equal(launcherCheck(env), null);
+  assert.equal(launcherCheck(env, 'linux'), null);
 });
 
 // #500: after a fresh install, every line that names a command uses one way to run yokoten.

@@ -17,6 +17,7 @@ import {
 } from '../../repo/helpers.ts';
 import {
   draft,
+  draftJson,
   type Fact,
   facts,
   parseAnswer,
@@ -50,6 +51,12 @@ test('adopt: with no key, the rule-based draft and how to set the key; it change
   assert.match(r.stdout, /You decide every row/);
   const json = await sandbox.call(['adopt', '--json']);
   const rows = JSON.parse(json.stdout) as { key: string; decision: string }[];
+  // Plan D1: --json prints the draft the screens are built from, in the shape it always had.
+  const drafted = await draft(facts(sandbox.repo, sandbox.env), { env: sandbox.env });
+  const shape = drafted.rows.map(({ key, status, evidence, decision, reason }) => ({ key, status, evidence, decision, reason }));
+  assert.deepEqual(rows, shape, 'the old output, row for row');
+  assert.deepEqual(draftJson(drafted), shape);
+  assert.ok(rows.every((row) => Object.keys(row).join() === 'key,status,evidence,decision,reason'), 'the same fields, in the same order');
   assert.equal(rows.find((row) => row.key === 'tests')?.decision, 'as-is');
   assert.match(json.stderr, /^note: Drafted by rules, because no model key/, "a note on stderr says who drafted it");
   assert.equal(sandbox.git('status', '--porcelain', '--ignored').stdout, before, 'adopt writes nothing');

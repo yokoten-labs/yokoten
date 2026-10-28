@@ -578,15 +578,15 @@ export function doubleInstallCheck(root: string | null, env: Env): Finding | nul
  * message says `yokoten init`, and that command is then not found. With the plugin on,
  * the plugin's own commands are used, so there is no note.
  */
-export function launcherCheck(env: Env): Finding | null {
+export function launcherCheck(env: Env, platform: NodeJS.Platform): Finding | null {
   if (hasPlugin(env)) return null;
   const { runtime } = paths(env);
-  if (!existsSync(runtime) || isOnPath(env, runtime)) return null;
+  if (!existsSync(runtime) || isOnPath(env, runtime, platform)) return null;
   const home = homeIn(env);
   const meanwhile = 'until then, `npx yokoten` runs yokoten';
   let fix = `run \`npx yokoten install\`; it puts a launcher in ${launcherDir(home)} and offers to add that folder to your PATH`;
-  if (existsSync(launcherFile(home))) {
-    fix = process.platform === 'win32'
+  if (existsSync(launcherFile(home, platform))) {
+    fix = platform === 'win32'
       ? `add ${launcherDir(home)} to the Path for your account (search Windows for "environment variables for your account"), then open a new terminal; ${meanwhile}`
       : `add this line to your shell profile (~/.bashrc or ~/.zshrc), then open a new terminal: ${PROFILE_LINE}; ${meanwhile}`;
   }
@@ -604,12 +604,12 @@ export function launcherCheck(env: Env): Finding | null {
  * where the backtick has a backslash before it, stays as written: it must match the hook install writes.
  * Null when the messages stay as written.
  */
-export function commandWording(env: Env): ((text: string) => string) | null {
+export function commandWording(env: Env, platform: NodeJS.Platform): ((text: string) => string) | null {
   if (hasPlugin(env) || env.CLAUDE_PLUGIN_ROOT || homeOf(env) === null) return null;
   const { runtime } = paths(env);
   const isNpx = env.npm_command === 'exec';
-  if (!isNpx && (!existsSync(runtime) || isOnPath(env, runtime))) return null;
-  if (isNpx && isOnPath(env, runtime)) return null;
+  if (!isNpx && (!existsSync(runtime) || isOnPath(env, runtime, platform))) return null;
+  if (isNpx && isOnPath(env, runtime, platform)) return null;
   return (text) => text.replace(/(?<!\\)`yokoten((?: [^`]*)?)`/g, '`npx yokoten$1`');
 }
 

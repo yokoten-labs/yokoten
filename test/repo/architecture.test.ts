@@ -1498,9 +1498,9 @@ const PLATFORM_READS: [string, number][] = [
   ['rules/guards/lead-only/edit.ts', 1],
   ['run/hook.ts', 1],
   ['setup/advice/unsaved.ts', 2],
-  ['setup/doctor/checks.ts', 2],
+  ['setup/doctor/checks.ts', 1],
   ['setup/init.ts', 1],
-  ['setup/install.ts', 5],
+  ['setup/install.ts', 2],
   ['setup/road.ts', 1],
 ];
 
