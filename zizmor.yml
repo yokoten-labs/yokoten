@@ -1,0 +1,9 @@
+# zizmor's settings for this repo's workflows (record 0053, issue #1149).
+rules:
+  # zizmor asks for the `$/` self-repository syntax, but actionlint 1.7.12, the newest,
+  # refuses it (rhysd/actionlint issue #711). The two can't both pass, so this repo keeps
+  # `./`: a reusable workflow call reads this commit either way, and the root action
+  # reads the checkout the step before it made. Turn the rule back on, and move to `$/`,
+  # when actionlint reads `$/`.
+  self-repository:
+    disable: true

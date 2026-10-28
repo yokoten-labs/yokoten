@@ -119,7 +119,7 @@ jobs:
       # A docs-only pull request runs only the tests that read the docs (#1051). A push to
       # main runs the whole suite after the merge, so a miss shows on main the same hour.
       - if: needs.changes.outputs.docs_only == 'true'
-        run: node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination=/dev/null test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
+        run: node --test --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" test/repo/docs/*.test.ts test/repo/architecture.test.ts test/run/notes/translations.test.ts test/run/changelog.test.ts
       - if: needs.changes.outputs.docs_only != 'true'
         run: node --test --test-concurrency=4 --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/tests.tap" --test-reporter=./scripts/time/suite.ts --test-reporter-destination="$RUNNER_TEMP/file-times.jsonl" --test-shard="$SHARD/$OF"
         env:
@@ -193,6 +193,15 @@ jobs:
             ${{ runner.temp }}/windows-failures.txt
             ${{ runner.temp }}/windows-times.txt
           retention-days: 7
+  # The release checks, the same file a tag runs (record 0053, issue #1149): a step only a
+  # tag ran failed the v0.1.2 tag the first time it ran. They run beside Windows, which
+  # takes longer, so the wait does not grow. Not in a merge queue group, as Windows.
+  release:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group' }}
+    uses: ./.github/workflows/release-checks.yml
+    permissions:
+      contents: read
   # Types are checked here and nowhere else: Node runs the .ts files without them.
   # Skipped on a docs-only pull request.
   typecheck:
@@ -289,21 +298,21 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # GitHub documents `$/` only with a folder after it, not for an action at the root.
-      - uses: ./ # zizmor: ignore[self-repository]
+      # `./`, not `$/`: actionlint does not read `$/` yet (zizmor.yml, #1149).
+      - uses: ./
         with:
           pr-check: false
   # The one required check. It runs even when a job it needs failed, and goes red if
   # any of them did not succeed (failed, cancelled or skipped). Two exceptions, skipped on
-  # purpose: on a docs-only pull request, `windows`, `typecheck`, `lint` and `action`
-  # (#438); in a merge queue group, `windows` and nothing else (#1084).
+  # purpose: on a docs-only pull request, `windows`, `release`, `typecheck`, `lint` and
+  # `action` (#438); in a merge queue group, `windows` and `release`, nothing else (#1084, #1149).
   # A job that never started is named in the summary, so a queued timeout reads as
   # "no runner was free", not as a test failure (#568).
   ci:
     # always(), never !cancelled(): a skipped required check counts as passed, so a
     # cancelled run (in the merge queue too) must still end red here.
     if: always()
-    needs: [changes, test, windows, typecheck, check, lint, action]
+    needs: [changes, test, windows, release, typecheck, check, lint, action]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -333,5 +342,6 @@ jobs:
           (contains(needs.*.result, 'skipped') && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group') ||
           needs.changes.result != 'success' || needs.test.result != 'success' || needs.check.result != 'success' ||
           (needs.changes.outputs.docs_only != 'true' && (needs.typecheck.result != 'success' || needs.lint.result != 'success' || needs.action.result != 'success')) ||
-          (needs.windows.result != 'success' && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group')
+          (needs.windows.result != 'success' && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group') ||
+          (needs.release.result != 'success' && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group')
         run: exit 1

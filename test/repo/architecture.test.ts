@@ -193,7 +193,7 @@ test('issue templates: each one here is the kit\'s, word for word; a changed cop
 // action (`./path`) is code in the repo and needs no pin.
 const PINNED = /^[\w.-]+\/[\w./-]+@[0-9a-f]{40} # v\d/;
 const unpinned = (text: string) =>
-  [...text.matchAll(/^\s*(?:-\s+)?uses:\s*(.+?)\s*$/gm)].map((m) => m[1]).filter((ref) => !ref.startsWith('./') && !PINNED.test(ref));
+  [...text.matchAll(/^\s*(?:-\s+)?uses:\s*(.+?)\s*$/gm)].map((m) => m[1]).filter((ref) => !/^[.$]\//.test(ref) && !PINNED.test(ref));
 
 test('workflows: every action is pinned to a commit, the version in a comment', () => {
   assert.deepEqual(unpinned('      - uses: actions/checkout@v4\n        uses: a/b@main\n      - uses: ./local\n'), ['actions/checkout@v4', 'a/b@main']);
@@ -381,6 +381,10 @@ const jobs = (text: string) => {
     block,
   }));
 };
+// A job that calls a workflow file in this folder can't carry a time limit: GitHub refuses
+// one there, and the jobs in the called file carry their own (record 0053).
+const callsWorkflow = (block: string) => /^ {4}uses: [.$]\/\.github\/workflows\/[\w-]+\.ya?ml$/m.test(block);
+const hasTimeLimit = (block: string) => callsWorkflow(block) || /^ {4}timeout-minutes: \d+$/m.test(block);
 const ciProblems = (text: string) => {
   const all = jobs(text);
   const ci = all.find((j) => j.name === 'ci');
@@ -389,7 +393,7 @@ const ciProblems = (text: string) => {
   if (!/^ {4}if: always\(\)$/m.test(ci.block)) problems.push('`ci` has no `if: always()`');
   const needs = (ci.block.match(/^ {4}needs: \[(.*)\]$/m)?.[1] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
   for (const j of all) if (j.name !== 'ci' && !needs.includes(j.name)) problems.push(`\`ci\` does not need \`${j.name}\``);
-  for (const j of all) if (!/^ {4}timeout-minutes: \d+$/m.test(j.block)) problems.push(`\`${j.name}\` has no time limit`);
+  for (const j of all) if (!hasTimeLimit(j.block)) problems.push(`\`${j.name}\` has no time limit`);
   if (!/^permissions: \{\}$/m.test(text)) problems.push('the workflow does not start from no permissions');
   return problems;
 };
@@ -399,6 +403,10 @@ test('workflows: the one required check, `ci`, waits for every job (#36)', () =>
   assert.deepEqual(ciProblems(good), []);
   assert.deepEqual(ciProblems(good.replace('jobs:\n', 'jobs:\n  b:\n    timeout-minutes: 5\n')), ['`ci` does not need `b`']);
   assert.deepEqual(ciProblems(good.replace('    if: always()\n', '')), ['`ci` has no `if: always()`']);
+  // A job that calls a workflow file here has its time limit in that file; one from elsewhere does not.
+  const caller = good.replace('jobs:\n', 'jobs:\n  b:\n    uses: ./.github/workflows/b.yml\n').replace('needs: [a]', 'needs: [a, b]');
+  assert.deepEqual(ciProblems(caller), []);
+  assert.deepEqual(ciProblems(caller.replace('./.github/workflows/b.yml', 'other/repo/.github/workflows/b.yml@v1')), ['`b` has no time limit']);
   for (const dir of ['.github/workflows', 'kit/project/.github/workflows']) {
     const text = readFileSync(join(ROOT, dir, 'yokoten.yml'), 'utf8');
     assert.ok(jobs(text).length > 1, `${dir}/yokoten.yml: no jobs found; the scan is broken`);
@@ -423,7 +431,13 @@ const workflowProblems = (text: string) => {
   const problems = unpinned(text).map((ref) => `\`${ref}\` is not pinned to a commit with a version comment`);
   const all = jobs(text);
   if (all.length === 0) problems.push('no jobs found');
-  for (const j of all) if (!/^ {4}timeout-minutes: \d+$/m.test(j.block)) problems.push(`\`${j.name}\` has no time limit`);
+  for (const j of all) if (!hasTimeLimit(j.block)) problems.push(`\`${j.name}\` has no time limit`);
+  // Node syncs a reporter's file when it closes it, and a sync of a device fails the run
+  // with EINVAL: a release tag failed so (issue #1149).
+  if (/--test-reporter-destination=\/dev\//.test(text)) problems.push('a test reporter writes to a device, which fails the run: write to a file, or to stdout');
+  // actionlint 1.7.12 refuses the `$/` self-repository syntax (rhysd/actionlint issue #711),
+  // so a same-repo reference stays `./` until it reads `$/` (#1149).
+  if (/^\s*(?:-\s+)?uses:\s*\$\//m.test(text)) problems.push('a same-repo reference uses `$/`, which actionlint refuses: write `./`');
   for (const c of text.matchAll(/uses: actions\/checkout@.*\n((?: {8,}.*\n)*)/g)) {
     if (!/persist-credentials: false/.test(c[1])) problems.push('a checkout keeps its token');
   }
@@ -435,10 +449,12 @@ test('workflows: every workflow, in the kit and here, meets the standard; a bad 
   const checkout = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1';
   const good = `permissions: {}\njobs:\n  a:\n    timeout-minutes: 10\n    steps:\n      - uses: ${checkout}\n        with:\n          persist-credentials: false\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n`;
   assert.deepEqual(workflowProblems(good), []);
-  const bad = 'permissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n  b:\n    timeout-minutes: 5\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n';
+  const bad = 'permissions: {}\njobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - run: node --test --test-reporter=spec --test-reporter-destination=/dev/null\n      - uses: $/local\n      - uses: actions/checkout@v4\n  b:\n    timeout-minutes: 5\n  ci:\n    if: always()\n    needs: [a]\n    timeout-minutes: 10\n';
   assert.deepEqual(workflowProblems(bad), [
     '`actions/checkout@v4` is not pinned to a commit with a version comment',
     '`a` has no time limit',
+    'a test reporter writes to a device, which fails the run: write to a file, or to stdout',
+    'a same-repo reference uses `$/`, which actionlint refuses: write `./`',
     'a checkout keeps its token',
     '`ci` does not need `b`',
   ]);
@@ -614,7 +630,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.deepEqual(pr.budgets, { 'ubuntu-latest 22.23.4 shard': '', 'macos-latest ^24.22.1 shard': '--budget 240 --warn-only' });
   assert.deepEqual(queue.budgets, { 'ubuntu-latest ^24.22.1 shard': '--budget 90' });
   assert.equal(evaluate(jobCondition(testJob), results('true', {})), true, 'test runs on every pull request');
-  for (const name of ['typecheck', 'action', 'windows', 'lint']) {
+  for (const name of ['typecheck', 'action', 'windows', 'release', 'lint']) {
     const condition = jobCondition(jobBlock(text, name));
     assert.equal(evaluate(condition, results('true', {})), false, `${name} is skipped on a docs-only pull request`);
     assert.equal(evaluate(condition, results('false', {})), true, `${name} runs in full`);
@@ -627,8 +643,8 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.match(testJob, /- if: needs\.changes\.outputs\.docs_only != 'true'\n {8}run: node scripts\/time\/suite\.ts/);
   // `ci` is red when this is true.
   const isRed = (docsOnly: string, jobResults: Record<string, string>) => evaluate(ciRule(text), results(docsOnly, jobResults));
-  const green = { test: 'success', windows: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
-  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
+  const green = { test: 'success', windows: 'success', release: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
+  const docsRun = { ...green, windows: 'skipped', release: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
   assert.equal(isRed('true', docsRun), false, 'docs-only: typecheck and action skipped on purpose');
   assert.equal(isRed('false', green), false);
   assert.equal(isRed('false', docsRun), true, 'skipped on a full run is red');
@@ -641,38 +657,44 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.equal(isRed('', green), true, '`changes` failed: red, though the rest ran in full');
 });
 
-// The per-event table (#1084): a merge queue group leaves out Windows, and `ci` counts
-// that one skip as passed. Any other skip in a group is red: the jobs are read from
+// The per-event table (#1084): a merge queue group leaves out Windows and the release
+// checks (record 0053), and `ci` counts those two skips as passed. Any other skip in a group is red: the jobs are read from
 // `ci`'s needs, so a new job that the rule forgets fails here.
-test('ci: a merge queue group skips Windows and nothing else; `ci` stays fail closed (#1084)', () => {
+test('ci: a merge queue group skips Windows and the release checks, nothing else; `ci` stays fail closed (#1084, #1149)', () => {
   const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
   const runs = (name: string, docsOnly: string, event: string) => evaluate(jobCondition(jobBlock(text, name)), results(docsOnly, {}), { event_name: event });
   for (const docsOnly of ['false', '']) {
-    assert.equal(runs('windows', docsOnly, 'merge_group'), false, 'Windows is left out of a queue group');
-    for (const event of ['pull_request', 'push', 'schedule']) assert.equal(runs('windows', docsOnly, event), true, `Windows runs on ${event}`);
+    for (const name of ['windows', 'release']) {
+      assert.equal(runs(name, docsOnly, 'merge_group'), false, `${name} is left out of a queue group`);
+      for (const event of ['pull_request', 'push', 'schedule']) assert.equal(runs(name, docsOnly, event), true, `${name} runs on ${event}`);
+    }
     for (const name of ['test', 'typecheck', 'lint', 'action']) assert.equal(runs(name, docsOnly, 'merge_group'), true, `${name} runs in a queue group`);
   }
   assert.doesNotMatch(jobBlock(text, 'check'), /^ {4}if:/m, 'check runs on every event');
   const isRed = (docsOnly: string, jobResults: Record<string, string>, event: string) => evaluate(ciRule(text), results(docsOnly, jobResults), { event_name: event });
   const needs = inBraces(jobBlock(text, 'ci'), /^ {4}needs: \[(.*)\]$/m).split(',').map((name) => name.trim());
-  assert.ok(needs.includes('windows') && needs.length > 5, 'the read of `ci` needs is broken');
+  assert.ok(needs.includes('windows') && needs.includes('release') && needs.length > 5, 'the read of `ci` needs is broken');
   const green = Object.fromEntries(needs.filter((name) => name !== 'changes').map((name) => [name, 'success']));
-  const queueRun = { ...green, windows: 'skipped' };
-  assert.equal(isRed('false', queueRun, 'merge_group'), false, 'a queue group without Windows is green');
+  const queueRun = { ...green, windows: 'skipped', release: 'skipped' };
+  assert.equal(isRed('false', queueRun, 'merge_group'), false, 'a queue group without Windows and the release checks is green');
   assert.equal(isRed('false', green, 'merge_group'), false);
   assert.equal(isRed('false', green, 'pull_request'), false, 'a pull request with no Linux Node 24 shards is green');
   // Positive controls: a queue group that skips or fails a job it needs is red.
-  for (const name of Object.keys(green).filter((job) => job !== 'windows')) {
+  for (const name of Object.keys(green).filter((job) => job !== 'windows' && job !== 'release')) {
     assert.equal(isRed('false', { ...queueRun, [name]: 'skipped' }, 'merge_group'), true, `a queue group that skips ${name} is red`);
     assert.equal(isRed('', { ...queueRun, [name]: 'skipped' }, 'merge_group'), true, `\`changes\` failed and ${name} skipped: red`);
     assert.equal(isRed('false', { ...queueRun, [name]: 'failure' }, 'merge_group'), true);
   }
   assert.equal(isRed('false', { ...green, windows: 'failure' }, 'merge_group'), true, 'a Windows run that fails is red, even in a group');
   assert.equal(isRed('false', { ...green, windows: 'cancelled' }, 'merge_group'), true);
+  assert.equal(isRed('false', { ...green, release: 'failure' }, 'merge_group'), true, 'release checks that fail are red, even in a group');
   // The skip counts only in a queue group.
-  for (const event of ['pull_request', 'push', 'schedule']) assert.equal(isRed('false', queueRun, event), true, `Windows skipped on ${event} is red`);
+  for (const event of ['pull_request', 'push', 'schedule']) {
+    assert.equal(isRed('false', { ...green, windows: 'skipped' }, event), true, `Windows skipped on ${event} is red`);
+    assert.equal(isRed('false', { ...green, release: 'skipped' }, event), true, `the release checks skipped on ${event} are red`);
+  }
   // A docs-only group skips what a docs-only pull request skips.
-  const docsRun = { ...green, windows: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
+  const docsRun = { ...green, windows: 'skipped', release: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
   assert.equal(isRed('true', docsRun, 'merge_group'), false);
   assert.equal(isRed('true', { ...docsRun, test: 'skipped' }, 'merge_group'), true);
   assert.equal(isRed('false', docsRun, 'merge_group'), true, 'a full group that skips typecheck, lint and action is red');
@@ -746,6 +768,41 @@ test('workflows: the required checks run on merge_group, with the same jobs as a
     const condition = job.block.match(/^ {4}if: (.+)$/m)?.[1] ?? '';
     assert.ok(condition === '' || (job.name === 'ci' && condition === 'always()'), `${job.name} runs only when "${condition}"`);
   }
+});
+
+// ---- A tag meets no step for the first time (record 0053, issue #1149) ----
+//
+// The release's checks are one file, release-checks.yml. release.yml calls it on a tag,
+// and yokoten.yml calls it on every pull request, where `ci` waits for it. So each step a
+// tag runs passed before the merge. Only the tag check and the kept package wait for a tag.
+const callsChecks = /^ {4}uses: [.$]\/\.github\/workflows\/release-checks\.yml$/m;
+const rehearsalProblems = (release: string, yokoten: string, checks: string) => {
+  const problems: string[] = [];
+  if (readTriggers(checks).join() !== 'workflow_call') problems.push('release-checks.yml runs on its own');
+  if (!callsChecks.test(jobBlock(release, 'verify')) || !/^ {6}tag: true$/m.test(jobBlock(release, 'verify'))) problems.push('release.yml: verify is not the shared checks on a tag');
+  if (!/^ {4}needs: verify$/m.test(jobBlock(release, 'publish'))) problems.push('release.yml: publish does not wait for the checks');
+  const callers = jobs(yokoten).filter((job) => callsChecks.test(job.block));
+  if (callers.length !== 1 || /^ {6}tag:/m.test(callers[0].block)) problems.push('yokoten.yml: not one job that runs the checks as a pull request');
+  else if (evaluate(jobCondition(callers[0].block), results('false', {}), { event_name: 'pull_request' }) !== true) problems.push('a pull request skips the release checks');
+  else if (!(inBraces(jobBlock(yokoten, 'ci'), /^ {4}needs: \[(.*)\]$/m).split(',').map((name) => name.trim()).includes(callers[0].name))) problems.push('ci does not wait for the release checks');
+  // Every step runs on a pull request, but the tag check and the kept package.
+  const tagOnly = jobBlock(checks, 'verify').split(/^ {6}- /m).slice(1).filter((step) => /^(?: {8})?if: inputs\.tag$/m.test(step));
+  if (tagOnly.length !== 2 || !tagOnly.every((step) => /GITHUB_REF_NAME|upload-artifact/.test(step))) problems.push('a check waits for a tag, so no pull request runs it');
+  // A step may wait for a tag only through `inputs.tag`, which the count above sees.
+  if (/github\.ref|startsWith\(/.test(checks)) problems.push('a step reads the ref, so it may run only on a tag');
+  return problems;
+};
+
+test('workflows: the release checks a tag runs are the ones every pull request ran (#1149)', () => {
+  const read = (name: string) => readFileSync(join(ROOT, '.github/workflows', name), 'utf8');
+  const [release, yokoten, checks] = [read('release.yml'), read('yokoten.yml'), read('release-checks.yml')];
+  assert.deepEqual(rehearsalProblems(release, yokoten, checks), []);
+  // Positive controls: each way back to a step only a tag runs is caught.
+  assert.deepEqual(rehearsalProblems(release, yokoten.replace('needs: [changes, test, windows, release,', 'needs: [changes, test, windows,'), checks), ['ci does not wait for the release checks']);
+  assert.deepEqual(rehearsalProblems(release, yokoten.replace(callsChecks, '    runs-on: ubuntu-latest'), checks), ['yokoten.yml: not one job that runs the checks as a pull request']);
+  assert.deepEqual(rehearsalProblems(release.replace(callsChecks, '    runs-on: ubuntu-latest'), yokoten, checks), ['release.yml: verify is not the shared checks on a tag']);
+  assert.deepEqual(rehearsalProblems(release, yokoten, checks.replace('      - run: npm run typecheck\n', '      - if: inputs.tag\n        run: npm run typecheck\n')), ['a check waits for a tag, so no pull request runs it']);
+  assert.deepEqual(rehearsalProblems(release, yokoten, checks.replace('      - run: npm run typecheck\n', '      - if: startsWith(github.ref, \'refs/tags/\')\n        run: npm run typecheck\n')), ['a step reads the ref, so it may run only on a tag']);
 });
 
 // ---- A run on main is kept while it waits, and never cancelled (#660, #798) ----
