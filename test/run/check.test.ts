@@ -524,7 +524,7 @@ test('check --history: counts commits with a time zone, as a note that does not 
 test('check --history: finds what a later commit deleted, and a personal author email', async () => {
   const sandbox = makeSandbox();
   const token = `${'gh'}p_${'x7Y2k9'.repeat(6)}`;
-  sandbox.write('notes.md', `server ${[10, 1, 2, 3].join('.')}\ntoken ${token}\n`);
+  sandbox.write('notes.md', `server ${[100, 64, 2, 3].join('.')}\ntoken ${token}\n`);
   sandbox.git('add', '.');
   sandbox.git('commit', '-qm', 'add notes');
   const added = sandbox.git('rev-parse', 'HEAD').stdout.slice(0, 8);
@@ -1358,6 +1358,8 @@ test('check --staged: reads over 1 MB of staged file names in full (#403)', asyn
   sandbox.git('config', 'core.longpaths', 'true');
   mkdirSync(join(sandbox.repo, 'many'));
   for (let i = 0; i < 4300; i++) writeFileSync(join(sandbox.repo, 'many', `${long}-${i}.txt`), '');
+  // The repo chose the cap (#1169), so the folder fails.
+  sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7 } }));
   sandbox.git('add', '.');
   const result = await sandbox.call(['check', '--staged', '--json']);
   const report = JSON.parse(result.stdout);
@@ -1786,4 +1788,41 @@ test('pr sync: a resolution whose tests fail stops and pushes nothing (#432)', a
   assert.deepEqual(sync.pushes, [], 'nothing is pushed');
   assert.equal(sandbox.git('rev-parse', 'origin/work').stdout.trim(), before, 'the remote branch is untouched');
   assert.ok(outcome.worktree && existsSync(outcome.worktree), 'the merge commit waits for the agent');
+});
+
+// #1169: a public repo that never adopted yokoten. Its public contact addresses, its local
+// default addresses and its wide folders are notes; a personal address, a public address and
+// the cap in a repo that chose it still fail.
+test('check: an outside repo passes with notes only; the real problems still fail (#1169)', async () => {
+  const sandbox = makeSandbox();
+  const quad = (...parts: number[]) => parts.join('.');
+  sandbox.write('SECURITY.md', `# Security\n\nReport a flaw to security${at}someproject.dev.\n`);
+  sandbox.write('package.json', JSON.stringify({ name: 'demo', author: `Jane Doe <jane${at}someproject.dev>`, bugs: { email: `bugs${at}someproject.dev` } }, null, 2) + '\n');
+  sandbox.write('src/config.rs', `const HOST: &str = "${quad(127, 0, 0, 1)}";\nconst LAN: &str = "${quad(10, 0, 0, 5)}";\n`);
+  for (let i = 0; i < 14; i++) sandbox.write(`basics/example-${i}/README.md`, `Example ${i}.\n`);
+  sandbox.git('add', '.');
+  const clean = await sandbox.call(['check', '--json']);
+  const report = JSON.parse(clean.stdout);
+  assert.equal(clean.status, 0, clean.stdout);
+  assert.deepEqual(report.findings, []);
+  const notes = report.notes.map((note: { id: string; file?: string }) => `${note.id} ${note.file ?? ''}`.trim());
+  assert.deepEqual(notes.filter((note: string) => !note.startsWith('translation')).sort(), ['email SECURITY.md', 'email package.json', 'email package.json', 'layout']);
+  const folded = report.notes.find((note: { id: string }) => note.id === 'layout');
+  assert.match(folded.what, /^1 folder holds more than 7 entries: basics\/$/);
+  assert.ok(!clean.stdout.includes(`jane${at}`), 'the address itself is never printed');
+
+  // Negative controls: a personal address in an ordinary file, and a public address.
+  sandbox.write('src/main.rs', `// ask me${at}gmail.com\nconst DNS: &str = "${quad(8, 8, 8, 8)}";\n`);
+  sandbox.git('add', '.');
+  const caught = await sandbox.call(['check', '--json']);
+  assert.equal(caught.status, 1);
+  assert.deepEqual(JSON.parse(caught.stdout).findings.map((f: { id: string; file?: string; line?: number }) => `${f.id} ${f.file}:${f.line}`), ['email src/main.rs:1', 'ip src/main.rs:2']);
+  sandbox.git('rm', '-q', '-f', 'src/main.rs');
+
+  // A repo that chose the cap is held to it, as yokoten's own is.
+  sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7 } }));
+  sandbox.git('add', '.');
+  const capped = await sandbox.call(['check', '--json']);
+  assert.equal(capped.status, 1);
+  assert.deepEqual(JSON.parse(capped.stdout).findings.map((f: { id: string; file?: string }) => `${f.id} ${f.file}`), ['layout basics/']);
 });

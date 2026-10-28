@@ -110,15 +110,17 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   const extra = { YOKOTEN_PRIVATE_MARKS: marks, YOKOTEN_ROLE: 'worker' };
   const token = `${'gh'}p_${'x7Y2k9'.repeat(6)}`;
   sandbox.write('AGENTS.md', '# rules\n');
-  sandbox.write('notes/a.md', `me${at}gmail.com\nI live in MyCity\n${token}\nserver ${[10, 1, 2, 3].join('.')}\n`);
+  sandbox.write('notes/a.md', `me${at}gmail.com\nI live in MyCity\n${token}\nserver ${[100, 64, 2, 3].join('.')}\n`);
   sandbox.write('dist/app.js', 'x\n');
   for (let i = 0; i < 8; i++) sandbox.write(`many/${i}.md`, 'x\n');
+  // The repo chose the folder cap (#1169), so the folder over it is a problem.
+  sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7 } }));
   sandbox.git('add', '.');
   const shaped = (f: Record<string, unknown>) => {
     for (const k of ['id', 'what', 'why', 'fix']) assert.ok(typeof f[k] === 'string' && f[k], `${f.id}: ${k}`);
   };
   const clean = (out: string) => {
-    for (const secret of ['mycity', 'gmail', token, [10, 1, 2, 3].join('.'), sandbox.home]) assert.ok(!out.toLowerCase().includes(secret.toLowerCase()), `${secret} printed`);
+    for (const secret of ['mycity', 'gmail', token, [100, 64, 2, 3].join('.'), sandbox.home]) assert.ok(!out.toLowerCase().includes(secret.toLowerCase()), `${secret} printed`);
   };
 
   // check: the text form says what, why and fix on each line.

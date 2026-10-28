@@ -93,6 +93,24 @@ export function checkLayout(files: string[], { layout }: Pick<Config, 'layout'>,
   return problems;
 }
 
+/** How many folders the folded note names before it says how many more. */
+const FOLDED_NAMES = 5;
+
+/**
+ * The folder hits of a repo that has not chosen the cap (#1169), as one note, or null when
+ * there are none. The cap is a yokoten house rule: a repo that only runs `check` is told
+ * once, not failed once per folder.
+ */
+export function foldLayoutHits(hits: Finding[], { layout }: Pick<Config, 'layout'>): Finding | null {
+  const folders = hits.filter((hit) => hit.id === 'layout').map((hit) => hit.file ?? '');
+  if (!folders.length) return null;
+  const named = folders.slice(0, FOLDED_NAMES).join(', ');
+  const more = folders.length > FOLDED_NAMES ? `, and ${folders.length - FOLDED_NAMES} more` : '';
+  return finding('layout', `${folders.length} ${folders.length === 1 ? 'folder holds' : 'folders hold'} more than ${layout.maxEntries} entries: ${named}${more}`, `to hold this repo to the cap, add \`"layout": { "maxEntries": ${layout.maxEntries} }\` to yokoten.json; \`yokoten init\` adds it`, {
+    why: 'the folder cap is a house rule a repo chooses; this one has no "layout" key in yokoten.json, so its hits are one note',
+  });
+}
+
 // Build output and binaries (#56). Build output is made from the source, so a copy in the
 // repo only goes stale. A reviewer can't read a binary. Images and fonts are binary too,
 // but docs and sites need them, so they pass.

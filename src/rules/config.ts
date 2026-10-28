@@ -222,6 +222,21 @@ export function findUnknownKeys(root: string): Finding[] {
   return unknown.map((key) => finding('config-key', `"${key}" is not a key this version of yokoten knows`, `check the spelling against the guide, or update yokoten if a newer version added "${key}"`, { file: 'yokoten.json' }));
 }
 
+/**
+ * Whether this repo chose the layout cap (#1169): its yokoten.json holds a "layout" key.
+ * `yokoten init` writes one from kit/project/yokoten.json, and yokoten's own file has one;
+ * a repo that only runs `check` has none, and its folder hits are one note. A file that
+ * can't be read counts as chosen, so a broken file never turns the cap off.
+ */
+export function hasChosenLayout(root: string): boolean {
+  try {
+    const layout = readConfigFile(root).layout;
+    return layout !== undefined && layout !== null;
+  } catch {
+    return true;
+  }
+}
+
 // The file as one JSON object; a missing file is an empty one. The message names the file
 // and never holds a path, so the hook can print it as it is (core rule 11).
 function readConfigFile(root: string): Record<string, unknown> {

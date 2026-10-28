@@ -148,7 +148,7 @@ test('secrets: a sure hit fails, a likely hit warns, and an unknown hit warns (#
 test('privacy findings: email, IP and private-mark hits are graded sure (#616)', () => {
   const found = [
     scanText(`mail someone${at}gmail.com`, { file: 'a' })[0],
-    scanText(`host ${[10, 0, 0, 5].join('.')}`, { file: 'a' })[0],
+    scanText(`host ${[100, 64, 0, 5].join('.')}`, { file: 'a' })[0],
     scanText('Deploy to Secret-Box', { file: 'a', marks: ['secret-box'] })[0],
   ];
   for (const hit of found) {

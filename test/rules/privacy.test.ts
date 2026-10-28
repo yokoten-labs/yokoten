@@ -17,7 +17,7 @@ import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
 import { at, makeRepoTemplate, makeTempDir } from '../repo/helpers.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
-import { formatFinding } from '../../src/rules/text/message.ts';
+import { formatFinding, isFailingFinding } from '../../src/rules/text/message.ts';
 import {
   describeMark,
   foldLine,
@@ -85,7 +85,7 @@ test('emails: personal ones are caught, noreply and examples are fine', () => {
 
 test('emails: the fix names privacy.allow for a project\'s own public address, and the address is still found (#380)', () => {
   const address = `support${at}myproject.dev`;
-  const found = scanText(`write to ${address}`, { file: 'SECURITY.md' });
+  const found = scanText(`write to ${address}`, { file: 'README.md' });
   assert.equal(found.length, 1, 'nothing is allowed on its own');
   assert.equal(found[0].id, 'email');
   const text = formatFinding(found[0]);
@@ -117,7 +117,7 @@ test('emails: role addresses, forge SSH remotes and .local point at no person (#
 });
 
 test('IPs: real ones are caught, documentation ranges and versions are not', () => {
-  for (const bad of [ip(100, 64, 1, 2), ip(10, 0, 0, 5), ip(8, 8, 8, 8), `host=${ip(203, 0, 114, 9)}:22`]) {
+  for (const bad of [ip(100, 64, 1, 2), ip(100, 64, 0, 5), ip(8, 8, 8, 8), `host=${ip(203, 0, 114, 9)}:22`]) {
     assert.equal(scanText(bad, { file: 'a' }).length, 1, bad);
   }
   for (const ok of [ip(127, 0, 0, 1), ip(192, 0, 2, 10), ip(198, 51, 100, 1), ip(0, 0, 0, 0), ip(999, 1, 1, 1), 'v1.2.3', '1.2.3.4.5']) {
@@ -154,19 +154,19 @@ test('IPs: spec section numbers and versions are not addresses (#382)', () => {
   ]) {
     assert.deepEqual(scanText(ok, { file: 'a' }), [], ok);
   }
-  // Real addresses in prose, private ranges included, are still caught.
+  // Real addresses in prose are still caught; the private ranges pass (#1169).
   for (const bad of [
     `connect to ${ip(8, 8, 8, 8)}`,
     `connect to ${ip(203, 0, 114, 9)} now`,
-    `host ${ip(10, 0, 0, 5)}`,
-    `gateway ${ip(192, 168, 1, 1)}`,
-    `server ${ip(172, 16, 0, 9)}`,
-    `${ip(10, 0, 0, 5)}-${ip(10, 0, 0, 9)}`,
-    `pool ${ip(10, 0, 0, 1)} to ${ip(10, 0, 0, 9)}`,
-    `${ip(192, 168, 1, 100)} through ${ip(192, 168, 1, 200)}`,
+    `host ${ip(100, 64, 0, 5)}`,
+    `gateway ${ip(100, 100, 1, 1)}`,
+    `server ${ip(172, 32, 0, 9)}`,
+    `${ip(100, 64, 0, 5)}-${ip(100, 64, 0, 9)}`,
+    `pool ${ip(100, 64, 0, 1)} to ${ip(100, 64, 0, 9)}`,
+    `${ip(192, 169, 1, 100)} through ${ip(192, 169, 1, 200)}`,
     // A bare range of public addresses is caught: only small section-shaped numbers are skipped.
     `${ip(203, 0, 114, 5)} to ${ip(203, 0, 114, 9)}`,
-    `${ip(10, 0, 0, 1)} to ${ip(10, 0, 0, 9)}`,
+    `${ip(100, 64, 0, 1)} to ${ip(100, 64, 0, 9)}`,
     `${ip(8, 8, 8, 8)} to ${ip(8, 8, 8, 9)}`,
     `${ip(1, 1, 1, 1)} through ${ip(1, 1, 1, 3)}`,
     `${ip(2, 3, 1, 15)} to ${ip(2, 3, 2, 17)}`,
@@ -181,6 +181,47 @@ test('IPs: spec section numbers and versions are not addresses (#382)', () => {
   assert.deepEqual(scanText(`connect to ${ip(127, 0, 0, 1)}`, { file: 'a' }), []);
 });
 
+test('IPs: loopback and the three RFC 1918 ranges pass; the addresses just outside them are caught (#1169)', () => {
+  for (const ok of [ip(127, 0, 0, 1), ip(127, 1, 2, 3), ip(10, 0, 0, 5), ip(10, 255, 255, 255), ip(172, 16, 0, 1), ip(172, 24, 1, 1), ip(172, 31, 255, 254), ip(192, 168, 0, 1), ip(192, 168, 255, 255), '::1', `listen on [::1]:8080`]) {
+    assert.deepEqual(scanText(`addr = "${ok}"`, { file: 'src/config.rs' }), [], ok);
+  }
+  // Positive controls: public addresses next to each range, and the shared range ISPs and VPNs use.
+  for (const bad of [ip(9, 255, 255, 255), ip(11, 0, 0, 1), ip(172, 15, 255, 255), ip(172, 32, 0, 1), ip(192, 167, 1, 1), ip(192, 169, 0, 1), ip(100, 64, 0, 5), ip(126, 0, 0, 1), ip(128, 0, 0, 1)]) {
+    assert.deepEqual(scanText(`addr = "${bad}"`, { file: 'src/config.rs' }).map((f) => f.id), ['ip'], bad);
+  }
+});
+
+test('emails: a contact address in a security policy or a manifest people field is a note, anywhere else it fails (#1169)', () => {
+  const contact = `security${at}someproject.dev`;
+  const grades = (text: string, file: string) => scanText(text, { file }).map((f) => `${f.id} ${f.line} ${isFailingFinding(f) ? 'fails' : 'note'}`);
+  for (const file of ['SECURITY.md', '.github/SECURITY.md', 'docs/SECURITY.md', 'security.md']) {
+    assert.deepEqual(grades(`# Security\n\nWrite to ${contact}.\n`, file), ['email 3 note'], file);
+  }
+  const note = scanText(`Write to ${contact}.`, { file: 'SECURITY.md' })[0];
+  assert.equal(note.grade, 'unknown');
+  assert.ok(!formatFinding(note).includes(contact), 'the address itself is never printed');
+  // A policy GitHub does not read, and an ordinary file, still fail.
+  for (const file of ['packages/a/SECURITY.md', 'SECURITY.txt', 'README.md', 'src/a.ts']) {
+    assert.deepEqual(grades(`Write to ${contact}.`, file), ['email 1 fails'], file);
+  }
+  const packageJson = JSON.stringify(
+    { name: 'a', description: `ask me${at}gmail.com`, author: `Jane <jane${at}someproject.dev>`, contributors: [{ name: 'Li', email: `li${at}someproject.dev` }], maintainers: [`max${at}someproject.dev`], bugs: { url: 'https://example.com', email: `bugs${at}someproject.dev` }, scripts: { mail: `echo ops${at}gmail.com` } },
+    null,
+    2,
+  );
+  // Only the description (line 3) and the script (line 19) fail; the people fields are notes.
+  assert.deepEqual(grades(packageJson, 'package.json').filter((hit) => hit.endsWith('fails')), ['email 3 fails', 'email 19 fails']);
+  assert.equal(grades(packageJson, 'package.json').filter((hit) => hit.endsWith('note')).length, 4);
+  assert.deepEqual(grades(packageJson, 'packages/a/package.json').filter((hit) => hit.endsWith('note')).length, 4, 'a workspace package too');
+  assert.deepEqual(grades(packageJson, 'other.json').filter((hit) => hit.endsWith('note')), [], 'not a manifest');
+  const composer = JSON.stringify({ name: 'a/b', authors: [{ name: 'Jane', email: `jane${at}someproject.dev` }], support: { email: `help${at}someproject.dev` }, extra: { contact: `me${at}gmail.com` } }, null, 2);
+  assert.deepEqual(grades(composer, 'composer.json').map((hit) => hit.split(' ')[2]), ['note', 'note', 'fails']);
+  const cargo = ['[package]', 'name = "a"', `authors = ["Jane <jane${at}someproject.dev>",`, `  "Li <li${at}someproject.dev>"]`, `description = "ask me${at}gmail.com"`, '', '[workspace.package]', `authors = ["Max <max${at}someproject.dev>"]`, '', '[badges]', `authors = ["me${at}gmail.com"]`].join('\n');
+  assert.deepEqual(grades(cargo, 'Cargo.toml'), ['email 3 note', 'email 4 note', 'email 5 fails', 'email 8 note', 'email 11 fails']);
+  const pyproject = ['[project]', 'name = "a"', 'authors = [', `  { name = "Jane", email = "jane${at}someproject.dev" },`, ']', `maintainers = [{ email = "max${at}someproject.dev" }]`, `description = "ask me${at}gmail.com"`, '', '[[project.authors]]', `email = "li${at}someproject.dev"`, '', '[tool.other]', `email = "me${at}gmail.com"`].join('\n');
+  assert.deepEqual(grades(pyproject, 'pyproject.toml'), ['email 4 note', 'email 6 note', 'email 7 fails', 'email 10 note', 'email 13 fails']);
+});
+
 test('web strings: retina image names and user agents are not private (#245)', () => {
   const ua = `Mozilla/5.0 (Windows NT 10.0) Chrome/${ip(120, 0, 0, 0)} Safari/537.36`;
   for (const ok of [`url("img/logo${at}2x.png")`, `icons/close${at}3x.webp`, `a${at}2X.JPEG b${at}10x.avif`, ua]) {
@@ -189,13 +230,13 @@ test('web strings: retina image names and user agents are not private (#245)', (
   // A real address on the same line is still caught.
   const email = `someone${at}gmail.com`;
   assert.deepEqual(scanText(`url("img/logo${at}2x.png") ${email}`, { file: 'a' }).map((f) => f.id), ['email']);
-  assert.deepEqual(scanText(`${ua} from ${ip(10, 0, 0, 5)}`, { file: 'a' }).map((f) => f.id), ['ip']);
+  assert.deepEqual(scanText(`${ua} from ${ip(100, 64, 0, 5)}`, { file: 'a' }).map((f) => f.id), ['ip']);
   // Only a browser version is skipped: a URL or a path root still names the host.
-  for (const bad of [`http://${ip(10, 0, 0, 5)}`, `https://${ip(8, 8, 8, 8)}/x`, `ssh:/${ip(8, 8, 8, 8)}`, `/${ip(8, 8, 8, 8)}`, `${ua} http://${ip(100, 64, 1, 2)}:8080`]) {
+  for (const bad of [`http://${ip(100, 64, 0, 5)}`, `https://${ip(8, 8, 8, 8)}/x`, `ssh:/${ip(8, 8, 8, 8)}`, `/${ip(8, 8, 8, 8)}`, `${ua} http://${ip(100, 64, 1, 2)}:8080`]) {
     assert.equal(scanText(bad, { file: 'a' }).length, 1, bad);
   }
   // An address in a path is real, even after a letter and `/`; only browser versions are skipped.
-  for (const bad of [`api/${ip(8, 8, 8, 8)}`, `hosts/${ip(10, 0, 0, 5)}`, `servers/${ip(192, 168, 1, 20)}`, `chrome/${ip(8, 8, 8, 8)}`, `MyChrome/${ip(8, 8, 8, 8)}`]) {
+  for (const bad of [`api/${ip(8, 8, 8, 8)}`, `hosts/${ip(100, 64, 0, 5)}`, `servers/${ip(172, 15, 1, 20)}`, `chrome/${ip(8, 8, 8, 8)}`, `MyChrome/${ip(8, 8, 8, 8)}`]) {
     assert.equal(scanText(bad, { file: 'a' }).length, 1, bad);
   }
   for (const ok of [`Chrome/${ip(120, 0, 0, 0)}`, 'Edg/120.0.2210.91', `Firefox/${ip(121, 0, 1, 2)}`]) {
@@ -677,6 +718,17 @@ test('a --body-file with a private mark is stopped, by file and line; the mark i
     assert.equal(f?.line, 3);
     assert.ok(!formatFinding(f).toLowerCase().includes('quietvale'));
   }
+});
+
+// #1169: the post guard reads the same address list as the commit check, so a bot can report
+// a local default; a public address is still stopped. A body file named like a security
+// policy is not a repo file, so a personal address in it is still stopped.
+test('a post may name loopback and private addresses; a public one, or an email in a body named SECURITY.md, is stopped (#1169)', () => {
+  assert.equal(post(`gh issue create --title "check: a" --body "the default is ${ip(127, 0, 0, 1)} or ${ip(10, 0, 0, 5)} or ${ip(192, 168, 1, 1)}"`), null);
+  assert.equal(post(`gh issue create --title "check: a" --body "the server is ${ip(8, 8, 8, 8)}"`)?.id, 'ip');
+  assert.equal(post(`gh issue create --title "check: a" --body "the VPN is ${ip(100, 64, 0, 5)}"`)?.id, 'ip');
+  writeFileSync(join(postDir, 'SECURITY.md'), `write to ${email}\n`);
+  assert.equal(post('gh issue create --title "check: a" --body-file SECURITY.md')?.id, 'email');
 });
 
 test('release notes are read when a release is allowed', () => {
