@@ -69,7 +69,7 @@ Renaming them would cost four languages of docs and every kit skill for no compl
 | `yokoten` | First run sets up (asks on a terminal), then shows the status screen. It is built from the results of install, init and doctor, never from printed text |
 | `help` | Shows `yokoten`, `desk`, `kanban`, `check` and `tidy`. `check` joins because every `Fix:` line and the commit hook point to it |
 | `help --all` | Five groups by job: Start, Work, Guard, Merge and CI, Maintain. `help` and `version` are in Start, so there is no sixth group. Replaces the two old groups, one for commands said to have moved and one for agents and CI |
-| `doctor` | A bare `doctor` reads and changes nothing. What it used to fix by itself is now `marks fill` |
+| `doctor` | A bare `doctor` reads and changes none of your files. What it used to fix by itself is now `marks fill`. The one thing it writes is its own memory in `.git/yokoten/` (the stage it saw, the lessons it showed), so the next run can say what changed |
 | `marks` | New action `fill`: adds the marks yokoten can read from this machine (your git name, git email and forge login) and shows their kinds, never their values |
 | `install`, `init`, `doctor`, `trust`, `update`, `worker`, `msg` | Same. The "moved to yokoten" note is removed: they did not move, and the note cost a line on every run |
 | `board` | Now `kanban`. The note stays, because this is a real rename |

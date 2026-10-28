@@ -56,7 +56,7 @@ export interface RenderWaiver {
 }
 
 /** How many keys RENDER_WAIVED may hold. Only the integrator changes it, and only down. */
-export const RENDER_WAIVED_MOST = 22;
+export const RENDER_WAIVED_MOST = 0;
 
 /**
  * Old screens that break a rule today, keyed by renderKey (`<command> <sorted flags>`). The
@@ -64,30 +64,7 @@ export const RENDER_WAIVED_MOST = 22;
  * key lists. Whether a key healed is read over the whole suite (healedWaivers): run
  * `RENDER_REPORT=<file> nice npm test`, then `node test/repo/invoke.ts <file>`.
  */
-export const RENDER_WAIVED: Record<string, RenderWaiver> = {
-  'check': { rules: ['width', 'widest', 'fix-line'], reason: 'test/commands/more/check.test.ts renders rows over 80 and 100 columns (width, widest) and a Fix inside the problem text (fix-line); test/run/check.test.ts the fix-line too (#1115)' },
-  'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'test/commands/more/check.test.ts renders rows over 80 and 100 columns and a Fix inside the text; the bot tests the fix-line too (#1115)' },
-  'check --all --staged': { rules: ['label-columns', 'fix-line'], reason: 'test/run/check.test.ts renders labels that do not share one column (label-columns) and a Fix inside the text (fix-line) (#1115)' },
-  'check --history': { rules: ['widest', 'fix-line'], reason: 'test/run/check.test.ts renders a row over 100 columns (widest) and a Fix inside the text (fix-line) (#1115)' },
-  'check --issue': { rules: ['fix-line'], reason: 'test/commands/more/check.test.ts and test/run/check.test.ts render a Fix inside the problem text (fix-line) (#1115)' },
-  'check --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'test/run/check.test.ts renders rows over 80 and 100 columns and a Fix inside the text (#1115)' },
-  'check --staged': { rules: ['label-columns', 'fix-line'], reason: 'test/run/check.test.ts and the conflicts moves test render labels that do not share one column; test/run/check.test.ts a Fix inside the text (#1115)' },
-  'doctor --agent --session': { rules: ['width', 'widest', 'spaced-items'], reason: 'the Muse runtime test renders rows over 80 columns and the doctor tests over 100 (width, widest); test/commands/hook.test.ts a wrapped item touching the next (spaced-items) (#1115)' },
-  'doctor --all': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'the agent runtime, doctor, start and cli tests render rows over 100 columns (widest) and a Fix inside the text (fix-line); width and next-step were not seen in the files run on 2026-10-28, so the full report decides them (#1115)' },
-  'doctor --session': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'test/commands/hook.test.ts renders a wrapped item touching the next (spaced-items); width, widest and no-internal-path were not seen in the files run on 2026-10-28, so the full report decides them (#1115)' },
-  'hook': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'test/commands/hook.test.ts renders rows over 80 and 100 columns and a path of this machine (no-internal-path); test/run/hook.test.ts a wrapped item touching the next (spaced-items) (#1115)' },
-  'hook --agent': { rules: ['width', 'widest', 'no-internal-path'], reason: 'test/commands/hook.test.ts renders rows over 80 and 100 columns and a path of this machine; the Codex and OpenCode tests rows over 100 columns (#1115)' },
-  'hook --agent --commands-only': { rules: ['width', 'widest', 'next-step', 'spaced-items', 'no-internal-path'], reason: 'test/commands/hook.test.ts renders rows over 80 and 100 columns, no Next line, a wrapped item touching the next and a path of this machine (#1115)' },
-  'hook --agent --stop': { rules: ['widest', 'next-step'], reason: 'test/commands/hook.test.ts and the msg tests render a Stop answer with no Next line (next-step); widest was not seen in the files run on 2026-10-28, so the full report decides it (#1115)' },
-  'hook --stop': { rules: ['width', 'widest', 'next-step'], reason: 'test/commands/hook.test.ts and the msg tests render a Stop answer with no Next line (next-step); width and widest were not seen in the files run on 2026-10-28, so the full report decides them (#1115)' },
-  'learn --export': { rules: ['width', 'widest', 'spaced-items'], reason: 'test/commands/more/learn.test.ts renders rows over 80 and 100 columns and wrapped items touching (#1115)' },
-  'learn --import': { rules: ['width', 'widest', 'prose'], reason: 'test/commands/more/learn.test.ts renders rows over 80 and 100 columns and lines of prose (#1115)' },
-  'msg': { rules: ['width'], reason: 'test/commands/more/advice/messages.test.ts renders a row over 80 columns (#1115)' },
-  'tidy': { rules: ['width', 'widest', 'no-internal-path'], reason: 'test/commands/tidy/tidy.test.ts renders rows over 80 and 100 columns and a path of this machine (#1115)' },
-  'tidy --empty': { rules: ['spaced-items'], reason: 'test/commands/tidy/tidy.test.ts renders a wrapped item touching the next (#1115)' },
-  'tidy --local': { rules: ['width', 'widest', 'no-internal-path'], reason: 'test/commands/tidy/tidy.test.ts renders rows over 80 and 100 columns and a path of this machine (#1115)' },
-  'trust': { rules: ['no-internal-path'], reason: 'the agents\' own text names a folder outside the home folder; not seen in the files run on 2026-10-28, so the full report decides it (#1115)' },
-};
+export const RENDER_WAIVED: Record<string, RenderWaiver> = {};
 
 /** The key of a render: the command, then its flags sorted, values and words after `--` left out. */
 export function renderKey(words: readonly string[]): string {
