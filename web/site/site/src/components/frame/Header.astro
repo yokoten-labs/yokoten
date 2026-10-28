@@ -1,0 +1,97 @@
+---
+// The header, as on the live yokoten.app: the security notice above it, then the lockup, the three
+// sections (docs, road, about; on a phone, a menu button left of the tools), and three icon tools: the theme menu (system, light, dark), the
+// language menu and the GitHub mark, last, where an engineer looks for it. No framework: the menus
+// are buttons and links, and public/js/theme.js opens them, moves the focus and remembers the choices.
+import Lockup from '../brand/Lockup.astro';
+import { DOCS_PAGES, href, LANG_INFO, LANGS, type Lang, type Page } from '../../lib/i18n';
+import { LINKS } from '../../lib/content/facts';
+import type { CollectionEntry } from 'astro:content';
+interface Props { lang: Lang; page: Page | '404'; sub?: string; t: CollectionEntry<'site'>['data'] }
+const { lang, page, sub = '', t } = Astro.props;
+const nav = (['how', 'docs', 'road', 'about'] as const).map((p) => ({ page: p, text: t.nav[p] }));
+/** Every docs page is under Docs: it stays marked on them. */
+const section = page !== '404' && DOCS_PAGES.includes(page) ? 'docs' : page;
+const here = page === '404' ? 'home' : page;
+---
+<div class="notice" role="region" aria-label={t.notice.text}>
+  <a href={LINKS.nodeAdvisory} rel="noopener">{t.notice.text}</a>
+</div>
+<header class="sheet head">
+  <a class="skip" href="#main">{t.skip}</a>
+  <a class="home" href={href('home', lang)} aria-label={t.home}><Lockup size={30} kanji={false} /></a>
+  <nav aria-label={t.nav.label}>
+    <ul>
+      {nav.map((n) => <li><a href={href(n.page, lang)} aria-current={n.page === section ? 'page' : undefined}>{n.text}</a></li>)}
+    </ul>
+  </nav>
+  <div class="tools">
+    <div class="menu pages" data-menu>
+      <button type="button" class="icon-btn" aria-label={t.nav.label} aria-haspopup="menu" aria-expanded="false" aria-controls="menu-pages"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg></button>
+      <div id="menu-pages" role="menu" aria-label={t.nav.label} class="menu-list" hidden>
+        {nav.map((n) => <a role="menuitem" tabindex="-1" class="menu-item" href={href(n.page, lang)} aria-current={n.page === section ? 'page' : undefined}><span class="menu-label">{n.text}</span></a>)}
+      </div>
+    </div>
+    <div class="menu" data-menu>
+      <button type="button" class="icon-btn" aria-label={t.theme.label} aria-haspopup="menu" aria-expanded="false" aria-controls="menu-theme" data-tip={t.theme.label}>
+        <span class="ti ti-system"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg></span><span class="ti ti-light"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4" /></svg></span><span class="ti ti-dark"><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" /></svg></span>
+      </button>
+      <div id="menu-theme" role="menu" aria-label={t.theme.label} class="menu-list" hidden>
+        {([['system', t.theme.system, '<rect x=&quot;3&quot; y=&quot;4&quot; width=&quot;18&quot; height=&quot;12&quot; rx=&quot;2&quot; /><path d=&quot;M8 20h8M12 16v4&quot; />'], ['light', t.theme.light, '<circle cx=&quot;12&quot; cy=&quot;12&quot; r=&quot;4&quot; /><path d=&quot;M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4&quot; />'], ['dark', t.theme.dark, '<path d=&quot;M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z&quot; />']] as const).map(([value, text, path]) => (
+          <button type="button" role="menuitemradio" aria-checked={value === 'system' ? 'true' : 'false'} tabindex="-1" class="menu-item" data-theme-choice={value}>
+            <svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" set:html={path} />
+            <span class="menu-label">{text}</span><svg class="menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </button>
+        ))}
+      </div>
+    </div>
+    <div class="menu" data-menu>
+      <button type="button" class="icon-btn" aria-label={t.language} aria-haspopup="menu" aria-expanded="false" aria-controls="menu-lang" data-tip={t.language}><svg class="icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5.5h10M8 3v2.5M11 5.5c-.6 3.4-2.8 6.4-6.5 8.3M5.8 9c1.1 2 3 3.6 5.2 4.6" /><path d="M12.5 21l4.25-9.5L21 21M14 17.8h5.5" /></svg></button>
+      <div id="menu-lang" role="menu" aria-label={t.language} class="menu-list" hidden>
+        {LANGS.map((l) => (
+          <a role="menuitemradio" aria-checked={l === lang ? 'true' : 'false'} tabindex="-1" class="menu-item" href={href(here, l, '', page === '404' ? '' : sub)} hreflang={LANG_INFO[l].html} lang={LANG_INFO[l].html} data-lang={l}>
+            <span class="menu-label">{LANG_INFO[l].name}</span><svg class="menu-check" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          </a>
+        ))}
+      </div>
+    </div>
+    <a class="icon-btn" href={LINKS.github} aria-label={t.footer.more.github} data-tip="GitHub"><svg class="icon" width="20" height="20" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59 .4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23 .82.72 1.21 1.87.87 2.33 .66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2 .82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12 .51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95 .29.25 .54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15 .46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+  </div>
+</header>
+<style>
+  /* The bar stays at the top while the page scrolls; its ground and hairline reach both edges. */
+  .head { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1.5rem; padding-block: 1.1rem; }
+  .head::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--bg); box-shadow: 0 0 0 100vmax var(--bg), 0 1px 0 100vmax var(--line); clip-path: inset(0 -100vmax -1px); }
+  .home { text-decoration: none; margin-right: auto; }
+  nav ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; list-style: none; margin: 0; padding: 0; }
+  nav a { font-family: var(--font-sans); font-size: 0.9rem; font-weight: 500; color: var(--muted); text-decoration: none; }
+  nav a:hover, nav a[aria-current='page'] { color: var(--fg); }
+  nav a[aria-current='page'] { text-decoration: underline; text-decoration-color: var(--link); text-decoration-thickness: 2px; text-underline-offset: 6px; }
+  .tools { display: flex; align-items: center; gap: 0.25rem; }
+  .notice { display: flex; justify-content: center; padding: 0.55rem 1rem; background: var(--notice); color: #ffffff; font-size: 0.875rem; line-height: 1.4; text-align: center; }
+  .notice a { color: inherit; text-decoration: underline; text-decoration-color: rgb(255 255 255 / 0.6); text-underline-offset: 0.2em; }
+  .notice a:hover { text-decoration-color: #ffffff; }
+  .icon-btn { position: relative; display: inline-grid; place-items: center; width: 2.375rem; height: 2.375rem; border: 0; border-radius: 0.55rem; background: transparent; color: var(--fg); cursor: pointer; }
+  .icon-btn:hover, .icon-btn[aria-expanded='true'] { background: var(--raised); }
+  .icon-btn :global(.icon) { display: block; }
+  .icon-btn[data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: 0; padding: 0.2rem 0.5rem; border-radius: 0.35rem; background: var(--fg); color: var(--bg); font-family: var(--font-sans); font-size: 0.75rem; line-height: 1.4; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity 0.12s 0.25s; z-index: 41; }
+  .icon-btn[data-tip]:hover::after, .icon-btn[data-tip]:focus-visible::after { opacity: 1; }
+  .icon-btn[aria-expanded='true']::after { display: none; }
+  /* the theme button shows the icon of the choice: system with no data-theme, else light or dark */
+  .ti { display: none; }
+  :global(:root:not([data-theme])) .ti-system, :global(:root[data-theme='light']) .ti-light, :global(:root[data-theme='dark']) .ti-dark { display: block; }
+  .menu { position: relative; }
+  .menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 40; min-width: 10.5rem; padding: 0.3rem; border: 1px solid var(--line); border-radius: 0.7rem; background: var(--surface); box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.35); }
+  .menu-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.5rem 0.65rem; border: 0; border-radius: 0.45rem; background: transparent; color: var(--fg); font: inherit; font-size: 0.92rem; text-align: left; text-decoration: none; cursor: pointer; }
+  .menu-item:hover, .menu-item:focus-visible { background: var(--raised); }
+  .menu-item:focus-visible { outline-offset: -2px; }
+  .menu-item[aria-checked='true'], .menu-item[aria-current='page'] { color: var(--link); font-weight: 600; }
+  .menu-label { flex: 1; }
+  .menu-item :global(.menu-check) { flex: none; visibility: hidden; }
+  .menu-item[aria-checked='true'] :global(.menu-check) { visibility: visible; }
+  .skip { position: absolute; left: -999px; }
+  .skip:focus { left: 1rem; top: 1rem; background: var(--bg); padding: 0.5rem; z-index: 20; }
+  /* a phone: the sections move into the menu button, left of the tools */
+  .pages { display: none; }
+  @media (max-width: 40rem) { nav { display: none; } .pages { display: block; } .notice { font-size: 0.8125rem; padding: 0.45rem 1rem; } }
+</style>

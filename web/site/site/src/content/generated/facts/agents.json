@@ -1,0 +1,47 @@
+[
+  {
+    "agent": "Claude Code",
+    "verified": true,
+    "trustFirst": false
+  },
+  {
+    "agent": "GitHub Copilot CLI",
+    "verified": true,
+    "trustFirst": true
+  },
+  {
+    "agent": "Antigravity CLI (agy)",
+    "verified": true,
+    "trustFirst": false
+  },
+  {
+    "agent": "Codex CLI",
+    "verified": true,
+    "trustFirst": true
+  },
+  {
+    "agent": "Muse Code",
+    "verified": true,
+    "trustFirst": true
+  },
+  {
+    "agent": "DeepSeek Harness (dsh)",
+    "verified": true,
+    "trustFirst": false
+  },
+  {
+    "agent": "Grok CLI (grok)",
+    "verified": true,
+    "trustFirst": true
+  },
+  {
+    "agent": "Gemini CLI",
+    "verified": false,
+    "trustFirst": false
+  },
+  {
+    "agent": "OpenCode",
+    "verified": true,
+    "trustFirst": false
+  }
+]

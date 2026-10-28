@@ -1,0 +1,64 @@
+---
+// One picture per stop card, in one visual language: the agent on the left, its move stopped by a
+// red stop sign in the middle, and on the right the thing the stop keeps safe. The caption beside
+// it says the same in words, so the picture is hidden from screen readers.
+interface Props { screen: string }
+const { screen } = Astro.props;
+---
+<svg class="art" viewBox="0 0 240 76" aria-hidden="true">
+  <g class="agent">
+    <line x1="24" y1="22" x2="24" y2="15" />
+    <circle cx="24" cy="13" r="2.5" class="solid" />
+    <rect x="8" y="22" width="32" height="28" rx="8" />
+    <circle cx="19" cy="36" r="2.5" class="solid" />
+    <circle cx="29" cy="36" r="2.5" class="solid" />
+  </g>
+  <g class="move">
+    <line x1="50" y1="36" x2="98" y2="36" />
+    <path d="M92 30 L100 36 L92 42" />
+  </g>
+  <g class="stop">
+    <polygon points="114.6,23 125.4,23 133,30.6 133,41.4 125.4,49 114.6,49 107,41.4 107,30.6" />
+    <rect x="113" y="34" width="14" height="4" rx="1" class="bar" />
+  </g>
+  {screen === 'guard, force push' && (
+    <g class="kept">
+      <line x1="150" y1="44" x2="232" y2="44" />
+      <circle cx="160" cy="44" r="5" class="solid" />
+      <circle cx="186" cy="44" r="5" class="solid" />
+      <circle cx="212" cy="44" r="5" class="ring" />
+      <circle cx="212" cy="20" r="4" />
+      <path d="M204 32 a8 8 0 0 1 16 0" />
+    </g>
+  )}
+  {screen === 'guard, wipe home' && (
+    <g class="kept">
+      <path d="M154 22 h18 l5 6 h33 v30 h-56 z" />
+      <text x="182" y="50" text-anchor="middle">~</text>
+      <line x1="218" y1="30" x2="232" y2="30" />
+      <line x1="218" y1="38" x2="232" y2="38" />
+      <line x1="218" y1="46" x2="228" y2="46" />
+    </g>
+  )}
+  {screen === 'guard, tag push' && (
+    <g class="kept">
+      <path d="M152 26 h36 l10 10 l-10 10 h-36 z" />
+      <text x="170" y="40" text-anchor="middle" class="small">v1.2</text>
+      <circle cx="224" cy="22" r="5" />
+      <path d="M214 42 a10 10 0 0 1 20 0" />
+      <path d="M218 12 l3 3 l3 -5 l3 5 l3 -3 v6 h-12 z" class="solid" />
+    </g>
+  )}
+</svg>
+<style>
+  .art { display: block; width: 100%; max-width: 15rem; height: auto; }
+  .art :global(*) { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .art .solid { fill: var(--muted); stroke: none; }
+  .art .kept :global(*) { stroke: var(--fg); }
+  .art .kept .solid, .art .kept path.solid { fill: var(--fg); stroke: none; }
+  .art .kept .ring { fill: var(--surface); stroke: var(--fg); }
+  .art .stop polygon { fill: var(--andon); stroke: none; }
+  .art .stop .bar { fill: #ffffff; stroke: none; }
+  .art text, .art .kept text { fill: var(--fg); stroke: none; font-family: var(--font-mono); font-size: 20px; font-weight: 600; }
+  .art .kept text.small { font-size: 11px; }
+</style>

@@ -1,0 +1,16 @@
+---
+// The signature: the guard mark with the wordmark beside it. The header shows "yokoten" alone (owner, 2026-10-28):
+// 横展 needs its explanation, so it stays where that explanation is, in the footer.
+import Mark from './Mark.astro';
+interface Props { size?: number; kanji?: boolean }
+const { size = 28, kanji = true } = Astro.props;
+---
+<span class="lockup" style={`--s:${size}px`}>
+  <Mark size={size} />
+  <span class="word">yokoten</span>{kanji && <span class="kanji" lang="ja">横展</span>}
+</span>
+<style>
+  .lockup { display: inline-flex; align-items: center; gap: calc(var(--s) * 0.38); line-height: 1; }
+  .word { font-family: 'Inter Variable', 'Inter Fallback', sans-serif; font-weight: 700; font-size: calc(var(--s) * 0.72); letter-spacing: -0.02em; }
+  .kanji { font-family: 'Noto Sans JP Variable', 'Noto Sans SC Variable', 'Noto Sans TC Variable', sans-serif; font-weight: 700; font-size: calc(var(--s) * 0.6); margin-left: calc(var(--s) * -0.18); }
+</style>

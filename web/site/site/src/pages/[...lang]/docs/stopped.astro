@@ -1,0 +1,76 @@
+---
+// When it stops something, /docs/stopped: a real stop, how to read its four parts, what to tell the
+// agent, the five things yokoten protects (the README's "What it stops") and what to do when a stop
+// looks wrong. The words are in content/pages/stopped/<lang>.json; the screen is the CI capture.
+import DocsShell from '../../../components/frame/DocsShell.astro';
+import Terminal from '../../../components/blocks/Terminal.astro';
+import { langPaths, type Lang } from '../../../lib/i18n';
+import { pageData } from '../../../lib/content/data';
+import { LINKS } from '../../../lib/content/facts';
+import { inline } from '../../../lib/page/text';
+
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const t = await pageData('site', lang);
+const d = await pageData('stopped', lang);
+/** A protection's name and its words, as the README joins them: a full-width colon in Chinese and Japanese. */
+const colon = lang === 'en' ? ': ' : '：';
+/** The four parts of a stop, as the screen prints them. */
+const PARTS = ['yokoten stopped this:', 'Why', 'Instead', 'More'];
+const toc = [
+  { slug: 'read-title', text: d.read.title },
+  { slug: 'tell-title', text: d.tell.title },
+  { slug: 'protects-title', text: d.protects.title },
+  { slug: 'wrong-title', text: d.wrong.title },
+];
+---
+<DocsShell lang={lang} page="stopped" name={t.docs.stopped} description={t.docs.stoppedDescription} toc={toc}>
+  <section id="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{d.intro.label}</p>
+    <h1 id="intro-title" class="page-title">{d.intro.title}</h1>
+    <p class="lede">{d.intro.body}</p>
+    <div class="screen"><Terminal screen="guard, force push" head={t.terminal.stopped} exit={t.terminal.exit} /></div>
+  </section>
+
+  <section id="read" class="part" aria-labelledby="read-title">
+    <h2 id="read-title">{d.read.title}</h2>
+    <p set:html={inline(d.read.body)} />
+    <dl class="marks">
+      {PARTS.map((mark, i) => <div><dt lang="en"><code>{mark}</code></dt><dd set:html={inline(d.read.parts[i])} /></div>)}
+    </dl>
+  </section>
+
+  <section id="tell" class="part" aria-labelledby="tell-title">
+    <h2 id="tell-title">{d.tell.title}</h2>
+    <p set:html={inline(d.tell.body)} />
+    <p set:html={inline(d.tell.only)} />
+  </section>
+
+  <section id="protects" class="part" aria-labelledby="protects-title">
+    <h2 id="protects-title">{d.protects.title}</h2>
+    <p set:html={inline(d.protects.body)} />
+    <ul class="protects">
+      {d.protects.items.map((p) => <li><strong>{p.title}</strong>{colon}<span set:html={inline(p.body)} /></li>)}
+    </ul>
+  </section>
+
+  <section id="wrong" class="part" aria-labelledby="wrong-title">
+    <h2 id="wrong-title">{d.wrong.title}</h2>
+    <p set:html={inline(d.wrong.body)} />
+    <p class="more"><a href={`${LINKS.github}/issues/new`} rel="noopener">{d.wrong.link} →</a></p>
+  </section>
+</DocsShell>
+<style>
+  .lede { margin-bottom: 0.5rem; }
+  .screen { margin: 2rem 0 0; max-width: calc(80ch + 2rem); overflow-x: auto; }
+  .part { max-width: 72ch; margin-top: 3.5rem; }
+  .part h2 { font-size: clamp(1.5rem, 3vw, 1.875rem); line-height: 1.2; margin: 0 0 1rem; scroll-margin-top: 1rem; }
+  .part p { margin: 0 0 1rem; line-height: 1.6; }
+  .marks { display: grid; gap: 0.75rem; margin: 0; }
+  .marks div { display: grid; gap: 0.25rem 1rem; }
+  @media (min-width: 40rem) { .marks div { grid-template-columns: 14rem minmax(0, 1fr); } }
+  .marks code { white-space: nowrap; }
+  .marks dd { margin: 0; line-height: 1.6; }
+  .protects { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
+  .protects li { line-height: 1.6; }
+</style>

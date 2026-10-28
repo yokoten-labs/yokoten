@@ -1,0 +1,13 @@
+---
+// A real screen from the CI capture (generated/facts/screens.json), in the colours yokoten gives it.
+import { screens, type ScreenKey } from '../../lib/content/facts';
+import { screenHtml } from '../../lib/terminal/screen';
+interface Props { screen: ScreenKey; head: string; exit: string; window?: boolean }
+const { screen, head, exit, window = false } = Astro.props;
+const shot = screens[screen];
+const stopped = screen.startsWith('guard, ');
+---
+<figure class:list={['term', stopped && 'term-stop', window && 'term-window']}>
+  <figcaption class="term-head"><span>{head}</span><span>{exit} {shot.exit}</span></figcaption>
+  <pre set:html={screenHtml(shot.typed, shot.ansi)} />
+</figure>

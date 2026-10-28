@@ -1,0 +1,59 @@
+{
+  "intro": {
+    "label": "Quick start",
+    "title": "Start in three steps",
+    "body": "Open a terminal in your project's folder, then follow these three steps."
+  },
+  "node": {
+    "title": "Check Node",
+    "body": "yokoten runs on Node.js. To see which version you have, type:",
+    "after": "It prints a version number. You need {node} or later. If it prints an older one, or says the command is not found, install Node from [nodejs.org](https://nodejs.org/), then open a new terminal."
+  },
+  "run": {
+    "title": "Run yokoten in your project",
+    "body": "In your project's folder, run:",
+    "after": "It turns on the guard for your AI agent and writes its own files into the project. It changes none of yours."
+  },
+  "video": {
+    "title": "Thirty-two seconds on what it does",
+    "body": "An agent, three stops, the first run. Captions in four languages.",
+    "play": "The yokoten film",
+    "fallback": "Your browser can't play this video here.",
+    "download": "Download it",
+    "controls": {
+      "play": "Play",
+      "pause": "Pause",
+      "mute": "Mute",
+      "unmute": "Sound on",
+      "fullscreen": "Full screen",
+      "captions": "Captions",
+      "off": "Off",
+      "seek": "Position"
+    }
+  },
+  "next": {
+    "title": "Do what the Next line says",
+    "body": "The first run shows one screen: what it set up, where you are, and the one command to type next. This is a real one:",
+    "marks": [
+      "Done. Nothing to do.",
+      "Something yokoten needs from you. The Fix line under it is the command to run.",
+      "`next` is the step you are on; `to do` are the ones after it.",
+      "The one command to type now."
+    ],
+    "after": "Type the command on the Next line. Then run `npx yokoten` again: it does only what is still missing, and shows the next step. Repeat until the road is done: {stages} stages, {steps} steps in all.",
+    "more": "See every step of the road"
+  },
+  "stops": {
+    "title": "When your agent gets stopped",
+    "body": "From now on, yokoten reads the commands your AI agent runs and stops the ones that cannot be undone, such as a force push. The agent is told why and what to do instead, so most stops need nothing from you.",
+    "more": "When it stops something"
+  },
+  "where": {
+    "title": "Where next",
+    "items": [
+      "What yokoten is, what it stops and how it works.",
+      "Every stage, and every step in it.",
+      "Every rule and command, one chapter a page."
+    ]
+  }
+}

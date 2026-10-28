@@ -1,0 +1,66 @@
+---
+// The docs' navigation, the same on every docs page and in every language: three groups (get
+// started, learn, reference), each page by name; the guide's chapters under it. The page you are
+// on, or the chapter, shows its sections under its name. DocsShell puts it beside the article on
+// a wide screen and in a fold above it on a phone.
+import type { CollectionEntry } from 'astro:content';
+import { href, type Lang, type Page } from '../../lib/i18n';
+export interface TocItem { text: string; slug: string }
+interface Props {
+  lang: Lang;
+  t: CollectionEntry<'site'>['data'];
+  page: Page;
+  /** The chapter you are on, by slug. */
+  sub?: string;
+  toc: TocItem[];
+  chapters: { slug: string; title: string }[];
+}
+const { lang, t, page, sub = '', toc, chapters } = Astro.props;
+const groups: { label: string; pages: Page[] }[] = [
+  { label: t.docs.groups.start, pages: ['docs', 'stopped'] },
+  { label: t.docs.groups.learn, pages: ['overview', 'docsRoad'] },
+  { label: t.docs.groups.reference, pages: ['guide'] },
+];
+const name = (p: Page) => t.docs[p as 'docs' | 'stopped' | 'overview' | 'docsRoad' | 'guide'];
+const here = (p: Page) => p === page && !sub;
+---
+{groups.map((g) => (
+  <div class="group">
+    <p class="group-label">{g.label}</p>
+    <ul class="docs-list">
+      {g.pages.map((p) => (
+        <li>
+          <a href={href(p, lang)} aria-current={here(p) ? 'page' : undefined}>{name(p)}</a>
+          {here(p) && toc.length > 0 && <ol class="toc">{toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}</ol>}
+          {p === 'guide' && (
+            <ol class="chapters">
+              {chapters.map((c) => (
+                <li>
+                  <a href={href('guide', lang, '', c.slug)} aria-current={page === 'guide' && sub === c.slug ? 'page' : undefined}>{c.title}</a>
+                  {page === 'guide' && sub === c.slug && toc.length > 0 && <ol class="toc">{toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}</ol>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </li>
+      ))}
+    </ul>
+  </div>
+))}
+<style>
+  /* Each group under a mono label in caps; the page you are on has a blue mark at its left. */
+  .group + .group { margin-top: 1.75rem; }
+  .group-label { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.6rem; }
+  .docs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
+  .docs-list a { display: block; text-decoration: none; border-left: 2px solid transparent; }
+  .docs-list > li > a { font-weight: 600; padding: 0.15rem 0 0.15rem 0.75rem; }
+  .docs-list a[aria-current='page'] { border-left-color: var(--link); }
+  .docs-list a:hover { color: var(--fg); text-decoration: underline; text-decoration-color: var(--link); }
+  /* The chapters: one line each, in the guide's order. */
+  .chapters { list-style: none; margin: 0.35rem 0 0; padding: 0 0 0 0.75rem; display: grid; gap: 0.05rem; }
+  .chapters > li > a { font-size: 0.9rem; line-height: 1.35; padding: 0.3rem 0 0.3rem 0.75rem; }
+  .chapters > li > a[aria-current='page'] { font-weight: 600; }
+  /* The current page's sections, smaller and grey. */
+  .toc { list-style: none; margin: 0.25rem 0 0.5rem; padding: 0 0 0 0.75rem; display: grid; gap: 0.05rem; }
+  .toc a { font-size: 0.85rem; line-height: 1.4; color: var(--muted); padding: 0.25rem 0 0.25rem 0.75rem; }
+</style>

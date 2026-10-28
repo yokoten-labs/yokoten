@@ -1,0 +1,162 @@
+[
+  {
+    "number": 1,
+    "name": "safety net",
+    "steps": [
+      {
+        "key": "rules",
+        "title": "Write the rules for your agents (AGENTS.md)",
+        "why": "an agent follows the rules it can read, and only those"
+      },
+      {
+        "key": "tool-hook",
+        "title": "Turn on the guard for your agents' commands",
+        "why": "the guard stops a risky command, like a force push, before the agent runs it"
+      },
+      {
+        "key": "commit-check",
+        "title": "Check each commit before it is made",
+        "why": "a secret or a personal email is hard to take back once a commit is pushed"
+      },
+      {
+        "key": "runtime",
+        "title": "Add the yokoten runtime to the project",
+        "why": "the hooks and CI run this copy, so they work with no network and no global install"
+      },
+      {
+        "key": "tests",
+        "title": "Run your tests on every push",
+        "why": "tests that run on every push catch a broken change before it reaches main"
+      }
+    ]
+  },
+  {
+    "number": 2,
+    "name": "issues and pull requests",
+    "steps": [
+      {
+        "key": "remote",
+        "title": "Put the project on GitHub or Gitea",
+        "why": "the code host keeps a copy, so a lost machine does not lose the work"
+      },
+      {
+        "key": "ci",
+        "title": "Run the checks on every pull request",
+        "why": "a commit made with the hook off would reach main unchecked"
+      },
+      {
+        "key": "issues",
+        "title": "Turn on issues",
+        "why": "an issue has an owner, a state and a history; a todo file has none"
+      },
+      {
+        "key": "templates",
+        "title": "Add issue and pull request templates",
+        "why": "a template asks for what a reviewer needs, so nothing is forgotten"
+      },
+      {
+        "key": "labels",
+        "title": "Add the standard labels",
+        "why": "a label says what kind of change a pull request is, and the pull request check asks for one"
+      },
+      {
+        "key": "milestone",
+        "title": "Add a first milestone",
+        "why": "a milestone says when a change ships, and the pull request check asks for one"
+      },
+      {
+        "key": "no-build-output",
+        "title": "Keep build output out of git",
+        "why": "a build makes these files again from the source, and a reviewer can't read a binary"
+      }
+    ]
+  },
+  {
+    "number": 3,
+    "name": "release",
+    "steps": [
+      {
+        "key": "changelog",
+        "title": "Keep a changelog",
+        "why": "each pull request adds its entry as it goes, so a release needs no digging"
+      },
+      {
+        "key": "titles",
+        "title": "Check pull request titles",
+        "why": "a pull request title becomes the commit on main, so it must say what changed and why"
+      }
+    ]
+  },
+  {
+    "number": 4,
+    "name": "a team of agents",
+    "steps": [
+      {
+        "key": "codeowners",
+        "title": "Name the owner (CODEOWNERS)",
+        "why": "the host then asks you to review a pull request that changes those paths, and `check --pr` makes it tier A"
+      },
+      {
+        "key": "bot",
+        "title": "Set up the bot account",
+        "why": "when the bot opens pull requests, you review work you did not write, as a team does"
+      },
+      {
+        "key": "skills",
+        "title": "Install the yokoten skills",
+        "why": "the skills show an agent how to hand off work, review it and find the cause of a failure"
+      },
+      {
+        "key": "sandbox",
+        "title": "Keep your agents in a sandbox",
+        "why": "a worker writes only where the sandbox allows, so it must cover the worktree"
+      },
+      {
+        "key": "review",
+        "title": "Ask for a review before a merge",
+        "why": "the bot opens the pull requests, so you approve work you did not write, and nothing merges unread"
+      }
+    ]
+  },
+  {
+    "number": 5,
+    "name": "going public",
+    "steps": [
+      {
+        "key": "security-files",
+        "title": "Add a license and a security policy",
+        "why": "people can then report a hole in private, old dependencies get updates, and others know how they may use the code"
+      },
+      {
+        "key": "protection",
+        "title": "Protect the main branch",
+        "why": "the guards catch an agent's mistakes, but only the server stops a push that gets past them"
+      },
+      {
+        "key": "merge-settings",
+        "title": "Set the merge settings",
+        "why": "one pull request becomes one commit on main, and no merged branch is left behind"
+      },
+      {
+        "key": "security-settings",
+        "title": "Turn on the security settings",
+        "why": "the host then stops a pushed secret, and people can report a hole in private"
+      },
+      {
+        "key": "tag-bypass",
+        "title": "Let only you create release tags",
+        "why": "a tag that nobody can push blocks a release, and a bot on the list can push one"
+      },
+      {
+        "key": "release-reviewer",
+        "title": "Approve each release yourself",
+        "why": "without it, a publish job that a tag starts runs without anyone approving it"
+      },
+      {
+        "key": "release-tag-rule",
+        "title": "Limit releases to version tags",
+        "why": "a branch rule named v* matches no tag, and with both rules a branch named v* can still publish"
+      }
+    ]
+  }
+]

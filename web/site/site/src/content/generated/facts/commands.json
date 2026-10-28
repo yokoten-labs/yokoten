@@ -1,0 +1,229 @@
+{
+  "start": "Start here: run `yokoten` in your project.",
+  "groups": [
+    {
+      "shown": "always",
+      "title": "Commands"
+    },
+    {
+      "shown": "start",
+      "title": "Start"
+    },
+    {
+      "shown": "work",
+      "title": "Work"
+    },
+    {
+      "shown": "guard",
+      "title": "Guard"
+    },
+    {
+      "shown": "merge and ci",
+      "title": "Merge and CI"
+    },
+    {
+      "shown": "maintain",
+      "title": "Maintain"
+    }
+  ],
+  "commands": [
+    {
+      "name": "install",
+      "summary": "skills, agents and user-level hooks for this machine",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "init",
+      "summary": "put the practices into a project (adds only, never overwrites)",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "trust",
+      "summary": "turn on yokoten's guard in the agents installed here",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "update",
+      "summary": "the core rules in AGENTS.md: preview, or --write",
+      "shown": "maintain",
+      "group": "Maintain"
+    },
+    {
+      "name": "upgrade",
+      "summary": "yokoten itself, to the newest version",
+      "shown": "maintain",
+      "group": "Maintain"
+    },
+    {
+      "name": "doctor",
+      "summary": "the road: where this project is and its next step",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "adopt",
+      "summary": "a draft of the adoption table for an old project",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "check",
+      "summary": "layout, privacy and lead-only files, and a PR or issue",
+      "shown": "always",
+      "group": "Commands"
+    },
+    {
+      "name": "ci-health",
+      "summary": "the last 200 Actions runs, in one issue that is updated in place",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "provenance",
+      "summary": "the writer, reviewers and approver of a commit",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "mcp",
+      "summary": "check the project MCP server and its tools",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "borrowed",
+      "summary": "borrowed code against upstream, with issues",
+      "shown": "maintain",
+      "group": "Maintain"
+    },
+    {
+      "name": "redact",
+      "summary": "hide your private marks in a pipeline",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "test",
+      "summary": "run the tests light: niced, with few at once",
+      "shown": "work",
+      "group": "Work"
+    },
+    {
+      "name": "marks",
+      "summary": "your private marks, never their values",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "changelog",
+      "summary": "the entries the files in changes/ add under [Unreleased]",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "learn",
+      "summary": "a check draft from an incident issue, for a person to review",
+      "shown": "work",
+      "group": "Work"
+    },
+    {
+      "name": "hook",
+      "summary": "the tool-call guard, or the stop check with --stop",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "anchor",
+      "summary": "list a worker's checkpoints: commits whose checks passed",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "stops",
+      "summary": "the log of the guard stops on this computer, or turn it off and on",
+      "shown": "guard",
+      "group": "Guard"
+    },
+    {
+      "name": "worker",
+      "summary": "mark a worktree as a worker's",
+      "shown": "work",
+      "group": "Work"
+    },
+    {
+      "name": "desk",
+      "summary": "give one task to one AI, in its own fenced desk",
+      "shown": "always",
+      "group": "Commands"
+    },
+    {
+      "name": "msg",
+      "summary": "messages between agents on this team",
+      "shown": "work",
+      "group": "Work"
+    },
+    {
+      "name": "explain",
+      "summary": "a rule or a step: what it is, why, and how it is checked",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "pr",
+      "summary": "keep open pull requests up to date",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "bot",
+      "summary": "run one command as the bot account",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "train",
+      "summary": "merge an approved queue, one at a time",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "kanban",
+      "summary": "the team at a glance, live and read only (preview)",
+      "shown": "always",
+      "group": "Commands"
+    },
+    {
+      "name": "tidy",
+      "summary": "find old branches, worktrees and desks, and put them away",
+      "shown": "always",
+      "group": "Commands"
+    },
+    {
+      "name": "conflicts",
+      "summary": "which open changes collide, and what to merge first",
+      "shown": "merge and ci",
+      "group": "Merge and CI"
+    },
+    {
+      "name": "uninstall",
+      "summary": "take back what install wrote",
+      "shown": "maintain",
+      "group": "Maintain"
+    },
+    {
+      "name": "help",
+      "summary": "this list, or the help of one command",
+      "shown": "start",
+      "group": "Start"
+    },
+    {
+      "name": "version",
+      "summary": "the version of this yokoten",
+      "shown": "start",
+      "group": "Start"
+    }
+  ]
+}

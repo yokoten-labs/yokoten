@@ -1,0 +1,12 @@
+---
+// One section of a page: full width in the container, the topic
+// ("01 · Stop the line") above the heading. `id` names the section for links and for
+// scripts/i18n-check.mjs. `tone` gives it a band ("band", "ink") that runs to the window's
+// edges; `center` puts the head on the page's axis.
+interface Props { id: string; no?: string; label: string; tone?: 'band' | 'ink'; center?: boolean }
+const { id, no, label, tone, center = false } = Astro.props;
+---
+<section id={id} class:list={['row', tone === 'band' && 'band', tone === 'ink' && 'band-ink', center && 'center']} aria-labelledby={`${id}-title`}>
+  <p class="eyebrow">{no && <><span class="no">{no}</span> · </>}{label}</p>
+  <slot />
+</section>

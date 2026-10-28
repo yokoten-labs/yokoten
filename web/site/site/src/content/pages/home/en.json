@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "title": "yokoten",
+    "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command sets it up: npx yokoten."
+  },
+  "hero": {
+    "headline": "Stops the mistake you can't undo.",
+    "sub": "One command sets it up. Nothing to configure.",
+    "works": {
+      "label": "Works with",
+      "items": [
+        "Claude Code",
+        "Codex",
+        "Copilot",
+        "Antigravity",
+        "Muse Code",
+        "OpenCode",
+        "Grok",
+        "DeepSeek"
+      ]
+    },
+    "platforms": {
+      "label": "Runs on",
+      "items": [
+        "Linux",
+        "macOS",
+        "Windows (WSL)",
+        "Native Windows (beta)"
+      ]
+    },
+    "tags": [
+      "MIT"
+    ]
+  },
+  "stops": {
+    "label": "Stop the line",
+    "title": "What it stops",
+    "cards": [
+      {
+        "screen": "guard, force push",
+        "caption": "A force push that throws away someone's work."
+      },
+      {
+        "screen": "guard, wipe home",
+        "caption": "A command that wipes your home folder."
+      },
+      {
+        "screen": "guard, tag push",
+        "caption": "A release that only the owner should make."
+      }
+    ],
+    "more": "Every rule"
+  },
+  "firstMinute": {
+    "label": "Your first minute",
+    "title": "What `npx yokoten` does",
+    "callouts": [
+      "Turns the guard on.",
+      "Adds the rules. Changes none of your files.",
+      "Shows the one next command."
+    ]
+  },
+  "questions": {
+    "label": "Questions",
+    "title": "Three questions",
+    "items": [
+      {
+        "q": "Is it free?",
+        "a": "Yes. It is open source under MIT, with no account to make."
+      },
+      {
+        "q": "Does it send my code anywhere?",
+        "a": "No. It runs on your machine and in your CI, with no telemetry."
+      },
+      {
+        "q": "How do I remove it?",
+        "a": "Run `yokoten uninstall`; the files it added to a project are plain files you can delete."
+      }
+    ]
+  }
+}

@@ -1,0 +1,56 @@
+---
+// The footer, as on the live yokoten.app: the brand (lockup with the copyright beside it, then
+// where the name comes from, in an italic serif),
+// then two columns of links: Project (pages on this site) and More (on GitHub; no arrow, the owner took it out 2026-10-28). Three
+// columns on desktop, stacked on a phone. The language switcher is in the header only.
+import Lockup from '../brand/Lockup.astro';
+import { href, type Lang } from '../../lib/i18n';
+import { LINKS } from '../../lib/content/facts';
+import type { CollectionEntry } from 'astro:content';
+interface Props { lang: Lang; t: CollectionEntry<'site'>['data'] }
+const { lang, t } = Astro.props;
+const { project, more } = t.footer;
+const outside = [
+  { text: more.contribute, url: `${LINKS.github}/blob/main/CONTRIBUTING.md` },
+  { text: more.board, url: 'https://github.com/orgs/yokoten-labs/projects/1' },
+  { text: more.github, url: LINKS.github },
+];
+---
+<footer class="sheet foot">
+  <div class="brand">
+    <div class="id">
+      <Lockup size={24} />
+      <p class="small">© 2026 yokoten-labs</p>
+    </div>
+    <p class="note">{t.footer.note}</p>
+  </div>
+  <nav aria-labelledby="foot-project">
+    <h2 id="foot-project">{project.title}</h2>
+    <ul>
+      <li><a href={href('docs', lang)}>{project.docs}</a></li>
+      <li><a href={href('about', lang)}>{project.about}</a></li>
+      <li><a href={href('about', lang, '#contact')}>{project.contact}</a></li>
+      <li><a href={href('about', lang, '#privacy')}>{project.privacy}</a></li>
+    </ul>
+  </nav>
+  <nav aria-labelledby="foot-more">
+    <h2 id="foot-more">{more.title}</h2>
+    <ul>
+      {outside.map((l) => <li><a href={l.url} rel="noopener">{l.text}<span class="sr-only"> {more.onGithub}</span></a></li>)}
+    </ul>
+  </nav>
+</footer>
+<style>
+  .foot { border-top: 1px solid var(--line); padding-block: 2.5rem 3rem; display: grid; gap: 2rem 4rem; font-size: 0.9rem; color: var(--muted); grid-template-columns: 1fr 1fr; align-items: start; }
+  .brand { grid-column: 1 / -1; display: grid; gap: 0.75rem; justify-items: start; max-width: 28rem; }
+  @media (min-width: 40rem) { .foot { grid-template-columns: 1fr auto auto; } .brand { grid-column: auto; } }
+  /* the lockup and the copyright on one line, sharing a baseline */
+  .id { display: flex; flex-wrap: wrap; align-items: last baseline; gap: 0.4rem 1.25rem; }
+  .brand p { margin: 0; }
+  .small { color: var(--muted); font-size: 0.875rem; }
+  .note { font-size: 0.875rem; line-height: 1.6; }
+  h2 { font-family: var(--font-sans); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg); margin: 0 0 0.5rem; line-height: 1rem; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; }
+  a { display: inline-flex; align-items: center; min-height: 2.25rem; gap: 0.15rem; text-decoration: none; color: var(--muted); }
+  a:hover { color: var(--fg); }
+</style>
