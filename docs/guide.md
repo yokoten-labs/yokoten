@@ -1979,6 +1979,17 @@ The setup treats agents like staff on a line, each with a clear role and limited
   waits for you in the protected `release` environment. A ruleset requires your review,
   so nothing it opens merges without you.
 
+A worker runs its commands under the guard, so write the brief to fit it:
+
+- Start with `cd <worktree> && cmd && cmd`. The `cd` stands on its own, joined by `&&` or
+  `;`: not in a subshell, a pipe or the background. Use no pipe after it.
+- No `git -C`: `cd` into the worktree first.
+- No `VAR=value` before a command, except `TZ`, `CI`, `NODE_ENV`, `NO_COLOR`,
+  `FORCE_COLOR`, `DEBUG`, `LANG`, `LC_ALL` and the names `yokoten.json` lists in
+  `worker.settings`.
+- If the task needs another setting, such as a test's capture file, the lead makes it
+  and hands the worker the file.
+
 Seven skills carry the method. `dispatch` briefs a worker. `inspect` reviews one exact
 commit in three passes. `rca` finds the cause, adds a check, then spreads it. `record`
 writes decisions down. `release` picks the next version and prepares the changelog. The

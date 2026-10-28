@@ -1416,6 +1416,15 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
   也会经 CODEOWNERS 交给你审；发版要在受保护的 `release` 环境里等你批准。规则集要求你审查，
   所以它开的 PR，你不点头就合不进去。
 
+worker 在守卫之下运行命令，所以任务书要照这些规则写：
+
+- 命令以 `cd <worktree> && cmd && cmd` 的形式写。`cd` 要单独成句，用 `&&` 或 `;` 连接：
+  不能放在子 shell、管道或后台里。`cd` 之后不要接管道。
+- 不要用 `git -C`：先 `cd` 进 worktree。
+- 命令前面不要加 `VAR=value`，只有 `TZ`、`CI`、`NODE_ENV`、`NO_COLOR`、`FORCE_COLOR`、
+  `DEBUG`、`LANG`、`LC_ALL`，以及 `yokoten.json` 的 `worker.settings` 里列出的名字可以。
+- 任务需要别的设置（比如测试的输出文件）时，由 lead 自己做好，把文件交给 worker。
+
 这套方法靠七个技能来做。`dispatch` 给 worker 派活。`inspect` 分三轮审查某一个具体提交。
 `rca` 找根因，加检查，再推广到其他项目。`record` 把决定写下来。`release` 定下一个版本号，并准备更新日志。
 tag 由主人来打。`merge` 只通过 bot 合并，新提交不是 UTC 就停下。`yokoten` 采用这套做法。
