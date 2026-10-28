@@ -17,6 +17,8 @@
 //    is writable, so no agent writes, changes or deletes another's messages. The file
 //    `.git/yokoten-desk.json`, which names the agent, is locked, and YOKOTEN_DESK and
 //    YOKOTEN_TEAM say where the agent is (team/who.ts).
+// 8. The agent starts with its own sandbox off, by a flag for this one run (#1171): it
+//    can't start inside the fence, and the fence is the sandbox. No config file changes.
 //
 // This file turns a request into a `DeskPlan`: plain lists of paths, hosts and names. A
 // backend per system turns the plan into a command: fence/srt.ts (sandbox-runtime) on Linux,
@@ -26,7 +28,7 @@
 // found with PATHEXT. Those rules stay testable on every system.
 
 import { constants, copyFileSync, existsSync, lstatSync, mkdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve, win32 } from 'node:path';
+import { basename, dirname, join, resolve, win32 } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../../rules/config.ts';
 import { homeIn } from '../../rules/privacy.ts';
@@ -56,6 +58,13 @@ export interface RuntimeDesk {
   hosts: readonly string[];
   /** The model and provider the agent's own config names (#748), or null when it names none. */
   identity?: (env: Env) => { model: string; provider: string } | null;
+  /**
+   * How the agent starts with its own sandbox off, for this one run (#1171). Its own sandbox
+   * can't start inside the desk's fence, and the fence holds the whole agent instead.
+   * `program` is the agent's program name. `turnOff` adds the per-run flag to a command that
+   * starts it, never a config file, or says why it can't: the desk then does not start.
+   */
+  ownSandbox: { program: string; turnOff: (command: readonly string[]) => string[] | { fail: string } };
 }
 
 /** The runtimes a desk can start, by the name `--agent` takes elsewhere. DeepSeek runs through Codex. */
@@ -86,6 +95,8 @@ export interface DeskPlan {
   upstream?: UpstreamChoice;
   /** The agent command and its words. */
   command: string[];
+  /** Whether the command starts the agent, so its own sandbox is off for this run (#1171). */
+  isOwnSandboxOff: boolean;
 }
 
 /** What a desk request gives: the folder, the agent, its command, and the lead's few choices. */
@@ -266,6 +277,7 @@ export function planDesk(request: DeskRequest): DeskPlan {
   const isTooWide = (path: string) => hidden.some((folder) => isInside(folder, path, platform)) || isInside(desk, path, platform);
   const program = findProgram(request.command[0], env.PATH, platform, env);
   if (!program) throw new Error(`can't find ${request.command[0]} on PATH`);
+  const command = commandWithSandboxOff(runtime, request, platform);
   const node = dirname(dirname(realOr(process.execPath)));
   const wanted = [node, ...programFolders(program), ...(runtime.programParts?.(env) ?? []), ...OWN_RUNTIME, ...(request.runtimes ?? []), join(home, '.gitconfig'), join(home, '.config', 'git')];
   if (request.marks) wanted.push(request.marks);
@@ -320,9 +332,29 @@ export function planDesk(request: DeskRequest): DeskPlan {
     locked,
     hosts: [...new Set([...runtime.hosts, ...(request.extraHosts ?? [])])],
     env: { ...buildAgentEnv(env, { runtime: request.runtime, set: { YOKOTEN_ROLE: 'worker', ...teamEnv, ...(model ? { YOKOTEN_MODEL: model } : {}), ...(identity ? { YOKOTEN_VENDOR: identity.vendor } : {}) } }), ...runtime.stateEnv(state), TZ: 'UTC' },
-    command: request.command,
+    command: command ?? request.command,
+    isOwnSandboxOff: command !== null,
     upstream: readHostProxy(env),
   };
+}
+
+/** Whether `word`, a command's first word, names `program`: by its file name, with an extension on Windows. */
+export function isProgramNamed(word: string, program: string, platform: NodeJS.Platform, env: Env): boolean {
+  const isWindows = platform === WINDOWS_PLATFORM;
+  const name = isWindows ? win32.basename(word).toLowerCase() : basename(word);
+  return programExtensions(platform, env).some((extension) => name === (isWindows ? `${program}${extension}`.toLowerCase() : `${program}${extension}`));
+}
+
+/**
+ * The command with the agent's own sandbox off for this run (#1171), or null when the
+ * command does not start the agent (git, the tests). It throws when the runtime can't
+ * turn its sandbox off for this command: the desk then does not start (fail closed).
+ */
+function commandWithSandboxOff(runtime: RuntimeDesk, request: DeskRequest, platform: NodeJS.Platform): string[] | null {
+  if (!isProgramNamed(request.command[0], runtime.ownSandbox.program, platform, request.env)) return null;
+  const turned = runtime.ownSandbox.turnOff(request.command);
+  if (!Array.isArray(turned)) throw new Error(`can't start ${runtime.ownSandbox.program} with its own sandbox off: ${turned.fail}`);
+  return turned;
 }
 
 /**

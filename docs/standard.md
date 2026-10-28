@@ -501,7 +501,9 @@ Version 1. The line has no version field.
 A desk is the worker's own clone, plus a fence around the agent.
 Child processes and pipes work.
 The desk runs the command the lead gives.
-It does not add flags of its own.
+When that command starts the agent program, the desk adds one flag: the agent's own sandbox is off for that run.
+That sandbox can't start inside the fence, and the fence holds the whole agent.
+No settings file changes.
 A symlink is refused on `.git`, `.git/config`, `.git/hooks`, `.git/yokoten-worker` and the state folders.
 On a team, the team folder is read-only, and only that agent's outbox is writable.
 The fence is sandbox-runtime `0.0.81`, which runs its own proxy for `hosts`.
@@ -518,7 +520,8 @@ The fence is sandbox-runtime `0.0.81`, which runs its own proxy for `hosts`.
 | `env` | `YOKOTEN_ROLE` is `worker`. `TZ` is `UTC`. A team also sets `YOKOTEN_DESK` and `YOKOTEN_TEAM`. When the model is known, `YOKOTEN_MODEL` names it. `YOKOTEN_VENDOR` is set only when its vendor is not the runtime's own, so the agent knows what it really is. |
 | `env` (temp) | `TMPDIR`, `TEMP` and `TMP` name one writable folder in the desk. The caller's `TMPDIR` is never passed in. |
 | `upstream` | The host's own proxy, from `HTTPS_PROXY` or `https_proxy`, with `NO_PROXY`. An allowed tunnel goes through it; a host off `hosts` is refused first. Only an `http://` proxy is used. The start screen names it by host and port, never its password. |
-| `command` | The command the lead passed. |
+| `command` | The command the lead passed, with the flag that turns the agent's own sandbox off when it starts the agent program. |
+| `isOwnSandboxOff` | `true` when the desk added that flag. The start screen then says so in one line. |
 
 `/run` is hidden because sockets there can start programs outside the fence.
 
@@ -527,6 +530,16 @@ DeepSeek runs through `codex`.
 The runtime id `deepseek-harness` has no desk of its own.
 `gemini` and `antigravity` have no desk runtime.
 An unknown runtime is refused.
+
+Each runtime names its agent program and the flag that turns its own sandbox off:
+
+- `claude-code` starts `claude`, with `--settings` and `{"sandbox":{"enabled":false}}`.
+- `codex` starts `codex`, with `-c` and `sandbox_mode="danger-full-access"`.
+- `grok` starts `grok`, with `--sandbox off`.
+- `muse` starts `muse`, with `--disable-sandbox`. When the command has `exec`, the flag goes after it.
+
+A command that asks for the agent's own sandbox, or that the desk can't add the flag to, is refused.
+For example: a second `--settings`, `--sandbox workspace-write`, `--full-auto`, or `muse resume`.
 
 - `claude-code` may reach `api.anthropic.com` and `platform.claude.com`.
 - The login file copied in is `.credentials.json`.
@@ -570,7 +583,7 @@ Native Windows has no desk backend.
 
 Who writes. `planDesk` builds the plan. The agent writes only inside the writable folders.
 Who reads. The desk backend. The agent sees the fence, not the plan object.
-How yokoten checks it. `planDesk` throws for an unknown runtime, a folder that is not a clone, or a path that would open a hidden folder. The proxy refuses anything that is not CONNECT to an allowed host.
+How yokoten checks it. `planDesk` throws for an unknown runtime, a folder that is not a clone, or a path that would open a hidden folder. It also throws for an agent command that asks for its own sandbox. The proxy refuses anything that is not CONNECT to an allowed host.
 Version 1. `DeskPlan` has no version field.
 
 - [src/agents/desk/desk.ts](../src/agents/desk/desk.ts) and [test/agents/desk/desk.test.ts](../test/agents/desk/desk.test.ts).

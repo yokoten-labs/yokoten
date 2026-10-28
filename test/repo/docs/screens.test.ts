@@ -494,7 +494,7 @@ function screensOf(repo: string): ScreenRun[] {
         { commit: '0f1e2d3c4b5a69788796a5b4c3d2e1f0aabbccdd', at: '2026-10-28T08:40:00Z', check: 'the changed-file check' },
       ]),
     },
-    { key: 'desk, the start screen', words: ['desk', 'claude-code', '../desk-1', '--', 'claude'], lines: deskStartScreen({ runtime: 'claude-code', folder: '../desk-1', hosts: ['api.anthropic.com', 'registry.npmjs.org'], fence: 'bwrap' }) },
+    { key: 'desk, the start screen', words: ['desk', 'claude-code', '../desk-1', '--', 'claude'], lines: deskStartScreen({ runtime: 'claude-code', folder: '../desk-1', hosts: ['api.anthropic.com', 'registry.npmjs.org'], fence: 'bwrap', isOwnSandboxOff: true }) },
     { key: 'hook --stop, a passing worker', words: ['hook', '--stop'], lines: anchorNote({ kind: 'recorded', anchor: { commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678', at: '2026-10-28T09:12:00Z', check: 'npm test' } }) },
     { key: 'hook --stop, a dirty tree', words: ['hook', '--stop'], lines: anchorNote({ kind: 'dirty' }) },
     // C5 end.

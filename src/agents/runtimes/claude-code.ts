@@ -455,6 +455,11 @@ export const AGENT_ENV: RuntimeEnv = { login: ['ANTHROPIC_API_KEY', 'CLAUDE_CODE
  * Hosts: the API, and platform.claude.com, where Claude Code renews an OAuth login. A
  * `claude setup-token` token in CLAUDE_CODE_OAUTH_TOKEN, or an API key, needs no renewal.
  * The binary names HTTPS_PROXY and NODE_USE_ENV_PROXY.
+ *
+ * Its own sandbox goes off with `--settings` (#1171). Source: `claude --help` (2.1.302) and
+ * https://code.claude.com/docs/en/settings#settings-precedence: `--settings` sits above
+ * the user, project and local files and below managed settings; a key it leaves out keeps
+ * its value from those files, so the project's hooks stay.
  */
 export const DESK: RuntimeDesk = {
   leadState: (env) => [userDir(env), join(homeIn(env), '.claude.json')],
@@ -462,7 +467,19 @@ export const DESK: RuntimeDesk = {
   starter: { '.claude.json': '{"hasCompletedOnboarding": true}\n' },
   stateEnv: (state) => ({ CLAUDE_CONFIG_DIR: state }),
   hosts: ['api.anthropic.com', 'platform.claude.com'],
+  ownSandbox: { program: 'claude', turnOff: turnSandboxOff },
 };
+
+/** The settings a desk passes Claude Code for one run: its own sandbox off (#1171). */
+export const DESK_SANDBOX_SETTINGS = '{"sandbox":{"enabled":false}}';
+
+/** `claude` with its own sandbox off for this run; a command that passes its own `--settings` is refused, since two can't be merged safely. */
+function turnSandboxOff(command: readonly string[]): string[] | { fail: string } {
+  if (command.slice(1).some((word) => word === '--settings' || word.startsWith('--settings='))) {
+    return { fail: 'the command passes its own --settings, and the desk needs that flag. Put those settings in the project instead' };
+  }
+  return [command[0], '--settings', DESK_SANDBOX_SETTINGS, ...command.slice(1)];
+}
 
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {

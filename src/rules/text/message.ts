@@ -55,6 +55,9 @@ export const DOCS_URL = 'https://github.com/yokoten-labs/yokoten/blob/main/docs/
 export const docsLink = (file: string, section = ''): string => `https://github.com/yokoten-labs/yokoten/blob/main/docs/${file}${section ? `#${section}` : ''}`;
 const guide = (section: string) => `${DOCS_URL}#${section}`;
 
+/** The desk start screen's line when the agent starts with its own sandbox off (#1171). */
+export const DESK_OWN_SANDBOX_NOTE = "this agent's own sandbox can't start in a desk; the desk's sandbox covers the whole agent instead";
+
 const RELEASE_WHY = 'only the owner decides when to release';
 const PR_CHECK = '`yokoten check --pr` in CI reads the pull request';
 const UNSAVED_CHECK = '`doctor` and the session note read git and the file system, never change them, and give a note, never a failure';

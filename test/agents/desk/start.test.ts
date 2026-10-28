@@ -40,6 +40,37 @@ test('signalEnd: the real signal number, the signal named, and the sandbox hint 
   assert.doesNotMatch(linux, /log show/);
 });
 
+test("startDesk: the agent's own sandbox goes off for the run; the clone's settings stay byte for byte (#1171)", async () => {
+  const projects = makeTempDir('projects-');
+  const origin = join(projects, 'origin');
+  execFileSync('git', ['init', '-q', origin]);
+  // The project's own sandbox on, as `yokoten init` writes it, committed so the clone carries it.
+  const claudeSettings = '{\n  "sandbox": { "enabled": true },\n  "hooks": { "PreToolUse": [] }\n}\n';
+  const codexConfig = 'sandbox_mode = "workspace-write"\napproval_policy = "on-request"\n\n[sandbox_workspace_write]\nnetwork_access = false\n';
+  mkdirSync(join(origin, '.claude'));
+  mkdirSync(join(origin, '.codex'));
+  writeFileSync(join(origin, '.claude', 'settings.json'), claudeSettings);
+  writeFileSync(join(origin, '.codex', 'config.toml'), codexConfig);
+  execFileSync('git', ['-C', origin, 'add', '.']);
+  execFileSync('git', ['-C', origin, '-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-q', '-m', 'start']);
+  const desk = join(projects, 'desk');
+  execFileSync('git', ['clone', '-q', origin, desk]);
+  // Stand-ins for the agents: each writes the words it was started with.
+  const programs = makeTempDir('agents-');
+  for (const name of ['claude', 'codex']) writeFileSync(join(programs, name), `#!${process.execPath}\nrequire('node:fs').writeFileSync('started-${name}.json', JSON.stringify(process.argv.slice(2)));\n`, { mode: 0o755 });
+  // No fence: this test is about the words and the files, and runs where no backend can.
+  const direct: DeskBackend = { name: 'direct', problem: () => null, proxyAddress: () => null, fence: (plan) => ({ file: plan.command[0], args: plan.command.slice(1), env: plan.env }) };
+  for (const [runtime, name, words] of [['claude-code', 'claude', ['--settings', '{"sandbox":{"enabled":false}}']], ['codex', 'codex', ['-c', 'sandbox_mode="danger-full-access"']]] as const) {
+    const plan = planDesk({ runtime, desk, command: [join(programs, name), 'the brief'], env: { ...process.env }, markDesk: (folder) => markWorktree(origin, folder, process.env) });
+    const result = await startDesk(plan, direct, { stdio: 'pipe' });
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(JSON.parse(readFileSync(join(desk, `started-${name}.json`), 'utf8')), [...words, 'the brief'], `${name} starts with its own sandbox off`);
+  }
+  assert.equal(readFileSync(join(desk, '.claude', 'settings.json'), 'utf8'), claudeSettings, "the clone's .claude/settings.json is unchanged");
+  assert.equal(readFileSync(join(desk, '.codex', 'config.toml'), 'utf8'), codexConfig, "the clone's .codex/config.toml is unchanged");
+  assert.equal(execFileSync('git', ['-C', desk, 'status', '--porcelain', '--', '.claude', '.codex'], { encoding: 'utf8' }), '', 'git sees no change there either');
+});
+
 // The probe runs inside the desk. Each check is one line of its JSON answer. It is plain
 // JavaScript written into the desk, so it needs nothing but Node.
 const PROBE = String.raw`

@@ -9,7 +9,7 @@ import * as claudeCode from '../agents/runtimes/claude-code.ts';
 import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
-import { type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
+import { DESK_OWN_SANDBOX_NOTE, type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
 import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
 import { checkChanged, readGit } from '../run/check.ts';
@@ -1012,13 +1012,17 @@ export async function runDesk(invocation: Invocation, options: Parsed): Promise<
   return started.code;
 }
 
-/** The one screen before a desk's agent starts (#1027): where it writes, what it reaches, its fence and its role. */
-export function deskStartScreen({ runtime, folder, hosts, fence, upstream }: { runtime: string; folder: string; hosts: readonly string[]; fence: string; upstream?: string }): string[] {
+/**
+ * The one screen before a desk's agent starts (#1027): where it writes, what it reaches, its
+ * fence and its role. When the agent's own sandbox is off for the run (#1171), one line says so.
+ */
+export function deskStartScreen({ runtime, folder, hosts, fence, upstream, isOwnSandboxOff = false }: { runtime: string; folder: string; hosts: readonly string[]; fence: string; upstream?: string; isOwnSandboxOff?: boolean }): string[] {
   return screen(
     title('desk', `${runtime} in ${folder}`),
     // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
     // The host's proxy (#1172) by host and port only: `upstream` is UpstreamProxy.shown, never its URL.
     spaced([field('writes', `${folder} only`), field('network', hosts.join(', ') || 'none'), ...(upstream ? [field('through', `${upstream} (HTTPS_PROXY)`)] : []), field('fence', fence), field('role', 'worker, TZ=UTC, no tokens')]),
+    isOwnSandboxOff ? noteLine(DESK_OWN_SANDBOX_NOTE) : [],
     wrap('', 'Starting… (stop with Ctrl+C)'),
   );
 }
@@ -1074,7 +1078,7 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
     return { fail: (error as Error).message };
   }
   // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
-  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFrom(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name, upstream: plan.upstream?.proxy?.shown }), invocation.stderr);
+  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFrom(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name, upstream: plan.upstream?.proxy?.shown, isOwnSandboxOff: plan.isOwnSandboxOff }), invocation.stderr);
   if (isShown && plan.upstream?.problem) print(invocation, noteLine(plan.upstream.problem), invocation.stderr);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);

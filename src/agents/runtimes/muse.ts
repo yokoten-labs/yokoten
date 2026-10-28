@@ -247,13 +247,33 @@ export const AGENT_ENV: RuntimeEnv = { login: ['MODEL_API_KEY'], config: [] };
  * What a desk (#637) gives Muse Code. XDG_CONFIG_HOME and XDG_DATA_HOME point into the
  * desk's own folder; only `muse/auth.json` is copied in. Host: Meta's API. The binary
  * names HTTPS_PROXY, ALL_PROXY and MUSE_HTTP_PROXY.
+ *
+ * Its own sandbox goes off with `--disable-sandbox` (#1171). Source: `muse --help` and
+ * `muse exec --help` (1.4.14): "Disable shell filesystem/network sandboxing for this run".
+ * The flag goes after `exec`: before it, Muse reads `exec` as the TUI's prompt (checked
+ * 2026-10-28). Another subcommand, `resume` included, has no such flag, so it is refused.
  */
 export const DESK: RuntimeDesk = {
   leadState: (env) => [configDir(env), join(folderIn(env, 'XDG_DATA_HOME', '.local', 'share'), 'muse')],
   login: (env) => [{ from: join(configDir(env), 'auth.json'), to: join('config', 'muse', 'auth.json') }],
   stateEnv: (state) => ({ XDG_CONFIG_HOME: join(state, 'config'), XDG_DATA_HOME: join(state, 'data') }),
   hosts: ['api.meta.ai'],
+  ownSandbox: { program: 'muse', turnOff: turnSandboxOff },
 };
+
+/** The flag a desk adds to `muse` or `muse exec`: its own sandbox off for this run (#1171). */
+export const DESK_SANDBOX_FLAG = '--disable-sandbox';
+
+/** Muse's subcommands other than `exec`, from `muse --help` (1.4.14): none takes the flag. */
+const OTHER_SUBCOMMANDS = new Set(['resume', 'config', 'export', 'trace', 'model-profile', 'skills', 'voice', 'plugins', 'sandbox', 'schema', 'serve', 'session-message', 'mcp', 'auth', 'login', 'logout', 'usage', 'init']);
+
+/** `muse` (the TUI) or `muse exec` with its own sandbox off for this run; another subcommand can't be. */
+function turnSandboxOff(command: readonly string[]): string[] | { fail: string } {
+  const [program, first, ...rest] = command;
+  if (first === 'exec') return [program, first, DESK_SANDBOX_FLAG, ...rest];
+  if (first !== undefined && OTHER_SUBCOMMANDS.has(first)) return { fail: `\`muse ${first}\` has no flag to turn its own sandbox off. Start \`muse\` or \`muse exec\` in a desk` };
+  return [program, DESK_SANDBOX_FLAG, ...command.slice(1)];
+}
 
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
