@@ -13,7 +13,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { configHomeIn, configHomeOf, configHomeShown, folderIn, hideHome } from '../../rules/privacy.ts';
+import { configHomeIn, configHomeOf, configHomeShown, folderIn } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import type { Action } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -173,7 +173,7 @@ export function trustProject(root: string, env: Env): TrustPlan {
   if (isObject(entry) && entry.decision === 'trusted') return { state: 'same', store, changes: [] };
   // A decision the user made, other than trusted, stays (#984).
   if (isObject(entry) && typeof entry.decision === 'string') {
-    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+    return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays ${JSON.stringify(entry.decision)} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
   }
   const change: TrustChange = { agent: 'Muse Code', store, file, format: 'json', path: ['projects', folder], key: 'decision', value: 'trusted', before: null };
   return { state: 'trusted', store, changes: [change], seed: { schema_version: 1, projects: {} } };
