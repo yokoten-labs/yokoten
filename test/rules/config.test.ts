@@ -50,6 +50,9 @@ const WRONG_KEYS: [string, Record<string, unknown>][] = [
   ['worker.settings', { worker: { settings: ['screens_out'] } }],
 ];
 
+/** A note line as one line: the wrapped lines under `note: ` joined back. */
+const unwrapped = (text: string): string => text.replace(/\n {6}/g, ' ');
+
 test('glob: a slash anchors at the root, no slash matches in any folder', () => {
   const m = (g: string, p: string) => matcher([g])(p);
   assert.ok(m('test/**', 'test/a/b.ts'));
@@ -124,7 +127,7 @@ test('config: for the hook, a wrong "commands" drops only the block list, said o
   assert.deepEqual(config.commands.block, {});
   assert.deepEqual(config.leadOnly, ['secret/**'], 'the rest of the file still counts');
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /^yokoten hook: yokoten\.json "commands" was ignored, .*core checks still run\. yokoten\.json: "commands" must look like/);
+  assert.match(unwrapped(lines[0]), /^note: yokoten\.json "commands" was ignored, .*core checks still run\. yokoten\.json: "commands" must look like/);
   assert.equal(checkCommand('git push --force', { cwd: process.cwd(), env: {}, config })?.id, 'force-push', 'the core checks still run');
   // Positive control: check and doctor still see it as a config problem.
   assert.throws(() => loadConfig(dir), /^Error: yokoten\.json: "commands/);
@@ -138,7 +141,7 @@ test('config: for the hook, a wrong "commands" drops only the block list, said o
     writeFileSync(join(dir, 'yokoten.json'), text);
     assert.throws(() => loadConfig(dir), /^Error: yokoten\.json: /, text);
     assert.equal(loadHookConfig(dir, (line) => lines.push(line)), DEFAULTS, text);
-    assert.match(lines.at(-1) ?? '', /^yokoten hook: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: \S/);
+    assert.match(unwrapped(lines.at(-1) ?? ''), /^note: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: \S/);
   }
   assert.equal(lines.length, 4);
 });
@@ -154,7 +157,7 @@ test('config: a key with the wrong shape is a config error that names it, and th
     const lines: string[] = [];
     const config = loadHookConfig(dir, (line) => lines.push(line));
     assert.equal(lines.length, 1, label);
-    assert.ok(lines[0].startsWith(`yokoten hook: yokoten.json "${path}" was ignored, so its default applies; the core checks still run. yokoten.json: `), `${label}: ${lines[0]}`);
+    assert.ok(unwrapped(lines[0]).startsWith(`note: yokoten.json "${path}" was ignored, so its default applies; the core checks still run. yokoten.json: `), `${label}: ${lines[0]}`);
     const [key, field] = path.split('.') as [keyof Config, string | undefined];
     const got = config[key] as unknown as Record<string, unknown>;
     const want = DEFAULTS[key] as unknown as Record<string, unknown>;

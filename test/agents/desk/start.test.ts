@@ -34,7 +34,7 @@ test('signalEnd: the real signal number, the signal named, and the sandbox hint 
   assert.match(abort.lines.join('\n'), /sandbox may have stopped it/);
   assert.match(abort.lines.join('\n'), /log show --last 1m --predicate 'eventMessage CONTAINS "deny"'/);
   assert.equal(signalEnd('SIGKILL', 'linux', false).code, 137);
-  assert.deepEqual(signalEnd('SIGTERM', 'linux', false).lines, ['yokoten desk: the agent was ended by SIGTERM (exit 143).']);
+  assert.deepEqual(signalEnd('SIGTERM', 'linux', false).lines, ['yokoten desk · the agent was ended by SIGTERM (exit 143)']);
   const linux = signalEnd('SIGABRT', 'linux', true).lines.join('\n');
   assert.match(linux, /sandbox may have stopped it/);
   assert.doesNotMatch(linux, /log show/);

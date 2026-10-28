@@ -820,7 +820,7 @@ test('help: lists the always rows; help --all lists every command under its job 
     assert.ok(short.stdout.split('\n').every((line) => line.length <= 80), 'each line fits 80 columns');
   }
   const all = (await sandbox.call(['help', '--all'])).stdout;
-  assert.deepEqual(COMMAND_GROUPS, ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain', 'Help'], 'the jobs, in order (plan section 4)');
+  assert.deepEqual(COMMAND_GROUPS, ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain'], 'the jobs, in order (plan section 4)');
   const headings = all.split('\n').filter((line) => /^[A-Z][\w ]*:$/.test(line));
   assert.deepEqual(headings, COMMAND_GROUPS.map((group) => `${group}:`), 'one heading per job, in order, and no old groups');
   for (const group of COMMAND_GROUPS) {
@@ -829,7 +829,7 @@ test('help: lists the always rows; help --all lists every command under its job 
     const first = members.filter((command) => command.shown === 'always');
     assert.deepEqual(listed(block), [...first, ...members.filter((command) => !first.includes(command))].map((command) => command.name), `${group}: its rows, the ones to start with first`);
   }
-  assert.deepEqual(listed(all.slice(all.indexOf('\nHelp:\n'))), ['help', 'version'], 'help and version come last');
+  assert.ok(listed(all.slice(all.indexOf('\nStart:\n'), all.indexOf('\nWork:\n'))).includes('help') && listed(all.slice(all.indexOf('\nStart:\n'), all.indexOf('\nWork:\n'))).includes('version'), 'help and version join Start');
   assert.deepEqual([...listed(all)].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once with --all');
   // One text column in both lists, from table(): every row's text starts where the others' do.
   const starts = new Set([...short(all), ...short((await sandbox.call(['help'])).stdout)]);

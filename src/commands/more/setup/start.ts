@@ -51,8 +51,6 @@ export async function runStart(invocation: Invocation): Promise<number> {
       print(invocation, title(VERSION, 'nothing changed'));
       return 0;
     }
-    // The answer ends the question's screen; one blank line, then the screen of what was done.
-    print(invocation, ['']);
   }
   const platform = invocation.platform ?? 'linux';
   const installed = isMachineMissing ? install(env, { cwd, gh: ghIn(cwd, env, 3000), ask, platform }) : undefined;
@@ -135,7 +133,7 @@ export function previewLines(env: Env, isComputer: boolean, isProject: boolean):
   if (isProject) groups.push(['project', 'AGENTS.md, the commit check, CI and the templates', 'nothing of yours is overwritten']);
   // Each group is its own item, a blank line between, and every group's text starts in one column.
   const column = columnFor(groups.map(([label]) => label));
-  const rows = spaced(groups.map(([label, what, more]) => table([[label, what], ['', more]], column)));
+  const rows = spaced(groups.map(([label, what, more]) => [...table([[label, what]], column), ...wrap(' '.repeat(2 + column), more)]));
   return screen(title(VERSION, 'first run: here is what changes'), rows, wrap('Undo: ', isComputer ? '`yokoten uninstall`' : '`git restore .`'));
 }
 

@@ -10,39 +10,6 @@ import { HOOKS_PATH, init, type InitResult } from '../../../setup/init.ts';
 import { type PlanItem, type PlanResult, readOriginUrl, setUpPlanning } from '../../../setup/plan.ts';
 import { askOnTerminal, count, fail, type Invocation, moreLine, nextLine, parse, requireRoot, row, type RowMark, screen, SCREEN_WIDTH, show, spaced, summaryLine, terminalOf, title, underRow, usage, wrap } from '../../shared.ts';
 import { section } from '../../../rules/text/screen.ts';
-import { NEEDS_HAND, remaining, ROW_TEXT_INDENT } from './ask.ts';
-
-/**
- * The project part of the first run: init's report as four rows and a file count (#1027). It reads
- * InitResult.lines, the first run's own copy; the first run moves to `initScreen` (#1115, group C16).
- */
-export function projectScreen(lines: string[], ok: boolean, isFirstRun = false): string[] {
-  const wrote = lines.filter((line) => /^wrote /.test(line));
-  const kept = lines.filter((line) => /^kept /.test(line));
-  if (ok && !wrote.length) return title('init', 'already set up here, nothing changed');
-  const workflows = wrote.filter((line) => /^wrote \.github\/workflows\//.test(line)).length;
-  const hasDependabot = wrote.some((line) => /dependabot/.test(line));
-  const hasGithubFiles = wrote.some((line) => /templates|CODEOWNERS|pull_request_template/.test(line));
-  const agents = lines.filter((line) => /hook in \./.test(line)).length;
-  const isDone = ok && !lines.some((line) => NEEDS_HAND.test(line));
-  const out = title('init', isDone ? 'this project is set up' : 'this project is partly set up');
-  out.push('');
-  out.push(...row('ok', 'AGENTS.md, the commit check', 'rules'));
-  const ci = [workflows && `${workflows} workflows`, hasDependabot && 'Dependabot'].filter(Boolean).join(', ');
-  if (ci) out.push(...row('ok', ci, 'CI'));
-  if (hasGithubFiles) out.push(...row('ok', 'issue and PR templates, CODEOWNERS', 'GitHub'));
-  out.push(...row('ok', `guard for Claude Code${agents > 1 ? ` and ${agents - 1} more` : ''}`, 'agents'));
-  out.push(`${ROW_TEXT_INDENT}${wrote.length} files written${kept.length ? `, ${kept.length} of yours kept` : ', none of yours changed'}`);
-  const rest = remaining(lines, { isProblemsOnly: true });
-  if (rest.length) out.push('', ...rest);
-  // The first run ends on one Next line, after doctor, so this screen names only the rest.
-  if (!isFirstRun) {
-    out.push('');
-    out.push(...nextLine('git add -A && git commit -m "chore: add yokoten"'));
-    out.push(...moreLine('`yokoten init --list` names every file'));
-  } else out.push('', ...moreLine('`yokoten init --list` names every file'));
-  return out;
-}
 
 export function runInit(invocation: Invocation): number {
   const options = parse('init', invocation.args);
@@ -81,8 +48,7 @@ export function runInit(invocation: Invocation): number {
   // --github --yes asked for changes on GitHub: a skip made none (#208), and a change that
   // failed is named above, so either one fails, with the command to run again last.
   if (options.flags.has('--yes') && (planning.skipped || !planning.ok)) {
-    // A blank line after the files, so the failure under them reads as its own screen.
-    show(invocation, [...lines, '']);
+    show(invocation, lines);
     if (planning.skipped) return fail(invocation, '--github --yes changed nothing on GitHub; the project files are as shown above', planning.skip?.fix || 'yokoten init --github');
     return fail(invocation, 'some changes on GitHub failed, as shown above; the project files are set up', 'yokoten init --github --yes');
   }

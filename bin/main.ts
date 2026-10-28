@@ -9,7 +9,7 @@
 import { withHome } from '../src/rules/privacy.ts';
 import { fail, type Invocation, isTerminal, parse, print, usage } from '../src/commands/shared.ts';
 import { closestWord, COMMANDS, commandHelp, findCommand, HELP_OPTIONS, commandList, movedNote } from '../src/run/cli.ts';
-import { failure, moreLine, noteLine, screen, wrap } from '../src/rules/text/screen.ts';
+import { failure, moreLine, nextLine, noteLine, screen, title, wrap } from '../src/rules/text/screen.ts';
 import { VERSION } from '../src/setup/files.ts';
 
 /**
@@ -56,9 +56,9 @@ function isHelpAsked(words: string[]): boolean {
 }
 
 /** What `hook` and `redact` print when started by hand: they wait for input from a pipe, so a terminal gets one line (#1053). */
-const TERMINAL_LINE: Record<string, string> = {
-  hook: 'yokoten hook is the tool-call guard: your agent runs it and sends it each call on stdin. Run `yokoten hook --help` for more.',
-  redact: 'yokoten redact hides private text in a pipeline: try `cat file | yokoten redact`. Run `yokoten redact --help` for more.',
+const TERMINAL_SCREEN: Record<string, () => string[]> = {
+  hook: () => screen(title('hook', 'the tool-call guard; your agent runs it and sends it each call'), nextLine('yokoten hook --help')),
+  redact: () => screen(title('redact', 'hides private text in a pipeline, so it waits for input'), wrap('Next: ', 'try `cat file | yokoten redact`, or `yokoten redact --help`')),
 };
 
 function dispatch(invocation: Invocation): number | Promise<number> {
@@ -69,16 +69,16 @@ function dispatch(invocation: Invocation): number | Promise<number> {
     print(invocation, commandHelp(command));
     return 0;
   }
-  const line = cmd === undefined ? undefined : TERMINAL_LINE[cmd];
-  if (line && isTerminal(invocation.stdin)) {
-    print(invocation, [line]);
+  const terminalScreen = cmd === undefined ? undefined : TERMINAL_SCREEN[cmd];
+  if (terminalScreen && isTerminal(invocation.stdin)) {
+    print(invocation, terminalScreen());
     return 0;
   }
   // An old name says it was renamed, then runs as before (#1054); a command that kept its name
   // says nothing (#1115). The line is for a person: JSON for a script goes without it.
   const moved = cmd === undefined || args.includes('--json') ? undefined : movedNote(cmd);
-  // A blank line follows the note, so a wrapped screen under it never reads as part of it (issue #1115).
-  if (moved) print(invocation, [...noteLine(moved), ''], invocation.stderr);
+  // The note is a block of its own; the screen under it makes the gap (issue #1115).
+  if (moved) print(invocation, noteLine(moved), invocation.stderr);
   switch (command?.name ?? cmd) {
     case 'hook': {
       // The tool-call guard's worker, which bin/yokoten.mjs started before this file loaded (#408).
