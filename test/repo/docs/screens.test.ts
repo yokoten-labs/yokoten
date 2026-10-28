@@ -14,8 +14,9 @@ import {
   askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
   spaced, summaryLine, table, title, underRow, wrap,
 } from '../../../src/rules/text/screen.ts';
-import { limitOf, machinePathsIn, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
-import { healedWaivers, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
+import { blankHitsIn, isScreenCode, limitOf, machinePathsIn, NOT_SCREEN, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
+import { makeSandbox } from '../helpers.ts';
+import { healedWaivers, invoke, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
@@ -831,7 +832,15 @@ test('every render: RENDER_WAIVED holds old screens only, each naming #1115, and
 // owns the ceilings; a group reports what healed.
 
 /** The most each ratchet may find. Only the integrator changes these, and only down. */
-const RATCHET_CEILINGS: Record<Exclude<RatchetId, 'R4'>, number> = { R1: 13, R2: 0, R3: 61, R5: 6, R6: 0 };
+const RATCHET_CEILINGS: Record<Exclude<RatchetId, 'R4'>, number> = { R1: 0, R2: 0, R3: 0, R5: 0, R6: 0 };
+
+/**
+ * Every hit a ratchet still finds, one entry per place, with why it stays (#1115). The table
+ * is as long as the found count, so a ratchet cannot hide a hit: a new one fails the ceiling,
+ * and a healed one fails here until its entry goes. Key: `<ratchet> <file>:<line>`; `times` is
+ * how many hits that line has. Every reason names issue #1115.
+ */
+const RATCHET_REASONS: Record<string, { reason: string; times?: number }> = {};
 
 /**
  * R4: the raw writes that stay, as `path: <the line, trimmed>`. A child's or a hook's own
@@ -857,9 +866,8 @@ const RAW_WRITES = [
   "src/agents/desk/network/bridge.ts: stderr.write(`${failure('desk', what, next).join('\\n')}\\n`);",
 ];
 
-const SRC_FILES: SourceFile[] = readdirSync(join(ROOT, 'src'), { recursive: true, withFileTypes: true })
-  .filter((entry) => entry.isFile() && entry.name.endsWith('.ts'))
-  .map((entry) => join(entry.parentPath, entry.name))
+const SRC_FILES: SourceFile[] = ['src', 'bin']
+  .flatMap((folder) => readdirSync(join(ROOT, folder), { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith('.ts')).map((entry) => join(entry.parentPath, entry.name)))
   .sort()
   .map((path) => ({ path: relative(ROOT, path).split(sep).join('/'), source: readFileSync(path, 'utf8') }));
 const FOUND = ratchetsOf(SRC_FILES);
@@ -898,4 +906,46 @@ test("the screens' source: R4, the raw writes, are exactly the allow-list (#1115
   const gone = RAW_WRITES.filter((entry) => !FOUND.R4.includes(entry));
   assert.deepEqual(extra, [], 'print a screen with show() or fail() from src/commands/shared.ts, not a raw write');
   assert.deepEqual(gone.map((entry) => `${entry}: no such write now; take it off RAW_WRITES`), []);
+});
+
+// F2: the scope of R1 and R3, and the reasons table (#1115).
+test("the screens' source: R1 counts a line that starts with the old prefix, R3 counts only screen code (#1115)", () => {
+  const control = ratchetsOf([
+    { path: 'src/commands/demo.ts', source: "const a = `yokoten demo: x`;\nconst b = 'see the yokoten repo: here';\nconst c = '# yokoten board: a file comment';\nconst d = ['x', '', 'y'];" },
+    { path: 'src/setup/demo.ts', source: "const lines = ['#!/bin/sh', ''];\nconst e = 'yokoten demo: y';" },
+    { path: 'src/commands/kanban/view.ts', source: "const at = ['now', '', 'you'];" },
+  ]);
+  assert.deepEqual(control.R1, ['src/commands/demo.ts:1', 'src/setup/demo.ts:2'], 'a line start counts, in any file, with its line; a sentence or a file comment does not');
+  assert.deepEqual(control.R3, ['src/commands/demo.ts:4'], 'a blank in screen code counts; file text and data do not');
+  assert.ok(isScreenCode('bin/main.ts') && isScreenCode('src/run/cli.ts') && !isScreenCode('src/setup/init.ts') && !isScreenCode('src/commands/kanban/view.ts'), 'the scope');
+});
+
+test("the screens' source: every file off the R3 scope (NOT_SCREEN) still holds a data '' and says why (#1115)", () => {
+  for (const [path, reason] of Object.entries(NOT_SCREEN)) {
+    const file = SRC_FILES.find((each) => each.path === path);
+    assert.ok(file, `${path} exists; take it off NOT_SCREEN`);
+    assert.ok(reason.length > 10, `${path} has a reason`);
+    assert.ok(blankHitsIn(file.source) > 0, `${path} holds no '' now; take it off NOT_SCREEN`);
+  }
+});
+
+test("the screens' source: RATCHET_REASONS lists every hit left in R1, R2, R3, R5 and R6, each with a reason naming #1115 (#1115)", () => {
+  const found = (['R1', 'R2', 'R3', 'R5', 'R6'] as const).flatMap((id) => FOUND[id].map((place) => `${id} ${place}`)).sort();
+  const listed = Object.entries(RATCHET_REASONS).flatMap(([key, { times = 1 }]) => Array<string>(times).fill(key)).sort();
+  console.log(`ratchet reasons: ${listed.length} listed, ${found.length} found`);
+  assert.equal(listed.length, found.length, 'the table is as long as the found count');
+  assert.deepEqual(listed, found, 'the same places');
+  assert.deepEqual(Object.entries(RATCHET_REASONS).filter(([, { reason }]) => !reason.includes('#1115') || reason.length < 25).map(([key]) => key), [], 'each reason says why and names #1115');
+});
+
+test('bare hook and redact on a terminal print a title and one Next line under 80 columns, through invoke (#1115)', async () => {
+  const sandbox = makeSandbox();
+  for (const name of ['hook', 'redact']) {
+    const done = await invoke([name], { env: sandbox.env, cwd: sandbox.repo, isTTY: true });
+    assert.equal(done.code, 0, name);
+    const plain = done.stdout.replace(/\u001b\[[0-9;]*m/g, '');
+    assert.deepEqual(screenProblems({ text: plain, isFailure: false, isHelp: false }), [], `${name}: the screen keeps the rules`);
+    assert.ok(plain.split('\n').every((line) => line.length < 80), `${name}: under 80 columns`);
+    assert.equal(plain.match(/^Next: /gm)?.length, 1, `${name}: one Next line`);
+  }
 });
