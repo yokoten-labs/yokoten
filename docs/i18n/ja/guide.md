@@ -72,12 +72,29 @@ flowchart LR
 まだ yokoten を導入していないプロジェクトで、セッションの始めにはこう出ます。
 
 ```
-yokoten: stage 1 of 5, safety net. Next: no AGENTS.md, so the agents have no written rules here; `yokoten init` adds one.
-Why: an agent follows the rules it can read, and only those.
-Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).
+yokoten: stage 1 of 5, safety net
+
+  Next      No AGENTS.md, so the agents have no written rules here.
+
+  Why       An agent follows the rules it can read, and only those.
+
+  Fix       `yokoten init`
+
+Tell the user in plain words, one step at a time, and offer to do it (as-is,
+lighter, or not now with a reason).
+
+yokoten: ~/.config/yokoten/private-marks is missing or has no marks
+
+  Why       Without your marks, the privacy check knows only email addresses, IP
+            addresses and secrets.
+
+  Fix       `yokoten marks add`, then type your name, your city or a domain; it
+            is not shown.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#privacy
 ```
 
-セッションが聞くのは一つのステップだけです。関所、次のステップ、そしてそれがなぜ大事かです。関所は毎回ファイルから計算され、何も保存されません。「今はしない」と印を付けたステップは飛ばします。順番は助言です。後のステップを先に終えても、終わったものと数えます。すべてのステップが終わったか「今はしない」になると、セッションはそう伝える一行を聞きます。ここにないのに既定ブランチにはあるファイルは、`init` ではなく、そのブランチの名前で示します。Claude Code がコンテキストを圧縮したあとは、セッションは変わった注意だけを聞きます。各セッションは聞いた内容を `~/.config/yokoten/sessions/` に保ち、7 日より古いファイルは消します。エージェントはあなたの言語で伝えます。yokoten は英語を出力します。エージェントが最も確実に読む言語だからです。
+セッションが聞くのは一つのステップだけです。関所、次のステップ、そしてそれがなぜ大事かです。二つ目のブロックは非公開の印についてで、印がまだ一つも保存されていないときだけ出ます。関所は毎回ファイルから計算され、何も保存されません。「今はしない」と印を付けたステップは飛ばします。順番は助言です。後のステップを先に終えても、終わったものと数えます。すべてのステップが終わったか「今はしない」になると、セッションはそう伝える一行を聞きます。ここにないのに既定ブランチにはあるファイルは、`init` ではなく、そのブランチの名前で示します。Claude Code がコンテキストを圧縮したあとは、セッションは変わった注意だけを聞きます。各セッションは聞いた内容を `~/.config/yokoten/sessions/` に保ち、7 日より古いファイルは消します。エージェントはあなたの言語で伝えます。yokoten は英語を出力します。エージェントが最も確実に読む言語だからです。
 
 `yokoten doctor` は道の全体を示します。各ステップは **done**、**next**、**to do**、**not now**（あなたの理由つき）、**can't check** のどれかです。yokoten がまだチェックできないステップは一覧に出ません。
 
@@ -134,7 +151,7 @@ yokoten stopped this: git push --tags pushes tags [release]
 Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
 Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
 
-どの拒否も同じ四つの行を持ちます。最初の行は何が起きたか（**what**）で、最後は `yokoten stopped this: <what> [<id>]` の形でルールの id が角括弧で付きます。**Why:** の行はなぜ大事かを伝えます。**Instead:** の行は直し方（コマンドか編集）です。**More:** の行は、ルールの完全な説明へのリンクです。ファイルの問題では、場所がタイトルのすぐ後に来ます：`yokoten stopped this: file:line: <what> [<id>]`。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。
+どの拒否も同じ四つの部分を持ちます。最初の行は何が起きたか（**what**）で、最後は `yokoten stopped this: <what> [<id>]` の形でルールの id が角括弧で付きます。**Why** の行はなぜ大事かを伝えます。**Instead** の行は直し方（コマンドか編集）です。**More** の行は、ルールの完全な説明へのリンクです。ファイルの問題では、場所がタイトルのすぐ後に来ます：`yokoten stopped this: file:line: <what> [<id>]`。見つけたものは種類だけを名指しし、そのもの自体は決して出しません。秘密情報や個人情報の印は決して出力しません。
 
 ルールがなぜあるかを聞くには、`yokoten explain <id>` を実行します。id はルールかステップの名前で、たとえば `secret` や `commit-check` です。id なし、または知らない id なら、すべての id を一覧します。
 
@@ -335,8 +352,8 @@ Codex 0.163.0 は `wire_api = "chat"` を拒否します。`deepseek-flash` の�
 Node 22.23.4 以降（Node 24 は 24.22.1 以降、Node 26 は 26.12.1 以降）が要ります。TypeScript をそのまま走らせるからです。22.18 から 22.23.3 のリリースも TypeScript を走らせますが、使わないでください。Node が 2026-10-21 に直したセキュリティの穴があります（[advisory](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)）。だから npm はそれらに警告し、完全な `doctor` は `machine:` の下に注意します。依存はありません。インストールの方法は二つです。Claude Code のプラグインか、npm またはクローンからの `install` コマンドです。片方だけ使ってください。yokoten が書くフックのコマンドには POSIX シェルが要ります。Windows では Git Bash を使ってください。
 
 ほとんどの人に必要なのは一つのコマンド、`npx yokoten` だけです。`install`、`init`、`doctor` の
-仕事をまとめて行い、足りないものを整えてから、いまの位置と次の一歩を見せます。そのほかに、新しい人に見えるコマンドは
-`desk`、`kanban`、`tidy` の三つです（[記録 0043](../../records/0043-v012-three-commands.md)）。古いコマンドも動き、移動先を教えてくれます。
+仕事をまとめて行い、足りないものを整えてから、いまの位置と次の一歩を見せます。そのほかに、`yokoten help` が並べるコマンドは
+`desk`、`kanban`、`check`、`tidy` の四つです（[記録 0043](../../records/0043-v012-three-commands.md)）。古いコマンドも動き、移動先を教えてくれます。
 `yokoten help --all` で全部を一覧にでき、下の「コマンド」の表で一つずつ説明します。
 
 ### Claude Code のプラグイン
@@ -539,10 +556,10 @@ yokoten check --pr 12
 | `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
 | `uninstall` | `install` が書いたものを取り消します。yokoten が管理すると印を付けた入口スキルとエージェント、Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code の設定にあるフック、OpenCode のプラグイン、`~/.local/share/yokoten` です。非公開の印と mailmap のファイルは、`install` の見出しだけのときに消します。`install` が作ったフォルダと git の設定ファイルは、空のときに消します。`install` の前からあったフォルダは残ります。あなた自身のファイル、編集、設定は残ります。止めた記録は消えます。二回目の実行は何も変えません |
 | `bot -- <command>` | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。`gh pr edit` も、新しいタイトルや本文について同じことをし、本文が新しいティアを設定したときは古いティアのラベルを外します。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](../../server.md#3-the-bot-a-github-app) |
-| `kanban [--text] [--no-open]` | 古い名前の `board` も、`kanban` を名指す一行のあとで同じように走ります。このマシンでだけ動く読み取り専用のページを出します。セッション、あなたを待つプルリクエスト、Actions です。ページから仕事を始めたり止めたり変えたりはできません。ブラウザーでページをサインイン済みで開き、あなたが止めるまで走ります（`--no-open` はアドレスを出力するだけ）。サインインの鍵はブラウザーにだけ渡ります。`--text` は同じスナップショットを素のテキストで出力します。[チームのボード](#カンバン)を見てください |
+| `kanban [--text] [--json] [--no-open]` | 古い名前の `board` も、`kanban` を名指す一行のあとで同じように走ります。このマシンでだけ動く読み取り専用のページを出します。セッション、あなたを待つプルリクエスト、Actions です。ページから仕事を始めたり止めたり変えたりはできません。ブラウザーでページをサインイン済みで開き、あなたが止めるまで走ります（`--no-open` はアドレスを出力するだけ）。サインインの鍵はブラウザーにだけ渡ります。`--text` は同じスナップショットを素のテキストで、`--json` はデータとして出力します。[チームのボード](#カンバン)を見てください |
 | `tidy [--local \| --empty [--yes]]` | 引数なしでは古いものを、できることごとに並べます。マージ済みかリモートで消えたブランチ、作業の残っていないワークツリーとデスク、消えたデスクのログです。各行に理由と大きさを書き、何も変えません。`--local` はまず一つずつ保存し（ブランチは bundle、未コミットの変更は patch、それに `index.json`）、そのあと `~/.local/state/yokoten/trash` の日時つきフォルダーへ移します。保存が一つでも失敗したら何も移しません。使用中のデスクやワークツリーには触れません。GitHub 上のブランチは一覧に出すだけです。`--empty` は一度たずねてから、7 日を過ぎたごみ箱のフォルダーを消します。端末がないときは `--yes` が要ります |
 
-各コマンドは `--help` か `-h` で自分のヘルプを出力します。何をするか、オプション、例一つです。`yokoten help <command>` も同じものを出力します。`yokoten help` は最初に使う三つのコマンド `desk`、`kanban`、`tidy` を一覧し、`help --all` はすべてのコマンドを一覧します。移ったコマンドも走り、まず stderr に移った先を一行で言います。`yokoten version`（または `--version`、`-v`）はバージョンを出力します。ヘルプは何も変えず、0 で終わります。打ち間違いには、yokoten が一番近いコマンドかオプションを名指しします。`yokoten docter` は `Did you mean "doctor"?` と聞きます。`bot --` のあとは、すべての語がそれが走らせるコマンドのものです。だから `yokoten bot -- gh --help` は `gh --help` を走らせます。
+各コマンドは `--help` か `-h` で自分のヘルプを出力します。何をするか、オプション、例一つです。`yokoten help <command>` も同じものを出力します。`yokoten help` は最初に使う四つのコマンド `desk`、`kanban`、`check`、`tidy` を一覧し、`help --all` はすべてのコマンドを一覧します。移ったコマンドも走り、まず stderr に移った先を一行で言います。`yokoten version`（または `--version`、`-v`）はバージョンを出力します。ヘルプは何も変えず、0 で終わります。打ち間違いには、yokoten が一番近いコマンドかオプションを名指しします。`yokoten docter` は `unknown command docter` と言い、続けて `Next: \`yokoten doctor\`, if you meant it; \`yokoten help\` lists every command` と出します。`bot --` のあとは、すべての語がそれが走らせるコマンドのものです。だから `yokoten bot -- gh --help` は `gh --help` を走らせます。
 
 `check`、`doctor`、`hook`、`explain`、`adopt` は `--json` を受け取ります。すると stdout は JSON だけを持ち、エージェントやスクリプトのためのものになります。エラーも JSON です。使用法のエラーやクラッシュは `{ command, ok: false, error }` を出力して終了コード 1 になり、メッセージはまだ stderr へ行きます。各指摘は同じフィールドを持ちます。`id`、`what`、`why`、`fix`、`docs`（ガイドがルールを説明しているときのリンク）、そしてファイルの中なら `file` と `line` です。`yokoten explain <id>` はその `id` を取ります。どのフィールドも非公開の値を持ちません。
 
@@ -552,7 +569,7 @@ yokoten check --pr 12
 - `hook --stop --json`: `{ blocked, stop, findings }`。リードでは、`stop_hook_active` が `skipped` に理由を足します。ワーカーはそのフィールドがあってもチェックされます。チェック自体が失敗したときも `skipped` がそう名指しします。ワーカーの done-when チェックが失敗したときは `doneWhen` もです。試行の上限のあと、`skipped` は `stopped with failing checks` です。その停止は、リンクしたワークツリーの `.yokoten-agent.json` に `checks` を `failing` として書きます。そこの通過は `checks` を `passing` にします。stdin が Stop イベントでないときは `{ blocked: false, stop: false }`。
 - `explain --json`: `{ found, id, kind, what, why, check, docs, stage, standard }`。知らない id では `{ id, found: false, ids }` で終了コード 1。id なしでは `{ ids }` で終了コード 0。
 
-人向けの出力は一つのルールに従います。結果は stdout へ。問題、拒否、エラーは stderr へ。知らないオプションは拒否され、決して無視されません。
+人向けの出力は一つのルールに従います。結果は stdout へ。拒否、エラー、`check` が見つけた問題は stderr へ。`doctor` の道の行（MISSING など）は結果の一部なので、stdout のままです。知らないオプションは拒否され、決して無視されません。
 
 `init`、`update`、`doctor`、`check`、`adopt`、`bot` は git のリポジトリが要ります。外ではそう言い、何も書かず、終了コード 1 になります。`init <dir>` は存在しないフォルダも拒否します。`doctor --session` はリポジトリの外では静かにしています。そこのセッションが雑音を受け取らないようにです。
 
@@ -791,8 +808,8 @@ issue にその節がないフィールドは `TODO(reviewer)` になり、決�
 `learn --ship` は同じ一覧を出力します。問題を見つけた教訓は注意を出します。
 
 ```
-project:
-  note    lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+Project:
+  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
 ```
 
 プロジェクトの完全な `doctor` が新しい教訓を初めて走らせたときは、一度だけそう言います。何も見つけない教訓は `note    a new check ran: ok (incident-138); doctor now runs it in this project` と言います。問題を見つけたものは `note    new lesson: incident-138 (<what>); doctor now runs it in this project` と言い、そのあと問題を出します。見た教訓は `.git/yokoten/state.json` に保つので、そのファイルがコミットされることは決してありません。
@@ -933,6 +950,13 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
 - **リード**は、あなたが話すセッションです。計画を立て、作業を分け、レビューし、**ボット**を通してプルリクエストを開きます。あなたのアカウントでは決して開きません。
 - **ワーカー**は、リードがタスク一つずつために始めるセッションです。`.worktrees/` の下の自分のワークツリーで、`YOKOTEN_ROLE=worker` を持ちます。コードを変え、報告します。決して push しません。修正タスクは `YOKOTEN_FIX_TASK=1` も受け取ります。すると番人とコミットチェックが、テストのファイルへの変更を止めます。停止フックがブリーフの done-when のコマンドを走らせます。三回拒否されたあと、ワーカーは止まってよいことになります。リードへのメッセージは「NOT DONE: checks failing」で始まります。リンクしたワークツリーでは、`.yokoten-agent.json` が `checks` を記録します。リードがそのファイルを読みます。カンバンの `/api/state` は `checks` をコミットチェックとして示します。
 - **ボット**は、リポジトリにインストールした GitHub App です。プルリクエストを開きます。Workflows の権限があっても、CODEOWNERS がすべての CI の変更をあなたに送り、リリースは保護された `release` 環境であなたを待ちます。ルールセットがあなたのレビューを求めるので、それが開くものがあなたなしでマージされることはありません。
+
+ワーカーは番人のもとでコマンドを走らせます。だからブリーフは次のルールに合わせて書きます。
+
+- コマンドは `cd <worktree> && cmd && cmd` の形で書きます。`cd` は単独で置き、`&&` か `;` でつなぎます。サブシェル、パイプ、バックグラウンドの中には置けません。`cd` のあとにパイプは使いません。
+- `git -C` は使いません。先に `cd` でワークツリーに入ります。
+- コマンドの前に `VAR=value` は付けません。例外は `TZ`、`CI`、`NODE_ENV`、`NO_COLOR`、`FORCE_COLOR`、`DEBUG`、`LANG`、`LC_ALL` と、`yokoten.json` の `worker.settings` に書いた名前だけです。
+- タスクにほかの設定が要るとき（たとえばテストの出力ファイル）は、リードが自分で用意し、ファイルとしてワーカーに渡します。
 
 七つのスキルがこの方法を運びます。`dispatch` はワーカーにブリーフを渡します。`inspect` は一つの正確なコミットを三つの段階でレビューします。`rca` は原因を見つけ、チェックを足し、それを広めます。`record` は決断を書き留めます。`release` は次の版を選び、変更履歴を用意します。タグを打つのはオーナーです。`merge` はボットを通してマージし、新しいコミットが UTC でないときに止まります。`yokoten` は実践を導入します。三つのエージェントが作業します。`worker`、`reviewer`（読むだけ）、`verifier`（走らせるだけで、決して直さない）です。
 

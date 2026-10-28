@@ -16,10 +16,11 @@ import { gitConfig } from '../../../run/check.ts';
 import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
 import { docsLink, findingRow, sentence } from '../../../rules/text/message.ts';
-import { columnFor, screen, section, spaced, table, type TableRow } from '../../../rules/text/screen.ts';
+import { columnFor, LABEL_COLUMN, nextLine, ROW_INDENT, screen, section, spaced, table, type TableRow } from '../../../rules/text/screen.ts';
 import { hideHome } from '../../../rules/privacy.ts';
 import { type Decision, type Draft, draft, draftJson, facts, type Row, YOU_DECIDE } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
+import { nodeTestsSnippet } from '../../../setup/advice/tests-job.ts';
 import { cleanOlderInstall, type OlderInstallCleanup, PROFILE_MARK } from '../../../setup/install.ts';
 import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED } from '../../../setup/doctor/index.ts';
 import { ROAD, STAGES } from '../../../setup/road.ts';
@@ -233,7 +234,8 @@ export function runExplain(invocation: Invocation): number {
   }
   if (!found) return fail(invocation, `no rule or step is called ${id}`, 'yokoten explain');
   const step = ROAD.find((s) => s.key === found.id);
-  print(invocation, explainScreen(found, step ? stepFix(step, invocation) : undefined));
+  const root = rootOf(invocation.cwd, invocation.env);
+  print(invocation, explainScreen(found, step ? stepFix(step, invocation) : undefined, step?.key === 'tests' && root ? nodeTestsSnippet(root) ?? undefined : undefined));
   return 0;
 }
 
@@ -245,8 +247,12 @@ const lowerFirst = (text: string): string => text.charAt(0).toLowerCase() + text
  * and, for a road step, its Fix, as the caller computed it. A person and an agent read the same
  * words. Pure: the same `found` and `fix` give the same screen.
  */
-export function explainScreen(found: Explained, fix?: string): string[] {
+export function explainScreen(found: Explained, fix?: string, snippet?: string[]): string[] {
   const step = ROAD.find((s) => s.key === found.id);
+  // The tests step shows the job it asks for, on several lines, so "paste this" never points at nothing.
+  const fixRows = snippet && fix?.includes('paste this')
+    ? [...field('Fix', 'add this under `jobs:` in .github/workflows/yokoten.yml and `tests` to the `needs` of `ci`, or run `yokoten init`:'), ...snippet.map((line) => `${' '.repeat(ROW_INDENT + LABEL_COLUMN + 2)}${line}`)]
+    : step && fix ? field('Fix', shortFix(fix)) : [];
   const summary = step ? `stage ${step.stage}, ${STAGES[step.stage - 1]}` : found.kind === 'rule' ? 'a rule yokoten checks' : 'a step on the road';
   const task = step ? STEP_TITLES[found.id] : undefined;
   return screen(
@@ -255,11 +261,12 @@ export function explainScreen(found: Explained, fix?: string): string[] {
       field('What', task ? lowerFirst(task) : found.what),
       field('Why', found.why),
       field('Check', found.check),
-      ...(step && fix ? [field('Fix', shortFix(fix))] : []),
+      ...(fixRows.length ? [fixRows] : []),
       // explain is the detail screen: the outside standard a step meets stays here (#58).
       ...(step?.standard ? [field('Standard', step.standard)] : []),
     ]),
-    moreLine(found.docs ?? docsLink('road.md', found.id)),
+    // The one step after reading: the road for a step, the check for a rule.
+    [...nextLine(step ? 'yokoten doctor' : 'yokoten check'), ...moreLine(found.docs ?? docsLink('road.md', found.id))],
   );
 }
 
