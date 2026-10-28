@@ -10,6 +10,7 @@ import {
   checkLayout,
   codeOwnersPatternMatches,
   isBuildOutput,
+  isBuildSource,
 } from '../../src/rules/layout.ts';
 import { type Finding, formatFinding } from '../../src/rules/text/message.ts';
 
@@ -101,6 +102,16 @@ test('build output: build folders and binaries are refused, images, fonts and al
   assert.deepEqual(checkBuildOutput(files('docs/a.png', 'site/logo.svg', 'fonts/x.woff2', 'src/output.ts', 'distance.js'), DEFAULTS), []);
   assert.deepEqual(checkBuildOutput(files('dist/app.js', 'vendor/tool.zip'), { allowBuild: ['dist/**', '*.zip'] }), []);
   assert.ok(isBuildOutput('a/dist/b.js') && !isBuildOutput('a/dist/b.js', () => true) && !isBuildOutput('dist.md'));
+});
+
+test('build output: source in a build/ folder passes the gate; built files and other output folders do not (#1167)', () => {
+  const files = (...paths: string[]) => paths.map((path) => ({ path, binary: false }));
+  assert.deepEqual(checkBuildOutput(files('docker/build/Dockerfile', 'build/Makefile', 'build/release.sh', 'build/Dockerfile.dev'), DEFAULTS), []);
+  // The controls: built files, a binary by its name, and source in dist/ or out/ stay refused.
+  assert.equal(checkBuildOutput(files('build/out.js', 'docker/build/Dockerfile', 'build/tool.so'), DEFAULTS).length, 1, 'both are in build/, so one folder finding');
+  assert.equal(checkBuildOutput(files('dist/Makefile', 'out/run.sh', 'dist/build/Dockerfile'), DEFAULTS).length, 2, 'dist is one folder finding, out another');
+  assert.ok(isBuildSource('docker/build/Dockerfile') && !isBuildSource('build/out.js') && !isBuildSource('build/tool.so') && !isBuildSource('dist/Makefile'));
+  assert.ok(!isBuildOutput('docker/build/Dockerfile') && isBuildOutput('build/out.js'));
 });
 
 test('build output: many files under one folder make one finding for the folder (#521)', () => {

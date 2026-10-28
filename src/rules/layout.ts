@@ -102,9 +102,22 @@ const MEDIA = /\.(?:png|jpe?g|gif|webp|svg|ico|woff2?)$/i;
 /** Files that are built, whatever git thinks of their bytes. */
 export const BUILT = /\.(?:exe|dll|so|dylib|zip|tar|gz|tgz|jar|class|o|a|wasm|pyc|node)$/i;
 
+const SOURCE_NAME = /^(?:dockerfile|containerfile|makefile|gnumakefile)(?:[-._].*)?$|\.(?:sh|mk|md|cmake|dockerfile)$/i;
+
+/**
+ * A source file in a folder called build (#1167): docker/build/Dockerfile, build/Makefile, build/release.sh.
+ * A build does not make these. Only a build/ folder is exempt, not dist/ or out/, and a binary by its name is still output.
+ */
+export function isBuildSource(path: string): boolean {
+  const parts = path.split('/');
+  const dirs = parts.slice(0, -1);
+  if (!dirs.includes('build') || dirs.some((dir) => dir !== 'build' && BUILD_DIRS.includes(dir))) return false;
+  return !BUILT.test(path) && SOURCE_NAME.test(parts[parts.length - 1] ?? '');
+}
+
 /** Whether a path is build output: under a build folder, or a built file by its name. */
 export function isBuildOutput(path: string, allow: (path: string) => boolean = () => false): boolean {
-  if (allow(path)) return false;
+  if (allow(path) || isBuildSource(path)) return false;
   return path.split('/').slice(0, -1).some((dir) => BUILD_DIRS.includes(dir)) || BUILT.test(path);
 }
 
@@ -131,7 +144,7 @@ export function checkBuildOutput(files: { path: string; binary: boolean }[], { a
     if (allow(path)) continue;
     const parts = path.split('/').slice(0, -1);
     const at = parts.findIndex((d) => DEPENDENCY_DIRS.includes(d) || BUILD_DIRS.includes(d));
-    const dir = parts.find((d) => BUILD_DIRS.includes(d));
+    const dir = isBuildSource(path) ? undefined : parts.find((d) => BUILD_DIRS.includes(d));
     const isBuild = dir !== undefined;
     const isDependency = at >= 0 && DEPENDENCY_DIRS.includes(parts[at]);
     const isFetchedFile = isDependency && FETCHED_DIRS.includes(parts[at]);

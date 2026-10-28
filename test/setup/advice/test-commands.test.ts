@@ -57,6 +57,7 @@ const CASES: { language: string; files: Record<string, string>; runner: string; 
   { language: 'PHP', files: { 'phpunit.xml.dist': '<phpunit/>\n', 'tests/FooTest.php': '' }, runner: 'vendor/bin/phpunit', runs: ['vendor/bin/phpunit'] },
   { language: 'Swift', files: { 'Package.swift': '', 'Tests/FooTests.swift': '' }, runner: 'swift test', runs: ['swift test', 'swift test --parallel'] },
   { language: 'Elixir', files: { 'mix.exs': '', 'test/x_test.exs': '' }, runner: 'mix test', runs: ['mix test', 'MIX_ENV=test mix test'] },
+  { language: 'Solidity', files: { 'foundry.toml': '[profile.default]\n', 'test/Pool.t.sol': '' }, runner: 'forge test', runs: ['forge test', 'forge test --isolate -vvv'] },
   { language: 'Flutter', files: { 'pubspec.yaml': FLUTTER_PUBSPEC, 'test/a_test.dart': '' }, runner: 'flutter test', runs: ['flutter test'] },
   { language: 'Dart', files: { 'pubspec.yaml': DART_PUBSPEC, 'test/a_test.dart': '' }, runner: 'dart test', runs: ['dart test', 'dart run test'] },
   { language: 'Makefile', files: { Makefile: 'test:\n\tgo vet\n' }, runner: 'make test', runs: ['make test', 'make -C app tests'] },
@@ -161,6 +162,7 @@ test('test commands: a project file alone is no tests; adopt names the command f
     { files: { 'phpunit.xml.dist': '<phpunit/>\n' }, runner: 'vendor/bin/phpunit', language: 'PHP' },
     { files: { 'Package.swift': '' }, runner: 'swift test', language: 'Swift' },
     { files: { 'mix.exs': '' }, runner: 'mix test', language: 'Elixir' },
+    { files: { 'foundry.toml': '' }, runner: 'forge test', language: 'Solidity' },
     { files: { 'pubspec.yaml': FLUTTER_PUBSPEC }, runner: 'flutter test', language: 'Flutter' },
     { files: { 'pubspec.yaml': DART_PUBSPEC }, runner: 'dart test', language: 'Dart' },
   ];
@@ -216,6 +218,7 @@ test('test commands: a test folder counts only for the language whose test files
     { files: { 'composer.json': '{}', 'tests/Foo.php': '' }, runner: 'vendor/bin/phpunit', language: 'PHP' },
     { files: { 'Package.swift': '', 'Tests/Foo.swift': '' }, runner: 'swift test', language: 'Swift' },
     { files: { 'mix.exs': '', 'test/x.exs': '' }, runner: 'mix test', language: 'Elixir' },
+    { files: { 'foundry.toml': '', 'test/Pool.sol': '' }, runner: 'forge test', language: 'Solidity' },
     { files: { 'pubspec.yaml': FLUTTER_PUBSPEC, 'test/a.dart': '' }, runner: 'flutter test', language: 'Flutter' },
     { files: { 'pubspec.yaml': DART_PUBSPEC, 'test/a.dart': '' }, runner: 'dart test', language: 'Dart' },
   ];
