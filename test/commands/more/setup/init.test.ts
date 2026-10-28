@@ -112,6 +112,6 @@ test('init --github --yes: a skip changed nothing on GitHub, so it fails, after 
   writeFileSync(join(sandbox.repo, 'notes.txt'), 'x\n');
   const result = await sandbox.call(['init', '--github', '--yes']);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /^yokoten init · this project is set up$/m);
+  assert.match(result.stderr, /^yokoten init · this project is set up$/m, 'the files first');
   assert.match(result.stderr, /^yokoten init · --github --yes changed nothing on GitHub; the project files are\n {15}as shown above\n\nNext: `yokoten init --github --yes`$/m);
 });

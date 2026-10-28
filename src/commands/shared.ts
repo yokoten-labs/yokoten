@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { failure, isDoneMark, type Mark, MARKS, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, spaced, wrap } from '../rules/text/screen.ts';
+import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -109,8 +109,9 @@ export function printJsonError(invocation: Invocation, error: string): void {
 export function usage(invocation: Invocation, error: string): number {
   const { command } = invocation;
   printJsonError(invocation, error);
-  // The error with the word typed, then the command to run last (record 0049, #1115).
-  print(invocation, failure(command || undefined, error, command ? `yokoten ${command} --help` : 'yokoten help'), invocation.stderr);
+  // The error with the word typed, what the command does in one line, then the command to run last (record 0049, #1115).
+  const entry = command ? findCommand(command) : undefined;
+  print(invocation, screen(failure(command || undefined, error), entry ? field(entry.name, entry.summary) : [], nextLine(command ? `yokoten ${command} --help` : 'yokoten help')), invocation.stderr);
   return 1;
 }
 

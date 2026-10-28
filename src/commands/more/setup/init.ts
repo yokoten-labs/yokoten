@@ -8,7 +8,7 @@ import type { Finding } from '../../../rules/text/message.ts';
 import type { Change, Place, SetupResult } from '../../../setup/files.ts';
 import { HOOKS_PATH, init, type InitResult } from '../../../setup/init.ts';
 import { type PlanItem, type PlanResult, readOriginUrl, setUpPlanning } from '../../../setup/plan.ts';
-import { askOnTerminal, count, fail, type Invocation, moreLine, nextLine, parse, requireRoot, row, type RowMark, screen, SCREEN_WIDTH, show, spaced, summaryLine, terminalOf, title, underRow, usage, wrap } from '../../shared.ts';
+import { askOnTerminal, count, fail, failure, type Invocation, moreLine, nextLine, parse, print, printJsonError, requireRoot, row, type RowMark, screen, SCREEN_WIDTH, show, spaced, summaryLine, terminalOf, title, underRow, usage, wrap } from '../../shared.ts';
 import { section } from '../../../rules/text/screen.ts';
 
 export function runInit(invocation: Invocation): number {
@@ -48,9 +48,14 @@ export function runInit(invocation: Invocation): number {
   // --github --yes asked for changes on GitHub: a skip made none (#208), and a change that
   // failed is named above, so either one fails, with the command to run again last.
   if (options.flags.has('--yes') && (planning.skipped || !planning.ok)) {
-    show(invocation, lines);
-    if (planning.skipped) return fail(invocation, '--github --yes changed nothing on GitHub; the project files are as shown above', planning.skip?.fix || 'yokoten init --github');
-    return fail(invocation, 'some changes on GitHub failed, as shown above; the project files are set up', 'yokoten init --github --yes');
+    // One screen on stderr: the files, then the failure under them; screen() makes the gap.
+    const failed = (what: string, next: string): 1 => {
+      printJsonError(invocation, what);
+      print(invocation, screen(lines, failure(invocation.command, what, next)), invocation.stderr);
+      return 1;
+    };
+    if (planning.skipped) return failed('--github --yes changed nothing on GitHub; the project files are as shown above', planning.skip?.fix || 'yokoten init --github');
+    return failed('some changes on GitHub failed, as shown above; the project files are set up', 'yokoten init --github --yes');
   }
   show(invocation, lines);
   return planning.ok && done.ok ? 0 : 1;
