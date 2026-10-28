@@ -35,7 +35,9 @@ The release that reaches users is the one that already passed the tests.
 3. **No test reporter writes to a device.** The workflow standard test catches
    `--test-reporter-destination=/dev/...` in every workflow, the kit's included.
 4. **The rule for new workflows.** A step that runs on a rare event either also runs on a
-   pull request, or its workflow says why it can't. The scheduled workflows
+   pull request, or its workflow says why it can't. `publish` is the one accepted
+   exception: it needs the owner's approval and npm's token, which no pull request has, and
+   it runs no build or test, only the package `verify` made. The scheduled workflows
    (`actions-health`, `borrowed`, `outside-prs`, `board`, `anchor`) are the next to check.
 
 ## Options not taken

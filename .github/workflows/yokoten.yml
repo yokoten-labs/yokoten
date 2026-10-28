@@ -193,17 +193,17 @@ jobs:
             ${{ runner.temp }}/windows-failures.txt
             ${{ runner.temp }}/windows-times.txt
           retention-days: 7
-  # Types are checked here and nowhere else: Node runs the .ts files without them.
-  # Skipped on a docs-only pull request.
   # The release checks, the same file a tag runs (record 0053, issue #1149): a step only a
   # tag ran failed the v0.1.2 tag the first time it ran. They run beside Windows, which
   # takes longer, so the wait does not grow. Not in a merge queue group, as Windows.
   release:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group' }}
-    uses: ./.github/workflows/release-checks.yml
+    uses: $/.github/workflows/release-checks.yml
     permissions:
       contents: read
+  # Types are checked here and nowhere else: Node runs the .ts files without them.
+  # Skipped on a docs-only pull request.
   typecheck:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
@@ -298,14 +298,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # GitHub documents `$/` only with a folder after it, not for an action at the root.
-      - uses: ./ # zizmor: ignore[self-repository]
+      # `$/` is this repo at the running commit (#1149), the root action included.
+      - uses: $/
         with:
           pr-check: false
   # The one required check. It runs even when a job it needs failed, and goes red if
   # any of them did not succeed (failed, cancelled or skipped). Two exceptions, skipped on
-  # purpose: on a docs-only pull request, `windows`, `typecheck`, `lint` and `action`
-  # (#438); in a merge queue group, `windows` and nothing else (#1084).
+  # purpose: on a docs-only pull request, `windows`, `release`, `typecheck`, `lint` and
+  # `action` (#438); in a merge queue group, `windows` and `release`, nothing else (#1084, #1149).
   # A job that never started is named in the summary, so a queued timeout reads as
   # "no runner was free", not as a test failure (#568).
   ci:

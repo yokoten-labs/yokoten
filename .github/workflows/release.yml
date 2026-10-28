@@ -15,7 +15,7 @@ jobs:
   # Everything that can fail runs here, before the owner is asked to approve. The same
   # file runs on every pull request, so these steps passed before the merge (record 0053).
   verify:
-    uses: ./.github/workflows/release-checks.yml
+    uses: $/.github/workflows/release-checks.yml
     with:
       tag: true
     permissions:
