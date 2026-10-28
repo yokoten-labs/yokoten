@@ -393,7 +393,7 @@ const C8_MAP: ConflictMap = {
   hot: [],
 };
 // C6: kanban --text, rendered from state objects (the live state of src/commands/kanban/state.ts).
-const KANBAN_EMPTY: KanbanState = { version: '0.1.2', readAt: '2026-10-26T12:00:00.000Z', repo: { name: 'demo', url: 'https://github.com/octo/demo' }, sessions: [], pulls: [], actions: { main: { state: 'unknown' }, queuedOver15Min: [], flaky: [] }, usage: { quotas: [], costs: [] }, problems: [] };
+const KANBAN_EMPTY: KanbanState = { version: VERSION, readAt: '2026-10-26T12:00:00.000Z', repo: { name: 'demo', url: 'https://github.com/octo/demo' }, sessions: [], pulls: [], actions: { main: { state: 'unknown' }, queuedOver15Min: [], flaky: [] }, usage: { quotas: [], costs: [] }, problems: [] };
 const kanbanSession = (fields: Partial<KanbanSession>): KanbanSession => ({
   id: 'a', agent: 'Claude Code', model: 'opus', task: { kind: 'text', title: 'a task' }, state: 'working', startedAt: '2026-10-26T11:00:00.000Z', updatedAt: '2026-10-26T11:59:00.000Z',
   evidence: { fence: 'guard', commitCheck: 'none', platforms: [] }, cost: { tokens: 0, usd: null }, ...fields,
@@ -517,7 +517,7 @@ function screensOf(repo: string): ScreenRun[] {
     // C3: doctor's screens from reports built here, and explain's and adopt's (#1037, #1115).
     ...((): ScreenRun[] => {
       const found = (id: string, what: string, fix: string) => ({ id, what, why: 'it matters', fix });
-      const base: DoctorReport = { version: '0.1.2', channel: 'stable', ok: false, selfTest: { ok: true, failed: [], ran: true, skipped: [] }, repo: true, stage: 2, stages: ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'], next: found('ci', 'CI does not run `yokoten check`', '`yokoten init` adds .github/workflows/yokoten.yml'), findings: [] };
+      const base: DoctorReport = { version: VERSION, channel: 'stable', ok: false, selfTest: { ok: true, failed: [], ran: true, skipped: [] }, repo: true, stage: 2, stages: ['safety net', 'issues and pull requests', 'release', 'a team of agents', 'going public'], next: found('ci', 'CI does not run `yokoten check`', '`yokoten init` adds .github/workflows/yokoten.yml'), findings: [] };
       const steps = [{ id: 'rules', stage: 1, mark: 'done' as const }, { id: 'tool-hook', stage: 1, mark: 'done' as const }, { id: 'ci', stage: 2, mark: 'next' as const }, { id: 'templates', stage: 2, mark: 'to do' as const }, { id: 'labels', stage: 2, mark: "can't check" as const }];
       const marks = found('private-marks', '~/.config/yokoten/private-marks is missing or has no marks', 'run `yokoten marks add` and type your name, your city or a domain; it is not shown');
       const branches = Array.from({ length: 24 }, (_, at) => found('unpushed-commits', `branch topic-${at} has 1 commit not pushed to origin/topic-${at}; a commit not pushed is still only on this machine`, `\`git push origin topic-${at}\``));
@@ -528,7 +528,7 @@ function screensOf(repo: string): ScreenRun[] {
         view: {
           lead: [],
           full: {
-            version: { mark: 'ok', name: 'yokoten 0.1.2 (stable)', what: 'self-test ok' },
+            version: { mark: 'ok', name: `yokoten ${VERSION} (stable)`, what: 'self-test ok' },
             jumps: ['stage 1 is done too: its steps were already in place'],
             stages: [[{ mark: 'done', name: 'rules (OpenSSF: AI code assistant instructions), tool-hook' }], [{ mark: 'next', name: 'ci (Scorecard: CI-Tests)', what: base.next!.what, fix: base.next!.fix }, { mark: "can't check", name: 'labels', what: 'gh is not signed in', fix: 'run `gh auth login`' }], [{ mark: 'skipped', name: 'titles', what: 'not now, no CI yet' }], [], []],
             project: [{ mark: 'note', name: 'codex-hook', what: 'no tool-call guard in .codex/hooks.json', fix: '`yokoten init` adds it' }, { mark: 'ok', name: 'tree', what: 'layout and privacy clean' }],

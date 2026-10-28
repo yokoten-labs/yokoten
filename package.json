@@ -1,6 +1,6 @@
 {
   "name": "yokoten",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A safety guard for AI coding tools. AI agents can make a big mistake in a second. yokoten stops it before it happens.",
   "keywords": [
     "ai-agents",
