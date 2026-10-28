@@ -2,9 +2,8 @@
 
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, rowsText } from '../../repo/helpers.ts';
 
@@ -45,11 +44,17 @@ test('doctor: --all --json keeps the shape that other tools read (#1167)', async
 // A folder with a GitHub origin, but no gh on the PATH, no login and no network: doctor skips the server steps at once.
 test("doctor: with no gh on the PATH, the server steps are can't check, and doctor answers fast (#1167)", async () => {
   const sandbox = makeSandbox();
-  const bin = join(sandbox.home, 'bin');
-  mkdirSync(bin);
-  // Only git and node: the PATH has no gh.
-  symlinkSync(execFileSync('which', ['git'], { encoding: 'utf8' }).trim(), join(bin, 'git'));
-  symlinkSync(process.execPath, join(bin, 'node'));
+  // A PATH of the folders that hold git and node. If gh lives in one of them, a folder of links to git and node alone.
+  const named = (dir: string, names: string[]) => names.map((name) => join(dir, name)).find((path) => existsSync(path));
+  const gitPath = (process.env.PATH ?? '').split(delimiter).map((dir) => named(dir, ['git', 'git.exe'])).find(Boolean) ?? 'git';
+  let bin = [...new Set([dirname(process.execPath), dirname(gitPath)])].join(delimiter);
+  if (bin.split(delimiter).some((dir) => named(dir, ['gh', 'gh.exe', 'gh.cmd']))) {
+    const links = join(sandbox.home, 'bin');
+    mkdirSync(links);
+    symlinkSync(gitPath, join(links, 'git'));
+    symlinkSync(process.execPath, join(links, 'node'));
+    bin = links;
+  }
   sandbox.git('remote', 'add', 'origin', 'https://github.com/someone/repo.git');
   const started = Date.now();
   const result = await sandbox.call(['doctor', '--all', '--json'], { extra: { PATH: bin } });

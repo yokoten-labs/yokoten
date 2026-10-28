@@ -17,7 +17,7 @@ import { type Config, type Env, loadConfig } from '../rules/config.ts';
 import { matcher } from '../rules/config.ts';
 import { claudeOnlyRulesFix, claudeOnlyRulesWhat, docsLink, type Finding, finding, noteWork, type RuleId } from '../rules/text/message.ts';
 import { CHANGES_DIR, parseCodeOwners } from '../rules/pr.ts';
-import { BUILD_DIRS, BUILT, isBuildOutput } from '../rules/layout.ts';
+import { BUILD_DIRS, isBuildOutput } from '../rules/layout.ts';
 import { homeOf } from '../rules/privacy.ts';
 import { hasPlugin, hasProjectHook, sandboxProblem as claudeSandboxProblem } from '../agents/runtimes/claude-code.ts';
 import { sandboxProblem as codexSandboxProblem } from '../agents/runtimes/codex.ts';
@@ -337,13 +337,6 @@ const testsFix = (root: string) => {
   return `${start}, add this job under \`jobs:\`. Copy the \`uses:\` lines from the other jobs, because they are pinned: \`tests: {runs-on: ubuntu-latest, steps: ${steps}}\`. Then add \`tests\` to the \`needs\` list of the \`ci\` job, so a failing test blocks the merge`;
 };
 
-/**
- * A source file that sits in a folder called build (#1167): docker/build/Dockerfile, build/Makefile, build/ci.sh.
- * A build does not make these, so they are no build output. A binary by its name still is.
- */
-const SOURCE_IN_BUILD_DIR = /^(?:dockerfile|containerfile|makefile|gnumakefile)(?:[-._].*)?$|\.(?:sh|mk|md|cmake|dockerfile)$/i;
-const isBuildSource = (path: string) => !BUILT.test(path) && SOURCE_IN_BUILD_DIR.test(path.slice(path.lastIndexOf('/') + 1));
-
 /** Tracked build output, as yokoten.json lets it through; null outside a git repo. */
 const builtFiles = (root: string, env: Env): string[] | null => {
   let files: string[];
@@ -358,7 +351,7 @@ const builtFiles = (root: string, env: Env): string[] | null => {
   } catch {
     // a broken yokoten.json: the commit check names it; here, nothing is allowed
   }
-  return files.filter((f) => isBuildOutput(f, allow) && !isBuildSource(f));
+  return files.filter((f) => isBuildOutput(f, allow));
 };
 
 /** Where Changesets keeps the pending release notes (#1167). */
@@ -374,6 +367,8 @@ const LICENSE_FILE = 'license file';
  */
 export const isLicenseName = (name: string) => /^((un)?licen[cs]e|copying)([-._].*)?$/i.test(name);
 /** The REUSE layout (#1167): the license texts sit in a LICENSES/ folder (Uniswap names it licenses/ and the files MIT_LICENSE). */
+/** A license text in a licenses/ folder: a license-named file (REUSE: MIT.txt, Apache-2.0.txt; Uniswap: MIT_LICENSE), not a .gitkeep or a README. */
+const LICENSE_IN_FOLDER = /licen[cs]e|copying|^(?:0bsd|apache|bsd|busl|cc0|gpl|lgpl|agpl|isc|mit|mpl|unlicense)/i;
 const isLicenseFolder = (name: string) => name.toLowerCase() === 'licenses';
 /** Whether the root has a license file, or a licenses/ folder with a file in it: names as the folder lists them. */
 const hasLicense = (root: string) => {
@@ -381,7 +376,7 @@ const hasLicense = (root: string) => {
     const entries = readdirSync(root, { withFileTypes: true });
     return (
       entries.some((entry) => !entry.isDirectory() && isLicenseName(entry.name)) ||
-      entries.some((entry) => entry.isDirectory() && isLicenseFolder(entry.name) && readdirSync(join(root, entry.name), { withFileTypes: true }).some((inner) => inner.isFile()))
+      entries.some((entry) => entry.isDirectory() && isLicenseFolder(entry.name) && readdirSync(join(root, entry.name), { withFileTypes: true }).some((inner) => inner.isFile() && LICENSE_IN_FOLDER.test(inner.name)))
     );
   } catch {
     return false;
@@ -389,16 +384,11 @@ const hasLicense = (root: string) => {
 };
 const DEPENDABOT_FILE = 'Dependabot config';
 const DEPENDABOT_PATHS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
-/** Renovate reads these at the root or in .github/ (#1167); `.renovaterc` may carry an extension. */
+/** The names Renovate documents, at the root or in .github/ (#1167). */
 const RENOVATE_PATHS = ['renovate.json', 'renovate.json5', '.github/renovate.json', '.github/renovate.json5', '.renovaterc', '.renovaterc.json', '.renovaterc.json5'];
 /** Whether the repo updates dependencies with Dependabot or with Renovate. */
 const hasUpdates = (root: string) => {
-  if ([...DEPENDABOT_PATHS, ...RENOVATE_PATHS].some((p) => existsSync(join(root, p)))) return true;
-  try {
-    return readdirSync(root).some((name) => name.startsWith('.renovaterc'));
-  } catch {
-    return false;
-  }
+  return [...DEPENDABOT_PATHS, ...RENOVATE_PATHS].some((path) => existsSync(join(root, path)));
 };
 /**
  * Each security file: its name, the paths the default-branch lookup asks for (#405), and how
@@ -747,7 +737,10 @@ export const ROAD: Step[] = [
     },
     fix: (root) => {
       const gap = findRulesGap(root);
-      if (!existsSync(join(root, 'AGENTS.md')) && gap) return claudeOnlyRulesFix(gap.file, gap.line);
+      if (!existsSync(join(root, 'AGENTS.md')) && gap) {
+        // A link: init writes nothing through it (#428), so the words name the file it points to.
+        return gap.link ? `${gap.file} is a link to ${gap.link}: move the rules from that file to a new AGENTS.md, then add the line \`${gap.line}\` to it` : claudeOnlyRulesFix(gap.file, gap.line);
+      }
       if (!existsSync(join(root, 'AGENTS.md')) || !gap) return '`yokoten init` adds one';
       // init writes nothing through a link (#428).
       return gap.link

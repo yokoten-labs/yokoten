@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import {
   mkdirSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import {
@@ -736,7 +737,10 @@ const MISREAD_CASES: [string, string, Record<string, string>, boolean][] = [
   ...['renovate.json', 'renovate.json5', '.github/renovate.json', '.renovaterc', '.renovaterc.json'].map((file): [string, string, Record<string, string>, boolean] => [
     `updates: ${file}`, 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', [file]: '{}\n' }, true]),
   ['updates: none', 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n' }, false],
-  ['updates: a look-alike name', 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', 'renovate.md': 'x\n' }, false],
+  ['updates: .renovaterc.yaml is not a name Renovate reads', 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', '.renovaterc.yaml': '{}\n' }, false],
+  ['license: licenses/.gitkeep only', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'licenses/.gitkeep': '' }, false],
+  ['license: licenses/README.md only', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'licenses/README.md': 'x\n' }, false],
+  ['updates: a look-alike name','security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', 'renovate.md': 'x\n' }, false],
   // A license in a licenses/ or LICENSES/ folder (REUSE layout, Uniswap).
   ['license: licenses/MIT_LICENSE', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'licenses/MIT_LICENSE': 'MIT\n' }, true],
   ['license: LICENSES/MIT.txt', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'LICENSES/MIT.txt': 'MIT\n' }, true],
@@ -768,6 +772,16 @@ test('road: a CLAUDE.md with no AGENTS.md says the rules exist but only Claude C
     assert.equal(rules.what(claudeOnly, {}, undefined, undefined), 'CLAUDE.md has the rules, but only Claude Code reads them');
     assert.equal(rules.fix(claudeOnly, {}, undefined, undefined), 'move the rules from CLAUDE.md to a new AGENTS.md, then add the line `@AGENTS.md` to CLAUDE.md, so Claude Code still reads them');
     assert.match(String(rules.fix(inClaudeDir, {}, undefined, undefined)), /add the line `@\.\.\/AGENTS\.md` to \.claude\/CLAUDE\.md/);
+    // A CLAUDE.md that is a link keeps the link wording (#428): init writes nothing through it.
+    {
+      const linked = folderWith({ 'docs/rules.md': '# our rules\n' });
+      try {
+        symlinkSync('docs/rules.md', join(linked, 'CLAUDE.md'));
+        assert.match(String(rules.fix(linked, {}, undefined, undefined)), /^CLAUDE\.md is a link to docs\/rules\.md: move the rules from that file to a new AGENTS\.md, then add the line `@AGENTS\.md` to it$/);
+      } finally {
+        rmSync(linked, { recursive: true, force: true });
+      }
+    }
     // The control: no rules file at all keeps the old words.
     assert.equal(rules.what(none, {}, undefined, undefined), 'no AGENTS.md, so the agents have no written rules here');
     assert.equal(rules.fix(none, {}, undefined, undefined), '`yokoten init` adds one');
