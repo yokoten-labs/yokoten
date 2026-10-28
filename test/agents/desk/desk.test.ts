@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { DESK_RUNTIMES, findProgram, hiddenFolders, isInside, isProgramNamed, OWN_RUNTIME, planDesk, prepareDeskState, programExtensions, programFolders, proxyEnv } from '../../../src/agents/desk/desk.ts';
+import { DESK_RUNTIMES, findProgram, hiddenFolders, isInside, isProgramNamed, OWN_RUNTIME, planDesk, prepareDeskState, programExtensions, programFolders, proxyEnv, walkablePath } from '../../../src/agents/desk/desk.ts';
 import { identityLine } from '../../../src/agents/desk/team/who.ts';
 import { markWorktree } from '../../../src/commands/hook.ts';
 import { workerMarkAt } from '../../../src/rules/guards/index.ts';
@@ -101,6 +101,50 @@ test('hiddenFolders: Windows hides every profile folder and every other drive', 
   assert.ok(hidden.includes('C:\\Users\\Me\\projects'), 'the desk parent');
   assert.ok(hidden.includes('D:\\') && hidden.includes('Z:\\'), 'the other drives');
   assert.ok(!hidden.includes('C:\\'), 'the desk drive stays walkable');
+});
+
+// walkablePath (#1181): a pretend file system, so each case names its links. A path not
+// in LINKS is its own real path; null means it can't be resolved.
+const LINKS: Record<string, string | null> = {
+  '/usr/local/link-to-home': '/home/me/dotfiles/bin',
+  '/opt/link-to-tools': '/opt/tools/bin',
+  '/missing': null,
+  'C:\\Tools\\Link': 'C:\\Users\\Me\\bin',
+};
+const pretend = (path: string) => (Object.hasOwn(LINKS, path) ? LINKS[path] : path);
+
+test('walkablePath: no hidden folder unless shown again; real paths, in order, once (case table)', () => {
+  const hidden = ['/home', '/home/me', '/run'];
+  const shown = ['/home/me/.local/share/claude', '/home/me/desk'];
+  const cases: [string, string, string][] = [
+    // Positive controls: folders outside any hidden one pass as they are, in their order.
+    ['system folders stay', '/usr/local/bin:/usr/bin', '/usr/local/bin:/usr/bin'],
+    ['order is kept', '/usr/bin:/usr/local/bin', '/usr/bin:/usr/local/bin'],
+    ['a folder shown again inside a hidden one stays', '/home/me/.local/share/claude/bin:/usr/bin', '/home/me/.local/share/claude/bin:/usr/bin'],
+    ['a link outside a hidden folder becomes its real path', '/opt/link-to-tools:/usr/bin', '/opt/tools/bin:/usr/bin'],
+    // The bug: a folder in the hidden home, or a link into it, first on PATH.
+    ['a hidden folder is dropped', '/home/me/bin:/usr/bin', '/usr/bin'],
+    ['a link into a hidden folder is dropped', '/usr/local/link-to-home:/usr/bin', '/usr/bin'],
+    ['a folder only sharing a prefix with a shown one is dropped', '/home/me/desk-other/bin:/usr/bin', '/usr/bin'],
+    ['a folder only sharing a prefix with a hidden one stays', '/runner/bin', '/runner/bin'],
+    ['an entry that is not there is dropped', '/missing:/usr/bin', '/usr/bin'],
+    ['relative and empty entries are dropped', 'bin::./x:/usr/bin', '/usr/bin'],
+    ['a repeat is dropped, the first kept', '/usr/bin:/opt/tools/bin:/usr/bin:/opt/link-to-tools', '/usr/bin:/opt/tools/bin'],
+  ];
+  for (const [name, path, want] of cases) assert.equal(walkablePath(path, hidden, shown, 'linux', pretend), want, name);
+  // Windows: its own separator, absolute paths with a drive, folders compared without case.
+  assert.equal(walkablePath('C:\\Tools\\Link;c:\\users\\me\\x;C:\\Windows;bin', ['C:\\Users\\Me'], [], 'win32', pretend), 'C:\\Windows');
+});
+
+test('planDesk: the agent PATH loses a link into the hidden home and keeps the rest (#1181)', () => {
+  const { projects, desk } = makeDesk();
+  const inHome = join(realpathSync(TEST_HOME), 'dotfiles-1181', 'bin');
+  mkdirSync(inHome, { recursive: true });
+  const link = join(makeTempDir('path-link-'), 'bin');
+  symlinkSync(inHome, link);
+  const node = dirname(realpathSync(process.execPath));
+  const plan = planDesk({ runtime: 'claude-code', desk, command: ['node', 'x.js'], env: { ...env(), PATH: [link, node, node].join(delimiter) }, markDesk: (folder) => markWorktree(join(projects, 'origin'), folder, gitEnv()) });
+  assert.equal(plan.env.PATH, node, 'the link is gone, Node stays once');
 });
 
 test('planDesk: the desk and its own state writable, a token dropped, role and time zone fixed', () => {

@@ -4,11 +4,11 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import type { DeskPlan } from '../../../../src/agents/desk/desk.ts';
-import { parentFolders, SEATBELT, sbplString, seatbeltProfile } from '../../../../src/agents/desk/fence/seatbelt.ts';
+import { fencedPath, parentFolders, SEATBELT, sbplString, seatbeltProfile, shownFolders } from '../../../../src/agents/desk/fence/seatbelt.ts';
 import { makeTempDir } from '../../../repo/helpers.ts';
 
 const PLAN: DeskPlan = {
@@ -88,6 +88,57 @@ test('SEATBELT.fence: sandbox-exec with the written profile, the proxy names and
   assert.equal(fenced.env.HTTPS_PROXY, 'http://127.0.0.1:49152');
   assert.equal(fenced.env.TMPDIR, join(scratch, 'tmp'));
   assert.equal(SEATBELT.proxyAddress(scratch), 0);
+});
+
+// fencedPath (#1181): a pretend file system, so each case names its links. A path not in
+// LINKS is its own real path; null means it can't be resolved.
+const LINKS: Record<string, string | null> = {
+  '/Users/someone/bin': '/Users/someone/dotfiles/bin',
+  '/opt/homebrew/link-to-hidden': '/Users/someone/dotfiles/bin',
+  '/Users/someone/project/node_modules/.bin': '/Users/someone/project/node_modules/.bin',
+  '/a/link-to-shown': '/a/b/bin',
+  '/shown-link': '/a/b',
+  '/missing': null,
+};
+const pretend = (path: string) => (Object.hasOwn(LINKS, path) ? LINKS[path] : path);
+const SHOWN = ['/usr', '/opt', '/a/b', '/shown-link'];
+
+test('fencedPath: real paths inside a shown folder, in order, once; the rest dropped', () => {
+  const cases: [string, string, string][] = [
+    // Positive controls: shown folders pass as they are, in their order.
+    ['system folders stay', '/usr/bin:/opt/homebrew/bin', '/usr/bin:/opt/homebrew/bin'],
+    ['order is kept', '/opt/homebrew/bin:/usr/bin', '/opt/homebrew/bin:/usr/bin'],
+    ['a shown folder itself stays', '/a/b', '/a/b'],
+    ['a link into a shown folder becomes its real path', '/a/link-to-shown:/usr/bin', '/a/b/bin:/usr/bin'],
+    // The bug: a link into the hidden home, first on PATH.
+    ['a link into a hidden folder is dropped', '/Users/someone/bin:/opt/homebrew/bin', '/opt/homebrew/bin'],
+    ['a link inside a shown folder that points out is dropped', '/opt/homebrew/link-to-hidden:/usr/bin', '/usr/bin'],
+    ['a hidden folder is dropped', '/Users/someone/project/node_modules/.bin:/usr/bin', '/usr/bin'],
+    ['a folder only sharing a prefix is dropped', '/a/bc/bin:/a/b/bin', '/a/b/bin'],
+    ['a shown folder given by a link counts by its real path', '/a/b/x', '/a/b/x'],
+    ['an entry that is not there is dropped', '/missing:/usr/bin', '/usr/bin'],
+    ['relative and empty entries are dropped', 'bin::./x:/usr/bin', '/usr/bin'],
+    ['a repeat is dropped, the first kept', '/usr/bin:/a/link-to-shown:/usr/bin:/a/b/bin', '/usr/bin:/a/b/bin'],
+    ['nothing shown leaves PATH empty', '/Users/someone/bin', ''],
+  ];
+  for (const [name, path, want] of cases) assert.equal(fencedPath(path, SHOWN, pretend), want, name);
+});
+
+test('fencedPath: on the real file system, a link into a hidden folder goes and a link into a shown one stays', () => {
+  const root = makeTempDir('fenced-path-');
+  for (const folder of ['shown/bin', 'shownc/bin', 'hidden/bin']) mkdirSync(join(root, folder), { recursive: true });
+  symlinkSync(join(root, 'hidden', 'bin'), join(root, 'to-hidden'));
+  symlinkSync(join(root, 'shown', 'bin'), join(root, 'to-shown'));
+  const path = ['to-hidden', 'shownc/bin', 'to-shown', 'shown/bin', 'gone'].map((part) => join(root, part)).join(':');
+  // The temp folder may itself sit behind a link (/var on macOS), so the answer is by real path.
+  const real = fencedPath(join(root, 'shown'), [join(root, 'shown')]);
+  assert.equal(fencedPath(path, [join(root, 'shown')]), join(real, 'bin'));
+});
+
+test('SEATBELT.fence: the agent gets the fenced PATH; no PATH stays no PATH', () => {
+  const scratch = makeTempDir('seatbelt-');
+  assert.equal(SEATBELT.fence({ ...PLAN, env: { ...PLAN.env, PATH: '/usr/bin:/Users/someone/missing-bin' } }, 49152, scratch).env.PATH, fencedPath('/usr/bin', shownFolders(PLAN, scratch)));
+  assert.ok(!('PATH' in SEATBELT.fence(PLAN, 49152, scratch).env));
 });
 
 test("SEATBELT.fence: TMPDIR, TEMP and TMP are the desk's writable scratch folder, never the caller's (#1172)", () => {

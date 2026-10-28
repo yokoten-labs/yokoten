@@ -9,7 +9,7 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -85,7 +85,8 @@ const git = (...args) => spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.e
 git('add', 'written.txt');
 const committed = git('commit', '-qm', 'desk');
 answer.commit = committed.status;
-answer.commitError = (committed.stderr || '').trim().slice(-500);
+// The cause too, when git never started (#1181): an EPERM from the PATH search has no stderr.
+answer.commitError = [committed.error && 'error ' + committed.error.code, committed.signal && 'signal ' + committed.signal, (committed.stderr || '').trim().slice(-500)].filter(Boolean).join('; ');
 answer.outsideWrite = tryIt(() => { fs.writeFileSync(outsideFile, 'x'); return 'ok'; });
 answer.homeWrite = tryIt(() => { fs.writeFileSync(process.env.HOME + '/outside.txt', 'x'); return 'ok'; });
 answer.otherList = tryIt(() => fs.readdirSync(otherProject).join(','));
@@ -177,13 +178,19 @@ async function holdsContract(backend: DeskBackend): Promise<void> {
   mkdirSync(join(otherDesk, '.git'), { recursive: true });
   prepareDeskTeam({ team, name: 'other', runtime: 'codex', model: 'gpt-5.5', desk: otherDesk });
   appendMessage({ name: LEAD, team, readState: join(team, 'lead', 'read.json'), inDesk: false }, 'probe', 'hello from the lead', new Date());
+  // First on PATH, a folder reached through a link into the hidden home, as `~/bin` linked
+  // to dotfiles (#1181). Seatbelt answers a walk there with EPERM, where the PATH search stops.
+  const linkedBin = join(process.env.HOME ?? '', 'dotfiles', 'bin');
+  mkdirSync(linkedBin, { recursive: true });
+  const pathLink = join(makeTempDir('path-link-'), 'bin');
+  symlinkSync(linkedBin, pathLink);
   try {
     const plan = planDesk({
       runtime: 'claude-code',
       desk,
       command: [process.execPath, 'probe.cjs', CLI, outsideFile, other, String(echoPort), team],
       // A Claude Code shell's TMPDIR, read-only in the fence (#1172): the desk must give its own.
-      env: { ...process.env, GH_TOKEN: 'not-a-real-token', TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude' },
+      env: { ...process.env, GH_TOKEN: 'not-a-real-token', TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude', PATH: [pathLink, process.env.PATH ?? ''].join(':') },
       extraHosts: [`localhost:${echoPort}`],
       team: { folder: team, name: 'probe' },
       markDesk: (folder) => markWorktree(origin, folder, process.env),

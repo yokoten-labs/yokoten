@@ -149,6 +149,44 @@ function realOr(path: string): string {
   }
 }
 
+/** The real path, or null when it can't be resolved. */
+function realOrNull(path: string): string | null {
+  try {
+    return realpathSync(path);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A PATH the fence can walk (#1181). Each entry becomes its real path and stays unless it
+ * is inside a `hidden` folder and in none of `shown`, by whole path segments (`/a/b` never
+ * admits `/a/bc`). Order is kept and a repeat is dropped. An entry that is relative, empty
+ * or can't be resolved is dropped too: fail closed.
+ *
+ * Why: Seatbelt (macOS) answers a walk into a hidden folder with EPERM, not ENOENT. A
+ * program search (libuv's, like execvp) moves on past ENOENT, EACCES and ENOTDIR but stops
+ * at EPERM, so one PATH folder linked into the hidden home, before git's folder, broke
+ * every program started by name. The agent program is found before this, with the full
+ * PATH, and its folder is readable, so it stays.
+ */
+export function walkablePath(path: string, hidden: readonly string[], shown: readonly string[], platform: NodeJS.Platform, real: (path: string) => string | null = realOrNull): string {
+  const isWindows = platform === WINDOWS_PLATFORM;
+  const delimiter = isWindows ? ';' : ':';
+  const isAbsolute = isWindows ? win32.isAbsolute : (entry: string) => entry.startsWith('/');
+  const realFolders = (folders: readonly string[]) => folders.map((folder) => real(folder) ?? folder);
+  const [hide, show] = [realFolders(hidden), realFolders(shown)];
+  const kept: string[] = [];
+  for (const entry of path.split(delimiter)) {
+    if (!isAbsolute(entry)) continue;
+    const resolved = real(entry);
+    if (resolved === null || kept.includes(resolved)) continue;
+    const isHidden = hide.some((folder) => isInside(resolved, folder, platform)) && !show.some((folder) => isInside(resolved, folder, platform));
+    if (!isHidden) kept.push(resolved);
+  }
+  return kept.join(delimiter);
+}
+
 /** Whether `path` is a link, even one that points nowhere. */
 function isLink(path: string): boolean {
   try {
@@ -324,6 +362,9 @@ export function planDesk(request: DeskRequest): DeskPlan {
     // Who the agent is (team/who.ts): the lead's own env never has these.
     Object.assign(teamEnv, { YOKOTEN_DESK: desk, YOKOTEN_TEAM: folder });
   }
+  // Every backend gets a PATH without hidden folders (#1181); Seatbelt cuts it further.
+  // No PATH stays no PATH: the key is left out, never set to undefined.
+  const path: Record<string, string> = env.PATH === undefined ? {} : { PATH: walkablePath(env.PATH, hidden, [desk, ...writable, ...readable], platform) };
   return {
     desk,
     state: writable,
@@ -331,7 +372,7 @@ export function planDesk(request: DeskRequest): DeskPlan {
     hidden,
     locked,
     hosts: [...new Set([...runtime.hosts, ...(request.extraHosts ?? [])])],
-    env: { ...buildAgentEnv(env, { runtime: request.runtime, set: { YOKOTEN_ROLE: 'worker', ...teamEnv, ...(model ? { YOKOTEN_MODEL: model } : {}), ...(identity ? { YOKOTEN_VENDOR: identity.vendor } : {}) } }), ...runtime.stateEnv(state), TZ: 'UTC' },
+    env: { ...buildAgentEnv(env, { runtime: request.runtime, set: { YOKOTEN_ROLE: 'worker', ...teamEnv, ...(model ? { YOKOTEN_MODEL: model } : {}), ...(identity ? { YOKOTEN_VENDOR: identity.vendor } : {}) } }), ...path, ...runtime.stateEnv(state), TZ: 'UTC' },
     command: command ?? request.command,
     isOwnSandboxOff: command !== null,
     upstream: readHostProxy(env),

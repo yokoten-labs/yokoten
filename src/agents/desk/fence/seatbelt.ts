@@ -14,6 +14,7 @@
 //   Launch Services or send Apple events: those start programs outside the fence.
 // - Mach services: a short list that programs need to look up users, log, check TLS
 //   certificates and read preferences.
+// - PATH: only the folders the profile shows, each by its real path (#1181).
 // In SBPL a later rule wins over an earlier one, so each deny for a lock comes last.
 //
 // Untested on a Mac in this change: run test/agents/desk/start.test.ts there once.
@@ -22,7 +23,7 @@ import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv, tempEnv } from '../desk.ts';
+import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv, tempEnv, walkablePath } from '../desk.ts';
 
 /** The system folders every program reads: its libraries, tools, settings and time zones. */
 const SYSTEM_READS = ['/usr', '/bin', '/sbin', '/System', '/Library', '/opt', '/private/etc', '/private/var/db/timezone', '/private/var/select', '/dev'];
@@ -74,11 +75,24 @@ export function gitConfigReads(env: Env): string[] {
   return [join(home, '.gitconfig'), join(env.XDG_CONFIG_HOME || join(home, '.config'), 'git')];
 }
 
+/** The folders the profile shows whole: the system's, the readable paths, the desk, its state and the scratch folder. */
+export function shownFolders(plan: DeskPlan, scratch: string): string[] {
+  return [...SYSTEM_READS, ...plan.readable, plan.desk, ...plan.state, scratch];
+}
+
+/**
+ * The agent's PATH, cut to what the profile shows (#1181): `(deny default)` hides the
+ * whole disk, so only a real path inside one of `shown` stays. `walkablePath` says why.
+ */
+export function fencedPath(path: string, shown: readonly string[], real?: (path: string) => string | null): string {
+  return walkablePath(path, ['/'], shown, 'darwin', real);
+}
+
 /** The SBPL profile for a plan, with the proxy on `port` and a private scratch folder. */
 export function seatbeltProfile(plan: DeskPlan, port: number, scratch: string): string {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`the proxy port ${port} is not a port`);
   const writable = [plan.desk, ...plan.state, scratch];
-  const readable = [...SYSTEM_READS, ...plan.readable, ...writable, ...gitConfigReads(plan.env)];
+  const readable = [...shownFolders(plan, scratch), ...gitConfigReads(plan.env)];
   const lines = [
     '(version 1)',
     '; A yokoten desk (#637). Written for one run. Nothing is allowed that is not named here.',
@@ -126,10 +140,12 @@ export const SEATBELT: DeskBackend = {
     const profile = join(scratch, 'desk.sb');
     const work = join(scratch, 'tmp');
     writeFileSync(profile, seatbeltProfile(plan, port, scratch));
+    // No PATH stays no PATH: the key is left out, never set to undefined.
+    const path: Record<string, string> = plan.env.PATH === undefined ? {} : { PATH: fencedPath(plan.env.PATH, shownFolders(plan, scratch)) };
     return {
       file: '/usr/bin/sandbox-exec',
       args: ['-f', profile, ...plan.command],
-      env: { ...plan.env, ...proxyEnv(`http://127.0.0.1:${port}`), ...tempEnv(work) },
+      env: { ...plan.env, ...path, ...proxyEnv(`http://127.0.0.1:${port}`), ...tempEnv(work) },
     };
   },
 };
