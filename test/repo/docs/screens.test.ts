@@ -831,7 +831,7 @@ test('every render: RENDER_WAIVED holds old screens only, each naming #1115, and
 // owns the ceilings; a group reports what healed.
 
 /** The most each ratchet may find. Only the integrator changes these, and only down. */
-const RATCHET_CEILINGS: Record<Exclude<RatchetId, 'R4'>, number> = { R1: 13, R2: 3, R3: 61, R5: 6, R6: 6 };
+const RATCHET_CEILINGS: Record<Exclude<RatchetId, 'R4'>, number> = { R1: 13, R2: 0, R3: 61, R5: 6, R6: 0 };
 
 /**
  * R4: the raw writes that stay, as `path: <the line, trimmed>`. A child's or a hook's own
