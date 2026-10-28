@@ -907,8 +907,9 @@ test('hook and redact started by hand on a terminal print a title and one Next l
   for (const name of ['hook', 'redact']) {
     const r = await invoke([name], { env: sandbox.env, cwd: sandbox.repo, isTTY: true });
     assert.equal(r.code, 0, name);
-    assert.match(r.stdout, new RegExp(`^yokoten ${name} · [^\\n]+\\n(?: +[^\\n]+\\n)*\\nNext: [^\\n]+\\n$`), name);
-    assert.ok(r.stdout.split('\n').every((line) => line.length < 80), `${name}: under 80 columns`);
+    const plain = r.stdout.replace(/\u001b\[[0-9;]*m/g, '');
+    assert.match(plain, new RegExp(`^yokoten ${name} · [^\\n]+\\n(?: +[^\\n]+\\n)*\\nNext: [^\\n]+\\n$`), name);
+    assert.ok(plain.split('\n').every((line) => line.length < 80), `${name}: under 80 columns`);
     assert.equal(r.stderr, '', name);
   }
   // A pipe is not a terminal: redact still works on its input.

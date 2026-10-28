@@ -17,7 +17,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Env, loadConfig } from '../../../rules/config.ts';
 import { hideHome, loadMarkKinds, mapMarkKinds, scanText } from '../../../rules/privacy.ts';
-import { noteLine, wrap } from '../../../rules/text/screen.ts';
+import { noteLine, screen, wrap } from '../../../rules/text/screen.ts';
 import { isSecretValue, SECRET_NAME } from '../agent-env.ts';
 import { keepReadState, type Message, unread } from './outbox.ts';
 import { LEAD, MAX_DELIVERED, type Member, oneLine, readRoster, UNSEEN } from './team.ts';
@@ -93,11 +93,14 @@ export function deliveryText(messages: Message[], problems: string[], waiting: n
   if (!messages.length && !problems.length) return '';
   const roster = readRoster(me.team);
   const count = messages.length === 1 ? '1 message' : `${messages.length} messages`;
-  const lines = messages.length ? [...wrap('yokoten msg · ', `${count} for ${me.name}`), ...noteLine(DATA_NOTE)] : [];
-  for (const message of messages) lines.push(...wrapMessage(message, roster, env, root));
-  for (const problem of problems) lines.push(...noteLine(`${problem}. Tell the lead.`));
-  if (waiting) lines.push(...noteLine(`${waiting} more waiting; run \`yokoten msg inbox\`.`));
-  return lines.join('\n');
+  // Each part is a block of its own; screen() puts the gaps between them.
+  return screen(
+    messages.length ? wrap('yokoten msg · ', `${count} for ${me.name}`) : [],
+    messages.length ? noteLine(DATA_NOTE) : [],
+    ...messages.map((message) => wrapMessage(message, roster, env, root)),
+    ...problems.map((problem) => noteLine(`${problem}. Tell the lead.`)),
+    waiting ? noteLine(`${waiting} more waiting; run \`yokoten msg inbox\`.`) : [],
+  ).join('\n');
 }
 
 /**
