@@ -15,9 +15,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { type Config, type Env, loadConfig } from '../rules/config.ts';
 import { matcher } from '../rules/config.ts';
-import { docsLink, type Finding, finding, noteWork, type RuleId } from '../rules/text/message.ts';
+import { claudeOnlyRulesFix, claudeOnlyRulesWhat, docsLink, type Finding, finding, noteWork, type RuleId } from '../rules/text/message.ts';
 import { CHANGES_DIR, parseCodeOwners } from '../rules/pr.ts';
-import { BUILD_DIRS, isBuildOutput } from '../rules/layout.ts';
+import { BUILD_DIRS, BUILT, isBuildOutput } from '../rules/layout.ts';
 import { homeOf } from '../rules/privacy.ts';
 import { hasPlugin, hasProjectHook, sandboxProblem as claudeSandboxProblem } from '../agents/runtimes/claude-code.ts';
 import { sandboxProblem as codexSandboxProblem } from '../agents/runtimes/codex.ts';
@@ -337,6 +337,13 @@ const testsFix = (root: string) => {
   return `${start}, add this job under \`jobs:\`. Copy the \`uses:\` lines from the other jobs, because they are pinned: \`tests: {runs-on: ubuntu-latest, steps: ${steps}}\`. Then add \`tests\` to the \`needs\` list of the \`ci\` job, so a failing test blocks the merge`;
 };
 
+/**
+ * A source file that sits in a folder called build (#1167): docker/build/Dockerfile, build/Makefile, build/ci.sh.
+ * A build does not make these, so they are no build output. A binary by its name still is.
+ */
+const SOURCE_IN_BUILD_DIR = /^(?:dockerfile|containerfile|makefile|gnumakefile)(?:[-._].*)?$|\.(?:sh|mk|md|cmake|dockerfile)$/i;
+const isBuildSource = (path: string) => !BUILT.test(path) && SOURCE_IN_BUILD_DIR.test(path.slice(path.lastIndexOf('/') + 1));
+
 /** Tracked build output, as yokoten.json lets it through; null outside a git repo. */
 const builtFiles = (root: string, env: Env): string[] | null => {
   let files: string[];
@@ -351,8 +358,11 @@ const builtFiles = (root: string, env: Env): string[] | null => {
   } catch {
     // a broken yokoten.json: the commit check names it; here, nothing is allowed
   }
-  return files.filter((f) => isBuildOutput(f, allow));
+  return files.filter((f) => isBuildOutput(f, allow) && !isBuildSource(f));
 };
+
+/** Where Changesets keeps the pending release notes (#1167). */
+const CHANGESET_DIR = '.changeset';
 
 /** The one security file init does not write: the license is the owner's choice. */
 const LICENSE_FILE = 'license file';
@@ -363,15 +373,33 @@ const LICENSE_FILE = 'license file';
  * LICENSES.md and LICENSING.md do not: they explain which license applies where, and are no license.
  */
 export const isLicenseName = (name: string) => /^((un)?licen[cs]e|copying)([-._].*)?$/i.test(name);
-/** Whether the root has a license file: one readdir, names as the folder lists them. */
+/** The REUSE layout (#1167): the license texts sit in a LICENSES/ folder (Uniswap names it licenses/ and the files MIT_LICENSE). */
+const isLicenseFolder = (name: string) => name.toLowerCase() === 'licenses';
+/** Whether the root has a license file, or a licenses/ folder with a file in it: names as the folder lists them. */
 const hasLicense = (root: string) => {
   try {
-    return readdirSync(root, { withFileTypes: true }).some((entry) => !entry.isDirectory() && isLicenseName(entry.name));
+    const entries = readdirSync(root, { withFileTypes: true });
+    return (
+      entries.some((entry) => !entry.isDirectory() && isLicenseName(entry.name)) ||
+      entries.some((entry) => entry.isDirectory() && isLicenseFolder(entry.name) && readdirSync(join(root, entry.name), { withFileTypes: true }).some((inner) => inner.isFile()))
+    );
   } catch {
     return false;
   }
 };
 const DEPENDABOT_FILE = 'Dependabot config';
+const DEPENDABOT_PATHS = ['.github/dependabot.yml', '.github/dependabot.yaml'];
+/** Renovate reads these at the root or in .github/ (#1167); `.renovaterc` may carry an extension. */
+const RENOVATE_PATHS = ['renovate.json', 'renovate.json5', '.github/renovate.json', '.github/renovate.json5', '.renovaterc', '.renovaterc.json', '.renovaterc.json5'];
+/** Whether the repo updates dependencies with Dependabot or with Renovate. */
+const hasUpdates = (root: string) => {
+  if ([...DEPENDABOT_PATHS, ...RENOVATE_PATHS].some((p) => existsSync(join(root, p)))) return true;
+  try {
+    return readdirSync(root).some((name) => name.startsWith('.renovaterc'));
+  } catch {
+    return false;
+  }
+};
 /**
  * Each security file: its name, the paths the default-branch lookup asks for (#405), and how
  * to tell the root has it when any of those paths is not enough. A license has many names
@@ -379,7 +407,7 @@ const DEPENDABOT_FILE = 'Dependabot config';
  */
 const SECURITY_FILES: [string, string[], ((root: string) => boolean)?][] = [
   ['security policy (SECURITY.md)', ['.github/SECURITY.md', 'SECURITY.md']],
-  [DEPENDABOT_FILE, ['.github/dependabot.yml', '.github/dependabot.yaml']],
+  [DEPENDABOT_FILE, [...DEPENDABOT_PATHS, ...RENOVATE_PATHS], hasUpdates],
   [LICENSE_FILE, ['LICENSE', 'LICENSE.md', 'LICENSE.txt', 'LICENCE', 'COPYING'], hasLicense],
 ];
 /** The security files asked for. With "notNow" `ci` (#377), not the kit's Dependabot config: it updates only the actions that CI runs. */
@@ -714,10 +742,12 @@ export const ROAD: Step[] = [
     check: (root) => existsSync(join(root, 'AGENTS.md')) && claudeReadsRules(root),
     what: (root) => {
       const gap = findRulesGap(root);
+      if (!existsSync(join(root, 'AGENTS.md')) && gap) return claudeOnlyRulesWhat(gap.file);
       return existsSync(join(root, 'AGENTS.md')) && gap ? `${gap.file} does not import AGENTS.md, so Claude Code does not read the rules` : 'no AGENTS.md, so the agents have no written rules here';
     },
     fix: (root) => {
       const gap = findRulesGap(root);
+      if (!existsSync(join(root, 'AGENTS.md')) && gap) return claudeOnlyRulesFix(gap.file, gap.line);
       if (!existsSync(join(root, 'AGENTS.md')) || !gap) return '`yokoten init` adds one';
       // init writes nothing through a link (#428).
       return gap.link
@@ -883,13 +913,13 @@ export const ROAD: Step[] = [
     stage: 3,
     key: 'changelog',
     // changes/ alone passes; a CHANGELOG.md must also have an Unreleased section.
-    paths: [[CHANGES_DIR]],
-    // A changes/ folder (#132) counts too: its files become the Unreleased lines at a release.
-    check: (root) => /^#+\s*\[?Unreleased\]?/im.test(read(join(root, 'CHANGELOG.md'))) || existsSync(join(root, CHANGES_DIR)),
+    paths: [[CHANGES_DIR, CHANGESET_DIR]],
+    // A changes/ folder (#132) counts too: its files become the Unreleased lines at a release. So does a Changesets .changeset/ folder (#1167).
+    check: (root) => /^#+\s*\[?Unreleased\]?/im.test(read(join(root, 'CHANGELOG.md'))) || existsSync(join(root, CHANGES_DIR)) || existsSync(join(root, CHANGESET_DIR)),
     what: () => `no CHANGELOG.md with an "Unreleased" section, and no ${CHANGES_DIR}/ folder`,
     fix: () => `\`yokoten init\` adds both; then each pull request adds a file in ${CHANGES_DIR}/ for each change that users notice`,
     why: 'each pull request adds its entry as it goes, so a release needs no digging',
-    how: `CHANGELOG.md has an Unreleased heading, or the repo has a ${CHANGES_DIR}/ folder`,
+    how: `CHANGELOG.md has an Unreleased heading, or the repo has a ${CHANGES_DIR}/ folder or a ${CHANGESET_DIR}/ folder (Changesets)`,
     standard: 'Best Practices: release_notes',
   },
   {

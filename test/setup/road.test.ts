@@ -104,6 +104,9 @@ const TESTS_CASES: [string, Record<string, string>, boolean][] = [
   ['jobs:\n  t:\n    steps:\n      -run: tox\n', PLAIN, false],
   ['jobs:\n  t:\n    steps:\n      - run: |\n          # python -m unittest\n          echo skipped\n', PLAIN, false],
   ['jobs:\n  t:\n    steps:\n      - run: |\n          echo one\n      - name: tox\n        uses: some/action@v1\n', PLAIN, false],
+  // Foundry (#1167): `forge test` runs the tests; building, formatting or asking the version does not.
+  ...['forge test', 'forge test --isolate -vvv', 'forge test --match-contract Pool', 'FOUNDRY_PROFILE=ci forge test'].map((run): [string, Record<string, string>, boolean] => [run, PLAIN, true]),
+  ...['forge build', 'forge fmt --check', 'forge test --version', 'echo forge test', 'pip install forge'].map((run): [string, Record<string, string>, boolean] => [run, PLAIN, false]),
   // The package.json script.
   ['npm test', SCRIPT, true],
   ['npm run test', SCRIPT, true],
@@ -711,4 +714,81 @@ test('road: a missing commit hook needs chmod everywhere but Windows (issue #100
     assert.ok(missing, `${platform}: the pre-merge-commit hook is not there`);
     assert.equal(missing.needsChmod, needsChmod, platform);
   }
+});
+
+// ---- Working setups the road once called missing (#1167): each row is a positive and a negative control. ----
+
+/** A scratch folder with these files. */
+const folderWith = (files: Record<string, string>) => {
+  const dir = makeTempDir('yokoten-misread-');
+  for (const [path, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true });
+    writeFileSync(join(dir, path), text);
+  }
+  return dir;
+};
+
+const stepOf = (key: string) => ROAD.find((s) => s.key === key)!;
+
+// [what the row checks, the step, the files, whether the step is done]
+const MISREAD_CASES: [string, string, Record<string, string>, boolean][] = [
+  // Renovate counts as dependency updates; SECURITY.md and a license are there so only that part decides.
+  ...['renovate.json', 'renovate.json5', '.github/renovate.json', '.renovaterc', '.renovaterc.json'].map((file): [string, string, Record<string, string>, boolean] => [
+    `updates: ${file}`, 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', [file]: '{}\n' }, true]),
+  ['updates: none', 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n' }, false],
+  ['updates: a look-alike name', 'security-files', { 'SECURITY.md': 's\n', LICENSE: 'l\n', 'renovate.md': 'x\n' }, false],
+  // A license in a licenses/ or LICENSES/ folder (REUSE layout, Uniswap).
+  ['license: licenses/MIT_LICENSE', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'licenses/MIT_LICENSE': 'MIT\n' }, true],
+  ['license: LICENSES/MIT.txt', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'LICENSES/MIT.txt': 'MIT\n' }, true],
+  ['license: licenses/ holds only a folder', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n', 'licenses/sub/x.txt': 'x\n' }, false],
+  ['license: none', 'security-files', { 'SECURITY.md': 's\n', '.github/dependabot.yml': 'x\n' }, false],
+  // Changesets counts like changes/.
+  ['changelog: .changeset/', 'changelog', { '.changeset/config.json': '{}\n' }, true],
+  ['changelog: none', 'changelog', { 'README.md': 'x\n' }, false],
+];
+
+test('road: a Renovate config, a licenses/ folder and a .changeset/ folder count (#1167)', () => {
+  for (const [name, key, files, done] of MISREAD_CASES) {
+    const dir = folderWith(files);
+    try {
+      assert.equal(stepOf(key).check(dir, {}, undefined, undefined), done, name);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('road: a CLAUDE.md with no AGENTS.md says the rules exist but only Claude Code reads them (#1167)', () => {
+  const rules = stepOf('rules');
+  const claudeOnly = folderWith({ 'CLAUDE.md': '# our rules\n' });
+  const inClaudeDir = folderWith({ '.claude/CLAUDE.md': '# our rules\n' });
+  const none = folderWith({ 'README.md': 'x\n' });
+  try {
+    assert.equal(rules.check(claudeOnly, {}, undefined, undefined), false);
+    assert.equal(rules.what(claudeOnly, {}, undefined, undefined), 'CLAUDE.md has the rules, but only Claude Code reads them');
+    assert.equal(rules.fix(claudeOnly, {}, undefined, undefined), 'move the rules from CLAUDE.md to a new AGENTS.md, then add the line `@AGENTS.md` to CLAUDE.md, so Claude Code still reads them');
+    assert.match(String(rules.fix(inClaudeDir, {}, undefined, undefined)), /add the line `@\.\.\/AGENTS\.md` to \.claude\/CLAUDE\.md/);
+    // The control: no rules file at all keeps the old words.
+    assert.equal(rules.what(none, {}, undefined, undefined), 'no AGENTS.md, so the agents have no written rules here');
+    assert.equal(rules.fix(none, {}, undefined, undefined), '`yokoten init` adds one');
+  } finally {
+    for (const dir of [claudeOnly, inClaudeDir, none]) rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('road: build/ files that are source are no build output; built files still are (#1167)', () => {
+  const sandbox = makeSandbox();
+  const done = () => stepOf('no-build-output').check(sandbox.repo, sandbox.env, undefined, undefined);
+  assert.equal(done(), true);
+  for (const file of ['docker/build/Dockerfile', 'build/Dockerfile.dev', 'build/Makefile', 'build/release.sh']) sandbox.write(file, 'x\n');
+  sandbox.git('add', '.');
+  assert.equal(done(), true, 'source files in a build folder');
+  sandbox.write('docker/build/out.js', 'x\n');
+  sandbox.git('add', '.');
+  assert.equal(done(), false, 'a built file next to them');
+  sandbox.write('yokoten.json', JSON.stringify({ allowBuild: ['docker/build/out.js'] }));
+  assert.equal(done(), true, 'allowBuild still lets it through');
+  sandbox.write('build/tool.so', 'x\n');
+  sandbox.git('add', '.');
+  assert.equal(done(), false, 'a binary by its name is output even beside source');
 });

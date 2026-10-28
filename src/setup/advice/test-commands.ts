@@ -572,6 +572,11 @@ export const TEST_LANGUAGES: TestLanguage[] = [
     language: 'Dart', files: ['pubspec.yaml'], is: (root) => !isFlutter(root), runner: 'dart test', runs: [sequence(word('dart'), optional(word('run')), word('test'))],
     hasTests: (_, scan) => hasTestFile(scan, (name) => name.endsWith('_test.dart')),
   },
+  {
+    // Foundry, the usual Solidity tool (#1167): tests are `*.t.sol` files, run by `forge test`.
+    language: 'Solidity', files: ['foundry.toml'], runner: 'forge test', runs: [sequence(word('forge'), word('test'))],
+    hasTests: (_, scan) => hasTestFile(scan, (name) => name.endsWith('.t.sol')),
+  },
   { language: 'Makefile', files: MAKEFILES, is: (root) => makeTarget(root) !== '', runner: (root) => `make ${makeTarget(root)}`, runs: [sequence(word('make'), MAKE_FLAGS, word('test', 'tests'))] },
   // Node runners that need no package.json script. A Node project is found by its script, not here.
   { language: 'Node.js', files: [], runner: '', runs: [sequence(word('node'), FLAGS, word('--test')), sequence(NODE_EXEC, word('vitest', 'jest'))] },

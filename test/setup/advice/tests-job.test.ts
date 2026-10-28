@@ -216,6 +216,7 @@ const UNSUPPORTED_MARKERS: Record<string, Record<string, string>> = {
   Deno: { 'deno.json': '{}\n' },
   Swift: { 'Package.swift': '' },
   Elixir: { 'mix.exs': '' },
+  Solidity: { 'foundry.toml': '' },
   Flutter: { 'pubspec.yaml': FLUTTER_PUBSPEC },
   Dart: { 'pubspec.yaml': 'name: demo\n' },
   Makefile: { Makefile: 'test:\n\ttrue\n' },

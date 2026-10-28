@@ -55,6 +55,11 @@ export const DOCS_URL = 'https://github.com/yokoten-labs/yokoten/blob/main/docs/
 export const docsLink = (file: string, section = ''): string => `https://github.com/yokoten-labs/yokoten/blob/main/docs/${file}${section ? `#${section}` : ''}`;
 const guide = (section: string) => `${DOCS_URL}#${section}`;
 
+/** The rules step, when a CLAUDE.md holds the rules and there is no AGENTS.md (#1167): the rules exist, but one tool reads them. */
+export const claudeOnlyRulesWhat = (file: string): string => `${file} has the rules, but only Claude Code reads them`;
+export const claudeOnlyRulesFix = (file: string, importLine: string): string =>
+  `move the rules from ${file} to a new AGENTS.md, then add the line \`${importLine}\` to ${file}, so Claude Code still reads them`;
+
 /** The desk start screen's line when the agent starts with its own sandbox off (#1171). */
 export const DESK_OWN_SANDBOX_NOTE = "this agent's own sandbox can't start in a desk; the desk's sandbox covers the whole agent instead";
 
