@@ -440,7 +440,8 @@ export function servingScreen({ url, isOpening, couldNotOpen = false }: { url: s
 export function runBoard(invocation: CommandRun, options: BoardServerOptions = {}): number | Promise<number> {
   const parsed = parseWords('kanban', invocation.args);
   if (typeof parsed === 'string') return usageError(invocation, parsed);
-  const root = projectRoot(invocation, invocation.cwd);
+  // Run as the old name `board`, a failure still names the new one: the moved note above it says why.
+  const root = projectRoot({ ...invocation, command: 'kanban' }, invocation.cwd);
   if (!root) return 1;
   if (parsed.flags.has('--text') || parsed.flags.has('--json')) {
     const gh = ghRunner(root, invocation.env, BOARD_READ_TIMEOUT_MS);

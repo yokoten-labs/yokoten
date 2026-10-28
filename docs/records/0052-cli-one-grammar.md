@@ -68,7 +68,9 @@ Renaming them would cost four languages of docs and every kit skill for no compl
 |---|---|
 | `yokoten` | First run sets up (asks on a terminal), then shows the status screen. It is built from the results of install, init and doctor, never from printed text |
 | `help` | Shows `yokoten`, `desk`, `kanban`, `check` and `tidy`. `check` joins because every `Fix:` line and the commit hook point to it |
-| `help --all` | Groups by job: Start, Work, Guard, Merge and CI, Maintain. Replaces the two old groups, one for commands said to have moved and one for agents and CI |
+| `help --all` | Five groups by job: Start, Work, Guard, Merge and CI, Maintain. `help` and `version` are in Start, so there is no sixth group. Replaces the two old groups, one for commands said to have moved and one for agents and CI |
+| `doctor` | A bare `doctor` reads and changes nothing. What it used to fix by itself is now `marks fill` |
+| `marks` | New action `fill`: adds the marks yokoten can read from this machine (your git name, git email and forge login) and shows their kinds, never their values |
 | `install`, `init`, `doctor`, `trust`, `update`, `worker`, `msg` | Same. The "moved to yokoten" note is removed: they did not move, and the note cost a line on every run |
 | `board` | Now `kanban`. The note stays, because this is a real rename |
 | `install --list`, `init --list`, `uninstall --list` | Rows under a title, from the result's changes |
@@ -79,6 +81,18 @@ Renaming them would cost four languages of docs and every kit skill for no compl
 | every error line | `yokoten <cmd> · <what>` plus `Next:` on stderr |
 | exit codes | Unchanged: 0 ok, 1 problem or failure. A separate code for usage errors was considered and rejected, because the hook's exit code is a contract with the agent vendors |
 | removed commands | None. `test`, `adopt`, `borrowed` and `learn --upstream` are candidates for v0.2, once we know how they are used |
+
+## How it is held
+
+Six ratchets in `test/repo/docs/screens.test.ts` count what a screen built by hand leaves in
+`src/` and `bin/`: the old `yokoten <cmd>: ` line start (R1), a typed column number (R2), a
+typed blank line in screen code (R3), a raw stream write outside `shared.ts` (R4, an
+allow-list), a regex over report lines (R5) and an `isTTY` read outside `shared.ts` (R6).
+Every ceiling is 0. A hit that stays needs an entry in `RATCHET_REASONS` with its file, line,
+a reason and issue #1115, and the table must be as long as the found count. R3 looks only at
+screen code: the files that print to a person. A `''` that is data (a state, an argument, a
+Markdown brief) sits in a short `NOT_SCREEN` list with a reason, and a test keeps that list
+honest.
 
 ## What this amends
 

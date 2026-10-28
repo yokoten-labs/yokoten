@@ -820,7 +820,7 @@ test('help: lists the always rows; help --all lists every command under its job 
     assert.ok(short.stdout.split('\n').every((line) => line.length <= 80), 'each line fits 80 columns');
   }
   const all = (await sandbox.call(['help', '--all'])).stdout;
-  assert.deepEqual(COMMAND_GROUPS, ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain', 'Help'], 'the jobs, in order (plan section 4)');
+  assert.deepEqual(COMMAND_GROUPS, ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain'], 'the jobs, in order (plan section 4)');
   const headings = all.split('\n').filter((line) => /^[A-Z][\w ]*:$/.test(line));
   assert.deepEqual(headings, COMMAND_GROUPS.map((group) => `${group}:`), 'one heading per job, in order, and no old groups');
   for (const group of COMMAND_GROUPS) {
@@ -829,7 +829,7 @@ test('help: lists the always rows; help --all lists every command under its job 
     const first = members.filter((command) => command.shown === 'always');
     assert.deepEqual(listed(block), [...first, ...members.filter((command) => !first.includes(command))].map((command) => command.name), `${group}: its rows, the ones to start with first`);
   }
-  assert.deepEqual(listed(all.slice(all.indexOf('\nHelp:\n'))), ['help', 'version'], 'help and version come last');
+  assert.ok(listed(all.slice(all.indexOf('\nStart:\n'), all.indexOf('\nWork:\n'))).includes('help') && listed(all.slice(all.indexOf('\nStart:\n'), all.indexOf('\nWork:\n'))).includes('version'), 'help and version join Start');
   assert.deepEqual([...listed(all)].sort(), COMMANDS.map((command) => command.name).sort(), 'each command once with --all');
   // One text column in both lists, from table(): every row's text starts where the others' do.
   const starts = new Set([...short(all), ...short((await sandbox.call(['help'])).stdout)]);
@@ -860,7 +860,7 @@ test('help: only board says it moved; a command that kept its name says nothing 
   const old = await sandbox.call(['board', '--text', '--nope']);
   const now = await sandbox.call(['kanban', '--text', '--nope']);
   assert.equal(old.stderr.split('\n')[0], `note: ${movedNote('board')}`, 'drawn by noteLine');
-  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(2).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
+  assert.deepEqual([old.status, old.stdout, old.stderr.split('\n').slice(1).join('\n').replaceAll('board', 'kanban')], [now.status, now.stdout, now.stderr], 'the same code runs');
   for (const words of [['worker'], ['msg'], ['doctor'], ['install', '--nope']]) assert.doesNotMatch((await sandbox.call(words)).output, /moved to/, words.join(' '));
   // The line is for a person: JSON for a script goes without it.
   assert.doesNotMatch((await sandbox.call(['board', '--json', '--nope'])).stderr, /^note: /m, 'board --json');
@@ -902,12 +902,14 @@ test('help: --help at any position only prints: exit 0, same file tree, no child
   assert.deepEqual(tree(), start, 'the file tree is unchanged');
 });
 
-test('hook and redact started by hand on a terminal print one line and exit 0 (#1053)', async () => {
+test('hook and redact started by hand on a terminal print a title and one Next line, and exit 0 (#1053, #1115)', async () => {
   const sandbox = makeSandbox();
   for (const name of ['hook', 'redact']) {
     const r = await invoke([name], { env: sandbox.env, cwd: sandbox.repo, isTTY: true });
     assert.equal(r.code, 0, name);
-    assert.match(r.stdout, new RegExp(`^yokoten ${name} [^\\n]+\\n$`), name);
+    const plain = r.stdout.replace(/\u001b\[[0-9;]*m/g, '');
+    assert.match(plain, new RegExp(`^yokoten ${name} · [^\\n]+\\n(?: +[^\\n]+\\n)*\\nNext: [^\\n]+\\n$`), name);
+    assert.ok(plain.split('\n').every((line) => line.length < 80), `${name}: under 80 columns`);
     assert.equal(r.stderr, '', name);
   }
   // A pipe is not a terminal: redact still works on its input.

@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { failure, field, isDoneMark, type Mark, MARKS, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
+import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -110,14 +110,8 @@ export function usage(invocation: Invocation, error: string): number {
   const { command } = invocation;
   printJsonError(invocation, error);
   // The error with the word typed, what the command does in one line, then the command to run last (record 0049, #1115).
-  const name = command ?? '';
-  const entry = name ? findCommand(name) : undefined;
-  const said = screen(
-    wrap(name ? `yokoten ${name} · ` : 'yokoten · ', error.replace(/\.$/, '')),
-    entry ? field(entry.name, entry.summary) : [],
-    wrap('Next: ', name ? `\`yokoten ${name} --help\`` : '`yokoten help`'),
-  );
-  print(invocation, said, invocation.stderr);
+  const entry = command ? findCommand(command) : undefined;
+  print(invocation, screen(failure(command || undefined, error), entry ? field(entry.name, entry.summary) : [], nextLine(command ? `yokoten ${command} --help` : 'yokoten help')), invocation.stderr);
   return 1;
 }
 
@@ -169,8 +163,8 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
 export function noRootScreen(command: string | undefined, missing: Finding): string[] {
   const words = command === undefined ? 'yokoten' : `yokoten ${command}`;
   // What happened in the reader's words, with no path: the folder is the one they are in (issue #1115).
-  if (missing.what.startsWith(GIT_MISSING)) return screen(wrap(`${words} · `, missing.what), wrap('Next: ', `install git, or add it to PATH, then run \`${words}\` again`));
-  return screen(wrap(`${words} · `, 'this folder is not in a git repo'), wrap('Next: ', `go to your project's folder, or start one here with \`git init\``));
+  if (missing.what.startsWith(GIT_MISSING)) return failure(command, missing.what, `install git, or add it to PATH, then run \`${words}\` again`);
+  return failure(command, 'this folder is not in a git repo', "go to your project's folder, or start one here with `git init`");
 }
 
 // A person's terminal output (#707): colour and a shape that reads at a glance, like
@@ -387,7 +381,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
   try {
     appendFileSync(env.GITHUB_STEP_SUMMARY, hideHome(stepSummary(name, problems, notes), env));
   } catch (err) {
-    say(invocation, `${name}: the job summary was not written: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
+    print(invocation, noteLine(`${name}: the job summary was not written: ${((err as Error).message ?? String(err)).split('\n')[0]}`), invocation.stderr);
   }
 }
 

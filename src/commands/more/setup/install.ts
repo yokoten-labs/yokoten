@@ -177,7 +177,6 @@ export function runInstall(invocation: Invocation): number {
       print(invocation, title('install', 'nothing changed'));
       return 0;
     }
-    print(invocation, ['']);
   }
   // gh may reach the network for the login: three seconds at most.
   const done = install(invocation.env, { cwd: invocation.cwd, gh: ghIn(invocation.cwd, invocation.env, 3000), ask, platform: platformOf(invocation) });

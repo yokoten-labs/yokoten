@@ -69,6 +69,9 @@ import {
   writeAgentChecks,
 } from '../../src/run/hook.ts';
 
+/** A note line as one line: the wrapped lines under `note: ` joined back. */
+const unwrapped = (text: string): string => text.replace(/\n {6}/g, ' ');
+
 test('hook: blocks with exit 2 and a reason, allows with exit 0', async () => {
   const sandbox = makeSandbox();
   const tool = (tool_input: object) => JSON.stringify({ cwd: sandbox.repo, tool_input });
@@ -390,16 +393,16 @@ test('hook: bad JSON in yokoten.json gives the defaults and one line, and check 
   const sandbox = makeSandbox();
   sandbox.write('yokoten.json', '{ "layout": ');
   const call = (command: string) => sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_input: { command } }) });
-  const line = /^yokoten hook: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: [^\n]+\n/;
+  const line = /^note: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: [^\n]+\n/;
   let result = await call('git push --force');
   assert.equal(result.status, 2, result.stderr);
-  assert.match(result.stderr, line);
+  assert.match(unwrapped(result.stderr), line);
   assert.match(result.stderr, /\nyokoten stopped this: [^\n]*force/);
   assert.ok(!result.stderr.includes(sandbox.repo), 'no absolute path');
   result = await call('git status');
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, line);
-  assert.equal(result.stderr.split('\n').filter(Boolean).length, 1, 'one line');
+  assert.match(unwrapped(result.stderr), line);
+  assert.equal(unwrapped(result.stderr).split('\n').filter(Boolean).length, 1, 'one note');
   // check and doctor still see a config problem.
   result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
@@ -411,12 +414,12 @@ test('hook: a key with the wrong shape gets its default and one line; check name
   // Positive control: before #228, this made the hook crash on an edit (exit 1, guard open).
   sandbox.write('yokoten.json', '{ "leadOnly": "x" }');
   const call = (toolInput: Record<string, string>) => sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_input: toolInput }), extra: { YOKOTEN_ROLE: 'worker' } });
-  const line = /^yokoten hook: yokoten\.json "leadOnly" was ignored, so its default applies; the core checks still run\. yokoten\.json: "leadOnly" must be a list of text, such as [^\n]+\n/;
+  const line = /^note: yokoten\.json "leadOnly" was ignored, so its default applies; the core checks still run\. yokoten\.json: "leadOnly" must be a list of text, such as [^\n]+\n/;
   for (const toolInput of [{ file_path: 'AGENTS.md' }, { command: 'git push --force' }] as Record<string, string>[]) {
     const result = await call(toolInput);
     assert.equal(result.status, 2, result.stderr);
-    assert.match(result.stderr, line);
-    assert.equal(result.stderr.match(/^yokoten hook:/gm)?.length, 1, 'one line');
+    assert.match(unwrapped(result.stderr), line);
+    assert.equal(result.stderr.match(/^note:/gm)?.length, 1, 'one note');
   }
   let result = await sandbox.call(['check']);
   assert.equal(result.status, 1);

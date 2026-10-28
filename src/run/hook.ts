@@ -14,6 +14,7 @@ import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '.
 import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, realPath as real, stopsFile, stopsOffFile } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
+import { noteLine } from '../rules/text/screen.ts';
 import type { DeskAgent } from '../rules/pr.ts';
 import { loadMarks, makeRedactor } from '../rules/privacy.ts';
 import { realHomeRead, useRealHome } from '../rules/privacy/home.ts';
@@ -1692,7 +1693,7 @@ export interface Repo {
  */
 export function loadHookConfig(root: string | null, warn: (line: string) => void): Config {
   if (!root) return DEFAULTS;
-  return loadConfig(root, { onProblem: (problem, ignored) => warn(`yokoten hook: ${sayIgnored(ignored)}; the core checks still run. ${problem}`) });
+  return loadConfig(root, { onProblem: (problem, ignored) => warn(noteLine(`${sayIgnored(ignored)}; the core checks still run. ${problem}`).join('\n')) });
 }
 
 const sayIgnored = (ignored: IgnoredPart) =>

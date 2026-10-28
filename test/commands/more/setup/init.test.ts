@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { commitCommand, initListScreen, initScreen, planScreen, projectScreen } from '../../../../src/commands/more/setup/init.ts';
+import { commitCommand, initListScreen, initScreen, planScreen } from '../../../../src/commands/more/setup/init.ts';
 import { init } from '../../../../src/setup/init.ts';
 import { setUpPlanning } from '../../../../src/setup/plan.ts';
 import { screenProblems } from '../../../repo/docs/screen-rules.ts';
@@ -92,11 +92,6 @@ test('init screen: a step left for the person is a MISSING row with its fix; the
   assert.match(text, /^ {2}MISSING {5}husky is not set up in this clone yet, so the commit check is not\n {14}on yet\n {14}Fix: `npm install`$/m);
 });
 
-test('the first run reads init.lines until it moves to the result (#1115)', () => {
-  assert.match(projectScreen(['kept AGENTS.md'], true).join('\n'), /already set up here, nothing changed/);
-  assert.match(projectScreen(['wrote AGENTS.md', 'wrote yokoten.json', 'kept CODEOWNERS'], true).join('\n'), /2 files written, 1 of yours kept/);
-});
-
 test('init: a folder that does not exist is a failure with one Next line, and nothing is written (#205)', async () => {
   const sandbox = makeSandbox();
   const result = await sandbox.call(['init', 'typo']);
@@ -117,6 +112,6 @@ test('init --github --yes: a skip changed nothing on GitHub, so it fails, after 
   writeFileSync(join(sandbox.repo, 'notes.txt'), 'x\n');
   const result = await sandbox.call(['init', '--github', '--yes']);
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /^yokoten init · this project is set up$/m);
+  assert.match(result.stderr, /^yokoten init · this project is set up$/m, 'the files first');
   assert.match(result.stderr, /^yokoten init · --github --yes changed nothing on GitHub; the project files are\n {15}as shown above\n\nNext: `yokoten init --github --yes`$/m);
 });

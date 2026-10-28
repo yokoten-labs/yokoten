@@ -174,10 +174,10 @@ export interface HelpPage {
 
 /**
  * The jobs `yokoten help --all` groups the commands by, in order (issue #1115, record 0052):
- * setting up, the work itself, the guard, merging and CI, keeping things up to date, then
- * help and version.
+ * setting up (with help and version), the work itself, the guard, merging and CI, keeping
+ * things up to date: five.
  */
-export const COMMAND_GROUPS = ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain', 'Help'] as const;
+export const COMMAND_GROUPS = ['Start', 'Work', 'Guard', 'Merge and CI', 'Maintain'] as const;
 
 /** One job of `COMMAND_GROUPS`. */
 export type CommandGroup = (typeof COMMAND_GROUPS)[number];
@@ -573,12 +573,13 @@ export const COMMANDS: Command[] = [
     group: 'Guard',
     shown: 'all',
     summary: 'your private marks, never their values',
-    usage: '[add | remove | off <kind> | on <kind> | allow <mark> --here | allow --remove <mark> --here]',
+    usage: '[add | remove | fill | off <kind> | on <kind> | allow <mark> --here | allow --remove <mark> --here]',
     help: {
       summary: 'Counts your private marks by kind; it never shows a value. install adds your git name, git email and forge login by itself.',
       examples: [
         { command: 'yokoten marks', text: 'count your marks by kind' },
         { command: 'yokoten marks add', text: 'add one mark, typed with no echo' },
+        { command: 'yokoten marks fill', text: 'add the marks this machine can tell, and show their kinds' },
         { command: 'yokoten marks off git-name', text: 'stop install adding your git name' },
         { command: 'yokoten marks allow <mark> --here', text: 'let one mark pass in this repo only' },
       ],
@@ -587,6 +588,7 @@ export const COMMANDS: Command[] = [
           heading: 'Words',
           rows: [
             ['add, remove', 'read one mark: typed with no echo in a terminal, or from stdin. Never a word on the command line, where your shell history would keep it'],
+            ['fill', 'adds the marks yokoten can read from this machine (your git name, git email and forge login) and shows their kinds, never their values'],
             ['off <kind>', 'install stops adding git-name, git-email or forge-login, and removes the marks it added for it'],
             ['on <kind>', 'brings the default back and adds it again. Marks you added yourself are never touched'],
             ['allow <mark>', 'the mark passes the checks in this repo only, as with "privacy.allow" in yokoten.json. Only a mark in your private-marks file can be allowed'],
@@ -662,7 +664,7 @@ export const COMMANDS: Command[] = [
       { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file (prints it, or writes it with --out)' },
       { name: '--out', value: 'file', text: 'with --export: write the lesson file here instead of printing it' },
       { name: '--import', value: 'file', text: 'a lesson file from another project: show it, or add it with --write' },
-      { name: '--upstream', text: 'a note for the yokoten repo: what happened, in a few words' },
+      { name: '--upstream', text: 'a note for the yokoten repo, in a few words: what happened' },
       { name: '--area', value: 'name', text: 'with --upstream: the part of yokoten it is about, such as hook or doctor' },
       { name: '--fix', value: 'idea', text: 'with --upstream: how it could be fixed' },
       { name: '--list', text: 'with --upstream: the notes that wait' },
@@ -1066,7 +1068,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'help',
-    group: 'Help',
+    group: 'Start',
     shown: 'all',
     summary: 'this list, or the help of one command',
     usage: '[<command>] [--all]',
@@ -1084,7 +1086,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: 'version',
-    group: 'Help',
+    group: 'Start',
     shown: 'all',
     summary: 'the version of this yokoten',
     usage: '',
