@@ -164,7 +164,7 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks add`\n/, short.stdout);
   const lines = short.stdout.trimEnd().split('\n');
   assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
-  assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines`);
+  assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines:\n${short.stdout}`);
   assert.ok(lines.every((line) => line.length <= 80), 'no line passes 80 characters');
   assert.match(short.stdout, /^ {2}done {8}\d+ of 26 steps$/m);
   assert.match(short.stdout, /^ {2}next {8}Write the rules for your agents \(AGENTS\.md\)$/m);

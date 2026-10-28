@@ -596,7 +596,9 @@ function keptNoteRows(notes: readonly Finding[], all: string): string[][] {
   return Object.entries(KEPT_NOTES).flatMap(([id, words]) => {
     const kind = notes.filter((note) => note.id === id);
     if (!kind.length) return [];
-    if (kind.length === 1) return [row('note', (kind[0]?.what.split(';')[0] ?? '').replace(/^\. has /, 'this project has '))];
+    // The title names the project, so the row starts at the count: "16 uncommitted files, the oldest changed
+    // 1 minute ago" stays on one line (a slow runner made the old "this project has …" wrap, 25 lines, #1115).
+    if (kind.length === 1) return [row('note', (kind[0]?.what.split(';')[0] ?? '').replace(/^\. has /, ''))];
     return [row('note', `${kind.length} ${words.many}; \`${all}\` lists them`)];
   });
 }

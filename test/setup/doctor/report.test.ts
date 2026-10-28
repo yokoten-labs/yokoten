@@ -1254,7 +1254,7 @@ test('shortLines: 25 branches only on this machine fold into one row, and the sc
   const lines = shortLines(reportWith({ steps, notes: [...branches, note('uncommitted-changes', '. has 1 uncommitted file; commit it')] }));
   assert.ok(lines.length <= 25, lines.join('\n'));
   assert.ok(lines.includes('  note        25 branches with commits only on this machine;'), lines.join('\n'));
-  assert.ok(lines.includes('  note        this project has 1 uncommitted file'), 'one note of a kind keeps its words');
+  assert.ok(lines.includes('  note        1 uncommitted file'), 'one note of a kind keeps its words');
   // Every wrapped line starts under the text column (14), never at the left edge.
   for (const [at, line] of lines.entries()) if (at && lines[at - 1]?.startsWith('  ') && line !== '' && !/^(?:Next|More): /.test(line)) assert.ok(/^ {2}\S/.test(line) || /^ {14}\S/.test(line), line);
   assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
