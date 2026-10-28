@@ -4,6 +4,7 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   readdirSync,
   rmSync,
@@ -525,5 +526,7 @@ test('platform: the machine readers answer per platform (issue #1000)', () => {
     if (!hasProc) assert.equal(readProcMounts(platform), null, `${platform}: no /proc/mounts`);
     else assert.ok(readProcMounts(platform) === null || typeof readProcMounts(platform) === 'string');
   }
-  assert.ok(Array.isArray(listGitProcesses('linux')), 'linux: read from /proc');
+  // The Linux reader reads /proc, which only a Linux host has: there a list, elsewhere null (fail closed).
+  const listed = listGitProcesses('linux');
+  assert.ok(existsSync('/proc/self') ? Array.isArray(listed) : listed === null, 'linux: read from /proc, null on a host with none');
 });
