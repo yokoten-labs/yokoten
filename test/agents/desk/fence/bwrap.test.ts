@@ -54,3 +54,11 @@ test('BWRAP.fence: the bridge starts first, then the agent, with the proxy names
   assert.equal(fenced.env.HTTPS_PROXY, `http://127.0.0.1:${INSIDE_PORT}`);
   assert.equal(fenced.env.YOKOTEN_ROLE, 'worker');
 });
+
+test("BWRAP.fence: the desk's own /tmp is TMPDIR, TEMP and TMP, never the caller's (#1172)", () => {
+  const fenced = BWRAP.fence({ ...PLAN, env: { ...PLAN.env, TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude' } }, '/tmp/scratch/proxy.sock', '/tmp/scratch');
+  assert.deepEqual([fenced.env.TMPDIR, fenced.env.TEMP, fenced.env.TMP], ['/tmp', '/tmp', '/tmp']);
+  // /tmp is the fresh file system bwrap makes, and it is never made read-only again.
+  const args = bwrapArgs(PLAN, '/tmp/scratch/proxy.sock');
+  assert.ok(args.join(' ').includes('--tmpfs /tmp') && !args.join(' ').includes('--remount-ro /tmp '));
+});

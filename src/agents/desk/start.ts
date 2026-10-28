@@ -80,7 +80,8 @@ export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, o
   mkdirSync(join(scratch, 'tmp'));
   // A fence with its own proxy (sandbox-runtime) needs none from the desk.
   const wanted = backend.proxyAddress(scratch);
-  const proxy = wanted === null ? null : await startProxy(wanted, plan.hosts, onEvent);
+  // The host's own proxy, when it names one, carries the allowed tunnels (#1172).
+  const proxy = wanted === null ? null : await startProxy(wanted, plan.hosts, onEvent, undefined, plan.upstream?.proxy ?? null);
   try {
     const address = proxy?.server.address();
     const listened = typeof address === 'string' ? address : (address?.port ?? 0);

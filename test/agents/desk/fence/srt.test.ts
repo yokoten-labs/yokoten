@@ -215,3 +215,38 @@ test('startOptions and treeKill: no shell; a group to end at once on Linux and m
     assert.deepEqual(treeKill(42, 'SIGTERM', platform, group), kill, `${platform} kill`);
   }
 });
+
+test("srtBackend: the agent's TMPDIR, TEMP and TMP are a writable desk folder, never the caller's; srt's own temp is apart (#1172)", () => {
+  const scratch = realpathSync(makeTempDir('desk-scratch-'));
+  const work = join(scratch, 'tmp');
+  mkdirSync(work);
+  const env = { PATH: '/usr/bin:/bin', TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude' };
+  const plan = { ...PLAN, state: [...PLAN.state], hidden: [], env, command: ['agent'] } as unknown as DeskPlan;
+  const fenced = srtBackend('/opt/srt/bin/srt', 'linux', []).fence(plan, 0, scratch);
+  // srt 0.0.81 sets the agent's TMPDIR to its own CLAUDE_CODE_TMPDIR; TEMP and TMP pass as they are.
+  assert.deepEqual([fenced.env.CLAUDE_CODE_TMPDIR, fenced.env.TEMP, fenced.env.TMP], [work, work, work]);
+  assert.equal(fenced.env.TMPDIR, scratch, "srt's own files stay in the scratch folder, which the agent can't write");
+  assert.ok(!Object.values(fenced.env).includes('/tmp/claude'), "the caller's temp folder is gone");
+  const written = JSON.parse(readFileSync(join(scratch, 'srt-settings.json'), 'utf8'));
+  assert.ok(written.filesystem.allowWrite.includes(work), 'the temp folder is writable');
+  assert.ok(!written.filesystem.allowWrite.includes(scratch), 'its parent is not');
+});
+
+test("srtBackend: the host's proxy goes to srt's own environment, password and all, never into the settings file (#1172)", async () => {
+  const { readHostProxy } = await import('../../../../src/agents/desk/network/upstream.ts');
+  const { srtUpstreamEnv } = await import('../../../../src/agents/desk/fence/srt.ts');
+  const scratch = realpathSync(makeTempDir('desk-scratch-'));
+  mkdirSync(join(scratch, 'tmp'));
+  const upstream = readHostProxy({ HTTPS_PROXY: 'http://user:s3cret-pass@example.com:3128', NO_PROXY: 'internal.example.com' });
+  const plan = { ...PLAN, hidden: [], env: { PATH: '/usr/bin:/bin' }, command: ['agent'], upstream } as unknown as DeskPlan;
+  const fenced = srtBackend('/opt/srt/bin/srt', 'linux', []).fence(plan, 0, scratch);
+  assert.equal(fenced.env.HTTPS_PROXY, 'http://user:s3cret-pass@example.com:3128');
+  assert.equal(fenced.env.https_proxy, fenced.env.HTTPS_PROXY);
+  assert.equal(fenced.env.NO_PROXY, 'internal.example.com');
+  assert.equal(fenced.env.HTTP_PROXY, undefined, 'only the HTTPS names');
+  assert.ok(!readFileSync(join(scratch, 'srt-settings.json'), 'utf8').includes('s3cret'), 'the settings file, readable in the desk, holds no password');
+  assert.ok(!fenced.args.join(' ').includes('s3cret'), 'nor do the words srt gets');
+  // With no hosts srt runs no proxy, so it would not set the agent's proxy names over the host's: nothing is passed.
+  assert.deepEqual(srtUpstreamEnv({ upstream, hosts: [] }), {});
+  assert.deepEqual(srtUpstreamEnv({ upstream: undefined, hosts: ['api.example.com'] }), {});
+});

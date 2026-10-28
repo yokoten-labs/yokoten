@@ -19,7 +19,7 @@ import { delimiter, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { findProgram } from '../../../platform/process.ts';
 import type { Env } from '../../../rules/config.ts';
 import { homeIn } from '../../../rules/privacy.ts';
-import { type DeskBackend, type DeskPlan, hiddenFolders, isInside, OWN_RUNTIME, programFolders } from '../desk.ts';
+import { type DeskBackend, type DeskPlan, hiddenFolders, isInside, OWN_RUNTIME, programFolders, tempEnv } from '../desk.ts';
 
 /** The pinned version. A new one is a code change, checked by the contract test (#637). */
 export const SRT_VERSION = '0.0.81';
@@ -284,9 +284,35 @@ export function fenceCommand(spec: FenceSpec, command: string[], platform: NodeJ
 }
 
 /**
+ * The host's proxy for srt's own process (#1172): srt 0.0.81 reads HTTPS_PROXY and NO_PROXY
+ * from its own environment and chains its allowed tunnels through that proxy; its allowlist
+ * is checked first. srt then sets HTTPS_PROXY, https_proxy, NO_PROXY and no_proxy for the
+ * agent to itself, so the host's proxy and its password stay outside. It does so only when
+ * it runs its proxy, which it does for a plan with hosts: with none, nothing is passed.
+ */
+export function srtUpstreamEnv(plan: Pick<DeskPlan, 'upstream' | 'hosts'>): Record<string, string> {
+  const proxy = plan.upstream?.proxy;
+  if (!proxy || !plan.hosts.length) return {};
+  const noProxy = proxy.noProxy.join(',');
+  return { HTTPS_PROXY: proxy.url, https_proxy: proxy.url, NO_PROXY: noProxy, no_proxy: noProxy };
+}
+
+/**
+ * The temp names for srt and the agent (#1172). srt sets the agent's TMPDIR to its own
+ * CLAUDE_CODE_TMPDIR (else `/tmp/claude`, which may not be there and is read-only inside),
+ * so that name is the desk's writable `work` folder, and so are TEMP and TMP. srt's own
+ * TMPDIR is `scratch`, the folder `work` is in, which the agent can't write: srt keeps the
+ * files it binds into the sandbox there.
+ */
+export function srtTempEnv(scratch: string, work: string): Record<string, string> {
+  return { ...tempEnv(work), TMPDIR: scratch, CLAUDE_CODE_TMPDIR: work };
+}
+
+/**
  * The desk backend for start.ts. srt runs its own proxy, so the desk starts none
  * (`proxyAddress` is null), and srt sets the proxy names in the agent's environment.
  * srt starts as `srtLaunch` gives: `projects` are the folders no program may come from.
+ * The agent's temp folder is `<scratch>/tmp`, which start.ts makes, writable.
  */
 export function srtBackend(srt: string, platform: NodeJS.Platform, projects: string[]): DeskBackend {
   return {
@@ -295,8 +321,10 @@ export function srtBackend(srt: string, platform: NodeJS.Platform, projects: str
     proxyAddress: () => null,
     fence: (plan: DeskPlan, _: string | number, scratch: string) => {
       const launch = srtLaunch(srt, plan.env, projects);
-      const settings = writeSettings(scratch, 'srt-settings.json', splitHidden(withSrtFiles(plan, srt), listFolder, platform));
-      return { file: launch.file, args: [...launch.args, '--settings', settings, '--', ...plan.command], env: { ...plan.env, PATH: launch.env.PATH ?? '' } };
+      const work = join(scratch, 'tmp');
+      const withWork = { ...plan, state: [...plan.state, work] };
+      const settings = writeSettings(scratch, 'srt-settings.json', splitHidden(withSrtFiles(withWork, srt), listFolder, platform));
+      return { file: launch.file, args: [...launch.args, '--settings', settings, '--', ...plan.command], env: { ...plan.env, PATH: launch.env.PATH ?? '', ...srtTempEnv(scratch, work), ...srtUpstreamEnv(plan) } };
     },
   };
 }

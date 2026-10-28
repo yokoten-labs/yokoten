@@ -89,3 +89,12 @@ test('SEATBELT.fence: sandbox-exec with the written profile, the proxy names and
   assert.equal(fenced.env.TMPDIR, join(scratch, 'tmp'));
   assert.equal(SEATBELT.proxyAddress(scratch), 0);
 });
+
+test("SEATBELT.fence: TMPDIR, TEMP and TMP are the desk's writable scratch folder, never the caller's (#1172)", () => {
+  const scratch = makeTempDir('seatbelt-');
+  const fenced = SEATBELT.fence({ ...PLAN, env: { ...PLAN.env, TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude' } }, 49152, scratch);
+  const work = join(scratch, 'tmp');
+  assert.deepEqual([fenced.env.TMPDIR, fenced.env.TEMP, fenced.env.TMP], [work, work, work]);
+  // The scratch folder is writable in the profile.
+  assert.match(readFileSync(join(scratch, 'desk.sb'), 'utf8'), new RegExp(`\\(allow file-write\\* [^\\n]*\\(subpath "${scratch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"\\)`));
+});

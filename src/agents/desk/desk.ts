@@ -39,6 +39,7 @@ import { DESK as CODEX } from '../runtimes/codex.ts';
 import { DESK as GROK } from '../runtimes/grok.ts';
 import { DESK as MUSE } from '../runtimes/muse.ts';
 import { buildAgentEnv } from './agent-env.ts';
+import { readHostProxy, type UpstreamChoice } from './network/upstream.ts';
 import { DESK_FILE, modelOf, prepareDeskTeam, vendorOf } from './team/team.ts';
 
 /** What a runtime's own file tells the desk: where its state is, how to move it, and its API hosts. */
@@ -88,8 +89,10 @@ export interface DeskPlan {
   locked: string[];
   /** The hosts the proxy lets the agent reach. */
   hosts: string[];
-  /** The agent's environment. The backend adds the proxy names. */
+  /** The agent's environment. The backend adds the proxy names and the temp folder (`tempEnv`). */
   env: Record<string, string>;
+  /** The host's own proxy (HTTPS_PROXY), which the desk's door chains through (#1172). Never in `env`. */
+  upstream?: UpstreamChoice;
   /** The agent command and its words. */
   command: string[];
   /** Whether the command starts the agent, so its own sandbox is off for this run (#1171). */
@@ -331,6 +334,7 @@ export function planDesk(request: DeskRequest): DeskPlan {
     env: { ...buildAgentEnv(env, { runtime: request.runtime, set: { YOKOTEN_ROLE: 'worker', ...teamEnv, ...(model ? { YOKOTEN_MODEL: model } : {}), ...(identity ? { YOKOTEN_VENDOR: identity.vendor } : {}) } }), ...runtime.stateEnv(state), TZ: 'UTC' },
     command: command ?? request.command,
     isOwnSandboxOff: command !== null,
+    upstream: readHostProxy(env),
   };
 }
 
@@ -351,6 +355,15 @@ function commandWithSandboxOff(runtime: RuntimeDesk, request: DeskRequest, platf
   const turned = runtime.ownSandbox.turnOff(request.command);
   if (!Array.isArray(turned)) throw new Error(`can't start ${runtime.ownSandbox.program} with its own sandbox off: ${turned.fail}`);
   return turned;
+}
+
+/**
+ * The temp names for an agent in a desk: TMPDIR, TEMP and TMP, all the one writable folder
+ * the backend gives (#1172). Every backend sets these over the plan's env, so the caller's
+ * TMPDIR (a Claude Code shell's `/tmp/claude`, read-only in the fence) never gets in.
+ */
+export function tempEnv(folder: string): Record<string, string> {
+  return { TMPDIR: folder, TEMP: folder, TMP: folder };
 }
 
 /** The names that point an agent at the proxy. Upper and lower case: programs read either. */
