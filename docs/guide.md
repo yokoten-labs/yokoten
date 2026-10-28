@@ -1729,7 +1729,9 @@ A list you set replaces the default list; it does not add to it.
 
 #### Folders that may grow
 
-Core rule 10 keeps each folder at 7 entries or fewer. Two kinds of folder may grow past it,
+Core rule 10 keeps each folder at 7 entries or fewer. A repo chooses the cap with a
+`layout` key in yokoten.json; `yokoten init` writes one. Without the key, `check` lists the
+wide folders in one note and does not fail. Two kinds of folder may grow past it,
 and `changes/` and `.worktrees/` always may:
 
 - **A log**, such as `docs/records`. Each entry is added once and kept.
@@ -2478,9 +2480,18 @@ fine in a CODEOWNERS owner, an `@` mention in `.github/`, an author or owner fie
 `package.json` or a plugin manifest, and a LICENSE copyright line. It is found everywhere
 else. A mark you wrote yourself is found everywhere.
 
-The IP check covers IPv4 only, private ranges such as `10.x` and `192.168.x` included;
-IPv6 is not checked. Localhost and the documentation ranges (`192.0.2.0/24` and its two
-siblings) are fine. Browser version strings such as `Chrome/120.0.0.0` are not
+Some email addresses are public on purpose. An address in `SECURITY.md` (at the root, in
+`.github/` or in `docs/`) is a note, not a failure. So is one in the people fields of a
+package manifest: `author`, `contributors`, `maintainers` and `bugs` in `package.json`,
+`authors` and `support` in `composer.json`, `authors` in `Cargo.toml`, and `authors` and
+`maintainers` in `pyproject.toml`. A personal address anywhere else still fails.
+
+The IP check covers IPv4 only; IPv6 is not checked. Loopback (`127.x`), the three private
+ranges of RFC 1918 (`10.x`, `172.16.x` to `172.31.x`, `192.168.x`) and the documentation
+ranges (`192.0.2.0/24` and its two siblings) are fine in a file: code uses them as local
+defaults. In what an agent posts, only loopback and the documentation ranges are fine. A
+private address there describes your own network, such as your home network or the WSL
+host, so the post is stopped. Every other address is caught everywhere. Browser version strings such as `Chrome/120.0.0.0` are not
 addresses, and neither is a retina image name such as `logo@2x.png`. An address after
 `http://` or in a path such as `api/` is still caught.
 

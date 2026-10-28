@@ -208,3 +208,12 @@ test('adopt: the default screen groups the rows as keep, add and decide (#1027)'
   assert.equal(lines.at(-1), 'More: `yokoten adopt --json` shows every row with its reason');
   for (const line of lines) assert.ok(line.length <= 80, `over 80: ${line}`);
 });
+
+// #1169: the prompt goes to a remote model, so a private address names the owner's network and stops it; loopback does not.
+test('promptProblems: a private address stops the prompt, loopback passes (#1169)', () => {
+  const quad = (...parts: number[]) => parts.join('.');
+  const found = promptProblems([{ role: 'user', content: `the dev box is ${quad(192, 168, 1, 20)}` }], { HOME: '/nowhere' });
+  assert.equal(found.length, 1);
+  assert.match(found[0], /an IP address/);
+  assert.deepEqual(promptProblems([{ role: 'user', content: `the server listens on ${quad(127, 0, 0, 1)}` }], { HOME: '/nowhere' }), []);
+});

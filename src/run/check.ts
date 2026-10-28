@@ -7,9 +7,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Config, Env } from '../rules/config.ts';
-import { findUnknownKeys, matcher } from '../rules/config.ts';
+import { findUnknownKeys, hasChosenLayout, matcher } from '../rules/config.ts';
 import { checkEdit, withWorkerMark } from '../rules/guards/index.ts';
-import { checkBuildOutput, checkCodeOwners, checkLayout, CODEOWNERS_PLACES, codeOwnersPath } from '../rules/layout.ts';
+import { checkBuildOutput, checkCodeOwners, checkLayout, CODEOWNERS_PLACES, codeOwnersPath, foldLayoutHits } from '../rules/layout.ts';
 import { type Finding, finding, isFailingFinding } from '../rules/text/message.ts';
 import { isChangeFile, longSentenceNote, longSentences } from '../rules/pr.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneCommandFix } from '../rules/privacy.ts';
@@ -536,7 +536,7 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
   problems.push(...ignoreFile.problems);
   const privacy = (path: string, buf: Buffer) => {
     if (skip(path) || looksBinary(buf)) return;
-    const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env });
+    const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true });
     for (const hit of found) (isFailingFinding(hit) ? problems : notes).push(hit);
   };
   if (staged) {
@@ -601,7 +601,13 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
     problems.push(...readChanges(root).problems);
   }
   // An exempt glob that matches nothing is a note for the tree, not at each commit (#381).
-  problems.push(...checkLayout(indexed(), config, staged ? undefined : notes));
+  const layoutHits = checkLayout(indexed(), config, staged ? undefined : notes);
+  // The cap fails only a repo that chose it (#1169); any other repo gets its hits as one note.
+  if (hasChosenLayout(root)) problems.push(...layoutHits);
+  else {
+    const folded = foldLayoutHits(layoutHits, config);
+    if (folded) notes.push(folded);
+  }
   // A CODEOWNERS line for a path that moved protects nothing (#667), so the new path has no
   // owner review. The line is lead-only: the fix tells the reader to hand it to the lead.
   // With `--staged`, the index is the commit's tree, so its CODEOWNERS is the one that
@@ -652,7 +658,7 @@ export function checkChanged(root: string, { config, env, notes = [] }: { config
     if (skip(path)) continue;
     const buf = readEntry(root, path); // none if deleted, or a folder (a submodule)
     if (buf && !looksBinary(buf)) {
-      const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env });
+      const found = scanText(buf.toString('utf8'), { file: path, marks, logins, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true });
       for (const hit of found) (isFailingFinding(hit) ? problems : notes).push(hit);
       problems.push(...borrowedProblems(path, buf.toString('utf8')));
     }
@@ -714,7 +720,8 @@ export function checkHistory(root: string, { config, env, notes = [] }: { config
   const skip = matcher(config.privacy.skip);
   const ignoreFile = loadIgnores(root);
   add(ignoreFile.problems);
-  const opts = { marks, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env };
+  // The history is the repo's source too: a private address there is a local default (#1169).
+  const opts = { marks, allow: config.privacy.allow, kinds: markKinds, ignores: ignoreFile.entries, env, allowsLocalNetwork: true };
 
   const log = git(root, env, ['log', '--all', '--format=%h%x00%ae%x00%ce%x00%B%x1e']);
   for (const entry of log.split('\x1e')) {

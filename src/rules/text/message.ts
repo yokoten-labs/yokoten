@@ -63,6 +63,19 @@ export const claudeOnlyRulesFix = (file: string, importLine: string): string =>
 /** The desk start screen's line when the agent starts with its own sandbox off (#1171). */
 export const DESK_OWN_SANDBOX_NOTE = "this agent's own sandbox can't start in a desk; the desk's sandbox covers the whole agent instead";
 
+/** The note for an email address in a place where it is public on purpose: a security policy or a manifest's people fields (#1169). */
+export const CONTACT_EMAIL_NOTE = {
+  what: 'a contact email address, public on purpose here',
+  fix: 'nothing to do if it is this project\'s public contact (add it to "privacy.allow" in yokoten.json to drop the note); if it is a personal address, use a team or noreply address',
+};
+
+/** The one note for the wide folders of a repo that has not chosen the folder cap (#1169). `folders` is how many, `named` the list to show. */
+export const layoutFoldNote = (folders: number, maxEntries: number, named: string) => ({
+  what: `${folders} ${folders === 1 ? 'folder holds' : 'folders hold'} more than ${maxEntries} entries: ${named}`,
+  fix: `to hold this repo to the cap, add \`"layout": { "maxEntries": ${maxEntries} }\` to yokoten.json; \`yokoten init\` adds it`,
+  why: 'the folder cap is a house rule a repo chooses; this one has no "layout" key in yokoten.json, so its hits are one note',
+});
+
 const RELEASE_WHY = 'only the owner decides when to release';
 const PR_CHECK = '`yokoten check --pr` in CI reads the pull request';
 const UNSAVED_CHECK = '`doctor` and the session note read git and the file system, never change them, and give a note, never a failure';
@@ -221,13 +234,13 @@ export const RULES = {
   email: {
     rule: 'no personal email address in the repo (core rule 11)',
     why: 'an email address points at a person, and git keeps it after the file is gone',
-    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; an address in SECURITY.md, or in the people fields of a package manifest (package.json, composer.json, Cargo.toml, pyproject.toml), is public on purpose and only a note; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   ip: {
     rule: 'no IP address in the repo (core rule 11)',
     why: 'an IP address can lead to your server or your home network',
-    check: 'the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
+    check: 'the commit check, CI and `check --history` look for IPv4 addresses; loopback, the three private ranges of RFC 1918 and the documentation ranges pass there, but in a post only loopback and the documentation ranges pass, because a private address there describes your own network; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
   'private-mark': {

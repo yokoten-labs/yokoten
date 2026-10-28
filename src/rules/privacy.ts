@@ -16,7 +16,7 @@ import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
 import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
-import { type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
+import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
 import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
@@ -437,7 +437,7 @@ const KEY_LINE = /^\s*"([^"\\]+)"\s*:/;
  * such a key, or it is inside the object or list such a key holds. A minified file is one
  * line that opens with `{`, so it never counts.
  */
-function personLines(lines: string[]): boolean[] {
+function personLines(lines: string[], keys: ReadonlySet<string> = PERSON_KEYS): boolean[] {
   const inside: boolean[] = [];
   const stack: boolean[] = [];
   const top = () => stack.length > 0 && stack[stack.length - 1];
@@ -448,7 +448,7 @@ function personLines(lines: string[]): boolean[] {
   let key: string | null = null;
   for (const line of lines) {
     const opens = KEY_LINE.exec(line)?.[1];
-    inside.push(top() || (opens !== undefined && PERSON_KEYS.has(opens.toLowerCase())));
+    inside.push(top() || (opens !== undefined && keys.has(opens.toLowerCase())));
     for (const char of line) {
       if (isString) {
         if (isEscaped) isEscaped = false;
@@ -462,7 +462,7 @@ function personLines(lines: string[]): boolean[] {
         current = '';
       } else if (char === ':') key = lastString;
       else if (char === '{' || char === '[') {
-        stack.push(top() || (key !== null && PERSON_KEYS.has(key.toLowerCase())));
+        stack.push(top() || (key !== null && keys.has(key.toLowerCase())));
         key = null;
       } else if (char === '}' || char === ']') stack.pop();
       else if (char === ',') key = null;
@@ -489,12 +489,106 @@ function loginPlaces(file: string, lines: string[]): ((line: string, index: numb
   };
 }
 
+// ---- Contact addresses that are public on purpose (#1169) ----
+//
+// A security policy exists to give a contact address, and a package manifest's people fields
+// are published with the package. An address there is a note, not a failure: it still shows,
+// so a personal address put there by mistake is seen. Anywhere else it fails as before. As
+// for logins (#410), the place is told by the file's path and the line's shape alone.
+
+/** The security policy at a place GitHub reads it: the root, `.github/` or `docs/`. */
+const SECURITY_POLICY_FILE = /^(?:\.github\/|docs\/)?SECURITY\.md$/i;
+
+/** A manifest, its format, the tables that may hold its people fields (TOML), and those fields. */
+interface ContactManifest {
+  file: RegExp;
+  format: 'json' | 'toml';
+  tables?: string[];
+  keys: ReadonlySet<string>;
+}
+
+const CONTACT_MANIFESTS: ContactManifest[] = [
+  // npm's package.json docs: the people fields `author` and `contributors`, `maintainers` as the registry writes it, and `bugs`.
+  { file: /(^|\/)package\.json$/, format: 'json', keys: new Set(['author', 'contributors', 'maintainers', 'bugs']) },
+  // Composer's schema: `authors`, and `support` (its `email`).
+  { file: /(^|\/)composer\.json$/, format: 'json', keys: new Set(['authors', 'support']) },
+  // The Cargo book's manifest format: `authors` in `[package]` (or `[workspace.package]`, which members inherit).
+  { file: /(^|\/)Cargo\.toml$/, format: 'toml', tables: ['package', 'workspace.package'], keys: new Set(['authors']) },
+  // PEP 621 `[project]`: `authors` and `maintainers`; Poetry writes them in `[tool.poetry]`.
+  { file: /(^|\/)pyproject\.toml$/, format: 'toml', tables: ['project', 'tool.poetry'], keys: new Set(['authors', 'maintainers']) },
+];
+
+/** How many brackets a TOML line opens, less those it closes, outside its strings. */
+function tomlBracketDepth(line: string): number {
+  let depth = 0;
+  let quote: string | null = null;
+  for (let index = 0; index < line.length; index++) {
+    const character = line[index];
+    if (quote) {
+      if (quote === '"' && character === '\\') index++;
+      else if (character === quote) quote = null;
+    } else if (character === '#') break;
+    else if (character === '"' || character === "'") quote = character;
+    else if (character === '[' || character === '{') depth++;
+    else if (character === ']' || character === '}') depth--;
+  }
+  return depth;
+}
+
+/**
+ * For each line of a TOML manifest, whether it sits in a people field: a `key =` line of one
+ * of `keys` in one of `tables`, the lines of the list it opens, or the lines of an
+ * `[[<table>.<key>]]` table.
+ */
+function tomlPersonLines(lines: string[], tables: string[], keys: ReadonlySet<string>): boolean[] {
+  const inside: boolean[] = [];
+  let table = '';
+  let isPersonTable = false;
+  let depth = 0;
+  for (const line of lines) {
+    if (depth > 0) {
+      inside.push(true);
+      depth = Math.max(0, depth + tomlBracketDepth(line));
+      continue;
+    }
+    const header = /^\s*\[\[?\s*([\w.-]+)\s*\]\]?\s*(?:#.*)?$/.exec(line)?.[1];
+    if (header !== undefined) {
+      const at = header.lastIndexOf('.');
+      isPersonTable = at > 0 && tables.includes(header.slice(0, at)) && keys.has(header.slice(at + 1).toLowerCase());
+      table = header;
+      inside.push(false);
+      continue;
+    }
+    const key = /^\s*([\w-]+)\s*=/.exec(line)?.[1];
+    if (key !== undefined && tables.includes(table) && keys.has(key.toLowerCase())) {
+      inside.push(true);
+      depth = Math.max(0, tomlBracketDepth(line));
+      continue;
+    }
+    inside.push(isPersonTable);
+  }
+  return inside;
+}
+
+/**
+ * For a file whose addresses are public on purpose, a function that says whether the line
+ * at an index (from 0) is such a place: every line of a security policy, or a manifest's
+ * people fields. Null for any other file.
+ */
+function contactPlaces(file: string, lines: string[]): ((index: number) => boolean) | null {
+  if (SECURITY_POLICY_FILE.test(file)) return () => true;
+  const manifest = CONTACT_MANIFESTS.find((entry) => entry.file.test(file));
+  if (!manifest) return null;
+  const persons = manifest.format === 'json' ? personLines(lines, manifest.keys) : tomlPersonLines(lines, manifest.tables ?? [], manifest.keys);
+  return (index) => persons[index] === true;
+}
+
 // A match starts only where a word starts, so a long run with no @ is read once, not once per letter.
 const EMAIL = /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
 // A browser version in a user agent (Chrome/120.0.0.0) is not an address. Only the
 // browser product names are skipped, case-sensitive as a user agent writes them: an
 // address in a path (api/192.0.2.1) or a URL (http://192.0.2.1) is still caught.
-// Only IPv4 is checked, private ranges included; IPv6 is not.
+// Only IPv4 is checked; IPv6 is not, so its loopback (::1) passes too.
 const BROWSER = 'Chrome|Chromium|CriOS|Edg|EdgA|EdgiOS|Edge|OPR|Opera|Version|Firefox|FxiOS|Safari|AppleWebKit|Gecko|Mozilla|YaBrowser|SamsungBrowser|UCBrowser|Electron';
 const IPV4 = new RegExp(`(?<![\\w.])(?<!\\b(?:${BROWSER})/)(?:\\d{1,3}\\.){3}\\d{1,3}(?![\\w.])`, 'g');
 
@@ -518,8 +612,26 @@ const OK_EMAIL = [
 const isForgeRemote = (hit: string): boolean => hit.slice(0, 4).toLowerCase() === 'git@' && PUBLIC_FORGES.includes(hit.slice(4).toLowerCase());
 // A retina image name (logo@2x.png) looks like an email address at the domain 2x.png.
 const RETINA = /@\d+x\.(png|jpe?g|gif|webp|svg|avif)$/i;
-// Localhost, "any", and the three ranges RFC 5737 keeps for documentation.
-const OK_IP = [/^127\./, /^0\.0\.0\.0$/, /^192\.0\.2\./, /^198\.51\.100\./, /^203\.0\.113\./];
+// The addresses that point at no one, in one table (#1169). Loopback (127.0.0.0/8), "any",
+// and the three ranges RFC 5737 keeps for documentation pass everywhere. The three private
+// ranges of RFC 1918 are `isLocalNetwork`: in code they are local defaults, the same on every
+// network, so the commit check, CI and `--history` pass them. Text an agent posts describes
+// the owner's own machine (a home network, a WSL host), so the post guard still stops them.
+// Any other address, the shared range ISPs and VPNs use (RFC 6598) included, is caught everywhere.
+const OK_IP: { pattern: RegExp; isLocalNetwork: boolean }[] = [
+  { pattern: /^127\./, isLocalNetwork: false },
+  { pattern: /^0\.0\.0\.0$/, isLocalNetwork: false },
+  { pattern: /^192\.0\.2\./, isLocalNetwork: false },
+  { pattern: /^198\.51\.100\./, isLocalNetwork: false },
+  { pattern: /^203\.0\.113\./, isLocalNetwork: false },
+  { pattern: /^10\./, isLocalNetwork: true },
+  { pattern: /^172\.(?:1[6-9]|2\d|3[01])\./, isLocalNetwork: true },
+  { pattern: /^192\.168\./, isLocalNetwork: true },
+];
+
+/** Whether a dotted quad points at no one: loopback or a documentation range, and with `allowsLocalNetwork` a private range too. */
+const isHarmlessAddress = (hit: string, { allowsLocalNetwork }: { allowsLocalNetwork: boolean }): boolean =>
+  OK_IP.some((entry) => (allowsLocalNetwork || !entry.isLocalNetwork) && entry.pattern.test(hit));
 
 // A dotted quad in a spec citation or a version is not an address (#382). The words next to
 // it decide, read only around a hit, so a large file gets no extra pass:
@@ -816,7 +928,8 @@ const LEAD_IGNORE_FIX = (rule: string) => `if it is not real, ask the lead to ad
 function hideInReason(redact: (text: string) => string, reason: string, env: Env, values: string[] = []): string {
   return redact(makeSafeIgnoreReason(reason, env, values)).replace(IPV4, (hit) => {
     const octets = hit.split('.').map(Number);
-    return octets.every((n) => n <= 255) && !OK_IP.some((re) => re.test(hit)) ? SECRET : hit;
+    // Shown output may be pasted anywhere, so a private address in a reason is hidden too (#1169).
+    return octets.every((n) => n <= 255) && !isHarmlessAddress(hit, { allowsLocalNetwork: false }) ? SECRET : hit;
   });
 }
 
@@ -885,10 +998,14 @@ export function loadIgnores(root: string): { entries: IgnoreDirective[]; problem
  */
 export function scanText(
   text: string,
-  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean },
+  { file, marks = [], allow = [], logins = [], ownAllow = allow, kinds, ignores = [], env = {}, inlineIgnores = true, hasContactPlaces = true, allowsLocalNetwork = false }: { file: string; marks?: string[]; allow?: string[]; logins?: string[]; ownAllow?: string[]; kinds?: ReadonlyMap<string, string | null>; ignores?: IgnoreDirective[]; env?: Env; inlineIgnores?: boolean; hasContactPlaces?: boolean; allowsLocalNetwork?: boolean },
 ): Finding[] {
   const problems: Finding[] = [];
   const lines = text.split('\n');
+  // `hasContactPlaces: false` for text that is not a repo file, which only borrows a name (a gh post's body file).
+  // `allowsLocalNetwork`: false, the default, for any text that may leave the machine (a post, a note, a prompt), where a
+  // private address names the owner's own network; true only for a scan of the repo's own source (#1169).
+  const contacts = hasContactPlaces ? contactPlaces(file, lines) : null;
   // `logins`: the forge logins yokoten added to the marks, fine where a file names accounts (#410).
   const places = logins.length && marks.length ? loginPlaces(file, lines) : null;
   const secrets = findSecretHits(lines, { allow, env });
@@ -927,13 +1044,14 @@ export function scanText(
       problems.push(finding('secret', `a secret (${hit.kind})`, fix, { ...where, grade: hit.grade, ...fields }));
     }
     for (const [hit] of line.matchAll(EMAIL)) {
-      if (isPersonalEmail(hit, allow)) {
-        problems.push(finding('email', 'an email address', EMAIL_FIX, { ...where, grade: 'sure', ...ignoreFields('email', [hit], true) }));
-      }
+      if (!isPersonalEmail(hit, allow)) continue;
+      // A contact address public on purpose (#1169) is graded `unknown`: shown as a note, never a failure.
+      if (contacts?.(index)) problems.push(finding('email', CONTACT_EMAIL_NOTE.what, CONTACT_EMAIL_NOTE.fix, { ...where, grade: 'unknown', ...ignoreFields('email', [hit], true) }));
+      else problems.push(finding('email', 'an email address', EMAIL_FIX, { ...where, grade: 'sure', ...ignoreFields('email', [hit], true) }));
     }
     for (const { 0: hit, index } of line.matchAll(IPV4)) {
       const octets = hit.split('.').map(Number);
-      if (octets.some((n) => n > 255) || OK_IP.some((re) => re.test(hit)) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
+      if (octets.some((n) => n > 255) || isHarmlessAddress(hit, { allowsLocalNetwork }) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
       problems.push(finding('ip', 'an IP address', 'use a placeholder from 192.0.2.0/24', { ...where, grade: 'sure', ...ignoreFields('ip', [hit], true) }));
     }
     const marked = stopped.length && unglue ? unglue(line) : line;
@@ -1939,7 +2057,7 @@ export function checkPost(
   const own = isHere ? [...ownMarks(all, [...allow, ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];
   const marks = all.filter((mark) => !own.includes(mark));
   for (const piece of posted.pieces) {
-    const hit = scanText(piece.text, { file: piece.source, marks, allow, ownAllow: [], kinds, env, inlineIgnores: false }).find(isFailingFinding);
+    const hit = scanText(piece.text, { file: piece.source, marks, allow, ownAllow: [], kinds, env, inlineIgnores: false, hasContactPlaces: false, allowsLocalNetwork: false }).find(isFailingFinding);
     if (!hit) continue;
     const more = { why: postWhy(hit.why) };
     if (piece.isFile) return finding(hit.id as RuleId, hit.what, postFix(hit), { ...more, file: shownPath(piece.source, env, marks), line: hit.line });

@@ -5,7 +5,7 @@
 import { posix } from 'node:path';
 import type { Config } from './config.ts';
 import { matcher } from './config.ts';
-import { type Finding, finding } from './text/message.ts';
+import { type Finding, finding, layoutFoldNote } from './text/message.ts';
 import { CHANGES_DIR, codeOwnersWords, compileCodeOwnersPattern, isCodeOwnersHeader } from './pr.ts';
 
 export { codeOwnersPatternMatches } from './pr.ts';
@@ -91,6 +91,23 @@ export function checkLayout(files: string[], { layout }: Pick<Config, 'layout'>,
     );
   }
   return problems;
+}
+
+/** How many folders the folded note names before it says how many more. */
+const FOLDED_NAMES = 5;
+
+/**
+ * The folder hits of a repo that has not chosen the cap (#1169), as one note, or null when
+ * there are none. The cap is a yokoten house rule: a repo that only runs `check` is told
+ * once, not failed once per folder.
+ */
+export function foldLayoutHits(hits: Finding[], { layout }: Pick<Config, 'layout'>): Finding | null {
+  const folders = hits.filter((hit) => hit.id === 'layout').map((hit) => hit.file ?? '');
+  if (!folders.length) return null;
+  const named = folders.slice(0, FOLDED_NAMES).join(', ');
+  const more = folders.length > FOLDED_NAMES ? `, and ${folders.length - FOLDED_NAMES} more` : '';
+  const { what, fix, why } = layoutFoldNote(folders.length, layout.maxEntries, `${named}${more}`);
+  return finding('layout', what, fix, { why });
 }
 
 // Build output and binaries (#56). Build output is made from the source, so a copy in the

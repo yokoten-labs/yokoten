@@ -32,7 +32,8 @@ export function messageProblem(text: string, env: Env, root: string | null): { w
     } catch {}
   }
   const withKinds = loadMarkKinds(env);
-  const [hit] = scanText(text, { file: 'message', marks: withKinds.map((mark) => mark.value), allow, ownAllow: [], kinds: mapMarkKinds(withKinds) });
+  // A message reaches the lead, who may quote it on GitHub, so it is a post: a private address names your own network (#1169).
+  const [hit] = scanText(text, { file: 'message', marks: withKinds.map((mark) => mark.value), allow, ownAllow: [], kinds: mapMarkKinds(withKinds), allowsLocalNetwork: false });
   if (hit) return { what: `${hit.what}${text.includes('\n') ? ` (line ${hit.line})` : ''}`, fix: hit.fix };
   for (const [name, value] of Object.entries(env)) {
     if (value && value.length >= 8 && SECRET_NAME.test(name.toUpperCase()) && text.includes(value)) {

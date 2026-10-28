@@ -90,3 +90,16 @@ test('deliveryFor: the lead gets its messages with the data note, once; a worker
     open();
   }
 });
+
+// #1169: a team message reaches the lead, who may quote it on GitHub, so it is checked as a
+// post: a private address names the owner's own network; loopback does not.
+test('messageProblem: a private address in a team message is withheld, loopback passes (#1169)', () => {
+  const quad = (...parts: number[]) => parts.join('.');
+  for (const address of [quad(192, 168, 1, 20), quad(172, 16, 0, 9), quad(10, 0, 0, 5)]) {
+    assert.match(messageProblem(`the desk runs on ${address}`, {}, null)?.what ?? '', /IP address/, address);
+    const withheld = wrapMessage(message(`the desk runs on ${address}`), ROSTER, {}, null).join('\n');
+    assert.match(withheld, /withheld/, address);
+    assert.doesNotMatch(withheld, new RegExp(address.replaceAll('.', '\\.')), 'the address is never shown');
+  }
+  assert.equal(messageProblem(`the server listens on ${quad(127, 0, 0, 1)}:8080`, {}, null), null);
+});

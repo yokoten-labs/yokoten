@@ -9,6 +9,7 @@ import {
   checkCodeOwners,
   checkLayout,
   codeOwnersPatternMatches,
+  foldLayoutHits,
   isBuildOutput,
   isBuildSource,
 } from '../../src/rules/layout.ts';
@@ -202,4 +203,17 @@ test('codeowners: an escaped space stays inside the pattern (#667)', () => {
   const files = [...OWNED_FILES, 'docs/my file.md'];
   assert.deepEqual(checkCodeOwners(files, 'docs/my\\ file.md @lead\n'), []);
   assert.equal(codeOwnersPatternMatches('docs/my\\ file.md', 'docs/my file.md'), true);
+});
+
+// #1169: a repo that has not chosen the cap gets its folder hits as one note.
+test('layout: the hits of a repo that has not chosen the cap fold into one note (#1169)', () => {
+  const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g'].flatMap((dir) => Array.from({ length: 9 }, (_, i) => `${dir}/${i}.md`));
+  const hits = checkLayout(files, DEFAULTS);
+  assert.equal(hits.length, 7);
+  const note = foldLayoutHits(hits, DEFAULTS);
+  assert.equal(note?.id, 'layout');
+  assert.equal(note?.what, '7 folders hold more than 7 entries: a/, b/, c/, d/, e/, and 2 more');
+  assert.match(note?.fix ?? '', /add `"layout": { "maxEntries": 7 }` to yokoten\.json/);
+  assert.equal(foldLayoutHits(hits.slice(0, 1), DEFAULTS)?.what, '1 folder holds more than 7 entries: a/');
+  assert.equal(foldLayoutHits([], DEFAULTS), null);
 });

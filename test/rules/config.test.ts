@@ -13,6 +13,7 @@ import {
   type Config,
   DEFAULTS,
   findUnknownKeys,
+  hasChosenLayout,
   loadConfig,
   matcher,
 } from '../../src/rules/config.ts';
@@ -294,4 +295,16 @@ test('config: "worker.settings" refuses names that run code or move a folder, by
   // The control: test names that only look close still pass.
   writeFileSync(join(dir, 'yokoten.json'), JSON.stringify({ worker: { settings: ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE'] } }));
   assert.deepEqual(loadConfig(dir).worker.settings, ['SCREENS_OUT', 'PATHS_SEEN', 'HOME_PAGE_URL', 'DIRECTOR', 'TEMPO', 'LEARN_MODE']);
+});
+
+// #1169: the folder cap fails only a repo that chose it, by a "layout" key in yokoten.json.
+test('config: a repo chose the layout cap by a "layout" key; yokoten itself and what init writes have one (#1169)', () => {
+  assert.equal(hasChosenLayout(join(import.meta.dirname, '../..')), true, "yokoten's own repo is held to the cap");
+  assert.equal(hasChosenLayout(join(import.meta.dirname, '../../kit/project')), true, 'a repo yokoten init set up is held to it');
+  const dir = makeTempDir();
+  assert.equal(hasChosenLayout(dir), false, 'no yokoten.json: a first check');
+  for (const [text, isChosen] of [['{}', false], ['{ "layout": null }', false], ['{ "areas": [] }', false], ['{ "layout": {} }', true], ['{ "layout": { "maxEntries": 9 } }', true], ['{ "layout": ', true], ['[]', true]] as const) {
+    writeFileSync(join(dir, 'yokoten.json'), text);
+    assert.equal(hasChosenLayout(dir), isChosen, text);
+  }
 });
