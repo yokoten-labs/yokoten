@@ -360,7 +360,8 @@ export function planDesk(request: DeskRequest): DeskPlan {
     Object.assign(teamEnv, { YOKOTEN_DESK: desk, YOKOTEN_TEAM: folder });
   }
   // Every backend gets a PATH without hidden folders (#1181); Seatbelt cuts it further.
-  const path = env.PATH === undefined ? {} : { PATH: walkablePath(env.PATH, hidden, [desk, ...writable, ...readable], platform) };
+  // No PATH stays no PATH: the key is left out, never set to undefined.
+  const path: Record<string, string> = env.PATH === undefined ? {} : { PATH: walkablePath(env.PATH, hidden, [desk, ...writable, ...readable], platform) };
   return {
     desk,
     state: writable,

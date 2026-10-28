@@ -140,12 +140,14 @@ export const SEATBELT: DeskBackend = {
     const profile = join(scratch, 'desk.sb');
     const work = join(scratch, 'tmp');
     writeFileSync(profile, seatbeltProfile(plan, port, scratch));
+    // No PATH stays no PATH: the key is left out, never set to undefined.
+    const path: Record<string, string> = plan.env.PATH === undefined ? {} : { PATH: fencedPath(plan.env.PATH, shownFolders(plan, scratch)) };
     return {
       file: '/usr/bin/sandbox-exec',
       args: ['-f', profile, ...plan.command],
       env: {
         ...plan.env,
-        ...(plan.env.PATH === undefined ? {} : { PATH: fencedPath(plan.env.PATH, shownFolders(plan, scratch)) }),
+        ...path,
         ...proxyEnv(`http://127.0.0.1:${port}`),
         TMPDIR: work,
       },
