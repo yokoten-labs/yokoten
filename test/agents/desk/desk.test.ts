@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { DESK_RUNTIMES, findProgram, hiddenFolders, isInside, OWN_RUNTIME, planDesk, prepareDeskState, programExtensions, programFolders, proxyEnv } from '../../../src/agents/desk/desk.ts';
+import { DESK_RUNTIMES, findProgram, hiddenFolders, isInside, isProgramNamed, OWN_RUNTIME, planDesk, prepareDeskState, programExtensions, programFolders, proxyEnv } from '../../../src/agents/desk/desk.ts';
 import { identityLine } from '../../../src/agents/desk/team/who.ts';
 import { markWorktree } from '../../../src/commands/hook.ts';
 import { workerMarkAt } from '../../../src/rules/guards/index.ts';
@@ -246,4 +246,64 @@ test('planDesk: on a team, the team folder read-only, only the own outbox writab
   planDesk({ runtime: 'grok', desk, command: ['node'], env: env(), markDesk: (folder) => markWorktree(join(projects, 'origin'), folder, gitEnv()) });
   assert.ok(!readdirSync(join(desk, '.git')).includes('yokoten-desk.json'));
   assert.throws(() => planDesk({ runtime: 'grok', desk, command: ['node'], env: env(), markDesk: (folder) => markWorktree(join(projects, 'origin'), folder, gitEnv()), team: { folder: projects, name: 'g1' } }), /would open a hidden folder or the desk/);
+});
+
+/** A folder with a stand-in program for each agent, so a plan finds them on PATH. */
+function agentPrograms(): string {
+  const folder = makeTempDir('agents-');
+  for (const name of ['claude', 'codex', 'grok', 'muse']) writeFileSync(join(folder, name), '#!/bin/sh\n', { mode: 0o755 });
+  return folder;
+}
+
+test('planDesk: each agent starts with its own sandbox off, by a flag for this run (#1171)', () => {
+  const { desk } = makeDesk();
+  const programs = agentPrograms();
+  const plan = (runtime: string, command: string[]) => planDesk({ runtime, desk, command, env: { ...env(), PATH: [programs, dirname(process.execPath)].join(delimiter) }, markDesk: writeMark });
+  // One row per vendor and form: the command asked for, and the command the desk starts.
+  const cases: [string, string[], string[]][] = [
+    ['claude-code', ['claude', 'the brief'], ['claude', '--settings', '{"sandbox":{"enabled":false}}', 'the brief']],
+    ['claude-code', [join(programs, 'claude'), '-p', 'the brief'], [join(programs, 'claude'), '--settings', '{"sandbox":{"enabled":false}}', '-p', 'the brief']],
+    ['codex', ['codex', 'the brief'], ['codex', '-c', 'sandbox_mode="danger-full-access"', 'the brief']],
+    ['codex', ['codex', 'exec', '--sandbox', 'danger-full-access', 'the brief'], ['codex', '-c', 'sandbox_mode="danger-full-access"', 'exec', '--sandbox', 'danger-full-access', 'the brief']],
+    ['grok', ['grok', '-p', 'the brief'], ['grok', '--sandbox', 'off', '-p', 'the brief']],
+    ['muse', ['muse', 'the brief'], ['muse', '--disable-sandbox', 'the brief']],
+    ['muse', ['muse', 'exec', 'the brief'], ['muse', 'exec', '--disable-sandbox', 'the brief']],
+  ];
+  for (const [runtime, asked, started] of cases) {
+    const made = plan(runtime, asked);
+    assert.deepEqual(made.command, started, `${runtime}: ${asked.join(' ')}`);
+    assert.equal(made.isOwnSandboxOff, true, runtime);
+  }
+  // A command that does not start the agent (git, the tests) runs as it is.
+  const tests = plan('claude-code', ['node', '--test']);
+  assert.deepEqual(tests.command, ['node', '--test']);
+  assert.equal(tests.isOwnSandboxOff, false);
+  // Every runtime a desk starts says how: a new one can't leave its sandbox on by leaving it out.
+  for (const [name, runtime] of Object.entries(DESK_RUNTIMES)) assert.ok(runtime.ownSandbox.program, name);
+});
+
+test("planDesk: a command that asks for the agent's own sandbox does not start, with the reason (#1171)", () => {
+  const { desk } = makeDesk();
+  const programs = agentPrograms();
+  const plan = (runtime: string, command: string[]) => () => planDesk({ runtime, desk, command, env: { ...env(), PATH: [programs, dirname(process.execPath)].join(delimiter) }, markDesk: writeMark });
+  // Positive controls: each flag would turn the agent's own sandbox back on, or can't be merged.
+  assert.throws(plan('claude-code', ['claude', '--settings', '{}', 'x']), /can't start claude with its own sandbox off: the command passes its own --settings/);
+  assert.throws(plan('claude-code', ['claude', '--settings=/tmp/s.json', 'x']), /its own --settings/);
+  assert.throws(plan('codex', ['codex', 'exec', '--sandbox', 'workspace-write', 'x']), /asks for --sandbox workspace-write/);
+  assert.throws(plan('codex', ['codex', '-s', 'read-only', 'x']), /asks for --sandbox read-only/);
+  assert.throws(plan('codex', ['codex', '--sandbox=workspace-write', 'x']), /asks for --sandbox workspace-write/);
+  assert.throws(plan('codex', ['codex', 'exec', '--full-auto', 'x']), /asks for --full-auto/);
+  assert.throws(plan('codex', ['codex', '-c', 'sandbox_mode="workspace-write"', 'x']), /asks for -c sandbox_mode="workspace-write"/);
+  assert.throws(plan('grok', ['grok', '--sandbox', 'yokoten', '-p', 'x']), /asks for --sandbox yokoten/);
+  assert.throws(plan('muse', ['muse', 'resume', '--last']), /`muse resume` has no flag to turn its own sandbox off/);
+  // Words after -- are the agent's, not options.
+  assert.deepEqual(plan('codex', ['codex', 'exec', '--', '-s', 'x'])().command, ['codex', '-c', 'sandbox_mode="danger-full-access"', 'exec', '--', '-s', 'x']);
+});
+
+test('isProgramNamed: the file name, with an extension and no case on Windows', () => {
+  assert.ok(isProgramNamed('/usr/local/bin/claude', 'claude', 'linux', {}));
+  assert.ok(!isProgramNamed('/usr/local/bin/claude-wrapper', 'claude', 'linux', {}));
+  assert.ok(!isProgramNamed('Claude', 'claude', 'darwin', {}));
+  assert.ok(isProgramNamed('C:\\tools\\Codex.CMD', 'codex', 'win32', { PATHEXT: '.EXE;.CMD' }));
+  assert.ok(!isProgramNamed('C:\\tools\\codex.ps1', 'codex', 'win32', { PATHEXT: '.EXE;.CMD' }));
 });

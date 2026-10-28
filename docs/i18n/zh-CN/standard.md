@@ -501,7 +501,9 @@ CI 里从基础分支读 CODEOWNERS。
 工位是 worker 自己的那份克隆，再加上围住 agent 的一道栅栏。
 子进程和管道都能用。
 工位跑的是 lead 交给它的命令。
-它不会自己再加参数。
+这条命令启动的是 agent 程序时，工位只加一个参数：这一次运行里，关掉 agent 自己的沙箱。
+那个沙箱在栅栏里起不来，整个 agent 由栅栏围住。
+不改任何设置文件。
 符号链接在 `.git`、`.git/config`、`.git/hooks`、`.git/yokoten-worker` 和工位状态文件夹上会被拒绝。
 在团队里，团队文件夹只读，只有这个 agent 自己的发件箱可以写。
 栅栏是 sandbox-runtime `0.0.81`，`hosts` 由它自己的代理放行。
@@ -516,7 +518,8 @@ CI 里从基础分支读 CODEOWNERS。
 | `locked` | `.git/config`、`.git/hooks` 和 `.git/yokoten-worker` 保持只读。在团队里，`.git/yokoten-desk.json` 也锁上。 |
 | `hosts` | 只能到 API 主机，而且要经过外面的代理。只接受 CONNECT。端口是 `443`，除非主机那一项自己写了端口。隧道最多 `64` 条。`10 minutes` 没有数据就关掉。代理不读隧道里的内容。 |
 | `env` | `YOKOTEN_ROLE` 是 `worker`。`TZ` 是 `UTC`。在团队里还会设置 `YOKOTEN_DESK` 和 `YOKOTEN_TEAM`。知道模型时，`YOKOTEN_MODEL` 写出模型。只有当厂商不是运行环境自己的厂商时，才设置 `YOKOTEN_VENDOR`，让 agent 知道自己实际是谁。 |
-| `command` | lead 传进来的那条命令。 |
+| `command` | lead 传进来的那条命令。启动 agent 程序时，再加上关掉它自己沙箱的那个参数。 |
+| `isOwnSandboxOff` | 工位加了那个参数时是 `true`。启动画面会用一行说明。 |
 
 `/run` 要藏起来，因为那里的 socket 能在栅栏外面启动程序。
 
@@ -525,6 +528,16 @@ DeepSeek 通过 `codex` 来跑。
 运行时 id `deepseek-harness` 自己没有工位。
 `gemini` 和 `antigravity` 没有工位运行时。
 不认识的运行时直接拒绝。
+
+每个运行时写明自己的 agent 程序，和关掉它自己沙箱的参数：
+
+- `claude-code` 启动 `claude`，加上 `--settings` 和 `{"sandbox":{"enabled":false}}`。
+- `codex` 启动 `codex`，加上 `-c` 和 `sandbox_mode="danger-full-access"`。
+- `grok` 启动 `grok`，加上 `--sandbox off`。
+- `muse` 启动 `muse`，加上 `--disable-sandbox`。命令里有 `exec` 时，参数放在它后面。
+
+命令要用 agent 自己的沙箱，或者工位加不上这个参数，就直接拒绝。
+比如：又传了一个 `--settings`、`--sandbox workspace-write`、`--full-auto`，或者 `muse resume`。
 
 - `claude-code` 可以连 `api.anthropic.com` 和 `platform.claude.com`。
 - 复制进去的登录文件是 `.credentials.json`。
@@ -568,7 +581,7 @@ Windows 本机没有工位后端。
 
 谁来写。`planDesk` 生成这份计划。agent 只能写在可写的文件夹里。
 谁来读。工位的后端。agent 看见的是栅栏，不是这份计划对象。
-怎么检查。`planDesk` 遇到不认识的运行时、不是克隆的文件夹、或者一条会打开隐藏目录的路径，就抛出错误。代理拒绝一切不是发往允许主机的 CONNECT。
+怎么检查。`planDesk` 遇到不认识的运行时、不是克隆的文件夹、一条会打开隐藏目录的路径，或者要用 agent 自己沙箱的 agent 命令，就抛出错误。代理拒绝一切不是发往允许主机的 CONNECT。
 版本 1。`DeskPlan` 没有版本字段。
 
 - [src/agents/desk/desk.ts](../../../src/agents/desk/desk.ts) 和 [test/agents/desk/desk.test.ts](../../../test/agents/desk/desk.test.ts)。

@@ -1223,8 +1223,15 @@ export const AGENT_ENV: RuntimeEnv = { login: ['OPENAI_API_KEY', 'CODEX_API_KEY'
  * `auth.json` is copied in, never `config.toml`: pass a provider with `-c` on the command.
  * Hosts: the OpenAI API, and DeepSeek's, which yokoten's DeepSeek workers reach through
  * Codex. A ChatGPT login also needs `--host chatgpt.com,auth.openai.com`. The binary names
- * HTTPS_PROXY and ALL_PROXY. Inside the desk Codex runs with `--sandbox danger-full-access`:
- * its own sandbox blocks `.git` and the pipes tests use.
+ * HTTPS_PROXY and ALL_PROXY.
+ *
+ * Inside the desk Codex runs with its own sandbox off (#1171): it can't start there
+ * (`bwrap: No permissions to create new namespace`; Seatbelt does not nest), and it blocks
+ * `.git` and the pipes tests use. The desk adds `-c sandbox_mode="danger-full-access"` right
+ * after `codex`. Source: `codex --help` (codex-cli 0.163.0), where `-c` sits on the root and
+ * reaches every subcommand, and https://learn.chatgpt.com/docs/config-file/config-basic:
+ * "CLI flags and `--config` overrides" outrank the project's `.codex/config.toml`. A
+ * `--sandbox` flag outranks `-c`, so a command that asks for another sandbox is refused.
  */
 export const DESK: RuntimeDesk = {
   leadState: (env) => [codexHomeIn(env)],
@@ -1232,7 +1239,42 @@ export const DESK: RuntimeDesk = {
   stateEnv: (state) => ({ CODEX_HOME: state }),
   hosts: ['api.openai.com', 'api.deepseek.com'],
   identity: readModelIdentity,
+  ownSandbox: { program: 'codex', turnOff: turnSandboxOff },
 };
+
+/** The words a desk adds after `codex`: its own sandbox off for this run (#1171). */
+export const DESK_SANDBOX_WORDS: readonly string[] = ['-c', 'sandbox_mode="danger-full-access"'];
+
+/** Flags that pick Codex's own sandbox without naming it: each runs `workspace-write`. */
+const SANDBOX_PICKING_FLAGS = new Set(['--full-auto', '--approve-for-me']);
+
+/**
+ * The values `command` gives an option, in each form a parser takes: `--long value`,
+ * `--long=value`, `-s value` and `-svalue`. Words after `--` are not options.
+ */
+export function optionValues(command: readonly string[], long: string, short?: string): string[] {
+  const values: string[] = [];
+  for (let at = 1; at < command.length; at += 1) {
+    const word = command[at];
+    if (word === '--') break;
+    if (word === long || (short !== undefined && word === short)) values.push(command[at + 1] ?? '');
+    else if (word.startsWith(`${long}=`)) values.push(word.slice(long.length + 1));
+    else if (short !== undefined && word.startsWith(short) && !word.startsWith('--')) values.push(word.slice(short.length));
+  }
+  return values;
+}
+
+/** `codex` with its own sandbox off for this run, or why a command that picks another sandbox can't be. */
+function turnSandboxOff(command: readonly string[]): string[] | { fail: string } {
+  const refused = (what: string) => ({ fail: `the command asks for ${what}, and in a desk the desk's fence is the sandbox. Leave it out` });
+  const mode = optionValues(command, '--sandbox', '-s').find((value) => value !== 'danger-full-access');
+  if (mode !== undefined) return refused(`--sandbox ${mode}`);
+  const picking = command.slice(1).find((word) => SANDBOX_PICKING_FLAGS.has(word));
+  if (picking) return refused(picking);
+  const config = optionValues(command, '--config', '-c').find((value) => /^\s*sandbox_mode\s*=/.test(value) && !/=\s*"?danger-full-access"?\s*$/.test(value));
+  if (config !== undefined) return refused(`-c ${config}`);
+  return [command[0], ...DESK_SANDBOX_WORDS, ...command.slice(1)];
+}
 
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {
