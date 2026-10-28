@@ -115,7 +115,8 @@ const time = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).
 
     // captions: CC opens the list; the picked track shows, every other one is off, and the list closes
     const open = (on: boolean) => { ccMenu.hidden = !on; ccBtn.setAttribute('aria-expanded', String(on)); };
-    ccBtn.addEventListener('click', () => open(ccMenu.hidden));
+    // hidden is a boolean or 'until-found'; the menu only ever sets true or false
+    ccBtn.addEventListener('click', () => open(ccMenu.hidden !== false));
     document.addEventListener('click', (e) => { if (!fig.querySelector('.cc')!.contains(e.target as Node)) open(false); });
     fig.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !ccMenu.hidden) { open(false); ccBtn.focus(); } });
     const pick = (tag: string) => {
