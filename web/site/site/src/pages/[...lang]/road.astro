@@ -1,0 +1,69 @@
+---
+// Road: what happens after day one? An overview: the five stages as cards (each with its count of
+// steps, from road.ts), then the desk and the kanban in a sentence each. Every step is listed on the
+// road doc (/docs/road); the desk and the board are explained in the guide.
+import Sheet from '../../layouts/Sheet.astro';
+import Row from '../../components/blocks/Row.astro';
+import { href, langPaths, type Lang } from '../../lib/i18n';
+import { pageData } from '../../lib/content/data';
+import { guideLink } from '../../lib/content/docs';
+import { stages } from '../../lib/content/facts';
+import { inline } from '../../lib/page/text';
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const d = await pageData('road', lang);
+const total = stages.reduce((n, s) => n + s.steps.length, 0);
+const count = (template: string, n: number) => template.replace('{n}', String(n));
+const deskLink = await guideLink(lang, 'desk');
+const boardLink = await guideLink(lang, 'teamBoard');
+---
+<Sheet lang={lang} page="road" title={d.meta.title} description={d.meta.description}>
+  <section id="intro" class="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{d.intro.label}</p>
+    <h1 id="intro-title" class="page-title">{d.intro.title}</h1>
+    <p class="lede">{d.intro.body}</p>
+  </section>
+
+  <Row id="stages" no="01" label={d.stages.label}>
+    <h2 id="stages-title">{d.stages.title}</h2>
+    <ol class="stages body">
+      {stages.map((s) => (
+        <li class="card">
+          <span class="label">{d.stages.stage} {s.number}</span>
+          <span class="name" lang="en">{s.name}</span>
+          <span class="count">{count(d.stages.steps, s.steps.length)}</span>
+        </li>
+      ))}
+    </ol>
+    <p class="more"><a href={href('docsRoad', lang)}>{count(d.stages.all, total)} →</a></p>
+  </Row>
+
+  <Row id="desk" no="02" label={d.desk.label}>
+    <h2 id="desk-title">{d.desk.title} <span class="tag tag-running">{d.desk.tag}</span></h2>
+    <p class="lede" set:html={inline(d.desk.body)} />
+    <p class="more"><a href={deskLink}>{d.desk.more} →</a></p>
+  </Row>
+
+  <Row id="kanban" no="03" label={d.kanban.label}>
+    <h2 id="kanban-title">{d.kanban.title} <span class="tag tag-kanban">{d.kanban.tag}</span></h2>
+    <p class="lede" set:html={inline(d.kanban.body)} />
+    <p class="more"><a href={boardLink}>{d.kanban.more} →</a></p>
+  </Row>
+</Sheet>
+<style>
+  /* The five stages in a row on desktop, three on a tablet; on a phone one compact row each:
+     "Stage 1 · Safety net · 5 steps". Flat cards: a line, no colour, since no stage is done yet. */
+  .stages { list-style: none; padding: 0; margin-bottom: 0; display: grid; gap: 1rem; grid-template-columns: 1fr; }
+  @media (min-width: 48rem) { .stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 64rem) { .stages { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  .card { display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem; padding: 1.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .label, .count { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--muted); }
+  .name { display: block; font-family: var(--font-cond); font-weight: 700; font-size: 1.125rem; line-height: 1.25; text-wrap: balance; }
+  .name::first-letter { text-transform: uppercase; }
+  .count { margin-top: auto; }
+  @media (max-width: 47.99rem) {
+    .stages { gap: 0; border-top: 1px solid var(--line); }
+    .card { display: grid; grid-template-columns: 5.5rem 1fr auto; align-items: baseline; gap: 0.75rem; padding: 0.85rem 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: none; }
+  }
+  h2 .tag { vertical-align: middle; margin-left: 0.5rem; }
+</style>

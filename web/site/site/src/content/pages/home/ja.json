@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "title": "yokoten",
+    "description": "yokoten は、AI コーディングエージェントの取り返しのつかないミスを止めます。コマンド一つで準備完了：npx yokoten。"
+  },
+  "hero": {
+    "headline": "AI エージェントの取り返しのつかないミスを止める。",
+    "sub": "コマンド一つで準備完了。設定を書く必要はありません。",
+    "works": {
+      "label": "対応ツール",
+      "items": [
+        "Claude Code",
+        "Codex",
+        "Copilot",
+        "Antigravity",
+        "Muse Code",
+        "OpenCode",
+        "Grok",
+        "DeepSeek"
+      ]
+    },
+    "platforms": {
+      "label": "対応 OS",
+      "items": [
+        "Linux",
+        "macOS",
+        "Windows（WSL）",
+        "Windows ネイティブ（ベータ）"
+      ]
+    },
+    "tags": [
+      "MIT"
+    ]
+  },
+  "stops": {
+    "label": "ラインを止める",
+    "title": "何を止めるか",
+    "cards": [
+      {
+        "screen": "guard, force push",
+        "caption": "ほかの人の作業を消してしまう強制プッシュ。"
+      },
+      {
+        "screen": "guard, wipe home",
+        "caption": "ホームフォルダーを丸ごと消すコマンド。"
+      },
+      {
+        "screen": "guard, tag push",
+        "caption": "オーナーだけが行うべきリリース。"
+      }
+    ],
+    "more": "全ルール"
+  },
+  "firstMinute": {
+    "label": "最初の一分",
+    "title": "`npx yokoten` がすること",
+    "callouts": [
+      "ガードを有効にします。",
+      "ルールを追加します。あなたのファイルは変えません。",
+      "次のコマンドを一つ示します。"
+    ]
+  },
+  "questions": {
+    "label": "よくある質問",
+    "title": "三つの質問",
+    "items": [
+      {
+        "q": "無料ですか？",
+        "a": "はい。MIT のオープンソースで、アカウントも要りません。"
+      },
+      {
+        "q": "コードはどこかに送られますか？",
+        "a": "いいえ。あなたのマシンと CI の中だけで動き、テレメトリもありません。"
+      },
+      {
+        "q": "どうやって削除しますか？",
+        "a": "`yokoten uninstall` を実行します。プロジェクトに追加したファイルは普通のファイルなので、そのまま削除できます。"
+      }
+    ]
+  }
+}

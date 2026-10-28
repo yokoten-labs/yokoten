@@ -100,3 +100,79 @@ test('startProxy: past the tunnel cap a CONNECT is refused; a still tunnel is cl
     echo.close();
   }
 });
+
+/**
+ * A fake upstream proxy, as a host's corporate proxy: it notes each CONNECT head it gets,
+ * wants the right Proxy-Authorization, and then acts as the far host itself (an echo), so
+ * the allowed host name never has to resolve.
+ */
+async function fakeUpstream(authorization: string) {
+  const heads: string[] = [];
+  let connections = 0;
+  const server = createServer((socket) => {
+    connections++;
+    let head = '';
+    const onData = (chunk: Buffer) => {
+      head += chunk.toString('latin1');
+      const end = head.indexOf('\r\n\r\n');
+      if (end === -1) return;
+      socket.off('data', onData);
+      heads.push(head.slice(0, end));
+      if (!head.includes(`\r\nProxy-Authorization: ${authorization}\r\n`)) return socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\n\r\n');
+      socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+      const early = head.slice(end + 4);
+      if (early) socket.end(`echo:${early}`);
+      else socket.once('data', (data) => socket.end(`echo:${data}`));
+    };
+    socket.on('data', onData);
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  return { server, heads, port: (server.address() as { port: number }).port, connections: () => connections };
+}
+
+test('startProxy: with the host proxy set, an allowed host goes through it; an off-list host never reaches it; the password is never shown (#1172)', desksOnly, async () => {
+  const password = 's3cret-pass';
+  const authorization = `Basic ${Buffer.from(`desk-user:${password}`).toString('base64')}`;
+  const upstream = await fakeUpstream(authorization);
+  const { readHostProxy } = await import('../../../../src/agents/desk/network/upstream.ts');
+  const choice = readHostProxy({ HTTPS_PROXY: `http://desk-user:${password}@127.0.0.1:${upstream.port}`, NO_PROXY: 'direct.example.test' });
+  assert.ok(choice.proxy);
+  assert.equal(choice.proxy.shown, `127.0.0.1:${upstream.port}`, 'the start screen gets host and port only');
+  const events: ProxyEvent[] = [];
+  const path = join(makeTempDir('proxy-'), 'proxy.sock');
+  const proxy = await startProxy(path, ['api.example.test', 'direct.example.test'], (event) => events.push(event), undefined, choice.proxy);
+  try {
+    const allowed = await talk(path, 'CONNECT api.example.test:443 HTTP/1.1\r\nHost: api.example.test:443\r\n\r\nhi', 'echo:hi');
+    assert.match(allowed, /^HTTP\/1\.1 200 Connection Established\r\n\r\necho:hi$/, 'the tunnel runs through the upstream');
+    assert.deepEqual(upstream.heads, [`CONNECT api.example.test:443 HTTP/1.1\r\nHost: api.example.test:443\r\nProxy-Authorization: ${authorization}`], 'one CONNECT, with the login, to the allowed host');
+    assert.equal(upstream.connections(), 1);
+    // Off the list: refused here, before any upstream call.
+    assert.match(await talk(path, 'CONNECT evil.example.test:443 HTTP/1.1\r\n\r\n'), /^HTTP\/1\.1 403/);
+    assert.match(await talk(path, 'CONNECT api.example.test:22 HTTP/1.1\r\n\r\n'), /^HTTP\/1\.1 403/);
+    assert.equal(upstream.connections(), 1, 'the upstream never heard of an off-list host');
+    // NO_PROXY: dialled directly, so the upstream sees nothing (the name does not resolve, so the tunnel fails: 502).
+    assert.match(await talk(path, 'CONNECT direct.example.test:443 HTTP/1.1\r\n\r\n'), /^HTTP\/1\.1 502/);
+    assert.equal(upstream.connections(), 1, 'a NO_PROXY host is not sent to the upstream');
+    const shown = JSON.stringify(events) + allowed;
+    assert.ok(!shown.includes(password) && !shown.includes(authorization), 'no password in what the desk hears or shows');
+  } finally {
+    await proxy.close();
+    upstream.server.close();
+  }
+});
+
+test('startProxy: an upstream that refuses the tunnel gives the client 502 and nothing of its answer (#1172)', desksOnly, async () => {
+  const upstream = await fakeUpstream('Basic right');
+  const { readHostProxy } = await import('../../../../src/agents/desk/network/upstream.ts');
+  const choice = readHostProxy({ HTTPS_PROXY: `http://wrong:login@127.0.0.1:${upstream.port}` });
+  const path = join(makeTempDir('proxy-'), 'proxy.sock');
+  const proxy = await startProxy(path, ['api.example.test'], () => {}, undefined, choice.proxy);
+  try {
+    const answer = await talk(path, 'CONNECT api.example.test:443 HTTP/1.1\r\n\r\n');
+    assert.match(answer, /^HTTP\/1\.1 502 Bad Gateway\r\n/);
+    assert.ok(!answer.includes('407') && !answer.includes('Proxy-Authenticate'), "the upstream's answer is not passed on");
+  } finally {
+    await proxy.close();
+    upstream.server.close();
+  }
+});

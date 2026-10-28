@@ -1,0 +1,155 @@
+---
+// How it works: one task from you to the server, as a picture you step through (Play, Previous,
+// Next, Restart, Speed, every step in a list), then three questions on the sandbox. The picture and
+// its clock come from tools/steps/how-flow.mjs (generated/how/); the step texts are page data.
+import Sheet from '../../layouts/Sheet.astro';
+import Row from '../../components/blocks/Row.astro';
+import { langPaths, type Lang } from '../../lib/i18n';
+import { pageData } from '../../lib/content/data';
+import flow from '../../content/generated/how/flow.svg?raw';
+import plan from '../../content/generated/how/flow.json';
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const d = await pageData('how', lang);
+if (d.steps.length !== plan.steps.length) throw new Error(`how/${lang}.json has ${d.steps.length} steps; the picture has ${plan.steps.length}`);
+const total = plan.steps[plan.steps.length - 1].n;
+const steps = plan.steps.map((s, i) => ({ ...s, text: d.steps[i] }));
+const words = { ...d.player, total };
+---
+<Sheet lang={lang} page="how" title={d.meta.title} description={d.meta.description}>
+  <section id="intro" class="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{d.intro.label}</p>
+    <h1 id="intro-title" class="page-title">{d.intro.title}</h1>
+    <p class="lede">{d.intro.body}</p>
+  </section>
+
+  <Row id="flow" no="01" label={d.player.all}>
+    <h2 id="flow-title" class="vh">{d.intro.title}</h2>
+    <div class="flow" data-steps={JSON.stringify(steps)} data-total={plan.total} data-words={JSON.stringify(words)}>
+      <div class="stage"><Fragment set:html={flow} /></div>
+      <div class="side">
+        <div class="panel">
+          <p class="small">{d.player.label}</p>
+          <p class="count" data-count></p>
+          <p class="now" data-now aria-live="polite"></p>
+          <div class="controls">
+            <button class="primary" type="button" data-play>{d.player.play}</button>
+            <button type="button" data-prev>{d.player.prev}</button>
+            <button type="button" data-next>{d.player.next}</button>
+            <button type="button" data-reset>{d.player.restart}</button>
+            <label class="speed">{d.player.speed} <input type="range" min="1" max="5" value="3" data-speed /></label>
+          </div>
+        </div>
+        <div class="panel">
+          <p class="small">{d.player.all}</p>
+          <ol class="list" data-list>
+            {steps.map((s, i) => <li><button type="button" data-step={i}>{s.n} · {s.text}</button></li>)}
+          </ol>
+        </div>
+        <div class="panel">
+          <p class="small">{d.player.legend}</p>
+          <dl class="legend">
+            <dt><span class="key key-data">data</span></dt><dd>{d.player.data}</dd>
+            <dt><span class="key key-red">red</span></dt><dd>{d.player.red}</dd>
+            <dt><span class="key key-green">green</span></dt><dd>{d.player.green}</dd>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </Row>
+
+  <Row id="questions" no="02" label={d.questions.label}>
+    <h2 id="questions-title">{d.questions.title}</h2>
+    <dl class="items body">{d.questions.items.map((i) => <div><dt>{i.q}</dt><dd>{i.a}</dd></div>)}</dl>
+    <p class="note">{d.questions.note}</p>
+  </Row>
+</Sheet>
+<script>
+  // The picture's moves run on one SMIL clock; the page holds it still and moves it: Next plays one
+  // step and stops where its last move ends, Play runs to the end, Speed scales the clock.
+  const SPEED = [0.5, 0.75, 1, 1.5, 2];
+  for (const root of document.querySelectorAll<HTMLElement>('.flow')) {
+    const steps = JSON.parse(root.dataset.steps ?? '[]') as { n: number; at: number; stop: number; text: string }[];
+    const total = Number(root.dataset.total);
+    const w = JSON.parse(root.dataset.words ?? '{}') as Record<string, string | number>;
+    const svg = root.querySelector('svg') as SVGSVGElement;
+    const q = <T extends Element>(s: string) => root.querySelector(s) as T;
+    const play = q<HTMLButtonElement>('[data-play]'), speed = q<HTMLInputElement>('[data-speed]'), list = q<HTMLOListElement>('[data-list]');
+    const buttons = [...list.querySelectorAll<HTMLButtonElement>('button')];
+    const last = steps[steps.length - 1].stop;
+    let time = 0, playing = false, stopAt = 0, before = 0;
+    svg.pauseAnimations();
+    const current = () => steps.reduce((i, s, k) => (time >= s.at - 0.001 ? k : i), -1);
+    const render = () => {
+      const i = current();
+      q('[data-count]').textContent = String(w.count).replace('{n}', String(i < 0 ? 0 : steps[i].n)).replace('{total}', String(w.total));
+      q('[data-now]').textContent = i < 0 ? String(w.ready) : steps[i].text;
+      play.textContent = String(playing ? w.pause : time >= last - 0.05 ? w.replay : w.play);
+      buttons.forEach((b, k) => {
+        if (k === i) { b.setAttribute('aria-current', 'step'); list.scrollTop = b.offsetTop - list.clientHeight / 2 + b.offsetHeight / 2; }
+        else b.removeAttribute('aria-current');
+        b.classList.toggle('done', k < i);
+      });
+    };
+    const seek = (t: number) => { time = Math.max(0, Math.min(total, t)); svg.setCurrentTime(time); render(); };
+    const tick = (now: number) => {
+      if (!playing) return;
+      const next = Math.min(stopAt, time + ((now - before) / 1000) * SPEED[Number(speed.value) - 1]);
+      before = now;
+      seek(next);
+      if (next >= stopAt) { playing = false; render(); return; }
+      requestAnimationFrame(tick);
+    };
+    const start = () => { playing = true; before = performance.now(); requestAnimationFrame(tick); render(); };
+    const reset = () => { playing = false; seek(0); };
+    const playStep = (i: number) => {
+      if (i < 0) return reset();
+      if (i >= steps.length) return;
+      seek(steps[i].at); stopAt = steps[i].stop; start();
+    };
+    play.addEventListener('click', () => {
+      if (playing) { playing = false; render(); return; }
+      if (time >= last - 0.05) seek(0);
+      stopAt = total - 0.2; start();
+    });
+    q('[data-next]').addEventListener('click', () => playStep(current() + 1));
+    q('[data-prev]').addEventListener('click', () => playStep(current() - 1));
+    q('[data-reset]').addEventListener('click', reset);
+    buttons.forEach((b, k) => b.addEventListener('click', () => playStep(k)));
+    render();
+  }
+</script>
+<style>
+  .flow { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+  @media (min-width: 64rem) { .flow { grid-template-columns: minmax(0, 1fr) 20rem; } }
+  .stage { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; padding: 0.75rem; background: var(--bg); }
+  .stage :global(svg) { display: block; width: 100%; height: auto; min-width: 40rem; }
+  .stage :global(svg text) { font-family: var(--font-sans); }
+  .stage :global(svg text[font-family*='Mono']) { font-family: var(--font-mono); }
+  .side { display: grid; gap: 0.75rem; min-width: 0; }
+  .panel { border: 1px solid var(--line); border-radius: 12px; padding: 0.9rem 1rem; background: var(--surface); }
+  .small { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.4rem; }
+  .count { font-family: var(--font-mono); font-weight: 600; font-size: 0.875rem; color: var(--andon); margin: 0; }
+  .now { font-weight: 600; margin: 0.25rem 0 0; min-height: 3.2em; }
+  .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.6rem; }
+  .controls button { font: inherit; font-size: 0.8125rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.75rem; cursor: pointer; }
+  .controls button.primary { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .speed { margin-left: auto; display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem; color: var(--muted); }
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 26rem; overflow: auto; position: relative; }
+  .list button { width: 100%; text-align: left; font: inherit; font-size: 0.8125rem; color: var(--muted); background: none; border: 0; border-radius: 6px; padding: 0.3rem 0.5rem; cursor: pointer; }
+  .list button[aria-current='step'] { background: var(--band); color: var(--fg); font-weight: 600; outline: 1px solid var(--line); }
+  .list button.done { color: var(--fg); }
+  .legend { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.6rem; margin: 0; font-size: 0.8125rem; align-items: center; }
+  .legend dd { margin: 0; color: var(--muted); }
+  .key { display: inline-block; font-family: var(--font-mono); font-weight: 600; font-size: 0.6875rem; padding: 0.1rem 0.5rem; border-radius: 9px; color: var(--bg); }
+  .key-data { background: var(--fg); }
+  .key-red { background: var(--andon); }
+  .key-green { background: var(--running); }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .items { display: grid; gap: 2rem 3rem; margin-bottom: 0; }
+  @media (min-width: 48rem) { .items { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .items dt { font-weight: 700; margin-bottom: 0.5rem; }
+  .items dd { margin: 0; }
+  .note { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--andon); }
+  @media (prefers-reduced-motion: reduce) { .stage :global(.pkt) { display: none; } }
+</style>

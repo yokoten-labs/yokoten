@@ -1,0 +1,50 @@
+---
+// One chapter of the guide, /docs/guide/<slug>: the English chapter's slug in every language, so
+// the language switcher keeps the chapter. A chapter the translation leaves out is shown in
+// English, with the note. Under it: the chapters before and after.
+import DocsShell from '../../../../components/frame/DocsShell.astro';
+import { buildLangs, href, LANG_INFO, type Lang } from '../../../../lib/i18n';
+import { pageData } from '../../../../lib/content/data';
+import { guideOf } from '../../../../lib/content/docs';
+import { render, type CollectionEntry } from 'astro:content';
+
+type Chapter = CollectionEntry<'chapters'>;
+export async function getStaticPaths() {
+  const paths: { params: { lang: string | undefined; chapter: string }; props: { lang: Lang; entry: Chapter; prev?: Chapter; next?: Chapter } }[] = [];
+  for (const lang of buildLangs()) {
+    const { chapters } = await guideOf(lang);
+    chapters.forEach((entry, i) => {
+      paths.push({ params: { lang: LANG_INFO[lang].dir || undefined, chapter: entry.data.slug }, props: { lang, entry, prev: chapters[i - 1], next: chapters[i + 1] } });
+    });
+  }
+  return paths;
+}
+const { lang, entry, prev, next } = Astro.props as { lang: Lang; entry: Chapter; prev?: Chapter; next?: Chapter };
+const t = await pageData('site', lang);
+const { Content } = await render(entry);
+const c = entry.data;
+const local = LANG_INFO[lang].html;
+---
+<DocsShell lang={lang} page="guide" sub={c.slug} name={c.title} description={t.docs.chapterDescription.replace('{chapter}', c.title)} toc={c.sections.filter((s) => s.depth === 2)} translated={c.translated}>
+  <p class="eyebrow" lang={c.translated ? undefined : local}><a href={href('guide', lang)}>{t.docs.guide}</a></p>
+  <h1 class="page-title">{c.title}</h1>
+  <p class="source">{t.docs.source}: <a href={c.source}>{c.source.replace(/^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\//, '')}</a> · {c.ref}</p>
+  <div class="prose"><Content /></div>
+  <nav class="pager" aria-label={t.docs.chapters} lang={c.translated ? undefined : local}>
+    {prev ? <a class="prev" href={href('guide', lang, '', prev.data.slug)}><span class="dir">← {t.docs.previous}</span><span class="to" lang={prev.data.translated ? undefined : 'en'}>{prev.data.title}</span></a>
+          : <a class="prev" href={href('guide', lang)}><span class="dir">← {t.docs.chapters}</span><span class="to">{t.docs.guide}</span></a>}
+    {next && <a class="next" href={href('guide', lang, '', next.data.slug)}><span class="dir">{t.docs.next} →</span><span class="to" lang={next.data.translated ? undefined : 'en'}>{next.data.title}</span></a>}
+  </nav>
+</DocsShell>
+<style>
+  .eyebrow a { color: inherit; text-decoration: none; }
+  .eyebrow a:hover { text-decoration: underline; }
+  /* The chapters before and after: two plain links, left and right; on a phone, one above the other. */
+  .pager { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); max-width: 72ch; margin-top: 4rem; }
+  .pager a { display: grid; gap: 0.25rem; text-decoration: none; padding: 1rem 1.25rem; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
+  .pager a:hover { border-color: var(--fg); }
+  .pager a:hover .to { text-decoration: underline; text-decoration-color: var(--link); }
+  .pager .next { text-align: right; grid-column: -2; }
+  .dir { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .to { font-weight: 600; }
+</style>

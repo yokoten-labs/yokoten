@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "How it works · yokoten",
+    "description": "Follow one task from you to the server: the lead, a desk worker in its own sandbox, the guard before each action, and the checks when it lands."
+  },
+  "intro": {
+    "label": "How it works",
+    "title": "One task, step by step",
+    "body": "Press Play, or go one step at a time with Next. Each tag is one piece of data moving."
+  },
+  "player": {
+    "label": "Current step",
+    "count": "Step {n} of {total}",
+    "ready": "Ready. Press Play, or Next to go one step at a time.",
+    "play": "Play",
+    "pause": "Pause",
+    "replay": "Replay",
+    "prev": "Previous",
+    "next": "Next",
+    "restart": "Restart",
+    "speed": "Speed",
+    "all": "All steps",
+    "legend": "Legend",
+    "data": "a piece of data moving",
+    "red": "stopped, failed, or waits for you",
+    "green": "allowed or passed"
+  },
+  "steps": [
+    "You give the lead a task.",
+    "The lead asks the model. yokoten doesn't read this.",
+    "The lead opens a desk. The guard checks it first.",
+    "yokoten opens the desk: its own clone, in a sandbox.",
+    "The worker asks the model. Only the model API gets out.",
+    "The worker tries to push. The guard stops it.",
+    "The worker edits a file. The guard lets it through.",
+    "It commits, and the commit check runs in the sandbox.",
+    "The desk runs the tests in the sandbox: evidence.",
+    "The lead closes the desk and gets the evidence.",
+    "The lead reviews the diff and runs the checks itself.",
+    "The lead opens a PR. It touches guard settings, so the guard asks you (coming).",
+    "With your yes, the PR goes to the server.",
+    "Round 1: the lead checks CI. It failed.",
+    "The lead fixes it and pushes again, through the guard.",
+    "Round 2: the lead checks CI. It passed.",
+    "The lead merges, then tells you.",
+    "Only you release and tag."
+  ],
+  "questions": {
+    "label": "Questions",
+    "title": "About the sandbox",
+    "items": [
+      {
+        "q": "My agent already has a sandbox. Why use yokoten's?",
+        "a": "Each vendor's sandbox is different, and it only locks commands. A desk locks the whole worker the same way, whatever its vendor."
+      },
+      {
+        "q": "Do both sandboxes run?",
+        "a": "No. Inside a desk, the yokoten sandbox replaces the agent's own."
+      },
+      {
+        "q": "Can a worker come from any vendor?",
+        "a": "Yes: Claude Code, Codex, Grok or Muse."
+      }
+    ],
+    "note": "Being fixed: issues #1171, #1172 and #1174."
+  }
+}

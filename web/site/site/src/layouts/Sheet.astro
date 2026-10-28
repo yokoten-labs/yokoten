@@ -1,0 +1,56 @@
+---
+// Every page: the head (title, description, languages, share image), the header, the sheet, the footer.
+import '../styles/global.css';
+import Header from '../components/frame/Header.astro';
+import Footer from '../components/frame/Footer.astro';
+import { buildLangs, href, LANG_INFO, type Lang, type Page } from '../lib/i18n';
+import { pageData } from '../lib/content/data';
+import { structuredData } from '../lib/page/structured';
+/** `sub`: a page under the page, the same in every language: a guide chapter's slug. */
+interface Props { lang: Lang; page: Page | '404'; sub?: string; title: string; description: string }
+const { lang, page, sub = '', title, description } = Astro.props;
+const t = await pageData('site', lang);
+const site = 'https://yokoten.app';
+const info = LANG_INFO[lang];
+/** The CJK family each language links (astro.config.mjs copies the fonts); English needs JP for 横展. */
+const CJK_FONT: Record<Lang, string> = { en: 'noto-sans-jp', zh: 'noto-sans-sc', tw: 'noto-sans-tc', ja: 'noto-sans-jp' };
+const canonical = page === '404' ? undefined : new URL(href(page, lang, '', sub), site).href;
+const home = page === 'home' ? await pageData('home', lang) : undefined;
+const jsonLd = structuredData({ page, lang, url: canonical ?? site, title, description, homeUrl: new URL(href('home', lang), site).href, questions: home?.questions.items });
+---
+<!doctype html>
+<html lang={info.html} data-page={page} data-sub={sub || undefined}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <script is:inline src="/js/theme.js"></script>
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" href="/images/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href="/fonts/inter/files/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="stylesheet" href="/fonts/inter/index.css" />
+    <link rel="stylesheet" href="/fonts/jetbrains-mono/index.css" />
+    <link rel="stylesheet" href={`/fonts/${CJK_FONT[lang]}/index.css`} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    {page !== '404' && buildLangs().map((l) => <link rel="alternate" hreflang={LANG_INFO[l].html} href={new URL(href(page, l, '', sub), site).href} />)}
+    {page !== '404' && <link rel="alternate" hreflang="x-default" href={new URL(href(page, 'en', '', sub), site).href} />}
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="yokoten" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta property="og:image" content={`${site}/images/og-${info.og}.png`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json" is:inline set:html={jsonLd} />
+  </head>
+  <body>
+    <Header lang={lang} page={page} sub={sub} t={t} />
+    <main id="main" class="sheet"><slot /></main>
+    <Footer lang={lang} t={t} />
+  </body>
+</html>

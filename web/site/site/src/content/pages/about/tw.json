@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "關於 · yokoten",
+    "description": "yokoten 由 AI agent 開發，開發時也遵守 yokoten 自己的規則。本站記錄什麼（沒有個人資料），工具傳送什麼（什麼都不傳），怎麼聯絡專案，以及授權。"
+  },
+  "intro": {
+    "label": "關於",
+    "title": "在自己的這條線上造出來",
+    "body": "yokoten 由一群 AI agent 開發，它們遵守 yokoten 自己的守衛和規則，另有一個人負責專案，並批准每次發版。"
+  },
+  "built": {
+    "label": "怎麼做出來的",
+    "title": "數字都是從儲存庫裡讀的",
+    "body": "每個改動都是一個 pull request，經過 CI 檢查，並由另一個模型的 agent 審查。決定都寫成紀錄，不用再爭論。",
+    "facts": {
+      "mergedPrs": "已合併的 pull request",
+      "records": "決策紀錄",
+      "testFiles": "測試檔案",
+      "version": "最新版本"
+    }
+  },
+  "privacy": {
+    "label": "隱私",
+    "title": "我的資料怎麼辦",
+    "items": [
+      {
+        "title": "工具什麼都不傳",
+        "body": "yokoten 沒有遙測，從不回報你怎麼使用它。只有你執行要連到 GitHub 的指令時，它才會上網。"
+      },
+      {
+        "title": "本站不設 cookie",
+        "body": "沒有帳號、表單和廣告。本站用 Cloudflare Web Analytics 統計瀏覽量，它不用 cookie；每次瀏覽只記一個資料點，裡面沒有任何能分辨是誰的資訊：沒有 IP 位址，沒有 user agent。"
+      },
+      {
+        "title": "代管方能看到什麼",
+        "body": "和所有網站代管方一樣，Cloudflare 為了把頁面送到你面前，會看到你的 IP 位址，並為了排查錯誤把請求日誌保留幾天。它收集什麼，見[它的隱私權政策](https://www.cloudflare.com/privacypolicy/)。"
+      },
+      {
+        "title": "在你的裝置上",
+        "body": "你的瀏覽器會記住兩個選擇：語言和主題。它們不會離開你的裝置。"
+      }
+    ]
+  },
+  "contact": {
+    "label": "聯絡",
+    "title": "怎麼聯絡專案",
+    "items": [
+      {
+        "title": "問題、想法和 bug",
+        "body": "請在 GitHub 上[開一個 issue](https://github.com/yokoten-labs/yokoten/issues)。issue 是公開的，別寫金鑰、電子郵件和伺服器名稱。"
+      },
+      {
+        "title": "安全問題",
+        "body": "請不要開公開的 issue。請在 GitHub 上[私下回報](https://github.com/yokoten-labs/yokoten/security/advisories/new)，只有專案擁有者看得到。"
+      },
+      {
+        "title": "行為問題",
+        "body": "要依[行為準則](https://github.com/yokoten-labs/yokoten/blob/main/CODE_OF_CONDUCT.md)檢舉問題，請寫信到 [conduct@yokoten.app](mailto:conduct@yokoten.app)。這個地址只用於此事。"
+      }
+    ]
+  },
+  "license": {
+    "label": "授權",
+    "title": "免費開源",
+    "body": "yokoten 免費開源，採用 [MIT 授權](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)。可以用，可以改，可以發布。"
+  }
+}

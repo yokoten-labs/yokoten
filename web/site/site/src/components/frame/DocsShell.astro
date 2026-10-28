@@ -1,0 +1,128 @@
+---
+// Every docs page: the docs' navigation (DocsNav) beside the article on a wide screen, in a fold
+// above it on a phone or a tablet; then the article, with the note when it is shown in English.
+// The prose styles are here, for the repo's Markdown (in a .prose block) and the site's own docs
+// pages alike.
+import Sheet from '../../layouts/Sheet.astro';
+import DocsNav, { type TocItem } from './DocsNav.astro';
+import { pageData } from '../../lib/content/data';
+import { guideOf } from '../../lib/content/docs';
+import { LANG_INFO, type Lang, type Page } from '../../lib/i18n';
+interface Props {
+  lang: Lang;
+  page: Page;
+  /** A guide chapter's slug. */
+  sub?: string;
+  /** The page's name, for the title and the phone's fold. */
+  name: string;
+  description: string;
+  toc: TocItem[];
+  /** False: the article is the English one, with the note. */
+  translated?: boolean;
+}
+const { lang, page, sub = '', name, description, toc, translated = true } = Astro.props;
+const t = await pageData('site', lang);
+const { chapters } = await guideOf(lang);
+const list = chapters.map((c) => ({ slug: c.data.slug, title: c.data.title }));
+---
+<Sheet lang={lang} page={page} sub={sub} title={`${name} · ${t.docs.label} · yokoten`} description={description}>
+  <div class="docs">
+    <details class="toc-phone">
+      <summary><span class="fold-label">{t.docs.label}</span> <span class="fold-here">{name}</span></summary>
+      <nav aria-label={t.docs.label}><DocsNav lang={lang} t={t} page={page} sub={sub} toc={toc} chapters={list} /></nav>
+    </details>
+
+    <aside class="side">
+      <nav aria-label={t.docs.label}><DocsNav lang={lang} t={t} page={page} sub={sub} toc={toc} chapters={list} /></nav>
+    </aside>
+
+    <article class="doc" lang={translated ? undefined : 'en'}>
+      {!translated && <p class="untranslated" lang={LANG_INFO[lang].html}>{t.docs.untranslated}</p>}
+      <slot />
+    </article>
+
+    {toc.length > 0 && (
+      <aside class="rail">
+        <nav aria-label={t.docs.onPage}>
+          <p class="rail-label">{t.docs.onPage}</p>
+          <ol>{toc.map((h) => <li><a href={`#${h.slug}`}>{h.text}</a></li>)}</ol>
+        </nav>
+      </aside>
+    )}
+  </div>
+</Sheet>
+<style>
+  /* The sheet's column: the navigation beside the article on desktop, one column below that. */
+  .docs { display: grid; gap: 1.5rem; padding-block: 2rem 5rem; }
+  @media (min-width: 64rem) { .docs { grid-template-columns: 15rem minmax(0, 1fr); gap: 4rem; padding-block: 3rem 6rem; } }
+  .doc { min-width: 0; }
+  /* On a wide screen the page's own outline moves to a rail on the right, as Vercel's and Astro's
+     docs place it, and leaves the left navigation shorter. The docs grid then grows past the sheet
+     to 98rem, so the article keeps the width a wide table needs. */
+  .rail { display: none; }
+  @media (min-width: 96rem) {
+    .docs { grid-template-columns: 15rem minmax(0, 1fr) 13rem; gap: 3rem; margin-inline: calc(50% - min(49rem, 50vw - var(--gutter))); }
+    .rail { display: block; position: sticky; top: calc(var(--head) + 1.5rem); align-self: start; max-height: calc(100vh - var(--head) - 3rem); overflow-y: auto; }
+    .side :global(.toc) { display: none; }
+  }
+  .rail-label { font-size: 0.8125rem; font-weight: 600; margin: 0 0 0.5rem; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; border-left: 1px solid var(--line); }
+  .rail a { display: block; padding: 0.25rem 0 0.25rem 0.75rem; margin-left: -1px; border-left: 1px solid transparent; font-size: 0.8125rem; line-height: 1.4; color: var(--muted); text-decoration: none; }
+  .rail a:hover { color: var(--fg); border-left-color: var(--fg); }
+
+  /* The navigation: sticky, and it scrolls on its own. */
+  .side { display: none; }
+  @media (min-width: 64rem) {
+    .side { display: block; position: sticky; top: calc(var(--head) + 1.5rem); align-self: start; max-height: calc(100vh - var(--head) - 3rem); overflow-y: auto; padding-right: 0.5rem; }
+    .toc-phone { display: none; }
+  }
+
+  /* On a phone or a tablet: one fold above the article, named by the page you are on. */
+  .toc-phone { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  .toc-phone summary { cursor: pointer; padding: 0.75rem 1rem; display: flex; gap: 0.75rem; align-items: baseline; }
+  .fold-label { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .fold-here { font-weight: 600; }
+  .toc-phone summary::after { content: '▾'; margin-left: auto; color: var(--muted); }
+  .toc-phone[open] summary::after { content: '▴'; }
+  .toc-phone nav { padding: 0.25rem 1rem 1rem; }
+
+  .untranslated { font-size: 0.95rem; margin: 0 0 1.5rem; padding: 0.75rem 1rem; border-left: 4px solid var(--kanban); background: var(--band); max-width: 72ch; }
+  .doc :global(.page-title) { margin-bottom: 0.75rem; overflow-wrap: anywhere; }
+  .doc :global(.source) { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); margin: 0 0 2.5rem; overflow-wrap: anywhere; }
+
+  /* The prose: Markdown from the repo, set for reading. */
+  /* Text keeps a reading width; a table may use the whole column, as Vercel's and Google's docs do. */
+  .doc :global(.prose) { overflow-wrap: break-word; }
+  .doc :global(.prose > :not(table, pre)), .doc :global(.prose :is(h2, h3, h4)) { max-width: 72ch; }
+  .doc :global(.prose > :first-child) { margin-top: 0; }
+  .doc :global(.prose h2) { font-size: clamp(1.6rem, 3vw, 2rem); line-height: 1.2; margin: 3.5rem 0 1rem; padding-top: 1.5rem; border-top: 1px solid var(--line); scroll-margin-top: 1rem; }
+  .doc :global(.prose h3) { font-size: 1.3rem; line-height: 1.25; margin: 2.25rem 0 0.75rem; scroll-margin-top: 1rem; }
+  .doc :global(.prose h4) { font-size: 1.05rem; margin: 1.75rem 0 0.5rem; scroll-margin-top: 1rem; }
+  .doc :global(.prose :is(p, ul, ol, blockquote, pre, table, details)) { margin: 0 0 1.1rem; }
+  .doc :global(.prose ul), .doc :global(.prose ol) { padding-left: 1.4rem; }
+  .doc :global(.prose ul) { list-style: disc; }
+  .doc :global(.prose ol) { list-style: decimal; }
+  .doc :global(.prose li) { margin: 0.3rem 0; }
+  .doc :global(.prose li > ul), .doc :global(.prose li > ol) { margin: 0.3rem 0 0; }
+  .doc :global(.prose li::marker) { color: var(--muted); }
+  .doc :global(.prose a) { overflow-wrap: anywhere; }
+  .doc :global(.prose strong) { font-weight: 700; }
+  .doc :global(.prose hr) { border: 0; border-top: 1px solid var(--line); margin: 2.5rem 0; }
+  .doc :global(.prose img) { max-width: 100%; height: auto; }
+  .doc :global(.prose blockquote) { border-left: 4px solid var(--line); padding: 0.25rem 0 0.25rem 1rem; color: var(--muted); }
+  .doc :global(.prose blockquote > :last-child) { margin-bottom: 0; }
+  /* one code block style in the docs: the page colours, as the quick start's command blocks */
+  .doc :global(.prose pre) { max-width: min(100%, 88ch); background: var(--band); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 0.8rem 1rem; overflow-x: auto; font-size: 0.8125rem; line-height: 1.55; }
+  .doc :global(.prose pre code) { background: none; border: 0; padding: 0; font-size: inherit; color: inherit; overflow-wrap: normal; white-space: pre; }
+  /* A table is its own box that scrolls sideways: a wide one never makes the page scroll on a phone. */
+  .doc :global(.prose table) { display: block; width: max-content; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 0.92rem; line-height: 1.5; }
+  /* A table wider than the column shows a soft shadow at the edge it scrolls toward. */
+  .doc :global(.prose table) { background: linear-gradient(to right, var(--bg) 30%, transparent) left / 2rem 100% no-repeat local, linear-gradient(to left, var(--bg) 30%, transparent) right / 2rem 100% no-repeat local, radial-gradient(farthest-side at 0 50%, rgb(0 0 0 / 0.15), transparent) left / 0.75rem 100% no-repeat scroll, radial-gradient(farthest-side at 100% 50%, rgb(0 0 0 / 0.15), transparent) right / 0.75rem 100% no-repeat scroll; }
+  .doc :global(.prose th) { font-size: 0.8125rem; font-weight: 600; color: var(--fg); text-align: left; padding: 0.5rem 1rem 0.5rem 0; border-bottom: 1px solid var(--line); vertical-align: bottom; }
+  /* The first column names the row (an agent, a command): it stays on one line. */
+  .doc :global(.prose tr > td:first-child:not(:only-child)) { white-space: nowrap; }
+  .doc :global(.prose td) { padding: 0.55rem 1rem 0.55rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .doc :global(.prose td code) { overflow-wrap: break-word; white-space: normal; }
+  .doc :global(.prose details) { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 1rem; }
+  .doc :global(.prose summary) { cursor: pointer; font-weight: 600; }
+</style>

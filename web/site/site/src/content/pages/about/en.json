@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "About · yokoten",
+    "description": "yokoten is built by AI agents under its own rules. What the site records (nothing personal), what the tool sends (nothing), how to reach the project, and the license."
+  },
+  "intro": {
+    "label": "About",
+    "title": "Built on its own line",
+    "body": "yokoten is built by AI agents that work under yokoten's own guard and rules, with one person who owns the project and approves what ships."
+  },
+  "built": {
+    "label": "How it is built",
+    "title": "The numbers, read from the repo",
+    "body": "Every change is a pull request, checked in CI and reviewed by an agent of another model. Decisions are written down as records, so they are not argued again.",
+    "facts": {
+      "mergedPrs": "pull requests merged",
+      "records": "decision records",
+      "testFiles": "test files",
+      "version": "the latest release"
+    }
+  },
+  "privacy": {
+    "label": "Privacy",
+    "title": "What about my data",
+    "items": [
+      {
+        "title": "The tool sends nothing",
+        "body": "yokoten has no telemetry: it never reports how you use it. It talks to the network only when you run a command that talks to GitHub."
+      },
+      {
+        "title": "The site sets no cookies",
+        "body": "There are no accounts, forms or ads. The site counts page views with Cloudflare Web Analytics, which uses no cookies, and with one data point per page view that holds nothing that tells one person from another: no IP address, no user agent."
+      },
+      {
+        "title": "What the host sees",
+        "body": "Like any web host, Cloudflare sees your IP address to deliver the page, and keeps request logs for a few days to find errors. [Its privacy policy](https://www.cloudflare.com/privacypolicy/) says what it collects."
+      },
+      {
+        "title": "On your device",
+        "body": "Your browser keeps two choices: the language and the theme. They never leave it."
+      }
+    ]
+  },
+  "contact": {
+    "label": "Contact",
+    "title": "How to reach the project",
+    "items": [
+      {
+        "title": "Questions, ideas and bugs",
+        "body": "Open an [issue on GitHub](https://github.com/yokoten-labs/yokoten/issues). Issues are public, so leave out keys, emails and server names."
+      },
+      {
+        "title": "A security problem",
+        "body": "Please don't open a public issue. [Report it privately](https://github.com/yokoten-labs/yokoten/security/advisories/new) on GitHub; only the owner sees it."
+      },
+      {
+        "title": "Behavior",
+        "body": "To report a problem under the [code of conduct](https://github.com/yokoten-labs/yokoten/blob/main/CODE_OF_CONDUCT.md), write to [conduct@yokoten.app](mailto:conduct@yokoten.app). That address is for nothing else."
+      }
+    ]
+  },
+  "license": {
+    "label": "License",
+    "title": "Free and open source",
+    "body": "yokoten is free and open source under the [MIT license](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE). Use it, change it, ship it."
+  }
+}

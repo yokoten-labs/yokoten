@@ -1,0 +1,73 @@
+{
+  "skip": "跳到正文",
+  "home": "yokoten 首頁",
+  "nav": {
+    "label": "頁面",
+    "how": "原理",
+    "docs": "文件",
+    "road": "路線",
+    "about": "關於"
+  },
+  "docs": {
+    "label": "文件",
+    "onPage": "本頁內容",
+    "groups": {
+      "start": "上手",
+      "learn": "了解",
+      "reference": "參考"
+    },
+    "docs": "快速上手",
+    "stopped": "被擋下時怎麼辦",
+    "overview": "總覽",
+    "docsRoad": "路線",
+    "guide": "使用指南",
+    "docsDescription": "三步用上 yokoten：確認 Node 版本，在專案裡執行 npx yokoten，再照著 Next 那一行做。",
+    "stoppedDescription": "yokoten 擋下指令時是什麼意思：怎麼看 Why、Instead、More 三行，要跟 agent 說什麼，覺得擋錯了又該怎麼辦。",
+    "overviewDescription": "yokoten 是什麼、會擋下什麼、怎麼運作。內容來自 yokoten 儲存庫的 README。",
+    "docsRoadDescription": "yokoten 路線的每個階段和每一步，以及為什麼要做，用詞和 CLI 一樣。",
+    "guideDescription": "關於 yokoten 的其他一切，一章一頁：怎麼運作、有哪些規則、每個指令，還有它做不到的事。",
+    "chapterDescription": "「{chapter}」：yokoten 使用指南的一章。",
+    "chapters": "各章",
+    "previous": "上一章",
+    "next": "下一章",
+    "onThisPage": "本頁內容",
+    "untranslated": "這一頁還沒有繁體中文版，下面是英文原文。",
+    "source": "來源"
+  },
+  "language": "語言",
+  "theme": {
+    "label": "切換主題",
+    "system": "跟隨系統",
+    "light": "淺色",
+    "dark": "深色"
+  },
+  "notice": {
+    "text": "Node.js 10 月安全更新：使用 yokoten 之前，請把 Node 升到 22.23.4、24.22.1 或 26.12.1"
+  },
+  "footer": {
+    "note": "「横展」是豐田工廠的說法：一條產線學到的教訓（lessons learned），推廣到所有產線。yokoten 把這件事搬到你的專案上：一個專案踩過的坑，它會提醒其他專案先填好。",
+    "project": {
+      "title": "專案",
+      "docs": "文件",
+      "about": "關於",
+      "contact": "聯絡",
+      "privacy": "隱私"
+    },
+    "more": {
+      "title": "更多",
+      "contribute": "參與貢獻",
+      "board": "看板",
+      "github": "GitHub",
+      "onGithub": "（在 GitHub 上）"
+    }
+  },
+  "terminal": {
+    "stopped": "已擋下",
+    "firstRun": "第一次執行",
+    "exit": "結束碼"
+  },
+  "copy": {
+    "label": "複製指令",
+    "done": "已複製"
+  }
+}

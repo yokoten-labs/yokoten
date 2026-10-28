@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "title": "概要 · yokoten",
+    "description": "yokoten は、yokoten 自身のルールのもとで、AI エージェントが作っています。サイトが記録するもの（個人情報はなし）、ツールが送るもの（なし）、連絡先、ライセンス。"
+  },
+  "intro": {
+    "label": "概要",
+    "title": "自分たちのラインで作る",
+    "body": "yokoten は、yokoten 自身のガードとルールのもとで働く AI エージェントが作っています。プロジェクトを所有する人が一人いて、リリースするものを承認します。"
+  },
+  "built": {
+    "label": "作り方",
+    "title": "数字はリポジトリから読んだもの",
+    "body": "変更はすべて pull request になり、CI で確認され、別のモデルのエージェントがレビューします。決定は記録として書き残すので、同じ議論を繰り返しません。",
+    "facts": {
+      "mergedPrs": "マージした pull request",
+      "records": "決定記録",
+      "testFiles": "テストファイル",
+      "version": "最新リリース"
+    }
+  },
+  "privacy": {
+    "label": "プライバシー",
+    "title": "データはどうなるか",
+    "items": [
+      {
+        "title": "ツールは何も送らない",
+        "body": "yokoten にはテレメトリがなく、使い方を報告することはありません。ネットワークに接続するのは、GitHub と通信するコマンドを実行したときだけです。"
+      },
+      {
+        "title": "サイトは Cookie を使わない",
+        "body": "アカウントも、フォームも、広告もありません。ページビューは、Cookie を使わない Cloudflare Web Analytics と、人を見分けられる情報を含まない一件のデータ（IP アドレスなし、ユーザーエージェントなし）で数えています。"
+      },
+      {
+        "title": "ホスティング側に見えるもの",
+        "body": "ほかの Web ホストと同じく、Cloudflare はページを届けるためにあなたの IP アドレスを見て、エラーを調べるためにリクエストログを数日間保管します。集める情報は[そのプライバシーポリシー](https://www.cloudflare.com/privacypolicy/)に書かれています。"
+      },
+      {
+        "title": "あなたの端末に",
+        "body": "ブラウザーが覚えるのは、言語とテーマの二つの選択だけです。端末の外には出ません。"
+      }
+    ]
+  },
+  "contact": {
+    "label": "連絡先",
+    "title": "プロジェクトへの連絡方法",
+    "items": [
+      {
+        "title": "質問、アイデア、バグ",
+        "body": "[GitHub の issue](https://github.com/yokoten-labs/yokoten/issues) を作ってください。issue は公開されるので、キー、メールアドレス、サーバー名は書かないでください。"
+      },
+      {
+        "title": "セキュリティの問題",
+        "body": "公開の issue は作らないでください。GitHub で[非公開で報告](https://github.com/yokoten-labs/yokoten/security/advisories/new)してください。見られるのはオーナーだけです。"
+      },
+      {
+        "title": "行動について",
+        "body": "[行動規範](https://github.com/yokoten-labs/yokoten/blob/main/CODE_OF_CONDUCT.md)に関する問題は、[conduct@yokoten.app](mailto:conduct@yokoten.app) へ。このアドレスはそのためだけのものです。"
+      }
+    ]
+  },
+  "license": {
+    "label": "ライセンス",
+    "title": "無料のオープンソース",
+    "body": "yokoten は、[MIT ライセンス](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)の無料のオープンソースです。使って、変えて、公開できます。"
+  }
+}

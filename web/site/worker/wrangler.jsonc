@@ -1,0 +1,43 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yokoten-site",
+  "compatibility_date": "2026-10-01",
+  // Request logs for the Workers Logs page in the dashboard (Free plan: 200,000 a day).
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  // The Worker answers byte-range requests for the promo video, counts page views (where visitors
+  // come from, no personal data), and answers AI agents in Markdown. Files are static assets.
+  "main": "./index.js",
+  "assets": {
+    "directory": "../dist",
+    "binding": "ASSETS",
+    // A path with no file goes to the Worker, which answers the HTML 404 page, or Markdown for an agent.
+    "not_found_handling": "none",
+    // The video, and the HTML pages in every language (see PAGES and LANG_INFO in src/pages.ts).
+    "run_worker_first": [
+      "/video/*",
+      "/",
+      "/how-it-works",
+      "/roadmap",
+      "/start",
+      "/guard",
+      "/road",
+      "/docs",
+      "/about",
+      "/contact",
+      "/privacy",
+      "/zh/*",
+      "/zh-tw/*",
+      "/ja/*"
+    ]
+  },
+  // Page views: worker/index.js writes them, tools/stats/visits.mjs (npm run visits) reads them.
+  "analytics_engine_datasets": [
+    { "binding": "VISITS", "dataset": "yokoten_visits" },
+    // How long a page was on screen before the visitor left it (worker/index.js, site/public/js/theme.js).
+    { "binding": "STAYS", "dataset": "yokoten_stays" }
+  ],
+  "routes": [
+    { "pattern": "yokoten.app", "custom_domain": true },
+    { "pattern": "www.yokoten.app", "custom_domain": true }
+  ]
+}

@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Env } from '../../../rules/config.ts';
-import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv } from '../desk.ts';
+import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv, tempEnv } from '../desk.ts';
 
 /** Where the proxy's socket is inside the desk. */
 export const INSIDE_SOCKET = '/tmp/.yokoten-desk-proxy.sock';
@@ -72,6 +72,7 @@ export const BWRAP: DeskBackend = {
   fence: (plan: DeskPlan, address: string | number, _: string): FencedCommand => ({
     file: 'bwrap',
     args: [...bwrapArgs(plan, String(address)), process.execPath, ENTRY, 'desk', '--bridge', INSIDE_SOCKET, String(INSIDE_PORT), '--', ...plan.command],
-    env: { ...plan.env, ...proxyEnv(`http://127.0.0.1:${INSIDE_PORT}`) },
+    // The desk's own /tmp is a fresh, writable file system: the caller's TMPDIR never gets in (#1172).
+    env: { ...plan.env, ...proxyEnv(`http://127.0.0.1:${INSIDE_PORT}`), ...tempEnv('/tmp') },
   }),
 };

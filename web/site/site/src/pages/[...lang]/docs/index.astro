@@ -1,0 +1,117 @@
+---
+// The quick start, /docs: the first page a new user reads. Three numbered steps (check Node, run
+// yokoten, do what the Next line says) with the real first-run screen and the film beside the run step, then what a stop is and
+// where to read on. The words are in content/pages/quickstart/<lang>.json; the Node version, the
+// screen and the road's size come from the facts.
+import DocsShell from '../../../components/frame/DocsShell.astro';
+import Cmd from '../../../components/blocks/Cmd.astro';
+import Terminal from '../../../components/blocks/Terminal.astro';
+import Promo from '../../../components/blocks/Promo.astro';
+import { href, langPaths, type Lang } from '../../../lib/i18n';
+import { pageData } from '../../../lib/content/data';
+import { stages, version } from '../../../lib/content/facts';
+import { inline } from '../../../lib/page/text';
+
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const t = await pageData('site', lang);
+const d = await pageData('quickstart', lang);
+/** The oldest Node the package's engines range allows: "^22.23.4 || ^24.22.1 || >=26.12.1" → 22.23.4. */
+const node = /\d+\.\d+\.\d+/.exec(version.node)?.[0];
+if (!node) throw new Error(`generated/facts/version.json: no version in its node range "${version.node}"`);
+const steps = stages.reduce((n, s) => n + s.steps.length, 0);
+const fill = (s: string) => s.replace('{node}', node).replace('{stages}', String(stages.length)).replace('{steps}', String(steps));
+/** The first screen's marks, as it prints them, beside what each means. */
+const MARKS = [['ok'], ['MISSING', 'Fix:'], ['next', 'to do'], ['Next:']];
+const toc = [
+  { slug: 'node-title', text: `1. ${d.node.title}` },
+  { slug: 'run-title', text: `2. ${d.run.title}` },
+  { slug: 'next-title', text: `3. ${d.next.title}` },
+  { slug: 'stops-title', text: d.stops.title },
+  { slug: 'where-title', text: d.where.title },
+];
+const where = [
+  { page: 'overview', line: d.where.items[0] },
+  { page: 'docsRoad', line: d.where.items[1] },
+  { page: 'guide', line: d.where.items[2] },
+] as const;
+---
+<DocsShell lang={lang} page="docs" name={t.docs.docs} description={t.docs.docsDescription} toc={toc}>
+  <section id="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{d.intro.label}</p>
+    <h1 id="intro-title" class="page-title">{d.intro.title}</h1>
+    <p class="lede">{d.intro.body}</p>
+  </section>
+
+  <section id="node" class="step" aria-labelledby="node-title">
+    <h2 id="node-title"><span class="no">1</span>{d.node.title}</h2>
+    <p set:html={inline(d.node.body)} />
+    <Cmd t={t} command="node -v" />
+    <p set:html={inline(fill(d.node.after))} />
+  </section>
+
+  <section id="run" class="step" aria-labelledby="run-title">
+    <h2 id="run-title"><span class="no">2</span>{d.run.title}</h2>
+    <p set:html={inline(d.run.body)} />
+    <Cmd t={t} />
+    <p set:html={inline(d.run.after)} />
+    <figure class="film" aria-labelledby="film-title">
+      <figcaption><strong id="film-title">{d.video.title}</strong> {d.video.body}</figcaption>
+      <Promo lang={lang} label={d.video.play} fallback={d.video.fallback} download={d.video.download} controls={d.video.controls} />
+    </figure>
+  </section>
+
+  <section id="next" class="step" aria-labelledby="next-title">
+    <h2 id="next-title"><span class="no">3</span>{d.next.title}</h2>
+    <p set:html={inline(d.next.body)} />
+    <div class="screen"><Terminal screen="first run" head={t.terminal.firstRun} exit={t.terminal.exit} /></div>
+    <dl class="marks">
+      {MARKS.map((marks, i) => (
+        <div><dt lang="en">{marks.map((m) => <code>{m}</code>)}</dt><dd set:html={inline(d.next.marks[i])} /></div>
+      ))}
+    </dl>
+    <p set:html={inline(fill(d.next.after))} />
+    <p class="more"><a href={href('docsRoad', lang)}>{d.next.more} →</a></p>
+  </section>
+
+  <section id="stops" class="step" aria-labelledby="stops-title">
+    <h2 id="stops-title">{d.stops.title}</h2>
+    <p set:html={inline(d.stops.body)} />
+    <p class="more"><a href={href('stopped', lang)}>{d.stops.more} →</a></p>
+  </section>
+
+  <section id="where" class="step" aria-labelledby="where-title">
+    <h2 id="where-title">{d.where.title}</h2>
+    <ul class="where">
+      {where.map((w) => <li><a href={href(w.page, lang)}>{t.docs[w.page]}</a><span>{w.line}</span></li>)}
+    </ul>
+  </section>
+</DocsShell>
+<style>
+  /* The film beside the run step: the prose column's width, its caption above it. */
+  .film { margin: 1.5rem 0 0; }
+  .film figcaption { margin-bottom: 0.75rem; color: var(--muted); }
+  .film figcaption strong { color: var(--fg); }
+  .film :global(.promo) { margin-top: 0; }
+
+  /* On a phone the docs fold above already names the page: the eyebrow would say it twice. */
+  @media (max-width: 63.99rem) { .eyebrow { display: none; } }
+  .lede { margin-bottom: 0.5rem; }
+  /* A step: its number in a blue circle, then the heading; the text keeps a reading width. */
+  .step { max-width: 72ch; margin-top: 3.5rem; }
+  .step h2 { display: flex; align-items: center; gap: 0.75rem; font-size: clamp(1.5rem, 3vw, 1.875rem); line-height: 1.2; margin: 0 0 1rem; scroll-margin-top: 1rem; }
+  .no { display: inline-grid; place-items: center; flex: none; width: 2rem; height: 2rem; border-radius: 50%; background: var(--notice); color: #ffffff; font-family: var(--font-mono); font-size: 1rem; }
+  .step p { margin: 0 0 1rem; line-height: 1.6; }
+  .step :global(.cmd-copy) { margin: 0.25rem 0 1.25rem; }
+  /* The real screen is 80 columns: it scrolls inside its own box on a narrow screen. */
+  .screen { margin: 0.5rem 0 1.5rem; max-width: calc(80ch + 2rem); overflow-x: auto; }
+  .marks { display: grid; gap: 0.75rem; margin: 0 0 1.5rem; }
+  .marks div { display: grid; gap: 0.25rem 1rem; }
+  @media (min-width: 40rem) { .marks div { grid-template-columns: 9rem minmax(0, 1fr); } }
+  .marks dt { display: flex; flex-wrap: wrap; gap: 0.35rem; align-content: start; }
+  .marks dd { margin: 0; line-height: 1.6; }
+  .where { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+  .where li { display: grid; gap: 0.15rem; }
+  .where a { font-weight: 600; }
+  .where span { color: var(--muted); }
+</style>

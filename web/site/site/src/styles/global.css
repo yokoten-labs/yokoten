@@ -1,0 +1,589 @@
+/* The yokoten identity (brand-andon.md): pull the cord, stop the line, see the line.
+   A clean sheet after Vercel (owner, 2026-10-28): white or pure black, neutral greys, thin rules, mono labels in caps, tags. No motion.
+   The colours are the product's (owner, 2026-10-28): the four a terminal shows yokoten in, as
+   Windows Terminal's default scheme draws them. Cyan for a command and a topic, green for done,
+   yellow for a note, red for a stop. On paper each is a darker step of the same hue, so it reads. */
+@import 'tailwindcss';
+
+:root {
+  /* The palette. */
+  --ink: #171717;
+  /* The ink band: ink on the white page; in dark, a step above the black page with a line at each edge. */
+  --ink-band: var(--ink);
+  --ink-edge: transparent;
+  --paper: #ffffff;
+  --andon: #c50f1f;
+  --kanban: #c19c00;
+  --running: #13a10e;
+  --cyan: #3a96dd;
+  /* the same hues, a step darker, for text on paper */
+  --cyan-text: #1567a8;
+  /* the notice bar above the header: the theme blue, white text at 5.6:1, the same in both themes */
+  --notice: #1567a8;
+  --small: #666666;
+
+  /* What the page uses: light, a white sheet. */
+  --bg: var(--paper);
+  --fg: var(--ink);
+  --muted: var(--small);
+  /* the topic name above a heading: the one red, lighter where the ground is dark */
+  --topic: var(--cyan-text);
+  --line: #ebebeb;
+  --raised: #f2f2f2;
+  /* The terminal: Windows Terminal's default scheme (Campbell), the one most users see. */
+  --term: #0c0c0c;
+  --term-fg: #cccccc;
+  --term-dim: #767676;
+  --term-red: #c50f1f;
+  --term-green: #13a10e;
+  --term-yellow: #c19c00;
+  --term-cyan: #3a96dd;
+  --term-bold: #f2f2f2;
+  --link: var(--cyan-text);
+  --surface: #ffffff;
+  --band: #fafafa;
+  --shadow: 0 1px 2px rgb(21 23 28 / 0.06), 0 8px 24px -8px rgb(21 23 28 / 0.18);
+  --shadow-lg: 0 2px 4px rgb(21 23 28 / 0.06), 0 24px 60px -16px rgb(21 23 28 / 0.35);
+  --gutter: 1rem;
+  --head: 4.75rem; /* the sticky header bar's height */
+  --gap: 2.5rem;
+  color-scheme: light;
+}
+
+/* Dark: pure black, as the owner asked (2026-10-28), with soft white text (#ededed, 17:1) and neutral greys,
+   no blue tint. The terminal keeps its own #0c0c0c and a thin line around it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #000000;
+    --fg: #ededed;
+    --muted: #a1a1a1;
+    --topic: var(--cyan);
+    --link: var(--cyan);
+    --line: #2e2e2e;
+    --raised: #1a1a1a;
+    --term: #0c0c0c;
+    --surface: #0a0a0a;
+    --band: #0a0a0a;
+    --ink-band: #0a0a0a;
+    --ink-edge: var(--line);
+    --andon: #e74856;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+    --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 60px -16px rgb(0 0 0 / 0.7);
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #000000;
+  --fg: #ededed;
+  --muted: #a1a1a1;
+  --topic: var(--cyan);
+  --link: var(--cyan);
+  --line: #2e2e2e;
+  --raised: #1a1a1a;
+  --term: #0c0c0c;
+  --surface: #0a0a0a;
+  --band: #0a0a0a;
+  --ink-band: #0a0a0a;
+  --ink-edge: var(--line);
+  /* Campbell's bright red: the stop colour keeps 5:1 on black. */
+  --andon: #e74856;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 60px -16px rgb(0 0 0 / 0.7);
+  color-scheme: dark;
+}
+
+/* Stand-ins with the web fonts' measures (Arial sized to Inter, Courier New to JetBrains Mono), so
+   a page drawn before its fonts arrive keeps every line where it will be. */
+@font-face {
+  font-family: 'Inter Fallback';
+  src: local('Arial'), local('ArialMT');
+  size-adjust: 107.12%;
+  ascent-override: 90.44%;
+  descent-override: 22.52%;
+  line-gap-override: 0%;
+}
+@font-face {
+  font-family: 'JetBrains Mono Fallback';
+  src: local('Courier New'), local('CourierNewPSMT');
+  size-adjust: 100%;
+  ascent-override: 102%;
+  descent-override: 30%;
+  line-gap-override: 0%;
+}
+
+@theme {
+  --font-sans: 'Inter Variable', 'Inter Fallback', 'Noto Sans JP Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-cond: 'Inter Variable', 'Inter Fallback', 'Noto Sans JP Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-andon: var(--andon);
+  --color-kanban: var(--kanban);
+  --color-running: var(--running);
+}
+
+/* One face per script, the same on every system (owner, 2026-10-28: change the site's type, in
+   every language). Inter for Latin, JetBrains Mono for screens and commands, and Noto Sans in the
+   page's own script, shipped with the site (Sheet.astro links it) so no page falls back to a
+   system serif. The mono stack ends in the same Noto, so CJK in a label or a code span stays sans. */
+:lang(ja) {
+  --font-sans: 'Inter Variable', 'Inter Fallback', 'Noto Sans JP Variable', sans-serif;
+  --font-cond: 'Inter Variable', 'Inter Fallback', 'Noto Sans JP Variable', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', 'Noto Sans JP Variable', monospace;
+}
+:lang(zh-CN) {
+  --font-sans: 'Inter Variable', 'Inter Fallback', 'Noto Sans SC Variable', sans-serif;
+  --font-cond: 'Inter Variable', 'Inter Fallback', 'Noto Sans SC Variable', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', 'Noto Sans SC Variable', monospace;
+}
+:lang(zh-Hant-TW) {
+  --font-sans: 'Inter Variable', 'Inter Fallback', 'Noto Sans TC Variable', sans-serif;
+  --font-cond: 'Inter Variable', 'Inter Fallback', 'Noto Sans TC Variable', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono Fallback', 'Noto Sans TC Variable', monospace;
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --gutter: 2rem;
+    --gap: 4rem;
+  }
+}
+
+@layer base {
+  html {
+    scroll-padding-top: calc(var(--head) + 1rem);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+  :focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+  }
+  a {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+    /* one link style everywhere: text colour, a half-tone blue underline, full blue on hover */
+    text-decoration-color: color-mix(in srgb, var(--link) 50%, transparent);
+  }
+  a:hover {
+    text-decoration-color: var(--link);
+  }
+  /* inline code: a light tint, no border, so a paragraph full of names stays text */
+  code {
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    background: color-mix(in srgb, var(--fg) 7%, transparent);
+    border-radius: 6px;
+    padding: 0.1em 0.3em;
+    overflow-wrap: break-word;
+  }
+  /* In a heading, code keeps the heading's look; its wide monospace space is pulled in to a word gap. */
+  :is(h1, h2, h3) code {
+    background: none;
+    padding: 0;
+    font-size: 0.9em;
+    word-spacing: -0.3em;
+  }
+  /* Chinese and Japanese break between phrases, not inside a word, and no line ends on one character. */
+  :lang(ja) :is(p, li, a, dd, dt, h1, h2, h3) {
+    word-break: auto-phrase;
+  }
+  :is(p, li, dd) {
+    text-wrap: pretty;
+  }
+  /* Letter-spacing suits Latin caps only: the small labels lose it in Chinese and Japanese. Component
+     styles sit outside the layers, so this one has to win with !important. */
+  :is(:lang(ja), :lang(zh-CN), :lang(zh-Hans), :lang(zh-Hant-TW), :lang(zh-TW)) :is(.group-label, .fold-label, .grid-table th, .facts dt, .badge, .tag) {
+    letter-spacing: 0 !important;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-cond);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+    text-wrap: balance;
+  }
+}
+
+@layer components {
+  /* One container, centred: 1344 px of content on the 8 px grid. The owner found 1120 too narrow
+     on a wide screen (2026-10-28); prose inside it keeps its own reading width. */
+  .sheet {
+    max-width: calc(84rem + 2 * var(--gutter));
+    margin-inline: auto;
+    padding-inline: var(--gutter);
+  }
+  /* A section: full width, 128 px between sections (80 on phones). No rule above: the space and
+     the bands separate sections (owner, 2026-10-28: "去除无意义的边"). */
+  .row {
+    padding-block: var(--gap);
+  }
+  /* A band: the section's background runs to both edges of the window while its content stays in
+     the container. Bands set the rhythm of a long page: paper, band, paper, ink. */
+  .band,
+  .band-ink {
+    border-top: 0;
+    box-shadow: 0 0 0 100vmax var(--band-bg);
+    clip-path: inset(0 -100vmax);
+    background: var(--band-bg);
+  }
+  .band {
+    --band-bg: var(--band);
+  }
+  .band + .row,
+  .band-ink + .row {
+    border-top: 0;
+  }
+  .band-ink {
+    --band-bg: var(--ink-band);
+    border-block: 1px solid var(--ink-edge);
+    --fg: var(--paper);
+    color: var(--paper);
+    --muted: #a1a1a1;
+    --topic: var(--cyan);
+    --link: var(--cyan);
+    --line: #2e2e2e;
+  }
+  /* A centred section head: eyebrow, heading and lede on the axis of the page. */
+  .center {
+    text-align: center;
+  }
+  .row.center h2,
+  .row.center .lede {
+    margin-inline: auto;
+  }
+  /* The topic above a heading, so a reader knows what the section is about before the heading's
+     line: 16 px, semibold, in the product's cyan. The number before it stays small and grey. */
+  .eyebrow {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--topic);
+    margin: 0 0 0.75rem;
+  }
+  .eyebrow .no {
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--muted);
+  }
+  /* Page title (subpages): 44 px at most. */
+  .page-title {
+    font-size: clamp(2.125rem, 4vw, 2.75rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin: 0 0 1.5rem;
+    max-width: 52rem;
+  }
+  /* Section heading: 32 px. */
+  .row h2 {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    line-height: 1.2;
+    margin: 0 0 1rem;
+    max-width: 52rem;
+  }
+  /* The support line: 18 px, grey. */
+  .lede {
+    color: var(--muted);
+    font-size: 1.125rem;
+    line-height: 1.5;
+    max-width: 44rem;
+    margin: 0;
+  }
+  .lede + .lede {
+    margin-top: 0.5rem;
+  }
+  /* The block under a heading and its lede: 40 px down. */
+  .body {
+    margin-top: 2.5rem;
+  }
+  /* A subpage's first section: the eyebrow, the title, the lede. */
+  .intro {
+    padding-block: 4rem 0;
+  }
+  /* The one button-style link: "Every rule →", "The road →". */
+  .more {
+    margin: 1.75rem 0 0;
+  }
+  .more a {
+    display: inline-block;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.5rem 1.1rem;
+  }
+  .more a:hover {
+    border-color: var(--fg);
+  }
+
+  /* Tags: mono, small, in caps; a fill says the state. */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    color: var(--fg);
+    white-space: nowrap;
+  }
+  .tag-kanban {
+    background: var(--kanban);
+    border-color: var(--kanban);
+    color: var(--ink);
+  }
+  .tag-running {
+    background: var(--running);
+    border-color: var(--running);
+    color: var(--paper);
+  }
+  .tag-andon {
+    background: var(--andon);
+    border-color: var(--andon);
+    color: var(--paper);
+  }
+
+  /* The command box: the one thing to type. */
+  .cmd {
+    display: inline-flex;
+    gap: 0.6rem;
+    align-items: baseline;
+    font-family: var(--font-mono);
+    font-size: 1.125rem;
+    background: var(--term);
+    color: var(--term-fg);
+    padding: 0.85rem 1.2rem;
+    border-radius: 6px;
+  }
+  .cmd .prompt {
+    color: var(--term-dim);
+    user-select: none;
+  }
+
+  /* The terminal card: a real screen on ink. */
+  .term {
+    /* 80 columns of the screen plus the padding: never narrower on desktop. */
+    --term-w: calc(80ch + 2rem);
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    background: var(--term);
+    color: var(--term-fg);
+    border-radius: 6px;
+    border: 1px solid var(--line);
+    overflow: hidden;
+    min-width: 0;
+  }
+  .term-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--term-dim);
+    padding: 0.7rem 1rem 0;
+  }
+  /* A terminal shown as a window: three dots in its title bar, lifted off the page. */
+  .term-window {
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+    outline: 1px solid rgb(255 255 255 / 0.06);
+    outline-offset: -1px;
+  }
+  .term-window .term-head {
+    padding: 0.85rem 1.1rem 0.6rem;
+    border-bottom: 1px solid rgb(255 255 255 / 0.07);
+    align-items: center;
+  }
+  .term-window .term-head::before {
+    content: '';
+    width: 0.7rem;
+    height: 0.7rem;
+    border-radius: 50%;
+    flex: none;
+    /* grey, as Vercel draws a window: red is kept for a stop */
+    background: rgb(255 255 255 / 0.2);
+    box-shadow: 1.1rem 0 0 rgb(255 255 255 / 0.2), 2.2rem 0 0 rgb(255 255 255 / 0.2);
+    margin-right: 2.6rem;
+  }
+  .term-window .term-head > span:first-child {
+    margin-right: auto;
+  }
+  .term-window.term-stop .term-head > span:first-child {
+    color: var(--term-red);
+  }
+  .term-window pre {
+    padding: 1rem 1.25rem 1.25rem;
+  }
+  @media (max-width: 47.99rem) {
+    .term {
+      font-size: 0.75rem;
+    }
+  }
+  @media (min-width: 64rem) {
+    .term {
+      min-width: var(--term-w);
+    }
+  }
+  /* A screen keeps its lines as the terminal printed them: never clipped, never re-wrapped. Where the
+     card is narrower than 80 columns (a phone), the card scrolls sideways inside itself, as a code block
+     does on GitHub; the page never does. */
+  .term pre {
+    font: inherit;
+    line-height: 1.55;
+    padding: 0.75rem 1rem 1.1rem;
+    margin: 0;
+    white-space: pre;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+  /* On desktop the card is at least 80 columns wide, so only the rare over-80 line (a long link) wraps. */
+  @media (min-width: 64rem) {
+    .term pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+  }
+  .term .t-dim {
+    color: var(--term-dim);
+  }
+  /* One block per screen line (lib/terminal/screen.ts). A line too long for the box wraps under its own
+     text column (class iN: N cells), as yokoten wraps its rows; a mark's glyph fills one cell. */
+  .term .l { display: block; }
+  .term .l.i1 { padding-left: 1ch; text-indent: -1ch; }
+  .term .l.i2 { padding-left: 2ch; text-indent: -2ch; }
+  .term .l.i3 { padding-left: 3ch; text-indent: -3ch; }
+  .term .l.i4 { padding-left: 4ch; text-indent: -4ch; }
+  .term .l.i5 { padding-left: 5ch; text-indent: -5ch; }
+  .term .l.i6 { padding-left: 6ch; text-indent: -6ch; }
+  .term .l.i7 { padding-left: 7ch; text-indent: -7ch; }
+  .term .l.i8 { padding-left: 8ch; text-indent: -8ch; }
+  .term .l.i9 { padding-left: 9ch; text-indent: -9ch; }
+  .term .l.i10 { padding-left: 10ch; text-indent: -10ch; }
+  .term .l.i11 { padding-left: 11ch; text-indent: -11ch; }
+  .term .l.i12 { padding-left: 12ch; text-indent: -12ch; }
+  .term .l.i13 { padding-left: 13ch; text-indent: -13ch; }
+  .term .l.i14 { padding-left: 14ch; text-indent: -14ch; }
+  .term .l.i15 { padding-left: 15ch; text-indent: -15ch; }
+  .term .l.i16 { padding-left: 16ch; text-indent: -16ch; }
+  .term .l.i17 { padding-left: 17ch; text-indent: -17ch; }
+  .term .l.i18 { padding-left: 18ch; text-indent: -18ch; }
+  .term .l.i19 { padding-left: 19ch; text-indent: -19ch; }
+  .term .l.i20 { padding-left: 20ch; text-indent: -20ch; }
+  .term .l.i21 { padding-left: 21ch; text-indent: -21ch; }
+  .term .l.i22 { padding-left: 22ch; text-indent: -22ch; }
+  .term .l.i23 { padding-left: 23ch; text-indent: -23ch; }
+  .term .l.i24 { padding-left: 24ch; text-indent: -24ch; }
+  .term .g { display: inline-block; width: 1ch; text-align: center; text-indent: 0; }
+  /* The styles yokoten's styleText writes (lib/terminal/ansi.ts), in the terminal's colours. */
+  .term .t-red {
+    color: var(--term-red);
+  }
+  .term .t-green {
+    color: var(--term-green);
+  }
+  .term .t-yellow {
+    color: var(--term-yellow);
+  }
+  .term .t-cyan {
+    color: var(--term-cyan);
+  }
+  .term .t-bold {
+    color: var(--term-bold);
+    font-weight: 700;
+  }
+  .term .t-bold.t-red {
+    color: var(--term-red);
+  }
+
+  /* Tables in the sheet: thin rules, mono heads. */
+  .grid-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+  }
+  .grid-table th {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: left;
+    padding: 0 1rem 0.6rem 0;
+    border-bottom: 1px solid var(--fg);
+  }
+  .grid-table td {
+    padding: 0.7rem 1rem 0.7rem 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .grid-table td.mono {
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  /* A long table keeps its column heads in view while it scrolls. */
+  .sticky-head th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg);
+    padding-top: 0.75rem;
+    box-shadow: inset 0 -1px 0 var(--fg);
+  }
+  @media (max-width: 47.99rem) {
+    /* On a phone a long name breaks at its hyphens, never inside a word. */
+    .grid-table td.mono {
+      white-space: normal;
+    }
+  }
+  .scroll-x {
+    overflow-x: auto;
+  }
+}
+
+/* The home headline in Chinese and Japanese: a CJK glyph is about twice a Latin letter's width,
+   so the display size stops at 68 px (the 56 px floor stays) and Japanese breaks at phrases. */
+:lang(ja) #hero-title,
+:lang(zh-CN) #hero-title,
+:lang(zh-Hant-TW) #hero-title {
+  font-size: clamp(2.75rem, 3.8vw, 3.5rem);
+  line-height: 1.12;
+  /* Two lines, broken only at a space (zh, tw) or a phrase (ja): a word such as 收不回来 is never split on desktop. */
+  max-width: 24ch;
+  word-break: keep-all;
+}
+:lang(ja) #hero-title {
+  word-break: auto-phrase;
+}
+@media (max-width: 47.99rem) {
+  /* On a phone the CJK size follows the width, so the ten-character second line, full stop
+     included, fits the column (8.5vw of 390 px is 33 px; ten of them are 331 px of 358). */
+  :lang(ja) #hero-title,
+  :lang(zh-CN) #hero-title,
+  :lang(zh-Hant-TW) #hero-title {
+    font-size: min(2.5rem, 8.5vw);
+    overflow-wrap: anywhere;
+  }
+}

@@ -23,7 +23,7 @@ import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv, walkablePath } from '../desk.ts';
+import { type DeskBackend, type DeskPlan, type FencedCommand, proxyEnv, tempEnv, walkablePath } from '../desk.ts';
 
 /** The system folders every program reads: its libraries, tools, settings and time zones. */
 const SYSTEM_READS = ['/usr', '/bin', '/sbin', '/System', '/Library', '/opt', '/private/etc', '/private/var/db/timezone', '/private/var/select', '/dev'];
@@ -145,12 +145,7 @@ export const SEATBELT: DeskBackend = {
     return {
       file: '/usr/bin/sandbox-exec',
       args: ['-f', profile, ...plan.command],
-      env: {
-        ...plan.env,
-        ...path,
-        ...proxyEnv(`http://127.0.0.1:${port}`),
-        TMPDIR: work,
-      },
+      env: { ...plan.env, ...path, ...proxyEnv(`http://127.0.0.1:${port}`), ...tempEnv(work) },
     };
   },
 };
