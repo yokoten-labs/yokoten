@@ -1669,8 +1669,8 @@ test('borrowed --json: the watch and the issues, in the old shape, from the resu
 // ---- yokoten marks: one screen per action, from its result (#1115) ----
 
 test('marks: every action is a screen of its result, never a value, and passes the screen rules (#1115)', () => {
-  // The file as this system writes it: `~\\.config\\…` on Windows, `~/.config/…` elsewhere (hideHome keeps the separator).
-  const file = process.platform === 'win32' ? '~\\.config\\yokoten\\private-marks' : '~/.config/yokoten/private-marks';
+  // The file as this system writes it: hideHome keeps the system's separator after `~`.
+  const file = join('~', '.config', 'yokoten', 'private-marks');
   assert.deepEqual(marksScreen({ action: 'add', isAdded: true }), ['yokoten marks · added the mark to your private marks (not shown)']);
   assert.deepEqual(marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }), [
     'yokoten marks · removed the mark from your private marks',
@@ -1700,7 +1700,7 @@ test('marks fill: adds the git name this machine has, says the kind and the file
   const { said, call, marks } = marksSandbox();
   const first = await call(['marks', 'fill']);
   assert.equal(first.status, 0, first.stderr);
-  assert.equal(first.stdout, `yokoten marks · added your git name from this machine (not shown)\n\n  file        ${process.platform === 'win32' ? '~\\.config\\yokoten\\private-marks' : '~/.config/yokoten/private-marks'}\n`);
+  assert.equal(first.stdout, `yokoten marks · added your git name from this machine (not shown)\n\n  file        ${join('~', '.config', 'yokoten', 'private-marks')}\n`);
   assert.match(marks(), new RegExp(`# added by yokoten from this machine: git name\\n${NAME}\\n$`));
   const again = await call(['marks', 'fill']);
   assert.equal(again.status, 0, again.stderr);

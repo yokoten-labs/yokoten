@@ -11,6 +11,7 @@ import { type Change, type SetupResult } from '../../../../src/setup/files.ts';
 import { finding } from '../../../../src/rules/text/message.ts';
 import { screenProblems } from '../../../repo/docs/screen-rules.ts';
 import { VERSION } from '../../../../src/setup/files.ts';
+import { commitCommand } from '../../../../src/commands/more/setup/init.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
 test('start: bare yokoten installs, adds the rules, then shows the road (#548)', async () => {
@@ -21,9 +22,8 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   assert.match(first.stdout, /^ {2}ok {10}guard on for .+ on this computer$/m);
   assert.match(first.stdout, /^ {2}ok {10}\d+ files written in this project, none of yours changed$/m);
   assert.equal(first.stdout.match(/^Next: /gm)?.length, 1, 'one Next line');
-  // The commit command joins its two steps the way this system's shell does: `;` on Windows, `&&` elsewhere.
-  const glue = process.platform === 'win32' ? ';' : ' &&';
-  assert.match(first.stdout, new RegExp(`^Next: \`git add -A${glue} git commit -m "chore: add yokoten"\`\nMore: `, 'm'));
+  // The commit command as the product builds it for this system (one source: commitCommand).
+  assert.ok(first.stdout.includes(`Next: \`${commitCommand(process.platform)}\`\nMore: `), first.stdout);
   assert.ok(first.stdout.split('\n').every((line) => line.length <= 80), 'every line fits 80 columns');
   assert.ok(existsSync(join(sandbox.repo, 'AGENTS.md')), 'the rules are in the project');
   assert.ok(existsSync(join(sandbox.repo, 'yokoten.json')), 'init wrote yokoten.json');
@@ -125,7 +125,7 @@ test('start: the first run\'s screen says what each part did, then the road, the
   const lines = startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('linux') });
   assert.deepEqual(lines.slice(0, 4), [`yokoten ${VERSION} · set up; stage 1 of 5, safety net`, '', '  ok          guard on for Claude Code, Codex CLI on this computer', '  ok          3 files written in this project, none of yours changed']);
   assert.equal(lines.filter((line) => line.startsWith('Next: ')).length, 1, 'one Next line');
-  assert.ok(lines.includes(`Next: \`git add -A${process.platform === 'win32' ? ';' : ' &&'} git commit -m "chore: add yokoten"\``), lines.join('\n'));
+  assert.ok(lines.includes('Next: `git add -A && git commit -m "chore: add yokoten"`'), lines.join('\n'));
   assert.match(lines.at(-1) ?? '', /^More: /);
   assert.equal(lines.filter((line, at) => line === '' && lines[at - 1] === '').length, 0, 'never two blank lines');
   assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
