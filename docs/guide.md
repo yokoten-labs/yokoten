@@ -135,12 +135,30 @@ flowchart LR
 At the start of a session in a project that hasn't adopted yokoten yet:
 
 ```
-yokoten: stage 1 of 5, safety net. Next: no AGENTS.md, so the agents have no written rules here; `yokoten init` adds one.
-Why: an agent follows the rules it can read, and only those.
-Tell the user in plain words, one step at a time, and offer to do it (as-is, lighter, or not now with a reason).
+yokoten: stage 1 of 5, safety net
+
+  Next      No AGENTS.md, so the agents have no written rules here.
+
+  Why       An agent follows the rules it can read, and only those.
+
+  Fix       `yokoten init`
+
+Tell the user in plain words, one step at a time, and offer to do it (as-is,
+lighter, or not now with a reason).
+
+yokoten: ~/.config/yokoten/private-marks is missing or has no marks
+
+  Why       Without your marks, the privacy check knows only email addresses, IP
+            addresses and secrets.
+
+  Fix       `yokoten marks add`, then type your name, your city or a domain; it
+            is not shown.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#privacy
 ```
 
-The session hears about one step only: the stage, the next step, and why it matters.
+The session hears about one step only: the stage, the next step, and why it matters. The
+second block, about your private marks, shows only while no marks are saved.
 The stage is worked out from the files each time; nothing saves it. A step you marked
 "not now" is skipped. The order is advice: a later step done early counts as done.
 When every step is done or "not now", the session hears one line that says so.
@@ -240,10 +258,10 @@ The approval way, and the command that starts each agent with it, are in
 to their hooks, so the owner releases outside them. If Gemini CLI's strict environment
 sanitization is on, the variable is dropped, and the owner releases outside Gemini CLI.
 
-Every refusal has the same four lines. The first line says **what** happened, and ends
+Every refusal has the same four parts. The first line says **what** happened, and ends
 with the rule id in square brackets, as `yokoten stopped this: <what> [<id>]`. The
-**Why:** line says why it matters. The **Instead:** line is the fix, a command or an
-edit. The **More:** line links to where the rule is explained in full. For a problem in a
+**Why** row says why it matters. The **Instead** row is the fix, a command or an
+edit. The **More** row links to where the rule is explained in full. For a problem in a
 file, the place comes right after the title: `yokoten stopped this: file:line: <what> [<id>]`. A hit names the kind of thing
 it found, never the thing: a secret or a private mark is never printed.
 
@@ -635,7 +653,7 @@ alone guard nothing: run `npx yokoten install` too, or use the plugin, to turn t
 
 Most people need one command: `npx yokoten`. It does the work of `install`, `init`
 and `doctor`: it sets up what is missing, then shows where you are and the next step. `trust`
-and `update` stay their own steps. `yokoten help` shows five commands ([Start here](#start-here)),
+and `update` stay their own steps. `yokoten help` shows four commands and plain `yokoten` ([Start here](#start-here)),
 and `yokoten help --all` lists the rest in groups; the tables under [Commands](#commands) explain each.
 
 ### Which version to install
@@ -1034,11 +1052,12 @@ It puts three safe defaults in `.github/` too:
 | `tidy [--local \| --empty [--yes]] [--json]` | Maintain | Alone, it lists what is old, grouped by what you can do: merged or gone branches, worktrees and desks with no work left, and the logs of desks that are gone. Each row says why, and its size. It changes nothing (`--json` prints the list as data). `--local` saves each one first (a bundle of its branches, a patch of its unsaved changes, and `index.json`), then moves it into a dated folder in `~/.local/state/yokoten/trash`. If a save fails, nothing moves. A desk or worktree in use is never touched. Branches on GitHub are only listed. `--empty` deletes trash folders older than 7 days, after one question; with no terminal it needs `--yes` |
 
 Each command prints its own help with `--help` or `-h`: what it does, its options and
-one example. `yokoten help <command>` prints the same. `yokoten help` lists the five commands to
-start with, and `help --all` lists every command in groups by job. `yokoten board`, the old name of
+one example. `yokoten help <command>` prints the same. `yokoten help` lists the four commands to
+start with (`desk`, `kanban`, `check` and `tidy`; plain `yokoten` is the fifth), and `help --all` lists every command in groups by job. `yokoten board`, the old name of
 `kanban`, still runs it after one line that says so. `yokoten version` (or `--version`, `-v`) prints the version. Help changes nothing
 and exits 0. For a typo, yokoten names the closest command
-or option: `yokoten docter` asks `Did you mean "doctor"?`. After `bot --`, every word
+or option: `yokoten docter` says `unknown command docter`, then
+``Next: `yokoten doctor`, if you meant it; `yokoten help` lists every command``. After `bot --`, every word
 belongs to the command it runs, so `yokoten bot -- gh --help` runs `gh --help`.
 
 `check`, `doctor`, `hook`, `explain` and `adopt` take `--json`. Then stdout holds JSON and
@@ -1067,8 +1086,9 @@ value.
 - `explain --json`: `{ found, id, kind, what, why, check, docs, stage, standard }`. For an
   unknown id: `{ id, found: false, ids }`, exit 1. With no id: `{ ids }`, exit 0.
 
-Output for people follows one rule. Results go to stdout. Problems, refusals and errors
-go to stderr. An unknown option is refused, never ignored.
+Output for people follows one rule. Results go to stdout. Refusals, errors and the
+problems `check` finds go to stderr; a row of the `doctor` road, such as MISSING, is part
+of its result and stays on stdout. An unknown option is refused, never ignored.
 
 `init`, `update`, `doctor`, `check`, `adopt` and `bot` need a git repo. Outside one, they
 say so, write nothing, and exit 1. `init <dir>` also refuses a folder that does not exist.
@@ -1621,11 +1641,12 @@ its own `kit/lessons/`: nothing is downloaded or synced. So after the ship:
 | The project's own copy: `node .yokoten/bin/yokoten.ts doctor` | after `init` again from this copy; commit `.yokoten/` |
 | Everyone else, through npm or the plugin | when their yokoten updates, at the next release |
 
-`learn --ship` prints the same list. A lesson that finds the problem gives a note:
+`learn --ship` prints the same list. A lesson that finds the problem gives a note, a row of
+the `doctor` report:
 
 ```
-project:
-  note    lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+Project:
+  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
 ```
 
 The first time a project's full `doctor` runs a new lesson, it says so once. A lesson
@@ -1703,7 +1724,7 @@ A list you set replaces the default list; it does not add to it.
 | `allowBuild` | none | Build output and binaries the commit check lets through |
 | `areas` | any | The areas a title may name. See [Issue titles](#issue-titles) |
 | `translations.fail` | `false` | A translation behind its source fails the check |
-| `worker.timeLimitMinutes` | `180` | A worker that a runner or the board starts stops after this many minutes |
+| `worker.timeLimitMinutes` | `180` | A worker that a runner or a desk starts stops after this many minutes |
 | `worker.settings` | none | Environment settings a worker may put before a command, such as a test's output file: `["SCREENS_OUT"]`. A name that moves a folder or runs other code (`PATH`, `HOME`, `GIT_*`, `LD_*`, `NODE_OPTIONS` and the like) is a config error, and the list then gives no extra names |
 
 #### Folders that may grow
