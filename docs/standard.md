@@ -516,6 +516,8 @@ The fence is sandbox-runtime `0.0.81`, which runs its own proxy for `hosts`.
 | `locked` | `.git/config`, `.git/hooks` and `.git/yokoten-worker` stay read-only. On a team, `.git/yokoten-desk.json` is locked too. |
 | `hosts` | API hosts only, through a proxy that runs outside. CONNECT only. Port `443`, unless the host entry names a port. At most `64` tunnels. A quiet tunnel closes after `10 minutes`. The proxy does not read the tunnel. |
 | `env` | `YOKOTEN_ROLE` is `worker`. `TZ` is `UTC`. A team also sets `YOKOTEN_DESK` and `YOKOTEN_TEAM`. When the model is known, `YOKOTEN_MODEL` names it. `YOKOTEN_VENDOR` is set only when its vendor is not the runtime's own, so the agent knows what it really is. |
+| `env` (temp) | `TMPDIR`, `TEMP` and `TMP` name one writable folder in the desk. The caller's `TMPDIR` is never passed in. |
+| `upstream` | The host's own proxy, from `HTTPS_PROXY` or `https_proxy`, with `NO_PROXY`. An allowed tunnel goes through it; a host off `hosts` is refused first. Only an `http://` proxy is used. The start screen names it by host and port, never its password. |
 | `command` | The command the lead passed. |
 
 `/run` is hidden because sockets there can start programs outside the fence.

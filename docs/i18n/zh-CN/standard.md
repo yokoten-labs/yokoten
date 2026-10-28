@@ -516,6 +516,8 @@ CI 里从基础分支读 CODEOWNERS。
 | `locked` | `.git/config`、`.git/hooks` 和 `.git/yokoten-worker` 保持只读。在团队里，`.git/yokoten-desk.json` 也锁上。 |
 | `hosts` | 只能到 API 主机，而且要经过外面的代理。只接受 CONNECT。端口是 `443`，除非主机那一项自己写了端口。隧道最多 `64` 条。`10 minutes` 没有数据就关掉。代理不读隧道里的内容。 |
 | `env` | `YOKOTEN_ROLE` 是 `worker`。`TZ` 是 `UTC`。在团队里还会设置 `YOKOTEN_DESK` 和 `YOKOTEN_TEAM`。知道模型时，`YOKOTEN_MODEL` 写出模型。只有当厂商不是运行环境自己的厂商时，才设置 `YOKOTEN_VENDOR`，让 agent 知道自己实际是谁。 |
+| `env`（临时目录） | `TMPDIR`、`TEMP` 和 `TMP` 都指向 desk 里同一个能写的文件夹。调用方的 `TMPDIR` 不会传进来。 |
+| `upstream` | 主机自己的代理，来自 `HTTPS_PROXY` 或 `https_proxy`，加上 `NO_PROXY`。允许的隧道经过它走；不在 `hosts` 里的主机先被拒绝。只用 `http://` 代理。启动画面只写它的主机和端口，不写密码。 |
 | `command` | lead 传进来的那条命令。 |
 
 `/run` 要藏起来，因为那里的 socket 能在栅栏外面启动程序。
