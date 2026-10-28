@@ -1,168 +1,90 @@
-// `yokoten board --text` (#601, #603): the board's data as plain text, for a terminal or an agent.
+// `yokoten kanban --text` (#601, #603, #1027, #1115): the kanban's snapshot as one screen of
+// text, for a terminal or an agent. It renders the KanbanState the page reads from
+// GET /api/state, so the text and the page say the same things. The screen is built only
+// with the layout helpers of ports.ts.
 
-import { counted, fieldLines, moreLines, rowLines, type RowState, terminalSafe, titleLines } from '../ports.ts';
-import type { BoardRun, BoardWaiting } from '../feed/read/waiting.ts';
-import { type BoardUsage, costWords, tokenText, totalOf } from '../feed/read/usage.ts';
-import type { AgentView, BoardData, PullView } from '../view.ts';
+import { counted, moreLines, rowLines, type RowState, screenLines, terminalSafe, titleLines, wrapLines } from '../ports.ts';
+import { notReadLines } from '../state.ts';
+import type { KanbanActions, KanbanPull, KanbanSession, KanbanState } from './browser/types.ts';
 
-/** One agent as plain words: its nickname, vendor, role, task, worktree, what it does now, and how long ago. */
-function formatAgent(agent: AgentView): string {
-  const vendor = agent.vendor.name === 'Unknown' ? '' : ` (${agent.vendor.name})`;
-  const who = agent.nickname || agent.name;
-  const head = `${who}${vendor}${agent.role ? ` [${agent.role}]` : ''}`;
-  const state = agent.dot === 'waiting' || agent.dot === 'failing' || agent.dot === 'done' ? agent.dot : '';
-  const parts = [agent.task, agent.key ? `in ${agent.key}` : '', agent.doing, state, agent.age].filter(Boolean);
-  return parts.length ? `${head}: ${parts.join(', ')}` : head;
-}
+/** The groups, in the page's order. Stuck and waiting need you, so they are never folded. */
+const GROUPS: { state: KanbanSession['state']; heading: string; mark: RowState; cap: number }[] = [
+  { state: 'stuck', heading: 'Stuck:', mark: 'MISSING', cap: Infinity },
+  { state: 'waiting', heading: 'Waiting for you:', mark: 'next', cap: Infinity },
+  { state: 'working', heading: 'Working:', mark: 'note', cap: 5 },
+  { state: 'done', heading: 'Done:', mark: 'ok', cap: 5 },
+];
 
-/** One pull request as plain words: its number, title, branch, tier and current step. */
-function formatPull(pull: PullView): string {
-  return `#${pull.number} ${pull.title} [${pull.branch}]: ${pull.label}, ${pull.tier ? `tier ${pull.tier}` : 'no tier'}`;
-}
-
-/** `1 agent`, `2 agents`: the count with the word. */
-function countText(count: number, one: string): string {
-  return `${count} ${one}${count === 1 ? '' : 's'}`;
-}
-
-/** What `--text` adds past the agents, pulls and worktrees: the waiting list and the runs the board started. */
-export interface BoardTextExtra {
-  waiting: BoardWaiting[];
-  runs: BoardRun[];
-}
-
-/** One waiting row as plain words, the same data the page shows. */
-function formatBoardWaiting(row: BoardWaiting): string {
-  const kind = row.kind === 'approve' ? 'Needs the owner go-ahead' : row.kind === 'guard' ? 'Guard stop' : 'Question';
-  const head = [kind, row.agent, row.role ? `[${row.role}]` : '', row.wait].filter(Boolean).join(' ');
-  return `${head}: ${row.why}${row.link ? ` (${row.link})` : ''}`;
-}
-
-/** One started run as plain words, the same data the page shows. */
-function formatBoardRun(run: BoardRun): string {
-  const status = run.stoppedBy === 'time limit' ? 'stopped by the time limit' : run.status;
-  return `${run.name} ${run.vendor} ${run.model} issue ${run.issue} ${status}${run.worktree ? ` in ${run.worktree}` : ''}`;
-}
-
-/** A token count and a price, in plain words. */
-function formatUsageAmount(input: number, cached: number, output: number, cost: string): string {
-  return `${tokenText(input)} in, ${tokenText(cached)} cached, ${tokenText(output)} out: ${cost}`;
-}
+/** What a row says when its group is cut short: where all of them are. */
+const foldRow = (more: number): string[] => rowLines('to do', `${counted(more, 'more row')}, all of them with \`yokoten kanban --json\``);
 
 /**
- * The usage view as plain words: each agent, model and day, then the total, what is
- * partial, and when the prices were checked. Only numbers, a model name and a day leave
- * here: a session log's text never does.
+ * The agent as a label that fits the label field (10 characters): `Claude Code` is `Claude`, a
+ * longer name is cut with an ellipsis. `--json` and the page have the full name.
  */
-function formatUsage(usage: BoardUsage): string[] {
-  if (!usage.cells.length) {
-    return [`Usage${usage.filter ? ` (${usage.filter})` : ''}:`, usage.filter ? '- no rows for that filter.' : '- no token counts in a local log yet.'];
+const agentLabel = (agent: string): string => {
+  const short = agent.replace(/ Code$/, '') || 'unknown';
+  return short.length > 10 ? `${short.slice(0, 9)}…` : short;
+};
+
+/** One session as a row: the agent, then its task, model and why it needs you. */
+function sessionRow(session: KanbanSession, mark: RowState): string[] {
+  const task = session.task.number ? `${session.task.kind === 'pr' ? 'PR' : 'issue'} #${session.task.number} ${session.task.title}` : session.task.title || 'no task';
+  const extra = session.stuckMinutes !== undefined ? `, no output for ${session.stuckMinutes} min` : session.waitingFor ? `, waits for ${session.waitingFor}` : '';
+  return rowLines(mark, `${task}${session.model ? ` (${session.model})` : ''}${extra}`, agentLabel(session.agent));
+}
+
+/** The session blocks: one per group that has sessions, or one line saying how to start one. */
+function sessionBlocks(sessions: KanbanSession[]): string[][] {
+  if (!sessions.length) return [['Sessions:', ...wrapLines('  ', 'none yet. Start one with `yokoten desk`: it shows here by itself.')]];
+  const blocks: string[][] = [];
+  for (const group of GROUPS) {
+    const inGroup = sessions.filter((session) => session.state === group.state);
+    if (!inGroup.length) continue;
+    const shown = inGroup.slice(0, group.cap);
+    blocks.push([group.heading, ...shown.flatMap((session) => sessionRow(session, group.mark)), ...(inGroup.length > shown.length ? foldRow(inGroup.length - shown.length) : [])]);
   }
-  const rows = usage.cells.map((cell) => {
-    const who = [cell.vendor, cell.agent, cell.role ? `[${cell.role}]` : ''].filter(Boolean).join(' ');
-    const day = cell.day || 'day unknown';
-    const total = totalOf([cell]);
-    return `- ${who} · ${cell.model} · ${day}: ${formatUsageAmount(cell.input, cell.cached, cell.output, costWords(total, cell.isLocal))}`;
-  });
-  const total = totalOf(usage.cells);
-  const all = formatUsageAmount(total.input, total.cached, total.output, costWords(total, usage.cells.every((cell) => cell.isLocal)));
+  return blocks;
+}
+
+/** One pull request as a row: waits on you, merged, or why it cannot merge yet. */
+function pullRow(pull: KanbanPull): string[] {
+  const said = pull.mergedAt ? 'merged' : pull.waitsOnYou ? 'waits on you' : pull.notReadyBecause.join(', ') || 'open';
+  const mark: RowState = pull.mergedAt ? 'ok' : pull.waitsOnYou ? 'next' : 'to do';
+  return rowLines(mark, `${pull.title}: ${said}`, `PR #${pull.number}`);
+}
+
+/** The Actions rows: how main is, then each run that waits too long and each flaky workflow. */
+function actionRows(actions: KanbanActions): string[] {
+  const main = actions.main;
+  const rows: Record<KanbanActions['main']['state'], [RowState, string]> = {
+    pass: ['ok', 'passing'],
+    fail: ['MISSING', `failing${main.failingSince ? ` since ${main.failingSince}` : ''}`],
+    running: ['note', 'running'],
+    unknown: ['note', 'not read'],
+  };
+  const [mark, text] = rows[main.state];
   return [
-    `Usage${usage.filter ? ` (${usage.filter})` : ''} (estimates from the last 7 days of local session logs; nothing leaves this machine):`,
-    ...rows,
-    `- Total: ${all}`,
-    ...(usage.partial.length ? ['Partial:', ...usage.partial.map((note) => `- ${note}.`)] : []),
-    `Prices checked ${usage.checked}; each row is the vendor's list price, as if this use was paid by API.`,
+    ...rowLines(mark, text, 'main'),
+    ...actions.queuedOver15Min.flatMap((run) => rowLines('to do', `waits for a runner, ${run.minutes} min`, run.name)),
+    ...actions.flaky.flatMap((run) => rowLines('note', `flaky: ${run.passFailLast10}`, run.name)),
   ];
 }
 
 /**
- * The board as plain text: the same data the page shows. With `extra` it also shows the
- * waiting list and the runs the board started; without it the text stays as before.
- * Agents write it, so control and bidi characters show escaped.
+ * The default screen of `kanban --text`: a title with the counts, the sessions by group,
+ * the pull requests and Actions, what could not be read, and the live page last. A person
+ * and an agent read the same text; `--json` has every row. Sessions are written by agents,
+ * so control and bidi characters show escaped.
  */
-export function renderBoardText(board: BoardData, extra?: BoardTextExtra): string[] {
-  const pulls = typeof board.pulls === 'string' ? [] : board.pulls;
-  const worktrees = typeof board.worktrees === 'string' ? [] : board.worktrees;
-  return [
-    `yokoten board: ${board.repo} (preview: it may change, and team commands come in v0.1.2, #823)`,
-    `${countText(board.agents.length, 'agent')}, ${countText(pulls.length, 'open pull request')}, ${countText(worktrees.length, 'worktree')}.`,
-    '',
-    'Needs you:',
-    ...(board.needs.length ? board.needs.map((need) => `- ${need.title}: ${need.why}`) : ['- nothing.']),
-    '',
-    'Agents:',
-    ...(board.agents.length ? board.agents.map((agent) => `- ${formatAgent(agent)}`) : [`- none. Start an agent in this repo or its worktrees, or from the board page: it shows here by itself.`]),
-    '',
-    ...(extra === undefined
-      ? []
-      : [
-          'Waiting for you:',
-          ...(extra.waiting.length ? extra.waiting.map((row) => `- ${formatBoardWaiting(row)}`) : ['- Nothing waits for you.']),
-          '',
-          'Started here:',
-          ...(extra.runs.length ? extra.runs.map((run) => `- ${formatBoardRun(run)}`) : ['- No agents started here yet.']),
-          '',
-        ]),
-    'Pull requests:',
-    ...(typeof board.pulls === 'string' ? [`- ${board.pulls}`] : pulls.length ? pulls.map((pull) => `- ${formatPull(pull)}`) : ['- none open.']),
-    ...board.merged.map((pull) => `- #${pull.number} ${pull.title}: merged`),
-    '',
-    'Worktrees:',
-    ...(typeof board.worktrees === 'string' ? [`- ${board.worktrees}`] : worktrees.length ? worktrees.map((tree) => `- ${tree.path}${tree.branch ? ` (${tree.branch})` : ''}`) : ['- none.']),
-    ...(board.usage && (board.usage.cells.length || board.usage.partial.length || board.usage.filter) ? ['', ...formatUsage(board.usage)] : []),
-  ].map(terminalSafe);
-}
-
-/** The mark and the word for what an agent does now (issue #1027). */
-function agentMark(agent: AgentView): { mark: RowState; word: string } {
-  if (agent.dot === 'done') return { mark: 'ok', word: 'done' };
-  if (agent.dot === 'waiting') return { mark: 'next', word: 'waiting for you' };
-  if (agent.dot === 'failing') return { mark: 'MISSING', word: 'stopped: asks for help' };
-  return { mark: 'skipped', word: agent.doing || 'idle' };
-}
-
-/** One row per group, capped, with a fold row when the group is longer (R3). */
-function addGroup(lines: string[], heading: string, rows: string[][], cap: number): void {
-  lines.push(heading);
-  for (const one of rows.slice(0, cap)) lines.push(...one);
-  if (rows.length > cap) lines.push(...rowLines('to do', `${counted(rows.length - cap, 'more row')}, all of them with \`yokoten board --text --all\``));
-}
-
-/**
- * The default screen of `yokoten board --text` (issue #1027): a title with the counts, then
- * the agents, pull requests and worktrees, one row each, and the live page last. The full
- * detail stays behind `--all`; a person and an agent read the same text.
- */
-export function renderBoardScreen(board: BoardData, extra?: BoardTextExtra, livePage?: string): string[] {
-  const pulls = typeof board.pulls === 'string' ? [] : board.pulls;
-  const worktrees = typeof board.worktrees === 'string' ? [] : board.worktrees;
-  const lines: string[] = titleLines('board', `${counted(board.agents.length, 'agent')}, ${counted(pulls.length, 'pull request')}, ${counted(worktrees.length, 'worktree')}`);
-  lines.push('');
-  const agents = board.agents.map((agent) => {
-    const { mark, word } = agentMark(agent);
-    const who = agent.nickname || agent.name;
-    const vendor = agent.vendor.name === 'Unknown' ? '' : agent.vendor.name;
-    return rowLines(mark, [vendor, word].filter(Boolean).join(' · '), who);
-  });
-  addGroup(lines, 'Agents', agents.length ? agents : [['  none. Start an agent in this repo or its worktrees.']], 4);
-  lines.push('');
-  const pullRows = pulls.map((pull: PullView) => fieldLines(`PR #${pull.number}`, `${pull.label}${pull.tier ? `, tier ${pull.tier}` : ''}`));
-  addGroup(lines, 'Pull requests', typeof board.pulls === 'string' ? [[`  ${board.pulls}`]] : pullRows.length ? pullRows : [['  none open.']], 3);
-  lines.push('');
-  const treeRows = worktrees.map((tree) => fieldLines(tree.path, tree.branch || 'no branch'));
-  addGroup(lines, 'Worktrees', typeof board.worktrees === 'string' ? [[`  ${board.worktrees}`]] : treeRows.length ? treeRows : [['  none.']], 2);
-  // A need is a question for the owner: it is never folded (R5).
-  const waiting = extra?.waiting ?? [];
-  if (board.needs.length || waiting.length) {
-    lines.push('');
-    lines.push('Needs you');
-    for (const need of board.needs.slice(0, 3)) lines.push(...rowLines('next', need.why, need.title));
-    for (const one of waiting.slice(0, 3)) lines.push(...rowLines('next', one.why, one.agent || 'an agent'));
-  }
-  if (extra?.runs.length) {
-    lines.push(...rowLines('ok', `${counted(extra.runs.length, 'run')} started here`));
-  }
-  lines.push('');
-  lines.push(...moreLines(livePage === undefined ? '`yokoten board` opens the live page' : `the live page at ${livePage}`));
-  return lines.map(terminalSafe);
+export function renderBoardScreen(state: KanbanState, livePage?: string): string[] {
+  const pulls = state.pulls.length ? state.pulls.flatMap(pullRow) : wrapLines('  ', 'none waits on you.');
+  return screenLines(
+    titleLines('kanban', `${state.repo?.name ?? 'this repo'}: ${counted(state.sessions.length, 'session')}, ${counted(state.pulls.length, 'pull request')}, read only`),
+    ...sessionBlocks(state.sessions),
+    ['Pull requests:', ...pulls],
+    ['Actions:', ...actionRows(state.actions)],
+    ...(state.problems.length ? [['Not read:', ...notReadLines(state.problems)]] : []),
+    moreLines(livePage === undefined ? '`yokoten kanban` opens the live page' : `the live page at ${livePage}`),
+  ).map(terminalSafe);
 }

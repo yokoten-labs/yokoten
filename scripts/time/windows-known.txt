@@ -34,7 +34,6 @@ test/commands/more/check.test.ts :: check --issue: an issue needs the type and t
 test/commands/more/check.test.ts :: check --pr <number>: reads the pull request through gh and checks it with the commits here (#377)
 ? test/commands/more/check.test.ts :: marks add, marks and marks remove: one value from stdin, never in stdout or stderr (#434)
 test/commands/more/check.test.ts :: marks: the count names both files when the setting adds one (#656)
-test/commands/more/check.test.ts :: pr sync: a list that stops at the limit says so (#809)
 test/commands/more/check.test.ts :: pr sync: no open pull requests is one line, and no bot is needed (#432)
 test/commands/more/check.test.ts :: provenance: a commit names its writer, reviewers, approver, tier and issue (#756)
 test/commands/more/check.test.ts :: redact: fails closed; a marks file it cannot read prints none of the input, one line, exit 1 (#1006)
@@ -144,13 +143,14 @@ test/setup/doctor/checks.test.ts :: doctor: a skills-only copy alone is a note t
 test/setup/doctor/checks.test.ts :: doctor: names a newer kit copy that waits behind an edit (#477)
 test/setup/doctor/checks.test.ts :: doctor: the plugin and install both on is a note that says to uninstall (#300)
 test/setup/doctor/checks.test.ts :: install then doctor: the private-marks lines agree, in full doctor and a session (#522)
+# why: the whole-doctor control gives the Linux check a POSIX PATH, which Windows cannot run doctor with (#1097)
+test/setup/doctor/checks.test.ts :: deskFenceCheck in full doctor: a note with the install command, never a failure (#1097)
 test/setup/doctor/machine.test.ts :: machine: Claude Code's temp folder owned by another user is a note with the command to run, never run
 test/setup/doctor/machine.test.ts :: machine: reading the Windows drive in WSL, and each way it fails, never a crash
 test/setup/doctor/machine.test.ts :: machine: the printed command quotes the temp folder, so a space or $(...) in TMPDIR deletes nothing else
 test/setup/doctor/report.test.ts :: doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder is visible (#681)
 test/setup/doctor/report.test.ts :: doctor: full doctor in an empty repo starts each git read once, ten child processes in all (#453)
 ? test/setup/doctor/report.test.ts :: doctor: lists the work only on this machine; a session hears at most three items (#365)
-test/setup/doctor/report.test.ts :: doctor: on another host, each forge step says once what it asks, with no GitHub instruction, and never holds the stage (#504)
 # init on native Windows: 18 tests fail on main too, hidden until 2026-10-26 behind one time-out line.
 # Issue #1109 fixes them after the P4 design review; each line goes when its test passes. Remove all by v0.1.3.
 # On a slow GitHub runner the whole file can still pass its cap; then none of the 18 ran, so it may time out instead.
@@ -163,7 +163,6 @@ test/setup/init.test.ts :: init: an organization is no CODEOWNERS owner, so init
 test/setup/init.test.ts :: init: another core.hooksPath is kept, and its pre-commit is made with the check (#206)
 test/setup/init.test.ts :: init: husky keeps its hooks folder; .husky/pre-commit gets the check and keeps its own lines (#206)
 test/setup/init.test.ts :: init: reads GitHub and says what it would do; --github --yes does it, and a second run changes nothing (#10)
-test/setup/init.test.ts :: init: with no agent installed, the git hook line leads and trust steps fold into the guide (#654)
 test/setup/init.test.ts :: trust (#661): Grok CLI gets one folder entry; undo leaves another folder alone
 test/setup/init.test.ts :: trust (#661): a foreign hook is never trusted, even when it ends with yokoten's flags
 test/setup/init.test.ts :: trust (#661): a hook edited after trust stays off until init puts it back
@@ -171,27 +170,13 @@ test/setup/init.test.ts :: trust (#661): init without a terminal writes nothing 
 test/setup/init.test.ts :: trust (#984): a yokoten hook the user turned off in Codex stays off
 test/setup/init.test.ts :: trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code
 test/setup/install.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)
-test/setup/install.test.ts :: install lists git's global mailmap.file in its plan, and a no leaves it unset (#985)
-test/setup/install.test.ts :: install prints its plan, and uninstall restores the home folder (#904)
-test/setup/install.test.ts :: install: a managed skill you edited is kept; an untouched copy updates from the kit (#477)
-test/setup/install.test.ts :: install: a shared skill folder with your own files in it stays real
 test/setup/install.test.ts :: install: adds the git name as a mark of its own, never prints it, and not twice (#434)
 test/setup/install.test.ts :: install: adds the machine's marks and a git mailmap, and never prints a value (#390)
-test/setup/install.test.ts :: install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest goes on, and install exits 1 (#248)
-test/setup/install.test.ts :: install: an unreadable ~/.claude/settings.json is skipped, the rest goes on, and install exits 1 (#254)
 test/setup/install.test.ts :: install: run from the installed copy, it keeps that copy, and the next run works (#204)
 test/setup/install.test.ts :: install: skills, agents and hooks once, the user's own files untouched
-test/setup/install.test.ts :: install: the mark example follows an empty file, and a later run that does not ask leaves it out (#525)
-test/setup/install.test.ts :: install: the plugin replaces the global skills and agents (#904)
 test/setup/install.test.ts :: install: the session doctor and the command guard for Codex and Gemini CLI, safe twice (#211)
 test/setup/install.test.ts :: install: the user-level command guard for Antigravity CLI and Copilot CLI, safe twice (#342)
 test/setup/install.test.ts :: install: writes the launcher, and with no terminal prints the PATH line and edits no profile (#433)
-test/setup/install.test.ts :: launcher: a yokoten in ~/.local/bin that isn't ours is kept and named (#433)
-test/setup/install.test.ts :: launcher: asks once before it adds the PATH line, and only with a terminal (#433)
-test/setup/install.test.ts :: launcher: runs the .mjs entry the hooks run, and a launcher from an older install is rewritten (#433, #440)
 test/setup/install.test.ts :: launcher: runs the installed runtime with each argument kept whole (#433)
-test/setup/install.test.ts :: uninstall: a skill file that only mentions the mark in a sentence stays (#848)
-test/setup/install.test.ts :: uninstall: a symlinked profile stays a link, and the file it names loses the line (#983)
 test/setup/install.test.ts :: uninstall: removes the launcher and the marked PATH line, and keeps the rest of the profile (#433)
-test/setup/install.test.ts :: uninstall: removes the stop log (#621)
 test/setup/install.test.ts :: uninstall: takes back what install wrote, keeps the user's own files and settings (#300)

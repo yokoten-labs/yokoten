@@ -10,7 +10,7 @@ import { sessionId } from '../../../src/commands/kanban/agents.ts';
 import { EMPTY_DESK } from '../../../src/commands/kanban/feed/read/desk.ts';
 import { boardDataBody } from '../../../src/commands/kanban/server.ts';
 import { ghFailureCause } from '../../../src/commands/kanban/ports.ts';
-import { actionsOf, collectState, notReadLines, pullsOf, renderStateText, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
+import { actionsOf, collectState, notReadLines, pullsOf, sessionStateOf, stateOf, type StateSources } from '../../../src/commands/kanban/state.ts';
 import { healthReadFailed } from '../../../src/commands/more/check.ts';
 import type { KanbanState } from '../../../src/commands/kanban/page/browser/types.ts';
 import { type AgentView, type BoardData, vendorOf } from '../../../src/commands/kanban/view.ts';
@@ -118,14 +118,6 @@ test('kanban state: Actions health from the ci-health summary', () => {
   assert.deepEqual(queued.queuedOver15Min, [{ name: 'CI', minutes: 20, url: 'u' }]);
   // A positive control for the main filter: the same failures on another default branch pass.
   assert.equal(actionsOf([run({ conclusion: 'failure' })], 'trunk', NOW).main.state, 'unknown');
-});
-
-// `kanban --text` prints the same snapshot, grouped as the page groups it.
-test('kanban state: --text prints the groups, the pull requests and Actions', () => {
-  const state = stateOf(board([view({ dot: 'idle', updated: ago(20), task: 'issue 3 a', title: 'a', ref: { kind: 'issue', number: 3 } }), view({ dot: 'working', updated: ago(1), task: 'b' })]), { ...NO_GITHUB, pulls: [pull({ number: 4 })] }, new Set(), NOW);
-  const text = renderStateText(state).join('\n');
-  assert.match(text, /^yokoten kanban · this repo: sessions, pull requests and Actions, read only\n\nStuck:\n- Claude \(opus\): issue #3 a, no output for 20 min\n\nWorking:\n- Claude \(opus\): b\n\nPull requests:\n- #4 t: waits on you\n\nActions: main unknown$/);
-  assert.match(renderStateText(stateOf(board([]), NO_GITHUB, new Set(), NOW)).join('\n'), /Sessions:\n- none yet\./);
 });
 
 // Issue #1115, S004: gh's own words never show; the lists one cause kept from the board share

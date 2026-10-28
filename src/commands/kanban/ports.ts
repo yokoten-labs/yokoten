@@ -15,7 +15,7 @@ import { machineMarks, machineUserNames } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { EMPTY_SCHEDULE, planSchedule, scheduleIssueOf, summarizeSchedule } from '../more/advice/schedule.ts';
 import { actionsRunPage, actionsRunsQuery, healthReadFailed, readActionsRuns, readDefaultBranch, summarizeActionsHealth } from '../more/check.ts';
-import { count, field, moreLine, parse, print, requireRoot, row, spaced, title, usage } from '../shared.ts';
+import { count, fail, field, moreLine, parse, print, printJson, requireRoot, type RowMark, row, screen, spaced, title, usage, wrap } from '../shared.ts';
 
 // ---- Shapes ----
 
@@ -52,8 +52,8 @@ export interface ParsedWords {
   positional: string[];
 }
 
-/** The state word a text row starts with. */
-export type RowState = 'ok' | 'done' | 'next' | 'to do' | 'MISSING' | 'note' | "can't check" | 'skipped';
+/** The state word a text row starts with: the layout's RowMark, under the port's own name. */
+export type RowState = RowMark;
 
 /** Runs gh with these words and answers its output; throws when gh fails. */
 export type GhCall = (args: string[]) => string;
@@ -139,6 +139,10 @@ export interface MachineRoom {
 
 export const parseWords = (name: string, words: string[]): ParsedWords | string => parse(name, words);
 export const printLines = (run: CommandRun, lines: string[], stream?: RunOutput): void => print(run, lines, stream);
+/** A failure to run, on stderr: what is wrong, then the one command to type. Returns the exit code, 1. */
+export const failRun = (run: CommandRun, what: string, next?: string): 1 => fail(run, what, next);
+/** The data a command read, as JSON on stdout and nothing else (`--json`). */
+export const printData = (run: CommandRun, data: unknown): void => printJson(run, data);
 export const usageError = (run: CommandRun, error: string): number => usage(run, error);
 /** The project root above `dir`, or null after saying why there is none. */
 export const projectRoot = (run: CommandRun, dir: string): string | null => requireRoot(run, dir);
@@ -148,6 +152,10 @@ export const fieldLines = (label: string, text: string): string[] => field(label
 export const moreLines = (text: string): string[] => moreLine(text);
 /** Items one under the other, a blank line between them once one wraps (#1115). */
 export const spacedLines = (items: readonly (readonly string[])[]): string[] => spaced(items);
+/** Lines no wider than the screen, later ones under the first text. */
+export const wrapLines = (prefix: string, text: string): string[] => wrap(prefix, text);
+/** A whole screen from its blocks, one blank line between them. */
+export const screenLines = (...blocks: readonly (readonly string[])[]): string[] => screen(...blocks);
 /** "1 file", "3 files". */
 export const counted = (n: number, one: string, many?: string): string => count(n, one, many);
 /** Text with control and bidi characters escaped, safe to print on a terminal. */

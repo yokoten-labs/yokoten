@@ -11,7 +11,7 @@ import { GUARD_FAILED, PLUGIN_FILE, UNREADABLE_CALL, formatDenial, hasUserDir, p
 import { managedState } from '../../../../src/setup/files.ts';
 import { agentHooks, userAgentHooks } from '../../../../src/setup/doctor/index.ts';
 import { USER_CLI, USER_MISSING, writeOpenCodePlugin } from '../../../../src/setup/install.ts';
-import { CLI, makeSandbox } from '../../../repo/helpers.ts';
+import { CLI, makeSandbox, rowsText } from '../../../repo/helpers.ts';
 
 const worker = { YOKOTEN_ROLE: 'worker' };
 
@@ -462,29 +462,31 @@ test('opencode plugin: init and install keep a plugin the user wrote or edited (
   mkdirSync(join(sandbox.home, '.config', 'opencode'), { recursive: true });
   const userFile = join(sandbox.home, '.config', 'opencode', 'plugins', 'yokoten.ts');
   const projectFile = join(sandbox.repo, PLUGIN_FILE);
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^added the OpenCode command guard in ~\/\.config\/opencode\/plugins\/yokoten\.ts$/m);
-  assert.match((await sandbox.call(['init', '--list', '--no-ci'])).stdout, /^added the OpenCode tool-call plugin in \.opencode\/plugins\/yokoten\.ts$/m);
+  assert.match(rowsText((await sandbox.call(['install', '--list'])).stdout), /^ {2}added +OpenCode hooks in ~\/\.config\/opencode\/plugins\/yokoten\.ts: command guard$/m);
+  assert.match(rowsText((await sandbox.call(['init', '--list', '--no-ci'])).stdout), /^ {2}added the OpenCode tool-call plugin in \.opencode\/plugins\/yokoten\.ts$/m);
   assert.match(readFileSync(userFile, 'utf8'), /^\/\/ managed by yokoten sha256=[0-9a-f]{64}\n/, 'the plugin carries the mark and its hash');
   // The positive control: a marked older copy with no hash is yokoten's, so it is updated.
   writeFileSync(userFile, '// managed by yokoten\nold\n');
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^updated the OpenCode command guard in ~\/\.config\/opencode\/plugins\/yokoten\.ts$/m);
+  assert.match(rowsText((await sandbox.call(['install', '--list'])).stdout), /^ {2}updated +OpenCode hooks in ~\/\.config\/opencode\/plugins\/yokoten\.ts: command guard$/m);
   const cases = [
-    { text: 'export default {}; // my own plugin\n', state: 'yours, not yokoten\'s' },
-    { text: `${readFileSync(userFile, 'utf8')}// my edit\n`, state: 'your edit' },
+    { text: 'export default {}; // my own plugin\n', state: 'yours, not yokoten\'s', whose: "not yokoten's plugin" },
+    { text: `${readFileSync(userFile, 'utf8')}// my edit\n`, state: 'your edit', whose: "yokoten's plugin with your edits" },
   ];
-  for (const { text, state } of cases) {
+  for (const { text, state, whose } of cases) {
     writeFileSync(userFile, text);
     writeFileSync(projectFile, text);
-    const installed = (await sandbox.call(['install', '--list'])).stdout;
-    assert.ok(installed.includes('the OpenCode command guard in ~/.config/opencode/plugins/yokoten.ts'), installed);
+    // The kept row names the plugin and whose it is; a note under the rows says how to get yokoten's.
+    const installed = rowsText((await sandbox.call(['install', '--list'])).stdout);
+    assert.ok(installed.includes('  kept        OpenCode hooks in ~/.config/opencode/plugins/yokoten.ts'), installed);
     assert.ok(installed.includes(state), installed);
-    assert.ok(installed.includes('yokoten would write its own: to get it, move that file away and run `yokoten install`'), installed);
+    assert.ok(installed.includes(`~/.config/opencode/plugins/yokoten.ts is ${whose}, so yokoten leaves it`), installed);
+    assert.ok(installed.includes("To get yokoten's, move that file away and run `yokoten install`"), installed);
     assert.equal(readFileSync(userFile, 'utf8'), text, 'install kept the user plugin');
-    const inited = (await sandbox.call(['init', '--list', '--no-ci'])).stdout;
-    assert.ok(inited.includes('the OpenCode tool-call plugin in .opencode/plugins/yokoten.ts'), inited);
-    assert.ok(inited.includes('yokoten would write its own: to get it, move that file away and run `yokoten init`'), inited);
+    const inited = rowsText((await sandbox.call(['init', '--list', '--no-ci'])).stdout);
+    assert.ok(inited.includes('kept the OpenCode tool-call plugin in .opencode/plugins/yokoten.ts'), inited);
+    assert.ok(inited.includes("to get yokoten's, move that file away and run `yokoten init`"), inited);
     assert.equal(readFileSync(projectFile, 'utf8'), text, 'init kept the project plugin');
-    const doctor = (await sandbox.call(['doctor', '--all'])).stdout;
+    const doctor = rowsText((await sandbox.call(['doctor', '--all'])).stdout);
     assert.match(doctor, /opencode-hook: \.opencode\/plugins\/yokoten\.ts is (not yokoten's plugin|yokoten's plugin with your edits), so yokoten leaves it; to get yokoten's, move that file away and run `(npx )?yokoten init`/);
     assert.match(doctor, /opencode-user-hook: ~\/\.config\/opencode\/plugins\/yokoten\.ts is (not yokoten's plugin|yokoten's plugin with your edits), so yokoten leaves it/);
   }
@@ -496,7 +498,7 @@ test('opencode plugin: init and install keep a plugin the user wrote or edited (
 test('install writes the user plugin when OpenCode is installed, and skips it otherwise', async () => {
   const sandbox = makeSandbox();
   const skipped = await sandbox.call(['install', '--list']);
-  assert.match(skipped.stdout, /skipped OpenCode: ~\/\.config\/opencode not found/);
+  assert.match(rowsText(skipped.stdout), /^ {2}skipped +OpenCode hooks in ~\/\.config\/opencode: not installed here$/m);
   assert.equal(userAgentHooks(sandbox.env).some((item) => item.name === 'opencode-user-hook'), false);
   mkdirSync(join(sandbox.home, '.config', 'opencode'));
   assert.equal(hasUserDir(sandbox.env), true);
@@ -506,12 +508,12 @@ test('install writes the user plugin when OpenCode is installed, and skips it ot
   assert.equal(hasUserDir({ ...sandbox.env, XDG_CONFIG_HOME: xdg }), true);
   assert.equal(userPluginFile({ ...sandbox.env, XDG_CONFIG_HOME: xdg }), '$XDG_CONFIG_HOME/opencode/plugins/yokoten.ts');
   const wrote = await sandbox.call(['install', '--list']);
-  assert.match(wrote.stdout, /added the OpenCode command guard in ~\/\.config\/opencode\/plugins\/yokoten\.ts/);
+  assert.match(rowsText(wrote.stdout), /^ {2}added +OpenCode hooks in ~\/\.config\/opencode\/plugins\/yokoten\.ts: command guard$/m);
   assert.equal(managedState(userPluginPath(sandbox.env), userPluginSource(USER_CLI, USER_MISSING)), 'same');
   const hooks = userAgentHooks(sandbox.env).filter((item) => item.name === 'opencode-user-hook');
   assert.equal(hooks.length, 1);
   assert.equal(hooks[0]?.ok, true);
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^kept the OpenCode command guard in ~\/\.config\/opencode\/plugins\/yokoten\.ts$/m);
+  assert.match(rowsText((await sandbox.call(['install', '--list'])).stdout), /^ {2}kept +OpenCode hooks in ~\/\.config\/opencode\/plugins\/yokoten\.ts: command guard$/m);
   // A linked plugin keeps its link (#984): install writes through it, and uninstall
   // empties the target in place of removing the link.
   const path = userPluginPath(sandbox.env);

@@ -90,9 +90,9 @@ export function parseChildTimes(text: string): number | null {
  * A program that exits nonzero did run, so its cost is real (the guard itself exits 2 on a
  * refusal).
  */
-export function measureRun(argv: string[], input: string, options: { cwd: string; env: Record<string, string | undefined> }): GuardCost | null {
+export function measureRun(argv: string[], input: string, options: { cwd: string; env: Record<string, string | undefined> }, platform: string): GuardCost | null {
   const start = process.hrtime.bigint();
-  const isPosix = process.platform !== 'win32';
+  const isPosix = platform !== 'win32';
   const result = isPosix
     ? spawnSync('sh', ['-c', '"$@" >/dev/null 2>&1; code=$?; times; printf "code=%s" "$code" >&2', 'sh', ...argv], { ...options, input, encoding: 'utf8', timeout: 10_000 })
     : spawnSync(argv[0], argv.slice(1), { ...options, input, encoding: 'utf8', timeout: 10_000, stdio: ['pipe', 'ignore', 'ignore'], windowsHide: true });

@@ -1,0 +1,3 @@
+Changed
+
+The screen check now covers the first run, `install`, `upgrade`, `uninstall`, `desk` in a repo, a Codex session start with unsaved work, and the kanban's serving banner (with and without `--no-open`), each in a sandbox of its own: 105 screens. `yokoten install` puts a blank line between its rows once one wraps, and the kanban banner is built by the layout, so every line fits 80 columns. The screen test also saves every checked screen for the owner's walk-through, with a colour copy, on Linux, macOS and Windows: set `SCREENS_OUT` to a path; the file is written even when a screen fails the check (#1115).

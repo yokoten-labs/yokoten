@@ -10,7 +10,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { envFolder, folderIn, folderOf, hideHome, homeOf } from '../../rules/privacy.ts';
+import { envFolder, folderIn, folderOf, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runs } from '../../run/cli.ts';
 import { type Action, isWorkerType } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -613,7 +613,7 @@ export function trustProject(root: string, env: Env, platform: NodeJS.Platform =
   // nothing is written, hooks included (#984).
   if (folder.choice) {
     const level = JSON.stringify(String(folder.choice.level));
-    return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder.choice.key, env, { platform })} stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
+    return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays ${level} in ${store} (yokoten would set "trusted")`, fix: untrustedFix(store) }] };
   }
   const kept: { what: string; fix: string }[] = [];
   if (!folder.trusted) {

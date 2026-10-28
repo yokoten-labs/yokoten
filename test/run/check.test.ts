@@ -20,7 +20,7 @@ import {
   join,
 } from 'node:path';
 import { test } from 'node:test';
-import { shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
+import { rowsText, shareGuardMeasure, shareSelfTest } from '../repo/helpers.ts';
 import {
   at,
   makeSandbox,
@@ -496,7 +496,7 @@ test('check --staged: with nothing staged, no commit time to check (#208)', asyn
     if (step === 'committed') sandbox.git('commit', '-q', '--allow-empty', '-m', 'first');
     const r = await sandbox.call(['check', '--staged', '--all'], { extra: zoned });
     assert.equal(r.status, 0, `${step}: ${r.stderr}`);
-    assert.match(r.stdout, /note: nothing is staged/);
+    assert.match(r.stdout, /note +nothing is staged/);
     assert.ok(!/time zone/.test(r.stderr), step);
   }
   // In the commit hook git sets GIT_INDEX_FILE: an empty commit or an amend is checked.
@@ -518,7 +518,7 @@ test('check --history: counts commits with a time zone, as a note that does not 
   spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'zoned'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: 'Asia/Tokyo' } });
   const r = await sandbox.call(['check', '--history', '--all']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /note: 1 commit\(s\) record a time zone other than UTC/);
+  assert.match(r.stdout, /note +1 commit\(s\) record a time zone other than UTC/);
 });
 
 test('check --history: finds what a later commit deleted, and a personal author email', async () => {
@@ -834,9 +834,10 @@ test('check: a sure secret fails, a likely one warns, and an ignored one stays l
   assert.ok(output.notes.some((f) => f.grade === 'likely' && f.ignored === undefined), JSON.stringify(output.notes));
   assert.ok(output.notes.some((f) => f.grade === 'likely' && f.ignored === 'a test fixture'), JSON.stringify(output.notes));
   for (const secret of [sure, ignored, likely, sureIgnored]) assert.ok(!result.stdout.includes(secret), 'no secret appears in the output');
-  const text = await sandbox.call(['check', '--staged', '--all']);
-  assert.match(text.stdout, /warning: .*\[likely\]/);
-  assert.match(text.stdout, /ignored: a test fixture/);
+  // The sure secrets fail, so the screen is on stderr; the warnings are rows under them.
+  const text = flat((await sandbox.call(['check', '--staged', '--all'])).stderr);
+  assert.match(text, /a\.env:2: warning: [^[]*\[likely\]/);
+  assert.match(text, /a\.env:3: warning: [^[]*\[likely; ignored: a test fixture\]/);
 });
 
 test('check --staged: reads the staged change file as `yokoten changelog` does, not the work tree; plain check reads the work tree (#346)', async () => {
@@ -872,7 +873,7 @@ test('check --staged: reads the staged change file as `yokoten changelog` does, 
   sandbox.git('add', 'changes/9-new.md');
   const note = await sandbox.call(['check', '--staged', '--all']);
   assert.equal(note.status, 0, note.stderr);
-  assert.match(flat(note.stdout), /note: changes\/9-new\.md:4: a sentence of 30 words/);
+  assert.match(flat(note.stdout), /note changes\/9-new\.md:4: a sentence of 30 words/);
 });
 
 // The glob rules (a covered folder drops the note) are in layout.test.ts; doctor prints the same notes as check.
@@ -880,9 +881,9 @@ test('check: a stale exempt glob is a note for the tree, never at a commit (#381
   const sandbox = makeSandbox();
   sandbox.write('yokoten.json', JSON.stringify({ layout: { maxEntries: 7, exempt: ['crates/*/tests/data'] } }));
   sandbox.git('add', '.');
-  const note = /note: yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/;
+  const note = /note yokoten\.json: layout\.exempt "crates\/\*\/tests\/data" matches no folder/;
   const tree = await sandbox.call(['check', '--all']);
-  assert.match(tree.stdout, note);
+  assert.match(flat(tree.stdout), note);
   assert.equal(tree.status, 0, 'a note never fails the check');
   const staged = await sandbox.call(['check', '--staged']);
   assert.doesNotMatch(staged.stdout + staged.stderr, /matches no folder/);
@@ -1171,7 +1172,7 @@ test('marks allow keeps the skipOwnName switch; doctor counts the marks that nam
   own.write('README.md', 'Quiet Vale ships\n');
   own.git('add', 'README.md');
   assert.equal((await run(['check', '--staged'])).status, 0, 'the mark names this repo');
-  assert.match((await run(['doctor', '--all'])).stdout, /own-marks: 1 of your private marks skipped here because they name this repo/);
+  assert.match(rowsText((await run(['doctor', '--all'])).stdout), /own-marks: 1 of your private marks skipped here because they name this repo/);
   const count = (skipOwnName: boolean) => allowedMarkCount({ ...own.env, ...extra }, { privacy: { ...DEFAULTS.privacy, skipOwnName } }, own.repo).ownName;
   assert.deepEqual([count(true), count(false)], [1, 0], 'doctor stops counting it when the skip is off');
 
@@ -1203,14 +1204,14 @@ test('marks allow --here: a repo with no origin gets no machine allow; a held lo
   sandbox.git('add', 'README.md');
   const none = await sandbox.call(['marks', 'allow', 'quietvale', '--here']);
   assert.equal(none.status, 1);
-  assert.match(none.stderr, /because this repo has no origin remote\. .*"privacy\.allow" in yokoten\.json/);
+  assert.match(none.stderr, /because this repo has no origin remote\n\nNext: put the mark in `privacy\.allow` in yokoten\.json/);
   assert.equal(existsSync(allowFile), false);
   sandbox.git('remote', 'add', 'origin', 'https://example.com/octo/app');
   // A lock another run holds: refused, and the file is not made.
   writeFileSync(`${allowFile}.lock`, '');
   const busy = await sandbox.call(['marks', 'allow', 'quietvale', '--here']);
   assert.equal(busy.status, 1);
-  assert.match(busy.stderr, /another `yokoten marks` is changing the allow file/);
+  assert.match(flat(busy.stderr), /another `yokoten marks` is changing the allow file/);
   assert.equal(existsSync(allowFile), false);
   // A lock left by a run that died is taken over.
   const old = new Date(Date.now() - 60_000);
@@ -1224,11 +1225,11 @@ test('marks allow --here: a repo with no origin gets no machine allow; a held lo
   symlinkSync(join(sandbox.home, 'gone.json'), allowFile);
   const dangling = await sandbox.call(['marks', 'allow', 'quietvale', '--here']);
   assert.equal(dangling.status, 1);
-  assert.match(dangling.stderr, /a link to a file that is not there/);
+  assert.match(flat(dangling.stderr), /a link to a file that is not there/);
   assert.doesNotMatch(dangling.stderr, /gone\.json/);
   assert.ok(lstatSync(allowFile).isSymbolicLink());
   assert.equal((await sandbox.call(['check'])).status, 1, 'a dangling link allows nothing');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /own-marks: this machine allows no private mark here, because this machine's allow file can't be read/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /own-marks: this machine allows no private mark here, because this machine's allow file can't be read/);
 });
 
 test('marks allow: no mark is echoed, -- takes a mark that starts with -, a linked file stays a link, and a failed save says so plainly (#447)', async () => {

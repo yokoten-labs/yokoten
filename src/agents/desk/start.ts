@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
+import { failure, nextLine, noteLine, screen } from '../../rules/text/screen.ts';
 import { BWRAP } from './fence/bwrap.ts';
 import type { DeskBackend, DeskPlan } from './desk.ts';
 import { type ProxyEvent, startProxy } from './network/proxy.ts';
@@ -45,9 +46,11 @@ export function chooseBackend(platform: NodeJS.Platform, env: Env, projects: str
  */
 export function signalEnd(signal: NodeJS.Signals, platform: NodeJS.Platform, quiet: boolean): { code: number; lines: string[] } {
   const code = 128 + (constants.signals[signal] ?? 15);
-  const lines = [`yokoten desk: the agent was ended by ${signal} (exit ${code}).`];
-  if (quiet) lines.push('yokoten desk: if it printed no error, the system sandbox may have stopped it.');
-  if (quiet && platform === 'darwin') lines.push(`yokoten desk: to see why, run: log show --last 1m --predicate 'eventMessage CONTAINS "deny"'`);
+  const lines = screen(
+    failure('desk', `the agent was ended by ${signal} (exit ${code})`),
+    quiet ? noteLine('if it printed no error, the system sandbox may have stopped it') : [],
+    quiet && platform === 'darwin' ? nextLine(`log show --last 1m --predicate 'eventMessage CONTAINS "deny"'`) : [],
+  );
   return { code, lines };
 }
 
@@ -92,7 +95,7 @@ export async function startDesk(plan: DeskPlan, backend: DeskBackend, { stdio, o
     for (const [signal, handler] of handlers) process.on(signal, handler);
     const code = await new Promise<number>((resolve) => {
       child.on('error', (error: NodeJS.ErrnoException) => {
-        err.push(Buffer.from(`yokoten desk: can't start ${fenced.file}: ${error.code ?? error.message}\n`));
+        err.push(Buffer.from(`${failure('desk', `can't start ${fenced.file}: ${error.code ?? error.message}`, 'yokoten doctor').join('\n')}\n`));
         resolve(127);
       });
       child.on('close', (status, signal) => {

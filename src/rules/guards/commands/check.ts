@@ -54,6 +54,8 @@ type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?
 
 function checkEachCommand(command: string, { env, config, cwd, titles = false, rules }: EachOptions): Finding | null {
   const commands = commandWords(command);
+  // checkCommand set the place just before this call.
+  const placeNow = commandPlace.current ?? hostPathPlace();
   // Where a gh command reads a relative body file: the folder, followed through each cd.
   let postCwd = cwd;
   // The same, with a bare relative `cd` read as written, not through CDPATH: where git most
@@ -111,7 +113,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // private mark names the mark, which is the part the agent must fix (#391, #829).
       checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
-      (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd }) : null) ??
+      (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd, platform: placeNow.platform }) : null) ??
       // Last, so a worker's own rule names the case first. The commit's content: a repo with no
       // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
       // history (#824). Only a commit pays for it.
@@ -128,7 +130,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // walk over the command's programs. That walk reads only the words already parsed,
       // so it runs under its own budget: a long command that the reader accepted must not
       // lose these rules, and a rule that runs after the read must not make it unreadable.
-      withBudget(words.length, () => checkDamage(words, postCwd, env, commandPlace.current?.platform), true) ??
+      withBudget(words.length, () => checkDamage(words, postCwd, env, placeNow.platform), true) ??
       // Git's own ways to lose uncommitted work, a stash, the reflog or the default branch
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).
@@ -461,7 +463,7 @@ function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { 
     // `push.followTags` makes every later plain push carry the tags: a tag published after a
     // config change, not by a push that names it (#829).
     if (!env.YOKOTEN_RELEASE_APPROVAL && setsFollowTags(configArgs)) return release('git config push.followTags makes every push carry tags');
-    return checkConfig(configArgs, directory, env);
+    return checkConfig(configArgs, directory, env, (commandPlace.current ?? hostPathPlace()).platform);
   }
   return null;
 }

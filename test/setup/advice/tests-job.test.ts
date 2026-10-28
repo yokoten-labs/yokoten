@@ -353,7 +353,8 @@ test('tests-job: init asks and writes the job on a yes (#550)', () => {
   const asked: string[] = [];
   const done = init(sandbox.repo, sandbox.env, () => '', { ask: (question) => (asked.push(question), 'y') });
   assert.deepEqual(asked, [`Add a tests job for Go to ${WORKFLOW}? [Y/n]`]);
-  assert.match(done.lines.join('\n'), /wrote the tests job for Go/);
+  // init wrote the workflow a step before, so adding the job updates it.
+  assert.match(done.lines.join('\n'), /^updated the tests job for Go in \.github\/workflows\/yokoten\.yml/m);
   const text = readFileSync(join(sandbox.repo, WORKFLOW), 'utf8');
   assert.ok(text.includes('- run: go test') && text.includes('- run: go mod download'));
   assert.match(text, /needs: \[changes, check, lint, tests\]/);

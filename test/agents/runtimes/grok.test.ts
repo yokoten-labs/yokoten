@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { addProjectHooks, addProjectSandbox, addUserHooks, EDIT_TOOLS, GUARDED_TOOLS, projectHooksState, readStop, readToolCall, readTrust, sandboxProblem, userHooksState } from '../../../src/agents/runtimes/grok.ts';
-import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
+import { makeSandbox, makeTempDir, rowsText } from '../../repo/helpers.ts';
 
 // The events Grok CLI 1.0.52 sent its hooks in the real run of #407 (2026-10-20), as
 // recorded. Only the placeholders differ: `<repo>` is the throwaway repo, and the
@@ -242,14 +242,14 @@ test('grok project hooks: init writes the guard and the stop check, keeps other 
   const sandbox = makeSandbox();
   const file = join(sandbox.repo, '.grok', 'hooks', 'yokoten.json');
   const cli = '.yokoten/bin/yokoten.mjs'; // The agent hooks run yokoten.mjs (#408).
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +grok-hook: no tool-call guard or stop check in \.grok\/hooks\/yokoten\.json/, 'reported, not counted as missing');
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +grok-hook: no tool-call guard or stop check in \.grok\/hooks\/yokoten\.json/, 'reported, not counted as missing');
   sandbox.write('.grok/hooks/yokoten.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './lint.sh' }] }] } }));
   const result = await sandbox.call(['init', '--list']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^added the Grok CLI tool-call hook in \.grok\/hooks\/yokoten\.json$/m);
-  assert.match(result.stdout, /^added the Grok CLI stop check in \.grok\/hooks\/yokoten\.json$/m);
+  assert.match(rowsText(result.stdout), /^ {2}added the Grok CLI tool-call hook in \.grok\/hooks\/yokoten\.json$/m);
+  assert.match(rowsText(result.stdout), /^ {2}added the Grok CLI stop check in \.grok\/hooks\/yokoten\.json$/m);
   // No ~/.grok: init writes the hooks and leaves the trust step out (#654).
-  assert.doesNotMatch(result.stdout, /Grok CLI runs the hooks/);
+  assert.doesNotMatch(result.stdout, /guard is off in [^\n]*Grok CLI/);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.equal(written.hooks.PreToolUse.length, 2, "another hook's group stays");
   const guard = written.hooks.PreToolUse[1];
@@ -260,18 +260,18 @@ test('grok project hooks: init writes the guard and the stop check, keeps other 
   assert.equal(written.hooks.Stop[0].hooks[0].timeout, 600, "Grok's own default for Stop");
   assert.deepEqual(projectHooksState(sandbox.repo, cli), { guard: 'same', stop: 'same' });
   // Grok looks unused here: no trust line from doctor.
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +grok-hook: \.grok\/hooks\/yokoten\.json is in place; trust not checked, no ~\/\.grok\n/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +grok-hook: \.grok\/hooks\/yokoten\.json is in place; trust not checked, no ~\/\.grok\n/);
   mkdirSync(join(sandbox.home, '.grok'));
   const trusted = await sandbox.call(['init', '--list']);
   assert.match(trusted.stdout, /kept the Grok CLI tool-call hook/);
-  assert.match(trusted.stdout, /^to turn on yokoten's guard in Grok CLI, run `yokoten trust`$/m);
+  assert.match(rowsText(trusted.stdout), /^ {2}note +yokoten's guard is off in Grok CLI until a person turns it on Fix: `yokoten trust`$/m);
   written.hooks.Stop[0].hooks[0].timeout = 5;
   sandbox.write('.grok/hooks/yokoten.json', JSON.stringify(written));
   assert.equal(projectHooksState(sandbox.repo, cli).stop, 'updated', 'a hook with the default timeout is out of date');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +grok-hook: the hooks in \.grok\/hooks\/yokoten\.json are out of date/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +grok-hook: the hooks in \.grok\/hooks\/yokoten\.json are out of date/);
   assert.deepEqual(addProjectHooks(sandbox.repo, cli), { guard: 'same', stop: 'updated' });
   sandbox.write('.grok/hooks/yokoten.json', '{ not json');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +grok-hook: can't read \.grok\/hooks\/yokoten\.json/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +grok-hook: can't read \.grok\/hooks\/yokoten\.json/);
   assert.throws(() => addProjectHooks(sandbox.repo, cli), /can't read/);
   assert.equal(readFileSync(file, 'utf8'), '{ not json', 'a file yokoten cannot read stays as it was');
 });
@@ -280,7 +280,7 @@ test('grok trust: doctor says when Grok skips the hooks; ok only when trusted_fo
   const sandbox = makeSandbox();
   assert.equal((await sandbox.call(['init', '--list'])).status, 0);
   const root = realpathSync(sandbox.repo);
-  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
+  const doctor = async () => rowsText((await sandbox.call(['doctor', '--all'])).stdout);
   assert.equal(readTrust(root, { HOME: sandbox.home }).state, 'no home');
   mkdirSync(join(sandbox.home, '.grok'));
   assert.match(await doctor(), /note +grok-hook: can't check whether Grok CLI trusts this folder: no ~\/\.grok\/trusted_folders\.toml; if you use Grok CLI: run `yokoten trust`/);
@@ -300,7 +300,7 @@ test('grok trust: doctor says when Grok skips the hooks; ok only when trusted_fo
   assert.match(await doctor(), /note +grok-hook: you set Grok CLI not to trust this folder, so it skips/, 'the positive control');
   for (const value of ['0', 'false']) {
     assert.equal(readTrust(root, { HOME: sandbox.home, GROK_FOLDER_TRUST: value }).state, 'trusted');
-    assert.match((await sandbox.call(['doctor', '--all'], { extra: { GROK_FOLDER_TRUST: value } })).stdout, /ok +grok-hook\n/);
+    assert.match(rowsText((await sandbox.call(['doctor', '--all'], { extra: { GROK_FOLDER_TRUST: value } })).stdout), /ok +grok-hook\n/);
   }
   assert.equal(readTrust(root, { HOME: sandbox.home, GROK_FOLDER_TRUST: '1' }).state, 'untrusted');
   // So does `[folder_trust] enabled = false` in Grok's config.toml, read only.
@@ -325,23 +325,23 @@ test('grok user hook: install writes the command guard in ~/.grok/hooks only whe
   const sandbox = makeSandbox();
   const file = join(sandbox.home, '.grok', 'hooks', 'yokoten.json');
   let result = await sandbox.call(['install', '--list']);
-  assert.match(result.stdout, /^skipped Grok CLI: ~\/\.grok not found \(run `yokoten install` again after installing Grok CLI\)$/m);
+  assert.match(rowsText(result.stdout), /^ {2}skipped +Grok CLI hooks in ~\/\.grok: not installed here$/m);
   assert.ok(!existsSync(dirname(dirname(file))), 'no ~/.grok made');
   mkdirSync(join(sandbox.home, '.grok'));
-  assert.doesNotMatch((await sandbox.call(['doctor', '--all'])).stdout, /ok +grok-user-hook/);
+  assert.doesNotMatch(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +grok-user-hook/);
   result = await sandbox.call(['install', '--list']);
-  assert.match(result.stdout, /^added the Grok CLI command guard in ~\/\.grok\/hooks\/yokoten\.json$/m);
+  assert.match(rowsText(result.stdout), /^ {2}added +Grok CLI hooks in ~\/\.grok\/hooks\/yokoten\.json: command guard$/m);
   const written = JSON.parse(readFileSync(file, 'utf8'));
   assert.equal(written.hooks.PreToolUse[0].matcher, GUARDED_TOOLS, 'the shell and every edit tool, as the project hook (#1100)');
   assert.equal(written.hooks.PreToolUse[0].hooks[0].timeout, 60);
   assert.match(written.hooks.PreToolUse[0].hooks[0].command, /hook --agent grok --commands-only/);
   assert.equal(written.hooks.SessionStart, undefined, 'Grok shows a session-start hook only to the user');
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /ok +grok-user-hook/);
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^kept the Grok CLI command guard/m);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /ok +grok-user-hook/);
+  assert.match(rowsText((await sandbox.call(['install', '--list'])).stdout), /^ {2}kept +Grok CLI hooks in ~\/\.grok\/hooks\/yokoten\.json: command guard$/m);
   const env = { HOME: sandbox.home };
   assert.deepEqual(userHooksState(env, '/elsewhere/bin/yokoten.ts', 'gone'), { guard: 'updated' }, 'another runtime path is out of date');
   assert.deepEqual(addUserHooks(env, '/elsewhere/bin/yokoten.ts', 'gone'), { guard: 'updated' });
-  assert.match((await sandbox.call(['doctor', '--all'])).stdout, /note +grok-user-hook: the command guard in ~\/\.grok\/hooks\/yokoten\.json is out of date/);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /note +grok-user-hook: the command guard in ~\/\.grok\/hooks\/yokoten\.json is out of date/);
 });
 
 // ---- The project's sandbox (#589) ----

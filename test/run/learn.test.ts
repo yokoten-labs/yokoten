@@ -35,7 +35,14 @@ import {
   exportLesson,
   findLessonFolders,
   findLessonGroup,
-  formatDraft,
+  draftScreen,
+  exportedScreen,
+  importedScreen,
+  problemsScreen,
+  shipScreen,
+  upstreamDoneScreen,
+  upstreamKeptScreen,
+  upstreamListScreen,
   formatLessonRow,
   formatLessonTable,
   type Incident,
@@ -109,7 +116,7 @@ function makeModuleDir(prefix: string): string {
 test('lessons: full doctor notes a new lesson on the first run only; a session, not now and a broken state', async () => {
   const sandbox = makeSandbox();
   const stateFile = join(sandbox.repo, '.git', 'yokoten', 'state.json');
-  const newNote = /\n {2}note {4}a new check ran: ok \(incident-138\); doctor now runs it in this project\n {2}ok {6}lesson incident-138\n/;
+  const newNote = /\n {2}note {8}a new check ran: ok \(incident-138\); doctor now runs it in this\n {14}project\n\n {2}ok {10}lesson incident-138\n/;
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['doctor', '--session']);
   assert.equal(result.status, 0, result.stderr);
@@ -130,7 +137,7 @@ test('lessons: full doctor notes a new lesson on the first run only; a session, 
   // The second run: the lesson's own line only.
   result = await sandbox.call(['doctor', '--all']);
   assert.ok(!/new lesson/.test(result.stdout));
-  assert.match(result.stdout, /\n {2}ok {6}lesson incident-138\n/);
+  assert.match(result.stdout, /\n {2}ok {10}lesson incident-138\n/);
   // A broken state file is an empty state: the note again, no crash, and the file is mended.
   writeFileSync(stateFile, '{ not json');
   result = await sandbox.call(['doctor', '--json']);
@@ -172,7 +179,7 @@ test('lessons: a session hears a new lesson that finds something once; a project
   // A later session: nothing; full doctor still notes the lesson as new, and its problem.
   result = await startFound({ session_id: 's-2', source: 'startup' });
   assert.ok(!result.stdout.includes('new lesson'), result.stdout);
-  assert.match((await found.call(['doctor', '--all'])).stdout, /\n {2}note {4}new lesson: incident-138 [^\n]*\n {2}note {4}lesson incident-138: test\/api\.test\.ts/);
+  assert.match((await found.call(['doctor', '--all'])).stdout, /\n {2}note {8}new lesson: incident-138 [^\n]*(?:\n {14}[^\n]*)*\n\n {2}note {8}lesson incident-138: test\/api\.test\.ts/);
   // After full doctor has seen it, a fresh session state never brings it back.
   writeFileSync(foundState, JSON.stringify({ seenLessons: ['incident-138'] }));
   assert.ok(!(await startFound({ session_id: 's-3', source: 'startup' })).stdout.includes('new lesson'));
@@ -200,7 +207,7 @@ test('learn: the draft takes what, why and the fix from the issue\'s sections', 
   // The draft's own test is a positive control that fails until the check is written.
   assert.match(check, /import \{ findProblems, lesson \} from '\.\/lesson\.ts';/);
   assert.match(check, /test\('incident-12: catches the known-bad case'[^]*\[lesson\.id\]\);/);
-  assert.match(formatDraft(incidentOf(body), draft).join('\n'), /The issue answers every field\.\nThe reviewer also writes the check \(findProblems\) and the cases in its test, each a TODO\(reviewer\) too\.\n[^]*\n--- lessons\/incident-12\/lesson\.ts\n/);
+  assert.match(draftScreen(incidentOf(body), draft, '12').join('\n'), /The issue answers every field\.\n\nThe reviewer also writes the check \(findProblems\) and the cases in its test,\neach a TODO\(reviewer\) too\.\n\n--- lessons\/incident-12\/lesson\.ts\n/);
 });
 
 test('learn: a missing section gives a TODO for the reviewer, never a made-up answer (positive control)', () => {
@@ -213,8 +220,8 @@ test('learn: a missing section gives a TODO for the reviewer, never a made-up an
   const empty = draftLesson(incidentOf('Something broke.', 'Commit times carry a time zone'));
   assert.equal(empty.finding.what, 'commit times carry a time zone');
   assert.equal(empty.todos.length, 2);
-  const lines = formatDraft({ ...incidentOf(''), labels: [] }, draftLesson(incidentOf(''))).join('\n');
-  assert.match(lines, /Note: the issue has no `incident` label; it is drafted anyway\.\nThe issue left 2 field\(s\) open, each a TODO\(reviewer\):\n- why: /);
+  const lines = draftScreen({ ...incidentOf(''), labels: [] }, draftLesson(incidentOf('')), '12').join('\n');
+  assert.match(lines, /note: the issue has no `incident` label; it is drafted anyway\.\n\nThe issue left 2 fields open, each a TODO\(reviewer\):\n  why /);
 });
 
 test('learn: with no "Why it matters", the why starts from "Why it got through", with a TODO (#147)', () => {
@@ -332,9 +339,9 @@ test('learn: the printed draft sends no terminal escape from the issue, shown as
   const title = 'repo: tests break \u001b[2K\u001b[1A \u001b]8;;https://example.com/x\u0007click\u001b]8;;\u0007 \u009b31m';
   const body = '## Fix\n\nA check \u001b[31mred\u001b[0m.\n\n## Lesson\n\nKeep \u001b]0;title\u0007 out.';
   const incident = { ...incidentOf(body, title), labels: [] };
-  const text = formatDraft(incident, draftLesson(incident)).join('\n');
+  const text = draftScreen(incident, draftLesson(incident), '12').join('\n');
   assert.ok(!/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/.test(text), 'no control character but tab and newline');
-  assert.match(text, /^a check draft from issue #12, "repo: tests break \\u001b\[2K\\u001b\[1A \\u001b\]8;;https:\/\/example\.com\/x\\u0007click\\u001b\]8;;\\u0007 \\u009b31m"\.\n/);
+  assert.match(text.replace(/\n\s+/g, ' '), /issue #12 issue {7}"repo: tests break \\u001b\[2K\\u001b\[1A \\u001b\]8;;https:\/\/example\.com\/x\\u0007click\\u001b\]8;;\\u0007 \\u009b31m"/);
   assert.match(text, /\/\/ {3}A check {2}\[31mred \[0m\./, 'a comment in the draft has a space for each');
 });
 
@@ -347,7 +354,7 @@ test('learn: bidi controls from the issue are shown as \\uXXXX in the preview an
   const body = `## Fix\n\nA check ${bidi.join('')}.\n\n## Lesson\n\nKeep ${bidi[0]}out.`;
   const incident = { ...incidentOf(body, title), labels: [] };
   const draft = draftLesson(incident);
-  const text = formatDraft(incident, draft).join('\n');
+  const text = draftScreen(incident, draft, '12').join('\n');
   assert.ok(!raw.test(text), 'no raw bidi control in the preview');
   assert.ok(text.includes('repo: tests break \\u202ex\\u2066x\\u2067x\\u2068x\\u2069 end'), 'the preview shows each as \\uXXXX');
   const root = makeTempDir('yokoten-learn-bidi-');
@@ -762,4 +769,22 @@ test('upstream: every owner segment of a remote URL is an owner; the last one is
   assert.deepEqual(originParts('ssh://git@host.example.test:22/team/acme-app'), { owners: ['team'], project: 'acme-app' });
   assert.deepEqual(originParts(''), { owners: [], project: null });
   assert.deepEqual(originParts('/local/path'), { owners: [], project: null });
+});
+
+test('learn screens: ship, export, import and the inbox are pure functions of their results (#1115)', () => {
+  const ship = shipScreen({ id: 'incident-12', folder: '1/incident-12', url: 'https://example.com/issues/12', version: '0.1.2' }, '0.1.2');
+  assert.equal(ship[0], 'yokoten learn --ship · incident-12 is in kit/lessons/1/incident-12/');
+  assert.equal(ship.at(-1), 'More: commit it in a pull request');
+  const pack = { version: 1, id: 'incident-12', incident: 'https://example.com/issues/12', files: [{ path: 'lesson.ts', text: 'x' }] } as Parameters<typeof exportedScreen>[0];
+  assert.equal(exportedScreen(pack, 'out.json').at(-1), 'Next: `yokoten learn --import out.json`');
+  const done = importedScreen(pack, { written: ['lessons/incident-12/lesson.ts'], kept: [] });
+  assert.ok(done.some((line) => /^ {2}done {8}wrote {7}lessons\/incident-12\/lesson\.ts$/.test(line)));
+  const failed = problemsScreen('learn --ship', ['a', 'b'], 'nothing was moved', 'fix them');
+  assert.equal(failed[0], 'yokoten learn --ship · 2 problems; nothing was moved');
+  assert.equal(failed.at(-1), 'Next: fix them');
+  assert.deepEqual(upstreamListScreen([]), ['yokoten learn --upstream · no lessons wait; the inbox is empty']);
+  const note = { id: '20261027-120000-abcd', when: '2026-10-27T12:00:00Z', part: 'hook', what: 'it missed a case' };
+  assert.match(upstreamListScreen([note]).join('\n'), /1 lesson waits[^]*20261027-120000-abcd {2}2026-10-27 12:00 UTC, hook: it missed a case\n\nNext: `yokoten learn --upstream --done <id>`$/);
+  assert.deepEqual(upstreamDoneScreen(note.id), ['yokoten learn --upstream · removed note 20261027-120000-abcd']);
+  assert.match(upstreamKeptScreen(note, '~/inbox').join('\n'), /kept note 20261027-120000-abcd, outside every repo\n\n {2}note {8}it missed a case\n {2}in {10}~\/inbox/);
 });

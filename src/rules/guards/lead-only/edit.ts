@@ -3,13 +3,15 @@ import { WORKTREES_DIR } from '../../layout.ts';
 import { finding, type Finding } from '../../text/message.ts';
 
 /** A file edit, by path relative to the repo root. */
-export function checkEdit(path: string, { config, env }: { config: Config; env: Env }): Finding | null {
+// `platform` defaults to the host's platform until run/check.ts (group C4) passes it (issue #1000).
+export function checkEdit(path: string, { config, env, platform = process.platform }: { config: Config; env: Env; platform?: NodeJS.Platform }): Finding | null {
+  const folds = foldsCase(platform);
   // A file in a worker worktree reads from that worktree (#571); the message keeps the path as given.
   const inWorktree = stripWorktreeRoot(path);
   if (env.YOKOTEN_FIX_TASK === '1' && matcher(config.tests)(inWorktree)) {
     return finding('test-file', `${path} is a test file, and this is a fix task (YOKOTEN_FIX_TASK=1)`, 'if the test is wrong, stop and say so in your report');
   }
-  if (env.YOKOTEN_ROLE === 'worker' && isLeadOnly(inWorktree, config.leadOnly) && !isGranted(inWorktree, env)) {
+  if (env.YOKOTEN_ROLE === 'worker' && isLeadOnly(inWorktree, config.leadOnly, folds) && !isGranted(inWorktree, env, folds)) {
     return finding('lead-only', `${path} is lead-only (yokoten.json "leadOnly")`, LEAD_ONLY_FIX);
   }
   return null;
@@ -34,11 +36,12 @@ export function stripWorktreeRoot(path: string): string {
 
 export const LEAD_ONLY_FIX = 'stop and hand the change to the lead: say in your report what to change in it, or ask the lead to start you with YOKOTEN_LEAD_ONLY_OK=<path>';
 
-const FOLDS_CASE = process.platform === 'darwin' || process.platform === 'win32';
+/** Whether file names on `platform` ignore case: macOS and Windows do, Linux and every other system do not. */
+export const foldsCase = (platform: NodeJS.Platform): boolean => platform === 'darwin' || platform === 'win32';
 
 /** Whether yokoten.json "leadOnly" matches the path, in any case where file names ignore it. */
-export function isLeadOnly(path: string, leadOnly: string[], foldsCase = FOLDS_CASE): boolean {
-  return matcher(leadOnly, { foldsCase })(path);
+export function isLeadOnly(path: string, leadOnly: string[], folds: boolean): boolean {
+  return matcher(leadOnly, { foldsCase: folds })(path);
 }
 
 /**
@@ -48,13 +51,13 @@ export function isLeadOnly(path: string, leadOnly: string[], foldsCase = FOLDS_C
  * other entry is that one path. `\` reads as `/`, a trailing `/` and a leading `./` are
  * dropped, and an empty entry counts for nothing.
  */
-export function isGranted(path: string, env: Env, foldsCase = FOLDS_CASE): boolean {
+export function isGranted(path: string, env: Env, folds: boolean): boolean {
   const entries = (env.YOKOTEN_LEAD_ONLY_OK ?? '')
     .split(',')
     .map((entry) => entry.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, ''))
     .filter(Boolean);
-  const same = (entry: string) => (foldsCase ? entry.toLowerCase() === path.toLowerCase() : entry === path);
-  return entries.some((entry) => (entry.includes('*') ? matcher([entry], { foldsCase })(path) : same(entry)));
+  const same = (entry: string) => (folds ? entry.toLowerCase() === path.toLowerCase() : entry === path);
+  return entries.some((entry) => (entry.includes('*') ? matcher([entry], { foldsCase: folds })(path) : same(entry)));
 }
 
 /**

@@ -24,7 +24,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { Env } from '../../rules/config.ts';
-import { hideHome, homeIn, homeOf } from '../../rules/privacy.ts';
+import { homeIn, homeOf } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
@@ -246,7 +246,7 @@ export function trustProject(root: string, env: Env): TrustPlan {
   const trusted = folders.get(folder)?.trusted;
   if (trusted === true) return { state: 'same', store, changes: [] };
   // `trusted = false` is the user's choice: it stays (#984).
-  if (trusted === false) return { state: 'kept', store, changes: [], kept: [{ what: `${hideHome(folder, env)} stays trusted = false in ${store} (yokoten would set true)`, fix: untrustedFix(store) }] };
+  if (trusted === false) return { state: 'kept', store, changes: [], kept: [{ what: `this folder stays trusted = false in ${store} (yokoten would set true)`, fix: untrustedFix(store) }] };
   const change: TrustChange = { agent: 'Grok CLI', store, file, format: 'toml', path: ['folders', folder], key: 'trusted', value: 'true', before: null, kind: 'boolean' };
   return { state: 'trusted', store, changes: [change] };
 }

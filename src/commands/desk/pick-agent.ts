@@ -21,13 +21,13 @@ export const DESK_AGENTS: readonly DeskAgent[] = [
 
 /**
  * The agent to start: the one `asked` names, else the first installed. `isInstalled` tells
- * whether a program is on PATH. Else one plain line that says what to do.
+ * whether a program is on PATH. Else what is wrong and the one step to take.
  */
-export function pickAgent(asked: string | undefined, isInstalled: (program: string) => boolean): DeskAgent | { problem: string } {
+export function pickAgent(asked: string | undefined, isInstalled: (program: string) => boolean): DeskAgent | { problem: string; next: string } {
   if (asked !== undefined) {
     const agent = DESK_AGENTS.find((one) => one.runtime === asked);
-    if (!agent) return { problem: `--agent ${asked}: a desk starts ${DESK_AGENTS.map((one) => one.runtime).join(' or ')}.` };
-    return isInstalled(agent.program) ? agent : { problem: `${agent.label} is not installed here: \`${agent.program}\` is not on PATH.` };
+    if (!agent) return { problem: `--agent ${asked}: a desk starts ${DESK_AGENTS.map((one) => one.runtime).join(' or ')}`, next: 'yokoten desk --help' };
+    return isInstalled(agent.program) ? agent : { problem: `${agent.label} is not installed here: \`${agent.program}\` is not on PATH`, next: `install ${agent.label}, then run \`yokoten desk\` again` };
   }
-  return DESK_AGENTS.find((one) => isInstalled(one.program)) ?? { problem: `no AI to start: install Claude Code (\`npm install -g @anthropic-ai/claude-code\`), then run this again.` };
+  return DESK_AGENTS.find((one) => isInstalled(one.program)) ?? { problem: 'no AI to start: neither Claude Code nor Codex is installed', next: 'install Claude Code with `npm install -g @anthropic-ai/claude-code`, then run this again' };
 }

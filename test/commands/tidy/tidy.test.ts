@@ -7,7 +7,8 @@ import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSy
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir, runChild } from '../../repo/helpers.ts';
-import { formatSize } from '../../../src/commands/tidy/tidy.ts';
+import { deletedRow, formatSize, tidyScreen } from '../../../src/commands/tidy/tidy.ts';
+import type { TidyItem } from '../../../src/commands/tidy/find.ts';
 import type { TrashIndex } from '../../../src/commands/tidy/put-away.ts';
 import { tidyStateDir } from '../../../src/commands/tidy/find.ts';
 
@@ -134,22 +135,41 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
   const text = result.stdout;
   assert.match(text, /^yokoten tidy · 6 to put away, .+; nothing was changed\n/);
   // A group's rows, each joined onto one line again.
-  const group = (heading: string) => (text.split(`\n${heading}\n`)[1]?.split('\n\n')[0] ?? '').replace(/\n {26}/g, ' ');
+  const group = (heading: string) => {
+    const lines = text.split('\n');
+    const from = lines.indexOf(heading) + 1;
+    const length = lines.slice(from).findIndex((line) => /^\S/.test(line));
+    return lines.slice(from, length === -1 ? undefined : from + length).join('\n').replace(/\n\s*\n {26}/g, ' ').replace(/\n {26}/g, ' ');
+  };
   const putAway = group('Can put away:');
-  assert.match(putAway, /merged-one +branch: merged into the main branch, and no change for a day; no commit of its own\./);
-  assert.match(putAway, /desk-7 +desk at .*repo-desks[\\/]desk-7: merged into the main branch/);
-  assert.match(putAway, /desk-gone\.state logs at .*: its desk is gone; 3 B\./);
-  assert.match(putAway, /wt-n{50} worktree at .*o{20}[\\/]wt-n{50}: merged/);
+  assert.match(putAway, /branch +merged-one: merged into the main branch, and no change for a day; no commit of its own\./);
+  assert.match(putAway, /desk +desk-7 at .*repo-desks[\\/]desk-7: merged into the main branch/);
+  assert.match(putAway, /logs +desk-gone\.state at .*: its desk is gone; 3 B\./);
+  assert.match(putAway, /worktree +wt-n{50} at .*o{20}[\\/]wt-n{50}: merged/);
   const saved = group('Can put away with a saved copy:');
-  assert.match(saved, /gone-one +branch: its branch on the remote is gone, but 1 commit on no remote; 1 commit not in the main branch\./);
-  assert.match(saved, /wt-done +worktree at .*: merged into the main branch, and no change for a day, but changes not committed; \d+ B\./);
-  assert.match(group('In use, never touched:'), /desk-8 +desk at .*: it changed \d+ min ago; /);
-  assert.match(group('On the remote, only listed:'), /origin\/merged-one +merged into origin\/main/);
-  assert.match(text, /ok +1 more thing still in work: tidy leaves them\./);
+  assert.match(saved, /branch +gone-one: its branch on the remote is gone, but 1 commit on no remote; 1 commit not in the main branch\./);
+  assert.match(saved, /worktree +wt-done at .*: merged into the main branch, and no change for a day, but changes not committed; \d+ B\./);
+  assert.match(group('In use, never touched:'), /desk +desk-8 at .*: it changed \d+ min ago; /);
+  assert.match(group('On the remote, only listed:'), /branch +origin\/merged-one: merged into origin\/main/);
+  assert.match(text, /ok +in work +1 more thing still in work: tidy leaves them\./);
   assert.doesNotMatch(text, /open-one/, 'an open branch is not listed');
   assert.match(text, /\nNext: `yokoten tidy --local`\n$/);
   // A line is over 80 columns only for one word that can't break: a long name or path.
   for (const line of text.split('\n')) assert.ok(line.length <= 80 || Math.max(...line.trim().split(/\s+/).map((word) => word.length)) > 50, `within 80 columns: ${line}`);
+});
+
+test('tidy --json: the facts the list is built from, and --json with --local or --empty is refused (#1115)', async () => {
+  const messy = makeMessyRepo();
+  const before = snapshot(messy.base);
+  const listed = await messy.call(['tidy', '--json']);
+  assert.equal(listed.status, 0, listed.stderr);
+  const data = JSON.parse(listed.stdout) as { items: { name: string; judged: { verdict: string } }[]; remote: unknown[]; trash: unknown[] };
+  assert.ok(data.items.some((item) => item.name === 'merged-one' && item.judged.verdict === 'old'));
+  assert.ok(Array.isArray(data.remote) && Array.isArray(data.trash));
+  assert.deepEqual(snapshot(messy.base), before, '--json writes nothing');
+  const refused = await messy.call(['tidy', '--json', '--local']);
+  assert.equal(refused.status, 1);
+  assert.deepEqual(snapshot(messy.base), before);
 });
 
 test('tidy --local: saves, then moves; the bundle and the patch bring the work back; a desk in use stays (#1055)', async () => {
@@ -224,7 +244,7 @@ test('tidy --local: when one save fails, nothing at all is moved (#1055)', async
   const before = outsideHome();
   const result = await messy.call(['tidy', '--local']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten tidy: a save failed, so nothing was moved\.\n +MISSING +zz-broken +git bundle failed/);
+  assert.match(result.stderr, /^yokoten tidy · saving zz-broken failed, so nothing was moved: git bundle failed[^]*\n\nNext: `yokoten tidy`\n$/);
   assert.deepEqual(outsideHome(), before, 'nothing moved, the merged branch included');
   assert.deepEqual(readdirSync(trashIn(messy.home)), [], 'the half-made trash folder is gone');
 });
@@ -256,19 +276,23 @@ test('tidy --empty: deletes only trash over 7 days old, after one question; no t
   const piped = await sandbox.call(['tidy', '--empty']);
   assert.equal(piped.status, 1);
   assert.ok(piped.stdout.startsWith(`yokoten tidy --empty · 1 trash folder over 7 days old, ${size}\n\n`), piped.stdout);
-  assert.match(piped.stdout, /\n\n +next +2026-10-10T000000Z\n +[\d.]+ KB, put away \d{4}-\d{2}-\d{2}\.\n/);
-  assert.match(piped.stderr, /no terminal to ask in\. Nothing was deleted\. Run it in a terminal, or add --yes\./);
+  assert.match(piped.stdout, /\n\n +next +trash +2026-10-10T000000Z: [\d.]+ KB, put away \d{4}-\d{2}-\d{2}\.\n/);
+  assert.match(piped.stderr, /^yokoten tidy · --empty asks before it deletes, and there is no terminal to ask\n +in\. Nothing was deleted\n\nNext: run it in a terminal, or add `--yes`\n$/);
   assert.deepEqual(left(), all);
 
   const no = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'n\n', extra: { NO_COLOR: '1' } });
   assert.equal(no.status, 0);
-  assert.ok(no.stdout.includes(`Delete 1 folder (${size}) for good? [y/N] \n`), no.stdout);
-  assert.match(no.stdout, /\[y\/N\] \n +ok +nothing was deleted\./);
+  assert.ok(no.stdout.includes(`Delete 1 folder (${size}) for good? [Y/n] `), no.stdout);
+  assert.match(no.stdout, /\[Y\/n\] +ok +trash +nothing was deleted\./);
+  assert.deepEqual(left(), all);
+
+  const enter = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: '\n', extra: { NO_COLOR: '1' } });
+  assert.match(enter.stdout, /nothing was deleted\./, 'Enter alone deletes nothing');
   assert.deepEqual(left(), all);
 
   const yes = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'y\n', extra: { NO_COLOR: '1' } });
   assert.equal(yes.status, 0, yes.stderr);
-  assert.match(yes.stdout, /done +deleted 1 folder/);
+  assert.match(yes.stdout, /done +trash +deleted 1 folder/);
   assert.deepEqual(left(), all.filter((name) => name !== '2026-10-10T000000Z'));
   assert.ok(existsSync(join(outside, 'index.json')), 'a link is never followed');
 
@@ -297,4 +321,38 @@ test('tidy: the words it does not take are refused, and outside a repo it says s
 
 test('tidy: sizes read as a person reads them (#1055)', () => {
   assert.deepEqual([0, 900, 2048, 1536, 15 * 1024 * 1024, 3.4 * 1024 ** 3].map(formatSize), ['0 B', '900 B', '2.0 KB', '1.5 KB', '15 MB', '3.4 GB']);
+});
+
+// Plan D1: --local and --empty build a result first; the screen is a pure function of it (#1115).
+test('tidyScreen: --local and --empty from their results, the same result giving the same screen (#1115)', () => {
+  const item = (name: string): TidyItem => ({
+    kind: 'branch', name, path: '/work/demo', branch: name, head: 'f00ba12', adminDir: '', stateDir: '', size: 0, commits: 0,
+    facts: { kind: 'branch', isHere: false, hasProcess: false, isLocked: false, lastWrite: null, isMerged: true, isUpstreamGone: false, isGone: false, unpushed: 0, isDirty: false },
+    judged: { verdict: 'old', why: 'merged into the main branch' },
+  });
+  const done = tidyScreen({ kind: 'local', folder: '/trash/a', moves: [{ item: item('one'), outcome: 'moved' }, { item: item('two'), outcome: 'changed' }] });
+  assert.deepEqual(done, [
+    'yokoten tidy --local · put away 1 thing in /trash/a',
+    '',
+    '  done        branch      one: merged into the main branch; no commit of its',
+    '                          own. Put away.',
+    '',
+    '  skipped     branch      two: it changed while tidy saved it, so it stays.',
+    '',
+    'More: index.json there says how to bring each one back. It stays 7 days.',
+    '',
+    'Next: `yokoten tidy`',
+  ]);
+  const failed = tidyScreen({ kind: 'local', folder: '/trash/a', moves: [{ item: item('one'), outcome: 'failed', problem: 'in use' }, { item: item('two'), outcome: 'after-failure' }] });
+  assert.match(failed.slice(0, 2).join(' '), /put away 0 things in \/trash\/a; a move failed, so the rest +stayed$/);
+  assert.ok(failed.includes('  MISSING     branch      one: not moved, in use'));
+  assert.deepEqual(tidyScreen({ kind: 'local', folder: null, moves: [] }), ['yokoten tidy --local · nothing to put away; nothing was changed']);
+  const folders = [{ path: '/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2048, isOld: true }];
+  const asked = { kind: 'empty' as const, trash: '/trash', folders };
+  assert.deepEqual(tidyScreen(asked), ['yokoten tidy --empty · 1 trash folder over 7 days old, 2.0 KB', '', '  next        trash       2026-10-10T000000Z: 2.0 KB, put away 2026-10-10.']);
+  assert.deepEqual(deletedRow(asked), ['  ok          trash       nothing was deleted.'], 'no answer, or no: nothing was deleted');
+  const deleted = { ...asked, deleted: [folders[0]!.path] };
+  assert.deepEqual(deletedRow(deleted), ['  done        trash       deleted 1 folder, 2.0 KB.']);
+  assert.deepEqual(tidyScreen(deleted), [...tidyScreen(asked), '', ...deletedRow(deleted)], '--yes: the question\'s screen, then what was deleted');
+  assert.deepEqual(tidyScreen(deleted), tidyScreen(structuredClone(deleted)), 'pure');
 });

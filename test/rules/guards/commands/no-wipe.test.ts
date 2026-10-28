@@ -68,7 +68,7 @@ test('guard: no wipe of the home folder or a top-level system folder (#969)', ()
     ['find', '~', '-execdir', 'rm', '-rf', '{}', '+'],
     ['find', '~', '-ok', 'rm', '{}', ';'],
   ]) {
-    assert.equal(checkDamage(words, process.cwd(), withHome)?.id, 'wipe-home-or-system', `should refuse: ${words.join(' ')}`);
+    assert.equal(checkDamage(words, process.cwd(), withHome, process.platform)?.id, 'wipe-home-or-system', `should refuse: ${words.join(' ')}`);
   }
   for (const command of [
     'find -L ~ -delete', 'find -P ~ -delete', 'find -H / -delete', 'find -O3 ~ -delete', 'find -D search ~ -delete',
@@ -107,9 +107,9 @@ test('guard: a project one or two folders below the root is the project (#969)',
     ['/', '/usr'],
     ['/usr', '/usr/lib'],
   ]) {
-    assert.equal(checkDamage(['rm', '-rf', command], cwd, withHome)?.id, 'wipe-home-or-system', `should refuse at ${cwd}: rm -rf ${command}`);
+    assert.equal(checkDamage(['rm', '-rf', command], cwd, withHome, process.platform)?.id, 'wipe-home-or-system', `should refuse at ${cwd}: rm -rf ${command}`);
   }
-  assert.match(checkDamage(['rm', '-rf', '/app'], '/app', withHome)?.what ?? '', /this command runs in/);
+  assert.match(checkDamage(['rm', '-rf', '/app'], '/app', withHome, process.platform)?.what ?? '', /this command runs in/);
   // At `/app`, a wipe of `/` is a wipe of the whole checkout too, and that rule answers first.
   assert.equal(at('/app', 'rm -rf /')?.id, 'delete-checkout');
 });
@@ -242,4 +242,12 @@ test('pathsFor: Windows paths read as Windows reads them on any machine (#1015)'
   assert.equal(pathsFor('win32').isAbsolute('C:\\x'), true);
   assert.equal(pathsFor('linux').isAbsolute('C:\\x'), false);
   assert.equal(isHostPaths(process.platform), true);
+});
+
+test('platform: the same words are read per platform (issue #1000)', () => {
+  const rows: [NodeJS.Platform, string][] = [['linux', '/home/agent'], ['darwin', '/home/agent'], ['win32', 'C:/Users/agent']];
+  for (const [platform, target] of rows) {
+    const env = platform === 'win32' ? { USERPROFILE: 'C:\\Users\\agent' } : { HOME: '/home/agent' };
+    assert.equal(checkDamage(['rm', '-rf', target], '/work', env, platform)?.id, 'wipe-home-or-system', `${platform}: ${target}`);
+  }
 });

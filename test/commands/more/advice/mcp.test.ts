@@ -13,6 +13,9 @@ import {
   lintServerEntry,
   lintStdout,
   lintTools,
+  mcpJson,
+  mcpNoneScreen,
+  mcpScreen,
   needsWindowsShell,
   readMcpConfig,
   readServerTools,
@@ -205,7 +208,8 @@ test('mcp command: each trap is reported with what, why and fix, and the command
   const text = await sandbox.call(['mcp']);
   assert.equal(text.status, 1);
   assert.match(text.stderr, /write logs to stderr/i);
-  assert.match(text.stderr, /docs: https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#shipping-an-mcp-server-that-works-in-every-agent/);
+  assert.match(text.stderr, /More: the docs link of each problem: `yokoten mcp --json`/);
+  assert.ok(report.findings.every((item: { docs?: string }) => item.docs === undefined || /^https:\/\/github\.com\/yokoten-labs\/yokoten\/blob\/main\/docs\/guide\.md#shipping-an-mcp-server-that-works-in-every-agent$/.test(item.docs)));
 });
 
 test('commandWords: a part in double quotes is one word, a backslash is kept (#1027)', () => {
@@ -240,4 +244,38 @@ test('mcp command: a project with no MCP server is skipped, not failed', async (
   const report = JSON.parse(result.stdout);
   assert.equal(report.ok, true);
   assert.match(report.skipped, /no MCP server found/);
+});
+
+// The screen is a pure function of its result (issue #1115).
+test('mcpScreen: two tools and one problem, from data', () => {
+  const report = { name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] };
+  const problem = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
+  const lines = mcpScreen({ reports: [report], problems: [problem], warnings: [], toolCount: 2 });
+  assert.match(lines[0], /^yokoten mcp · 1 problem in 1 server$/);
+  assert.ok(lines.includes('Next: `yokoten mcp`'));
+  assert.ok(lines.some((line) => /^ {2}MISSING {5}\s*tool "read" inputSchema has a root anyOf/.test(line)));
+  const ready = mcpScreen({ reports: [report], problems: [], warnings: [problem], toolCount: 2 });
+  assert.deepEqual(ready.slice(0, 1), ['yokoten mcp --check · 2 tools ready']);
+  assert.ok(ready.some((line) => /note +1 warning; run yokoten mcp --json/.test(line)));
+  assert.deepEqual(mcpNoneScreen('.mcp.json')[0], 'yokoten mcp · no MCP server found in .mcp.json');
+});
+
+/** What printJson writes for a value: the bytes a --json reader gets. */
+const printed = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+// --json is the result the screen is built from, in the shape it always had (issue #1115).
+test('mcp --json: the result becomes the old {check, ok, servers, findings, notes} shape, byte for byte (#1115)', async () => {
+  const report = { name: 'sample', file: '.mcp.json', tools: 2, metrics: { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 }, probed: 2, findings: [], notes: [] };
+  const problem = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
+  const warning = lintServerEntry('win', { command: 'demo.cmd', args: [] })[0];
+  assert.equal(printed(mcpJson({ reports: [report], problems: [problem], warnings: [warning], toolCount: 2 })), printed({ check: 'mcp', ok: false, servers: [report], findings: [problem], notes: [warning] }));
+  assert.equal(printed(mcpJson({ reports: [], problems: [], warnings: [], toolCount: 0, skipped: 'no MCP server found in .mcp.json' })), printed({ check: 'mcp', ok: true, skipped: 'no MCP server found in .mcp.json', findings: [], notes: [] }));
+  // The command prints exactly that shape: no field more, none in another order.
+  const sandbox = mcpProject('clean');
+  const run = await sandbox.call(['mcp', '--json']);
+  assert.equal(run.status, 0, run.stderr);
+  const parsed = JSON.parse(run.stdout) as { servers: unknown[]; findings: unknown[]; notes: unknown[] };
+  assert.equal(run.stdout, printed({ check: 'mcp', ok: true, servers: parsed.servers, findings: parsed.findings, notes: parsed.notes }));
+  const none = await makeSandbox().call(['mcp', '--json']);
+  assert.equal(none.stdout, printed({ check: 'mcp', ok: true, skipped: 'no MCP server found in .mcp.json, .vscode/mcp.json, mcp.json', findings: [], notes: [] }));
 });

@@ -238,7 +238,7 @@ const matcherTimes = new Map([['compile each glob, each ask', [] as number[]], [
 for (let round = 0; round <= runs; round++) {
   for (const [name, run] of [
     ['compile each glob, each ask', () => compileEach('src/rules/guards/index.ts')],
-    ['isLeadOnly, one pass', () => isLeadOnly('src/rules/guards/index.ts', globs)],
+    ['isLeadOnly, one pass', () => isLeadOnly('src/rules/guards/index.ts', globs, false)],
   ] as const) {
     const start = performance.now();
     for (let at = 0; at < matcherRounds; at++) run();

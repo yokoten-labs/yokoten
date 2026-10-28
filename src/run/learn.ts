@@ -16,6 +16,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { Env } from '../rules/config.ts';
 import { BIDI, CONTROL, terminalText, unicodeEscape } from '../rules/text/terminal.ts';
 import { type Finding, finding, formatFinding } from '../rules/text/message.ts';
+import { field, moreLine, nextLine, noteLine, row, screen, section, spaced, summaryLine, table, title, wrap } from '../rules/text/screen.ts';
 import { homeOf, loadMarks, makeRedactor, NO_HOME, PLACEHOLDERS, scanText } from '../rules/privacy.ts';
 
 /** An incident issue, as the code host gives it. */
@@ -261,17 +262,118 @@ export function draftLesson(incident: Incident): Draft {
   return { finding, todos, files: [{ path: `${dir}/lesson.ts`, text: lesson }, { path: `${dir}/lesson.test.ts`, text: test }] };
 }
 
-/** The draft as text for a person: what to fill in, then each file. Writes nothing. */
-export function formatDraft(incident: Incident, draft: Draft): string[] {
-  const lines = [`a check draft from issue #${incident.number}, "${terminalText(incident.title)}".`];
-  if (!incident.labels.includes('incident')) lines.push('Note: the issue has no `incident` label; it is drafted anyway.');
-  if (draft.todos.length) lines.push(`The issue left ${draft.todos.length} field(s) open, each a TODO(reviewer):`, ...draft.todos.map((todo) => `- ${todo}`));
-  else lines.push('The issue answers every field.');
-  // `--ship` counts every TODO(reviewer) mark, so the count here must not look like all of them (#77).
-  lines.push('The reviewer also writes the check (findProblems) and the cases in its test, each a TODO(reviewer) too.');
-  for (const file of draft.files) lines.push('', `--- ${terminalText(file.path)}`, terminalText(file.text.trimEnd()));
-  return lines;
+const plural = (amount: number, one: string, many = `${one}s`): string => `${amount} ${amount === 1 ? one : many}`;
+
+/** A file's text under its path, as one block of a screen: the text of a draft or a lesson file, not wrapped. */
+const fileBlock = (file: DraftFile): string[] => [`--- ${terminalText(file.path)}`, ...terminalText(file.text.trimEnd()).split('\n')];
+
+/**
+ * The draft for a person (`learn <issue> --all`): what to fill in, then each file, then the
+ * command that writes them. Writes nothing.
+ */
+export function draftScreen(incident: Incident, draft: Draft, reference: string): string[] {
+  return screen(
+    title('learn', `a check draft from issue #${incident.number}`),
+    field('issue', `"${terminalText(incident.title)}"`),
+    incident.labels.includes('incident') ? [] : noteLine('the issue has no `incident` label; it is drafted anyway.'),
+    draft.todos.length
+      ? section(`The issue left ${plural(draft.todos.length, 'field')} open, each a TODO(reviewer)`, table(draft.todos.map((todo): [string, string] => {
+        const at = todo.indexOf(': ');
+        return at < 0 ? ['', todo] : [todo.slice(0, at), todo.slice(at + 2)];
+      })))
+      : summaryLine('The issue answers every field.'),
+    // `--ship` counts every TODO(reviewer) mark, so the count above must not look like all of them (#77).
+    summaryLine('The reviewer also writes the check (findProblems) and the cases in its test, each a TODO(reviewer) too.'),
+    ...draft.files.map(fileBlock),
+    summaryLine('Nothing was written.'),
+    nextLine(`yokoten learn ${reference} --write`),
+  );
 }
+
+/** The screen after `learn <issue> --write`: each file wrote or kept, and the one command that runs the draft's test. */
+export function draftWrittenScreen(incident: Incident, draft: Draft, { written, kept }: { written: string[]; kept: string[] }): string[] {
+  const test = draft.files.find((file) => file.path.endsWith('.test.ts'))?.path;
+  return screen(
+    title('learn', `wrote a check draft from issue #${incident.number}`),
+    [...written.flatMap((path) => row('done', path, 'wrote')), ...kept.flatMap((path) => row('ok', path, 'kept'))],
+    draft.todos.length ? summaryLine(`${plural(draft.todos.length, 'field')} still to fill in, listed by \`yokoten learn ${incident.number} --all\`.`) : [],
+    summaryLine('Review the draft: fill in each TODO, write the check, and make its test pass.'),
+    test === undefined ? [] : nextLine(`node --test ${test}`),
+  );
+}
+
+/** A refusal with a list: how many problems, each as a row, and what to do. `what` ends the title. */
+export function problemsScreen(command: string, problems: readonly string[], what: string, next: string): string[] {
+  return screen(title(command, `${plural(problems.length, 'problem')}; ${what}`), problems.flatMap((problem) => row('MISSING', problem.replaceAll('`', '"'))), wrap('Next: ', next));
+}
+
+/** The screen after `learn --ship`: where the lesson went, and how each project gets it (#77). */
+export function shipScreen(lesson: ShippedLesson, version: string): string[] {
+  const { id, folder, url } = lesson;
+  return screen(
+    title('learn --ship', `${id} is in ${KIT_LESSONS_DIR}/${folder}/`),
+    [...field('table', `a row in ${KIT_LESSONS_DIR}/${LESSONS_TABLE}`), ...field('from', `${url}, yokoten ${version}`)],
+    // A project runs the lessons of the yokoten that runs its doctor, so say how each one gets it.
+    section('Other projects get it from the yokoten that runs their doctor', table([
+      ['now', "run this copy's bin/yokoten.ts doctor in the project"],
+      ['this machine', 'run install from this copy, so `yokoten doctor` has it'],
+      ["a project's .yokoten/", 'run init again from this copy, then commit .yokoten/'],
+      ['everyone else', 'the next yokoten release'],
+    ])),
+    moreLine('commit it in a pull request'),
+  );
+}
+
+/** The screen after `learn --export <lesson> --out <file>`: what the file holds and how to import it. */
+export const exportedScreen = (pack: LessonPack, out: string): string[] =>
+  screen(
+    title('learn --export', `${pack.id} is ready to share`),
+    field('file', out),
+    summaryLine('It holds the incident, the check and its positive control, and no private detail the check found.'),
+    nextLine(`yokoten learn --import ${out}`),
+  );
+
+/** The review screen of `learn --import <file>`: what the lesson is, then the text of each file, written nowhere. */
+export function importScreen(pack: LessonPack, files: DraftFile[], file: string): string[] {
+  return screen(
+    title('learn --import', `a lesson ${pack.id}, with ${plural(pack.files.length, 'file')}`),
+    field('from', pack.incident),
+    summaryLine(`${pack.files.map((item) => item.path).join(' and ')}. No TODO(reviewer) is left.`),
+    ...files.map(fileBlock),
+    summaryLine('Nothing was written.'),
+    nextLine(`yokoten learn --import ${file} --write`),
+  );
+}
+
+/** The screen after `learn --import <file> --write`: each file wrote or kept, then its test and the way to ship it. */
+export const importedScreen = (pack: LessonPack, { written, kept }: { written: string[]; kept: string[] }): string[] =>
+  screen(
+    title('learn --import', `${pack.id} is in lessons/`),
+    [...written.flatMap((path) => row('done', path, 'wrote')), ...kept.flatMap((path) => row('ok', path, 'kept'))],
+    summaryLine('Review it and run its test. Then, in yokoten, `yokoten learn --ship` adds it to the kit every project gets.'),
+    nextLine(`node --test lessons/${pack.id}/lesson.test.ts`),
+  );
+
+/** The inbox of `learn --upstream --list`, its notes already cleaned for this place. */
+export function upstreamListScreen(notes: readonly UpstreamNote[]): string[] {
+  if (!notes.length) return screen(title('learn --upstream', 'no lessons wait; the inbox is empty'));
+  return screen(
+    title('learn --upstream', `${plural(notes.length, 'lesson waits', 'lessons wait')} to become an issue in the yokoten repo`),
+    table(notes.map((note): [string, string] => [note.id, `${note.when.replace('T', ' ').replace(/:\d\dZ$/, '')} UTC, ${note.part}: ${note.what}${note.fix ? ` Fix idea: ${note.fix}` : ''}`])),
+    nextLine('yokoten learn --upstream --done <id>'),
+  );
+}
+
+/** The screen after a note is kept: what it reads, where it is, and when yokoten counts it. */
+export const upstreamKeptScreen = (note: UpstreamNote, inbox: string): string[] =>
+  screen(
+    title('learn --upstream', `kept note ${note.id}, outside every repo`),
+    spaced([field('note', note.what), ...(note.fix ? [field('fix idea', note.fix)] : []), field('in', inbox)]),
+    moreLine('in the yokoten repo, the session start counts it until you open an issue for it'),
+  );
+
+/** The screen after a note is removed. */
+export const upstreamDoneScreen = (id: string): string[] => title('learn --upstream', `removed note ${id}`);
 
 /**
  * The draft's files in the repo. Adds only: a file that is there is kept, so a second run
@@ -444,9 +546,6 @@ export function importLesson(text: string, env: Env): { pack: LessonPack; files:
   const pack: LessonPack = { version: LESSON_PACK_VERSION, id, incident, files };
   return { pack, files: files.map((file) => ({ path: `${LESSONS_DIR}/${id}/${file.path}`, text: file.text })) };
 }
-
-/** The line that says what an import found, before its files. */
-export const formatLessonPack = (pack: LessonPack): string => `a lesson ${pack.id} from ${pack.incident}, with ${pack.files.length} file(s): ${pack.files.map((file) => file.path).join(' and ')}. No TODO(reviewer) is left.`;
 
 // Shipped lessons (#147), the second half of the loop. A reviewed lesson moves from
 // `lessons/<id>/` into the kit, with a row in the kit's lessons table. `doctor` then runs

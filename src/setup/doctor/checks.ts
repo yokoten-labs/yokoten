@@ -8,6 +8,7 @@ import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, type RuleId } from '../../rules/text/message.ts';
 import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
 import { readGit } from '../../run/check.ts';
+import { findProgram } from '../../platform/process.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
 import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userGuardMisses, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
 import * as codex from '../../agents/runtimes/codex.ts';
@@ -234,6 +235,33 @@ export function machineChecks(env: Env): Practice[] {
       ? practice('private-marks', 'private-marks', false, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX)
       : practice('private-marks', 'private-marks', marksNow === 'some', `${hideHome(target.marks, env)} is missing or has no marks`, EMPTY_MARKS_FIX),
   ];
+}
+
+/**
+ * What the desk fence needs on Linux, by program and by the Debian or Ubuntu package that
+ * brings it: sandbox-runtime finds them on PATH (#1097).
+ */
+export const FENCE_PROGRAMS = { bwrap: 'bubblewrap', rg: 'ripgrep', socat: 'socat' } as const;
+
+/** Names as a list a person reads: `a`, `a and b`, `a, b and c`. */
+const listOf = (names: readonly string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? ''));
+
+/** Why the fence matters, for the desk-fence note. */
+const FENCE_WHY = '`yokoten desk` starts each agent inside this fence, so a desk will not start without them';
+
+/**
+ * Whether the desk fence can start on this machine (#1097): on Linux, each program it needs
+ * is on PATH. A note when one is missing, with the one command that installs them. Read only:
+ * doctor never installs anything. Null on macOS and Windows, which start the fence their own
+ * way. `isFile` is for a test.
+ */
+export function deskFenceCheck(env: Env, platform: NodeJS.Platform, isFile?: (path: string) => boolean): Practice | null {
+  if (platform !== 'linux') return null;
+  const missing = (Object.keys(FENCE_PROGRAMS) as (keyof typeof FENCE_PROGRAMS)[]).filter((name) => findProgram(name, env.PATH, platform, env, isFile) === null);
+  if (!missing.length) return { name: 'desk-fence', ok: true, finding: { id: 'desk-fence', what: '', why: FENCE_WHY, fix: '' }, detail: 'the programs the desk fence needs are here' };
+  const packages = missing.map((name) => FENCE_PROGRAMS[name]);
+  const what = `the desk fence can't start: ${listOf(missing)} ${missing.length === 1 ? 'is' : 'are'} not installed`;
+  return { name: 'desk-fence', ok: false, finding: { id: 'desk-fence', what, why: FENCE_WHY, fix: `run \`sudo apt install ${packages.join(' ')}\` on Debian or Ubuntu, or install ${listOf(packages)} with your system's package manager` } };
 }
 
 /**
@@ -550,15 +578,15 @@ export function doubleInstallCheck(root: string | null, env: Env): Finding | nul
  * message says `yokoten init`, and that command is then not found. With the plugin on,
  * the plugin's own commands are used, so there is no note.
  */
-export function launcherCheck(env: Env): Finding | null {
+export function launcherCheck(env: Env, platform: NodeJS.Platform): Finding | null {
   if (hasPlugin(env)) return null;
   const { runtime } = paths(env);
-  if (!existsSync(runtime) || isOnPath(env, runtime)) return null;
+  if (!existsSync(runtime) || isOnPath(env, runtime, platform)) return null;
   const home = homeIn(env);
   const meanwhile = 'until then, `npx yokoten` runs yokoten';
   let fix = `run \`npx yokoten install\`; it puts a launcher in ${launcherDir(home)} and offers to add that folder to your PATH`;
-  if (existsSync(launcherFile(home))) {
-    fix = process.platform === 'win32'
+  if (existsSync(launcherFile(home, platform))) {
+    fix = platform === 'win32'
       ? `add ${launcherDir(home)} to the Path for your account (search Windows for "environment variables for your account"), then open a new terminal; ${meanwhile}`
       : `add this line to your shell profile (~/.bashrc or ~/.zshrc), then open a new terminal: ${PROFILE_LINE}; ${meanwhile}`;
   }
@@ -576,12 +604,12 @@ export function launcherCheck(env: Env): Finding | null {
  * where the backtick has a backslash before it, stays as written: it must match the hook install writes.
  * Null when the messages stay as written.
  */
-export function commandWording(env: Env): ((text: string) => string) | null {
+export function commandWording(env: Env, platform: NodeJS.Platform): ((text: string) => string) | null {
   if (hasPlugin(env) || env.CLAUDE_PLUGIN_ROOT || homeOf(env) === null) return null;
   const { runtime } = paths(env);
   const isNpx = env.npm_command === 'exec';
-  if (!isNpx && (!existsSync(runtime) || isOnPath(env, runtime))) return null;
-  if (isNpx && isOnPath(env, runtime)) return null;
+  if (!isNpx && (!existsSync(runtime) || isOnPath(env, runtime, platform))) return null;
+  if (isNpx && isOnPath(env, runtime, platform)) return null;
   return (text) => text.replace(/(?<!\\)`yokoten((?: [^`]*)?)`/g, '`npx yokoten$1`');
 }
 

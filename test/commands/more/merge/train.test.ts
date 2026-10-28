@@ -3,7 +3,9 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { npmTestSpawn, type PullRequest, runQueue, type TrainApi, verifyInWorktree } from '../../../../src/commands/more/merge/train.ts';
+import { linesAfter, npmTestSpawn, planLines, type PullRequest, resumeCommand, runQueue, stepRow, type TrainApi, type TrainStep, verifyInWorktree } from '../../../../src/commands/more/merge/train.ts';
+import type { Change, ConflictMap } from '../../../../src/commands/more/merge/conflicts/types.ts';
+import { screenProblems } from '../../../repo/docs/screen-rules.ts';
 import { CLI, makeSandbox } from '../../../repo/helpers.ts';
 
 /** A pull request the fake host holds. Its branches live in the sandbox repo. */
@@ -217,12 +219,12 @@ test('train: verify runs the project script and check in a worktree (#320)', () 
   const sandbox = makeSandbox();
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'false' } }));
   const failing = commit(sandbox, 'a.txt', 'a\n', 'tests fail');
-  const why = verifyInWorktree({ root: sandbox.repo, commit: failing, env: sandbox.env, script: CLI, cwd: sandbox.repo });
+  const why = verifyInWorktree({ root: sandbox.repo, commit: failing, env: sandbox.env, script: CLI, cwd: sandbox.repo, platform: process.platform });
   assert.match(why ?? '', /tests fail/);
 
   sandbox.write('package.json', JSON.stringify({ scripts: { test: 'true' } }));
   const passing = commit(sandbox, 'a.txt', 'b\n', 'tests pass');
-  assert.equal(verifyInWorktree({ root: sandbox.repo, commit: passing, env: sandbox.env, script: CLI, cwd: sandbox.repo }), null);
+  assert.equal(verifyInWorktree({ root: sandbox.repo, commit: passing, env: sandbox.env, script: CLI, cwd: sandbox.repo, platform: process.platform }), null);
 });
 
 /** Whether Node refuses this spawn on Windows (EINVAL since 18.20.2 and 20.12.2): a .cmd or .bat file with no shell. */
@@ -238,4 +240,54 @@ test('train: on Windows npm test runs through cmd.exe, never npm.cmd alone (#985
   assert.deepEqual(windows.args, ['/d', '/s', '/c', 'npm test']);
   assert.equal(windows.options.windowsVerbatimArguments, true);
   assert.deepEqual(npmTestSpawn('linux'), { command: 'npm', args: ['test'], options: {} });
+});
+
+/** A map of open pull requests, by number, with the collisions given. */
+function planMap(numbers: number[], collisions: [number, number][] = []): ConflictMap {
+  const changes: Change[] = numbers.map((number) => ({ id: `pr:${number}`, label: `PR #${number}`, branch: `b${number}`, head: '0'.repeat(8), draft: false, files: [`src/${number}.ts`], moves: [], mainConflicts: [] }));
+  return { version: 1, builtAt: new Date().toISOString(), main: '0'.repeat(8), changes, collisions: collisions.map(([first, second]) => ({ first: `pr:${first}`, second: `pr:${second}`, files: ['src/app.ts'] })), leased: {}, hot: [] };
+}
+
+test('train: the bare plan is rows, the order as a field, and the command that merges them last (#1115)', () => {
+  const lines = planLines(planMap([12, 15, 20]));
+  assert.deepEqual(lines, [
+    'yokoten train · the plan for 3 pull requests; nothing merged',
+    '',
+    '  next        PR #12: it collides with no other open change',
+    '  to do       PR #15: it collides with no other open change',
+    '  to do       PR #20: it collides with no other open change',
+    '',
+    '  Order       #12 → #15 → #20',
+    '',
+    'Next: `yokoten train 12 15 20`',
+  ]);
+  assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
+  const long = planLines(planMap(Array.from({ length: 12 }, (_, index) => index + 1)));
+  assert.ok(long.includes('4 more pull requests, in the order below'), long.join('\n'));
+  assert.equal(long.at(-1), 'Next: `yokoten train 1 2 3 4 5 6 7 8`', 'the command merges the rows shown');
+  assert.deepEqual(screenProblems({ text: long.join('\n') }), []);
+});
+
+test('train: each step is a row under the title, and a wrapped one is spaced from its neighbours (#1115)', () => {
+  const steps: TrainStep[] = [
+    { number: 20, mark: 'ok', text: 'approved and green on 0123456789ab' },
+    { number: 20, mark: 'done', text: 'took the union of the import lines in src/commands/more/merge/train.ts, src/commands/shared.ts' },
+    { number: 20, mark: 'done', text: 'squash-merged' },
+  ];
+  assert.deepEqual(stepRow(steps[0]), ['  ok          #20         approved and green on 0123456789ab']);
+  let shown = ['yokoten train · merging 1 pull request in this order: #20'];
+  const printed = [...shown];
+  for (const step of steps) {
+    printed.push(...linesAfter(shown, stepRow(step)));
+    shown = stepRow(step);
+  }
+  printed.push(...linesAfter(shown, ['merged 1 of 1 pull request'], true));
+  assert.deepEqual(printed.filter((line) => line === '').length, 4, 'a blank under the title, around the wrapped row, and before the total');
+  assert.deepEqual(screenProblems({ text: printed.join('\n') }), []);
+  assert.deepEqual(linesAfter([], ['a']), ['a'], 'the first block is shown as it is');
+});
+
+test('train: a stop says where to go on from (#1115)', () => {
+  assert.equal(resumeCommand([40, 41, 42], 41), 'yokoten train 41 42');
+  assert.equal(resumeCommand([40], 99), 'yokoten train 40', 'an unknown number goes on from the start');
 });

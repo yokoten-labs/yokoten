@@ -66,6 +66,9 @@ const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|
 // A command to run named without backticks, as in `run gh auth login` (#1115).
 const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
 
+/** The absolute paths on this machine that a text shows (the no-internal-path rule): not ~, not a link. */
+export const machinePathsIn = (text: string): string[] => text.match(MACHINE_PATH) ?? [];
+
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {
   text: string;
@@ -151,7 +154,216 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
   if (fixes > limitOf('fix-line')) problems.push(`${fixes} problems keep their fix inside the text; give it a last line \`Fix: <command>\` [fix-line]`);
   const repeated = [...fixLines].filter(([, count]) => count > limitOf('same-fix-once'));
   if (repeated.length) problems.push(`${repeated.map(([line, count]) => `"${line}" ${count} times`).join(', ')}; say a fix once, under the problems it fixes [same-fix-once]`);
-  const paths = text.match(MACHINE_PATH) ?? [];
+  const paths = machinePathsIn(text);
   if (paths.length > limitOf('no-internal-path')) problems.push(`${paths.length} paths on this machine show; say what they are, or use ~ [no-internal-path]`);
   return problems;
+}
+
+// ---- The screens' source (issue #1115, plan 6.5) ----
+//
+// The ratchets of screens.test.ts count what a screen built by hand leaves in src/: a literal
+// `yokoten <command>: ` prefix, a column number, a blank line typed as '', a raw write, a
+// regex that reads a screen's own lines back, an isTTY read. They read the code, not the
+// comments or the import lines, so a comment that names a pattern is not counted.
+
+/** One file's source, measured: the code with comments and imports gone and strings shortened, and the text of each string. */
+export interface SourceText {
+  /** The code, line for line: comments and import statements are spaces, a string's text is `_` unless it is only spaces. */
+  code: string;
+  /** The text of every string and template literal, outside `${}`. */
+  strings: string[];
+  /** The line (from 1) each string starts on, one per entry of `strings`. */
+  stringLines: number[];
+}
+
+const KEYWORDS_BEFORE_REGEX = new Set(['return', 'typeof', 'case', 'in', 'of', 'void', 'yield', 'await', 'delete', 'instanceof', 'new', 'else', 'do']);
+
+/** Split TypeScript source into code and string text, as the ratchets read it. Newlines stay where they were. */
+export function readSource(source: string): SourceText {
+  let code = '';
+  const strings: string[] = [];
+  const stringLines: number[] = [];
+  // Where each line starts, to tell on which line a string begins.
+  const lineStarts = [0];
+  for (let index = source.indexOf('\n'); index !== -1; index = source.indexOf('\n', index + 1)) lineStarts.push(index + 1);
+  const lineAt = (position: number): number => {
+    let low = 0;
+    let high = lineStarts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if ((lineStarts[middle] ?? 0) <= position) low = middle;
+      else high = middle - 1;
+    }
+    return low + 1;
+  };
+  // Each open template literal remembers how deep the braces of its `${}` are.
+  const templates: number[] = [];
+  let depth = 0;
+  let last = '';
+  let word = '';
+  const keepLines = (text: string) => text.replace(/[^\n]/g, ' ');
+  // A string's text in the code: as it is when it is only spaces, else `_`, keeping its newlines.
+  const shorten = (text: string) => (/^ *$/.test(text) ? text : `_${text.replace(/[^\n]/g, '')}`);
+  // Read string or template text from `start` up to an unescaped `end` (or `${` in a template).
+  const readText = (start: number, end: string): [string, number] => {
+    let at = start;
+    let text = '';
+    while (at < source.length && source[at] !== end && !(end === '`' && source.startsWith('${', at))) {
+      if (source[at] === '\\') {
+        text += source.slice(at, at + 2);
+        at += 2;
+      } else text += source[at++];
+    }
+    return [text, at];
+  };
+  let at = 0;
+  while (at < source.length) {
+    const char = source[at];
+    if (char === '/' && source[at + 1] === '/') {
+      const stop = source.indexOf('\n', at);
+      const end = stop === -1 ? source.length : stop;
+      code += keepLines(source.slice(at, end));
+      at = end;
+    } else if (char === '/' && source[at + 1] === '*') {
+      const stop = source.indexOf('*/', at + 2);
+      const end = stop === -1 ? source.length : stop + 2;
+      code += keepLines(source.slice(at, end));
+      at = end;
+    } else if (char === '/' && (!/[\w$)\]]/.test(last) || KEYWORDS_BEFORE_REGEX.has(word))) {
+      // A regex literal: up to the `/` outside a class, then its flags.
+      let end = at + 1;
+      let isClass = false;
+      while (end < source.length && source[end] !== '\n' && (isClass || source[end] !== '/')) {
+        if (source[end] === '\\') end += 1;
+        else if (source[end] === '[') isClass = true;
+        else if (source[end] === ']') isClass = false;
+        end += 1;
+      }
+      end += 1;
+      while (/[a-z]/.test(source[end] ?? '')) end += 1;
+      code += source.slice(at, end);
+      at = end;
+      last = '/';
+      word = '';
+    } else if (char === "'" || char === '"') {
+      const [text, end] = readText(at + 1, char);
+      strings.push(text);
+      stringLines.push(lineAt(at));
+      code += `${char}${shorten(text)}${char}`;
+      at = end + 1;
+      last = char;
+      word = '';
+    } else if (char === '`' || (char === '}' && templates.length && depth === templates.at(-1))) {
+      // A template starts, or one of its `${}` ends: read its text up to the next `${` or its end.
+      if (char === '}') templates.pop();
+      const [text, end] = readText(at + 1, '`');
+      strings.push(text);
+      stringLines.push(lineAt(at));
+      code += `${char}${shorten(text)}`;
+      if (source.startsWith('${', end)) {
+        templates.push(depth);
+        code += '${';
+        at = end + 2;
+      } else {
+        code += '`';
+        at = end + 1;
+      }
+      last = '`';
+      word = '';
+    } else {
+      if (char === '{') depth += 1;
+      if (char === '}') depth -= 1;
+      code += char;
+      if (/\S/.test(char)) {
+        word = /[\w$]/.test(char) ? (/[\w$]/.test(last) ? word + char : char) : '';
+        last = char;
+      }
+      at += 1;
+    }
+  }
+  // Import statements, which name files and not screens: from `import` to the module's string.
+  code = code.replace(/^import\b[^;]*?'[^']*';?/gm, keepLines);
+  return { code, strings, stringLines };
+}
+
+/** A file of src/: its path from the repo root, with `/`, and its text. */
+export interface SourceFile {
+  path: string;
+  source: string;
+}
+
+/** What each ratchet counts, by id; R4 is an allow-list, not a count. */
+export const RATCHETS = {
+  R1: 'strings of src/ that start a line with the old `yokoten <command>: ` prefix',
+  R2: 'column numbers outside src/rules/text/: padEnd(N), padStart(N), a repeated space, fit(…, N)',
+  R3: "blank lines typed by hand in screen code outside src/rules/text/ (see isScreenCode): '' as an array item, push('') or unshift('')",
+  R4: 'raw stdout.write and stderr.write outside src/commands/shared.ts',
+  R5: 'regexes in src/commands/ that read a lines array back: .test(line) or .exec(line) inside lines.filter((line) => …) and its kin',
+  R6: '.isTTY reads outside src/commands/shared.ts',
+} as const;
+
+export type RatchetId = keyof typeof RATCHETS;
+
+const OUTSIDE_TEXT = (path: string) => !path.startsWith('src/rules/text/');
+
+/**
+ * Files that are not screens although they sit where screens are built: each holds a '' that is
+ * data (an empty argument, a state, a word in a list, a line of a document for an agent or a
+ * pull request), never a blank line on a person's terminal. A file here keeps at least one such hit,
+ * so the list cannot go stale (screens.test.ts), and a screen added to it is not counted: do not.
+ */
+export const NOT_SCREEN: Readonly<Record<string, string>> = {
+  'src/commands/kanban/view.ts': "a card's state tuple: '' is no state, not a blank line",
+  'src/commands/kanban/server.ts': "the empty body of a redirect response",
+  'src/commands/kanban/feed/read/usage.ts': "'' is one word of the list of role names",
+  'src/commands/kanban/page/browser/desk.ts': "'' is an argument to the bar placement, not a screen",
+  'src/commands/more/advice/mcp.ts': "'' is the path argument of the schema walker",
+  'src/commands/tidy/find.ts': "'' is an argument to the unpushed count",
+  'src/commands/desk/brief.ts': "a Markdown brief for an agent, a document not a screen",
+  'src/commands/desk/finish.ts': "the text of a pull request body, a document not a screen",
+  'src/agents/desk/team/team.ts': "path parts and an empty outbox file, data not a screen",
+};
+
+/**
+ * Whether a file builds text a person reads on a terminal: the commands, the desk, the help and
+ * the hook's own text, and bin/. The setup, host, platform and rules code builds file contents,
+ * git arguments and data; a `yokoten x: ` line start is counted everywhere (R1), but a '' there is not a screen blank line.
+ */
+export const isScreenCode = (path: string): boolean =>
+  (path.startsWith('src/commands/') || path.startsWith('src/agents/desk/') || path.startsWith('bin/') || path === 'src/run/cli.ts' || path === 'src/run/hook.ts') && !(path in NOT_SCREEN);
+
+/** Where R3's pattern hits in one file, without the screen-code scope: for the NOT_SCREEN list to stay honest. */
+export const blankHitsIn = (source: string): number => readSource(source).code.split('\n').reduce((total, line) => total + (line.match(BLANK_LINE)?.length ?? 0), 0);
+
+const BLANK_LINE = /[[,]\s*''(?=\s*[,\]])|\.(?:push|unshift)\(''\)/g;
+const OUTSIDE_SHARED = (path: string) => path !== 'src/commands/shared.ts';
+// Per ratchet: which files it reads, and what it counts in a line of code (R1 reads the strings instead).
+const COUNTED: Record<Exclude<RatchetId, 'R1' | 'R4'>, { isIn: (path: string) => boolean; pattern: RegExp; onlyWhere?: RegExp }> = {
+  R2: { isIn: OUTSIDE_TEXT, pattern: /\.pad(?:End|Start)\(\s*\d+\s*\)|' +'\.repeat\(\s*\d+\s*\)|\bfit\([^()]*,\s*\d+\s*\)/g },
+  R3: { isIn: (path) => OUTSIDE_TEXT(path) && isScreenCode(path), pattern: BLANK_LINE },
+  R5: { isIn: (path) => path.startsWith('src/commands/'), pattern: /\.(?:test|exec)\(line\)/g, onlyWhere: /\blines\.(?:filter|find|findIndex|some|every|map|flatMap)\(\(line\b/ },
+  R6: { isIn: OUTSIDE_SHARED, pattern: /\.isTTY\b/g },
+};
+const RAW_WRITE = /\b(?:stdout|stderr)\.write\(/;
+
+/**
+ * Where each ratchet finds its pattern in src/, as `path:line` once per hit; R4 as
+ * `path: <the line, trimmed>`, the form of its allow-list.
+ */
+export function ratchetsOf(files: readonly SourceFile[]): Record<RatchetId, string[]> {
+  const found: Record<RatchetId, string[]> = { R1: [], R2: [], R3: [], R4: [], R5: [], R6: [] };
+  for (const { path, source } of files) {
+    const { code, strings, stringLines } = readSource(source);
+    // The old form is a line that starts with it; a comment in a file's text or a sentence that names yokoten is not.
+    strings.forEach((text, index) => found.R1.push(...Array<string>(text.match(/(?:^|\n)yokoten [a-z-]+: /g)?.length ?? 0).fill(`${path}:${stringLines[index]}`)));
+    const sourceLines = source.split('\n');
+    code.split('\n').forEach((line, at) => {
+      for (const [id, { isIn, pattern, onlyWhere }] of Object.entries(COUNTED) as [keyof typeof COUNTED, (typeof COUNTED)[keyof typeof COUNTED]][]) {
+        if (!isIn(path) || (onlyWhere && !onlyWhere.test(line))) continue;
+        found[id].push(...Array<string>(line.match(pattern)?.length ?? 0).fill(`${path}:${at + 1}`));
+      }
+      if (OUTSIDE_SHARED(path) && RAW_WRITE.test(line)) found.R4.push(`${path}: ${sourceLines[at]?.trim()}`);
+    });
+  }
+  return found;
 }

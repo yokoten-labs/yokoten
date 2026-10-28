@@ -26,12 +26,17 @@ import {
 } from '../../repo/helpers.ts';
 import { invoke } from '../../repo/invoke.ts';
 import { type ActionsHealth, cutPoint, failureWord, readActionsRuns, redactStream, runRedact, readHealthPullChecks, renderActionsHealth, summarizeActionsHealth } from '../../../src/commands/more/check.ts';
-import { borrowedIssue, hasOpenIssue, prSyncEnv, pullLine } from '../../../src/commands/more/check.ts';
+import { borrowedIssue, borrowedJson, borrowedScreen, checkJson, checkScreen, ciHealthScreen, hasOpenIssue, marksScreen, prSyncEnv, prSyncScreen, provenanceJson, provenanceScreen, pullLine, testEndScreen, testFilesOf, testPlanScreen } from '../../../src/commands/more/check.ts';
+import { finding } from '../../../src/rules/text/message.ts';
+import { screenProblems } from '../../repo/docs/screen-rules.ts';
 import { type BorrowedHost, watchBorrowed } from '../../../src/run/check.ts';
 import { REDACT_FAILED, wrapForRedact } from '../../../src/rules/guards/index.ts';
 
 /** The screen as one line of words: rows wrap at 80 columns (#1027), and a match reads the words. */
 const flat = (text: string): string => text.replace(/\s+/g, ' ');
+
+/** The rules a screen breaks, as the screen test measures them. */
+const broken = (lines: string[], isFailure = false): string[] => screenProblems({ text: lines.join('\n'), isFailure });
 
 // On run, not call: one real child keeps the check entry point (exit code and output through the binary) tested (#475).
 test('check --pr: reads the CI event, lists the changed files from git, notes long prose (#47)', () => {
@@ -54,7 +59,8 @@ test('check --pr: reads the CI event, lists the changed files from git, notes lo
   let result = sandbox.run(['check', '--pr', '--all'], { extra: event(body) });
   assert.equal(result.status, 1, 'src/a.ts changed with no changelog line');
   assert.match(result.stderr, /changelog: 1 changed file/);
-  assert.match(result.stdout, /note: 1 long sentence\(s\)\n- README\.md:2: a sentence of 30 words/);
+  // The notes are rows of the one screen, under the problems (#1115).
+  assert.match(result.stderr, /^ {2}note {8}README\.md:2: a sentence of 30 words$/m);
   result = sandbox.run(['check', '--pr', '--all'], { extra: event(body.replace('Made with worker', 'No changelog: a test\n\nMade with worker')) });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems/);
@@ -93,7 +99,7 @@ test('check --pr: a long sentence is noted only on a line the pull request adds 
   // A second long sentence on the line this commit adds is noted, and the old one still is not.
   result = await sandbox.call(['check', '--pr', '--all'], { extra: event(head('Shorter.', newSentence)) });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /note: 1 long sentence\(s\)\n- README\.md:3: a sentence of 30 words/);
+  assert.match(result.stdout, /^ {2}note {8}README\.md:3: a sentence of 30 words$/m);
 });
 
 test('check --pr: a change file counts as the changelog entry, and its form is checked (#132)', async () => {
@@ -177,7 +183,7 @@ test('check --pr: a large pull request gets a note, never a failure; lock files 
   assert.doesNotMatch(r.stdout, /lines, over 400/, '300 lines; the lock file does not count');
   r = await sandbox.call(['check', '--pr', '--all'], { extra: event(large) });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /note: this pull request changes 500 lines, over 400\. Smaller pull requests are easier to review/);
+  assert.match(flat(r.stdout), /note this pull request changes 500 lines, over 400 Smaller pull requests are easier to review/);
   assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
 });
 
@@ -198,7 +204,8 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
   const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true' } });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /note: 2 ignore\(s\) added by this pull request/);
+  assert.match(r.stdout, /^ {2}note {8}src\/a\.ts:2: /m);
+  assert.match(r.stdout, /^ {2}note {8}\.yokotenignore:1: /m);
   assert.match(r.stdout, /::notice file=src\/a\.ts,line=2,title=yokoten ignore-added::this pull request lets a secret hit through on this line \[ignored: a test fixture\]/);
   assert.match(r.stdout, /::notice file=\.yokotenignore,line=1,title=yokoten ignore-added::this pull request lets ip hits through in the whole repo \[ignored: documentation examples\]/);
   assert.doesNotMatch(r.stdout, /an old one/, 'an ignore already on the base branch is not new');
@@ -383,7 +390,7 @@ test('check --pr: notes hard-to-read names on added code lines, and the exit cod
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
   const r = await project.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file } });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /note: 2 hard-to-read name\(s\)\n- src\/cart\.js:1: "s" is used for 14 lines\. A reader must scroll back to learn what it holds\. Name what it is, e\.g\. "text"\.\n  docs: \S+#naming\n- src\/cart\.js:2: "loadTheWholeUserList" has 5 words, over 4\. /);
+  assert.match(flat(r.stdout), /note src\/cart\.js:1: "s" is used for 14 lines A reader must scroll back to learn what it holds\. Name what it is, e\.g\. "text"\. note src\/cart\.js:2: "loadTheWholeUserList" has 5 words, over 4 /);
   assert.doesNotMatch(r.stdout, /"i"|old\.ts|renamed\.ts/, 'no note for `i` in a short loop, for unchanged lines, or for a moved file');
   assert.match(r.stdout, /check --pr · (PR #\d+, )?no problems/);
   const json = JSON.parse((await project.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: file } })).stdout);
@@ -451,8 +458,9 @@ test('check --pr: a Dependabot pull request passes with notes; the same body fro
   const summary = join(sandbox.home, 'summary.md');
   let result = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]') } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /check --pr: note: 9 pull request rule\(s\) Dependabot does not meet\n- body: the first line is not a tier\. .*Dependabot opened this pull request, so it is a note\./);
-  assert.match(result.stdout, /\n- milestone: none set\./);
+  assert.match(flat(result.stdout), /note body: the first line is not a tier .*Dependabot opened this pull request, so it is a note\./);
+  assert.match(result.stdout, /^ {2}note {8}milestone: none set$/m);
+  assert.equal(result.stdout.match(/^ {2}note {8}/gm)?.length, 9, 'the nine rules Dependabot does not meet, each a note');
   assert.match(result.stdout, /^yokoten check --pr · (PR #\d+, )?no problems[^\n]*\n\n/);
   result = await sandbox.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]'), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(result.status, 0, result.stderr);
@@ -664,8 +672,8 @@ test('redact: in-process, the given stdin comes out hidden, a long one streamed 
 });
 
 // #1006: redact fails closed. A marks file it cannot read, or a piece it cannot redact,
-// prints nothing more of the input, one line on stderr, and exit 1. Then the wrapper hides the rest.
-const REDACT_REFUSED = /^yokoten redact: the output is hidden, because [^\n]*\n$/;
+// prints nothing more of the input, one failure screen on stderr, and exit 1. Then the wrapper hides the rest.
+const REDACT_REFUSED = /^yokoten redact · the output is hidden, because [^]*\n\nNext: [^\n]*`[^\n]*\n$/;
 
 test('redact: fails closed; a marks file it cannot read prints none of the input, one line, exit 1 (#1006)', async () => {
   const { sandbox } = ownerSandbox();
@@ -920,7 +928,7 @@ test('marks add, marks and marks remove: one value from stdin, never in stdout o
   // Not a terminal: the mark is read from stdin, and the file is made.
   const added = await call(['marks', 'add'], `${HAND_MARK}\n`);
   assert.equal(added.status, 0, added.stderr);
-  assert.equal(added.stdout, 'yokoten marks: added the mark to your private marks (not shown)\n');
+  assert.equal(added.stdout, 'yokoten marks · added the mark to your private marks (not shown)\n');
   assert.ok(marks().endsWith(`\n${HAND_MARK}\n`));
   const again = await call(['marks', 'add'], HAND_MARK.toUpperCase());
   assert.match(again.stdout, /already in your private marks, so nothing changed/);
@@ -940,7 +948,7 @@ test('marks add, marks and marks remove: one value from stdin, never in stdout o
   assert.equal(marks(), before);
   // Remove: the same way in, and gone from the file.
   const removed = await call(['marks', 'remove'], `${HAND_MARK}\n`);
-  assert.equal(removed.stdout, 'yokoten marks: removed the mark from your private marks\n');
+  assert.equal(removed.stdout, 'yokoten marks · removed the mark from your private marks\n');
   assert.ok(!marks().includes(HAND_MARK));
   assert.match((await call(['marks', 'remove'], HAND_MARK)).stdout, /not in your private marks, so nothing changed/);
   assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
@@ -960,7 +968,7 @@ test('marks add: a mark after one yokoten added goes under a header of its own, 
   writeFileSync(file, `# added by yokoten from this machine: git email\nann${'@'}sample-mail.dev\n`, { mode: 0o600 });
   assert.equal((await call(['marks', 'add'], OTHER)).status, 0);
   assert.equal(marks(), `# added by yokoten from this machine: git email\nann${'@'}sample-mail.dev\n# your own marks\n${OTHER}\n`);
-  assert.match((await call(['marks'])).stdout, /^ {2}git-email +1 +added by install\n(?:.*\n)* {2}your own +1$/m);
+  assert.match((await call(['marks'])).stdout, /^ {2}git-email +1, added by install\n(?:.*\n)* {2}your own +1$/m);
 });
 
 test('marks off git-name: removed, install no longer adds it, hand-added marks untouched; marks on git-name adds it back (#434)', async () => {
@@ -974,7 +982,7 @@ test('marks off git-name: removed, install no longer adds it, hand-added marks u
   assert.equal(off.status, 0, off.stderr);
   assert.equal(
     off.stdout,
-    'yokoten marks: install no longer adds your git name, and removed the 1 mark(s) it had added for it. Marks you added yourself are kept.\nTo go back to the default: yokoten marks on git-name\n',
+    'yokoten marks · install no longer adds your git name\n\n  done        removed 1 mark it had added; marks you added yourself are kept\n  undo        `yokoten marks on git-name`\n',
   );
   assert.ok(!marks().includes(NAME) && !marks().includes('from this machine: git name'), 'the git name and its header are gone');
   assert.ok(marks().includes(`\n${HAND_MARK}\n`) && marks().includes(`\n${OTHER}\n`), 'hand-added marks are kept');
@@ -983,10 +991,10 @@ test('marks off git-name: removed, install no longer adds it, hand-added marks u
   const install = await call(['install']);
   assert.doesNotMatch(install.stdout, /added your git name/);
   assert.ok(!marks().includes(NAME));
-  assert.match((await call(['marks'])).stdout, /^ {2}git-name +0 +off: install does not add it$/m);
+  assert.match((await call(['marks'])).stdout, /^ {2}git-name +0, off: install does not add it$/m);
   // Back to the default: the name is added again, with no value shown.
   const on = await call(['marks', 'on', 'git-name']);
-  assert.equal(on.stdout, 'yokoten marks: install adds your git name again, and it is in your private marks now (not shown)\n');
+  assert.equal(on.stdout, 'yokoten marks · install adds your git name again, and added it now (not shown)\n');
   assert.match(marks(), new RegExp(`# added by yokoten from this machine: git name\\n${NAME}\\n$`));
   assert.deepEqual(JSON.parse(readFileSync(join(sandbox.home, '.config', 'yokoten', 'machine.json'), 'utf8')).marksOff, []);
   assert.ok(marks().includes(`\n${HAND_MARK}\n`) && marks().includes(`\n${OTHER}\n`), 'still kept');
@@ -1000,7 +1008,7 @@ test('marks: an unknown kind or action is refused without repeating the word; al
   assert.match(kind.stderr, /name the kind: git-name, git-email, forge-login/);
   const action = await call(['marks', HAND_MARK]);
   assert.equal(action.status, 1);
-  assert.match(action.stderr, /the action is add, remove, off, on or allow/);
+  assert.match(action.stderr, /the action is add, remove, fill, off, on or allow/);
   assert.match((await call(['marks', 'add', '--here'], HAND_MARK)).stderr, /--here and --remove go with allow only/);
   assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });
@@ -1091,8 +1099,12 @@ test('writeNodeProgram: the fake program answers with its arguments, as a script
   assert.ok(existsSync(join(windowsDir, 'gh.exe')) && existsSync(join(windowsDir, 'gh.cjs')));
   const env = { PATH: process.env.PATH, NODE_OPTIONS: extra.NODE_OPTIONS };
   const ran = spawnSync(join(windowsDir, 'gh.exe'), ['issue', 'pin 12', '--repo', 'octo/demo'], { cwd: windowsDir, env, encoding: 'utf8' });
-  assert.equal(ran.stdout, '["issue","pin 12","--repo","octo/demo"]', ran.stderr);
-  assert.equal(ran.status, 0);
+  // A linked copy of node runs on Windows and Linux. On macOS a Homebrew node finds its libnode.dylib by
+  // a path relative to its own location, so the copy cannot start: the Windows form is checked for its files only.
+  if (process.platform !== 'darwin' || ran.status === 0) {
+    assert.equal(ran.stdout, '["issue","pin 12","--repo","octo/demo"]', ran.stderr);
+    assert.equal(ran.status, 0);
+  } else assert.match(ran.stderr, /Library not loaded|dyld/, 'on macOS the linked node could not start, for the known reason');
   // Positive control: in a process not named gh.exe (this one), the preload does nothing.
   createRequire(import.meta.url)(join(windowsDir, 'gh.cjs'));
   assert.equal(process.exitCode, undefined, 'the preload left this process alone');
@@ -1172,7 +1184,7 @@ test('ci-health: reads runs and pull request checks, then says what is red', () 
   assert.match(body, /`yokoten` on `fix\/x`: 1 passed, 1 failed/);
 });
 
-test('ci-health --dry-run: prints the report and touches no issue', async () => {
+test('ci-health --dry-run: shows the report as a screen and touches no issue (#1115)', async () => {
   const sandbox = makeSandbox();
   const extra = healthGh(sandbox, {
     'repo view octo/demo --json defaultBranchRef --jq .defaultBranchRef.name': 'main',
@@ -1181,8 +1193,9 @@ test('ci-health --dry-run: prints the report and touches no issue', async () => 
   });
   const result = await sandbox.call(['ci-health', '--dry-run'], { extra: { ...extra, GITHUB_REPOSITORY: 'octo/demo' } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /# CI/);
-  assert.match(result.stdout, /\*\*failure\*\*/);
+  assert.match(result.stdout, /^yokoten ci-health · octo\/demo, the last 1 run: 1 problem\n/);
+  assert.match(result.stdout, /^On main:\n {2}MISSING {5}yokoten: failure at /m);
+  assert.doesNotMatch(result.stdout, /^Next: /m, 'a dry run names no next step');
   assert.deepEqual(healthCalls(sandbox), [
     'repo view octo/demo --json defaultBranchRef --jq .defaultBranchRef.name',
     'api repos/octo/demo/actions/runs?per_page=100&page=1',
@@ -1204,8 +1217,8 @@ test('ci-health with no flag prints the report, writes no issue and names --writ
   });
   const result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /\*\*failure\*\*/);
-  assert.match(result.stdout, /nothing written; `--write` puts this report in the pinned issue "CI health"/);
+  assert.match(result.stdout, /^ {2}MISSING {5}yokoten: failure at /m);
+  assert.match(result.stdout, /\nNext: `yokoten ci-health --write` puts it in the pinned issue "CI health"\n$/);
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
 });
 
@@ -1380,7 +1393,7 @@ test('provenance: a range shows each commit, and a bad ref is one finding (#756)
   assert.match(result.stdout, /docs: second \(#8\)/);
   const bad = await sandbox.call(['provenance', 'not-a-ref']);
   assert.equal(bad.status, 1);
-  assert.match(bad.stderr, /^yokoten provenance: git can't answer, so the check stopped without looking: `git log .+` gave no answer: /);
+  assert.match(flat(bad.stderr), /^yokoten provenance · git can't answer, so the check stopped without looking: `git log .+` gave no answer: .*Next: `git log --oneline -3`/);
   const usage = await sandbox.call(['provenance']);
   assert.equal(usage.status, 1);
   assert.match(usage.stderr, /give a commit or a range/);
@@ -1440,7 +1453,7 @@ test('pr sync: no open pull requests is one line, and no bot is needed (#432)', 
   chmodSync(join(bin, 'gh'), 0o755);
   const result = await sandbox.call(['pr', 'sync'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten pr sync: no open pull requests$/m);
+  assert.equal(result.stdout, 'yokoten pr sync · no open pull requests\n');
 });
 
 test('pr sync: a missing action is a usage error, not a silent no-op (#432)', async () => {
@@ -1460,16 +1473,10 @@ test('pr sync: each report row names the real base branch (#809, #1027)', () => 
   assert.deepEqual(pullLine({ number: 3, branch: 'docs', base: 'next', state: 'up-to-date' }), ['  ok          PR #3       up to date with next']);
 });
 
-test('pr sync: a list that stops at the limit says so (#809)', async () => {
-  const sandbox = makeSandbox();
-  sandbox.git('remote', 'add', 'origin', 'https://github.com/me/repo.git');
-  const bin = join(sandbox.home, 'bin');
-  mkdirSync(bin);
-  const rows = Array.from({ length: 100 }, (_, at) => ({ number: at + 1, headRefName: `work-${at + 1}`, baseRefName: 'main' }));
-  writeFileSync(join(bin, 'gh'), `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(JSON.stringify(rows))})\n`);
-  chmodSync(join(bin, 'gh'), 0o755);
-  const result = await sandbox.call(['pr', 'sync'], { extra: { PATH: `${bin}:${process.env.PATH}` } });
-  assert.match(result.stdout, /the open pull request list stops at 100/);
+test('pr sync: a list that stops at the limit says so (#809)', () => {
+  const lines = prSyncScreen({ isCut: true, pulls: [{ number: 1, branch: 'work', base: 'main', state: 'up-to-date' }] });
+  assert.ok(lines.includes('  note        open list   stops at 100 pull requests; the rest are not synced'), lines.join('\n'));
+  assert.deepEqual(broken(lines), []);
 });
 
 // #1027: the default screens. A clean check is one line; a problem names its place first,
@@ -1492,4 +1499,217 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`');
   assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
+});
+
+// ---- The screens, from result objects (issue #1115) ----
+
+test('check: the screen places its notes itself, folded by default and in full with --all (#1115)', () => {
+  const problems = [
+    finding('email', 'an email address', 'remove it', { file: 'docs/a-long-folder/notes.md', line: 3, why: 'an email address points at a person, and git keeps it' }),
+    finding('change-file', 'changelog: 1 changed file has no entry', 'run `yokoten changelog --new`', { why: 'a reader learns what changed from the changelog' }),
+  ];
+  const note = finding('long-sentence', 'a sentence of 30 words', 'split it', { file: 'README.md', line: 2, why: 'agents misread long sentences' });
+  const folded = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] });
+  assert.equal(folded[0], 'yokoten check --pr · 2 problems');
+  assert.ok(folded.includes('  note        1 note: `yokoten check --all` shows each'), folded.join('\n'));
+  assert.equal(folded.at(-1), 'Next: fix them, then `yokoten check`');
+  assert.deepEqual(broken(folded, true), []);
+  const all = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] }, { isAll: true });
+  assert.ok(all.includes('  note        README.md:2: a sentence of 30 words'), all.join('\n'));
+  assert.deepEqual(broken(all, true), []);
+  const clean = checkScreen({ mode: 'staged', problems: [], notes: [], hints: [] });
+  assert.deepEqual(clean, ['yokoten check --staged · clean: layout, privacy, lead-only files']);
+  assert.deepEqual(checkScreen({ mode: 'issue', problems: [], notes: [], hints: [], skipped: 'no issue in this run (it reads the CI event); nothing to check' }), ['yokoten check --issue · no issue in this run (it reads the CI event); nothing to', '                        check']);
+});
+
+test('check with no flag reads only: the tree and the index are as they were (#1044, D8)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('a.md', 'hello\n');
+  sandbox.git('add', '.');
+  const before = sandbox.git('status', '--porcelain').stdout;
+  assert.equal((await sandbox.call(['check'])).status, 0);
+  assert.equal(sandbox.git('status', '--porcelain').stdout, before);
+});
+
+test('ci-health: the screen is rows and tables with one text column, built from the summary (#1115)', () => {
+  const run = { id: 1, workflow: 'CI', event: 'push', branch: 'main', status: 'completed', conclusion: 'failure', createdAt: '2026-10-22T10:00:00Z', startedAt: '2026-10-22T10:01:00Z', updatedAt: '2026-10-22T10:04:00Z', url: 'https://example.com/run/1' };
+  const health = summarizeActionsHealth([run, { ...run, id: 2, conclusion: 'success', branch: 'work' }], [{ number: 7, title: 'feat: a\u001b[2J thing', url: 'https://example.com/pull/7', isDraft: false, check: 'test', conclusion: 'failure' }]);
+  const lines = ciHealthScreen({ repo: 'octo/demo', health });
+  assert.equal(lines[0], 'yokoten ci-health · octo/demo, the last 2 runs: 2 problems');
+  assert.ok(lines.includes('  MISSING     PR #7 test: failure'), lines.join('\n'));
+  assert.ok(!lines.join('\n').includes('\u001b'), 'a control character from GitHub never reaches the screen');
+  assert.deepEqual(broken(lines), []);
+  const posted = ciHealthScreen({ repo: 'octo/demo', health, posted: { number: 12, created: false, pinned: true } });
+  assert.deepEqual(posted, ['yokoten ci-health · updated issue #12 in octo/demo', '', '  ok          2 runs: 2 problems']);
+});
+
+test('provenance: the screen is a title and fields per commit (#756, #1115)', () => {
+  const record = { commit: 'a1b2c3d4e5', subject: 'feat(check): one screen (#12)', writers: [{ vendor: 'Claude Code', model: 'opus' }], reviewers: [], tier: 'B', issues: [12], approver: '' } as unknown as Parameters<typeof provenanceScreen>[0][number];
+  const lines = provenanceScreen([record, { ...record, commit: 'f0e1d2c3b4' }], 'main~2..main');
+  assert.deepEqual(lines.slice(0, 7), [
+    'yokoten provenance · a1b2c3d feat(check): one screen (#12)',
+    '',
+    '  writer      Claude Code (opus)',
+    '  reviewers   none',
+    '  approver    unknown',
+    '  tier        B',
+    '  issue       #12',
+  ]);
+  assert.deepEqual(broken(lines), []);
+  assert.deepEqual(provenanceScreen([], 'HEAD~0..HEAD'), ['yokoten provenance · no commit in HEAD~0..HEAD']);
+});
+
+test('marks: the counts screen is fields, never a value; marks with no action reads only (#434, #1115)', async () => {
+  const lines = marksScreen({ action: 'list', kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] });
+  assert.deepEqual(lines, ['yokoten marks · 3 private marks, values never shown', '', '  git-name    1, added by install', '  your own    2', '', 'Add one: `yokoten marks add`']);
+  assert.deepEqual(broken(lines), []);
+  const { sandbox, file } = marksSandbox();
+  const result = await sandbox.call(['marks']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.ok(!existsSync(file), 'a bare `yokoten marks` writes no marks file');
+});
+
+test('pr sync: a conflict gets its files, hunks and brief as sections, then the next step (#432, #1115)', () => {
+  const lines = prSyncScreen({
+    isCut: false,
+    pulls: [
+      { number: 4, branch: 'work', base: 'main', state: 'merged' },
+      { number: 5, branch: 'fix', base: 'main', state: 'needs-agent', files: ['src/a.ts'], hunksText: ['<<<<<<< HEAD\nconst a = 1;\n=======\nconst a = 2;\n>>>>>>> main'], brief: 'Merge main into fix.\nKeep both changes.\n' },
+    ],
+  });
+  assert.equal(lines[0], 'yokoten pr sync · 2 open pull requests, 1 needs an agent');
+  for (const heading of ['PR #5, files:', 'PR #5, conflict hunks:', 'PR #5, dispatch brief:']) assert.ok(lines.includes(heading), heading);
+  assert.ok(lines.includes('  <<<<<<< HEAD'), 'a hunk keeps its own text, indented as rows are');
+  assert.match(lines.at(-1) ?? '', /^Next: /);
+  assert.deepEqual(broken(lines, true), []);
+});
+
+test('borrowed: a source that moved is a row with what became of its issue (record 0024, #1115)', () => {
+  const change = { source: 'https://github.com/example/wheel', files: ['src/borrowed/a.ts'], borrowedCommit: 'abc', latestCommit: 'def', commits: [{ sha: 'def', message: 'fix' }], isSecurity: false } as unknown as Parameters<typeof borrowedIssue>[0];
+  const lines = borrowedScreen({ sources: 2, outcomes: [{ change, title: 'check: review borrowed code upstream', body: 'x\n', labels: ['bug', 'tier B'], state: 'failed', reason: 'HTTP 403 `x`' }], unreadable: [] });
+  assert.equal(lines[0], 'yokoten borrowed · 2 sources, 1 source moved');
+  assert.match(lines.at(-1) ?? '', /^Next: /);
+  assert.deepEqual(broken(lines, true), []);
+});
+
+// #1044: the test files are the ones git lists, so a build folder git ignores is never tested.
+test('test: the files are the ones git lists by the runner\'s own names; a build folder is left out (#1044)', async () => {
+  assert.deepEqual(testFilesOf(['test/a.test.ts', 'src/a.ts', 'src/b.test.mjs', 'lib/c_test.js', 'test-d.cjs', 'node_modules/x/test/e.js', 'docs/test.md']), ['test/a.test.ts', 'src/b.test.mjs', 'lib/c_test.js', 'test-d.cjs']);
+  const sandbox = makeSandbox();
+  sandbox.write('.gitignore', 'dist/\n');
+  sandbox.write('test/a.test.ts', "import { test } from 'node:test';\ntest('a', () => {});\n");
+  sandbox.write('dist/test/a.test.js', "require('node:test').test('a stale build', () => { throw new Error('dist ran'); });\n");
+  const shown = await sandbox.call(['test', '--print']);
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.match(shown.stdout, /^yokoten test · would run 1 test file, /);
+  assert.match(flat(shown.stdout), /--test-reporter=dot <1 test file>/);
+  assert.deepEqual(broken(shown.stdout.split('\n')), []);
+  const ran = await sandbox.call(['test', '--heavy']);
+  assert.equal(ran.status, 0, ran.output);
+  assert.match(ran.stdout, /^ {2}done {8}tests passed$/m);
+});
+
+test('test: the plan and the end are screens of their own (#461, #1115)', () => {
+  const plan = testPlanScreen({ files: ['test/a.test.ts'], light: true, jobs: 2, cores: 4, freeBytes: 2 * 1024 ** 3, hasNice: true, shown: 'nice -n 10 node --test <1 test file>' });
+  assert.equal(plan[0], 'yokoten test · would run 1 test file, 2 at once, niced');
+  assert.deepEqual(broken(plan), []);
+  assert.deepEqual(testEndScreen(0), ['  done        tests passed']);
+  assert.deepEqual(broken(testEndScreen(3), true), []);
+});
+
+// ---- --json is the result the screen is built from (#1115) ----
+
+/** What printJson writes for a value: the bytes a --json reader gets. */
+const printed = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
+
+test('check --json: the result becomes the old {check, ok, findings, notes} shape, byte for byte (#1115)', async () => {
+  const problem = finding('email', 'an email address', 'remove it', { file: 'a.md', line: 1 });
+  const note = finding('long-sentence', 'a sentence of 30 words', 'split it', { file: 'b.md', line: 2 });
+  // The shapes the runner printed by hand before, on the same results.
+  assert.equal(printed(checkJson({ mode: 'tree', problems: [problem], notes: [note], hints: ['git restore --staged a.md'] })), printed({ check: 'tree', ok: false, findings: [problem], notes: [note] }));
+  assert.equal(printed(checkJson({ mode: 'pr', number: '12', problems: [], notes: [note], hints: [] })), printed({ check: 'pr', ok: true, findings: [], notes: [note] }));
+  assert.equal(printed(checkJson({ mode: 'issue', problems: [], notes: [note], hints: [], skipped: 'not an issue event' })), printed({ check: 'issue', ok: true, skipped: 'not an issue event', findings: [], notes: [] }));
+  // The command prints exactly that shape: no field more, none in another order.
+  const sandbox = makeSandbox();
+  sandbox.write('notes.md', `mail jane${at}personal-mail.dev\n`);
+  sandbox.git('add', '.');
+  const run = await sandbox.call(['check', '--json']);
+  assert.equal(run.status, 1, run.stderr);
+  const report = JSON.parse(run.stdout) as { findings: unknown[]; notes: unknown[] };
+  assert.ok(report.findings.length > 0, run.stdout);
+  assert.equal(run.stdout, printed({ check: 'tree', ok: false, findings: report.findings, notes: report.notes }));
+});
+
+test('provenance --json: the rows the screen shows, in the old shape, an unknown approver as null (#1115)', () => {
+  const record = { commit: 'a1b2c3d4e5', subject: 'feat(check): one screen (#12)', writers: [{ vendor: 'Claude Code', model: 'opus' }], reviewers: [], tier: 'B', issues: [12], approver: '' } as unknown as Parameters<typeof provenanceJson>[0][number];
+  const old = (row: typeof record) => ({ commit: row.commit, subject: row.subject, writers: row.writers, reviewers: row.reviewers, approver: row.approver || null, tier: row.tier, issues: row.issues });
+  const rows = [record, { ...record, commit: 'f0e1d2c3b4', approver: 'octo' }];
+  assert.equal(printed(provenanceJson(rows)), printed(rows.map(old)));
+  assert.equal(printed(provenanceJson([])), printed([]));
+});
+
+test('borrowed --json: the watch and the issues, in the old shape, from the result; nothing is opened (#1115)', async () => {
+  const source = 'https://github.com/example/upstream/blob/main/src/thing.ts';
+  const sha = '0123456789abcdef0123456789abcdef01234567';
+  const host: BorrowedHost = { commits: (from) => (from.includes('gone') ? null : [{ sha: 'fedcba9876543210fedcba9876543210fedcba98', message: 'fix: a bug' }, { sha, message: 'taken' }]) };
+  const watch = watchBorrowed([{ path: 'src/borrowed/thing.ts', source, commit: sha, license: 'MIT' }, { path: 'src/borrowed/gone.ts', source: `${source}/gone`, commit: sha, license: 'MIT' }], host);
+  assert.equal(watch.changed.length, 1);
+  assert.equal(watch.unreadable.length, 1);
+  // The old runner printed the watch, then each moved source with its issue.
+  const old = { borrowed: watch, issues: watch.changed.map((change) => ({ source: change.source, ...borrowedIssue(change) })) };
+  const result = { sources: 2, unreadable: watch.unreadable, outcomes: watch.changed.map((change) => ({ change, ...borrowedIssue(change), state: 'would open' as const })) };
+  assert.equal(printed(borrowedJson(result)), printed(old));
+  // A repo with no wheel: the empty shape, exit 0.
+  const sandbox = makeSandbox();
+  const run = await sandbox.call(['borrowed', '--json']);
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout, printed({ borrowed: { changed: [], unreadable: [] }, issues: [] }));
+});
+
+// ---- yokoten marks: one screen per action, from its result (#1115) ----
+
+test('marks: every action is a screen of its result, never a value, and passes the screen rules (#1115)', () => {
+  // The file as this system writes it: hideHome keeps the system's separator after `~`.
+  const file = join('~', '.config', 'yokoten', 'private-marks');
+  assert.deepEqual(marksScreen({ action: 'add', isAdded: true }), ['yokoten marks · added the mark to your private marks (not shown)']);
+  assert.deepEqual(marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }), [
+    'yokoten marks · removed the mark from your private marks',
+    '',
+    '  note        it came from this machine (your git name), so install adds it',
+    '              again',
+    '',
+    '  stop it     `yokoten marks off git-name`',
+  ]);
+  assert.deepEqual(marksScreen({ action: 'fill', found: 3, kinds: ['git name', 'git email'], file }), ['yokoten marks · added your git name and git email from this machine (not shown)', '', `  file        ${file}`]);
+  assert.match(marksScreen({ action: 'fill', found: 0, kinds: [], file })[0] ?? '', /this machine has none to add/);
+  assert.match(marksScreen({ action: 'fill', found: 2, kinds: [], file })[0] ?? '', /nothing new from this machine/);
+  assert.deepEqual(marksScreen({ action: 'here', isRemoving: false, isChanged: false }), ['yokoten marks · that mark is already allowed here, so nothing changed']);
+  const all = [
+    marksScreen({ action: 'add', isAdded: false }),
+    marksScreen({ action: 'remove', isRemoved: false, isSwitched: false }),
+    marksScreen({ action: 'off', kind: 'git name', removed: 2 }),
+    marksScreen({ action: 'on', kind: 'forge login', found: 0, isAdded: false }),
+    marksScreen({ action: 'fill', found: 1, kinds: ['private remote host'], file }),
+    marksScreen({ action: 'here', isRemoving: true, isChanged: true }),
+    marksScreen({ action: 'here', isRemoving: false, isChanged: true }),
+  ];
+  for (const lines of all) assert.deepEqual(broken(lines), [], lines.join('\n'));
+});
+
+test('marks fill: adds the git name this machine has, says the kind and the file, never the value; again, nothing changes (#1115)', async () => {
+  const { said, call, marks } = marksSandbox();
+  const first = await call(['marks', 'fill']);
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(first.stdout, `yokoten marks · added your git name from this machine (not shown)\n\n  file        ${join('~', '.config', 'yokoten', 'private-marks')}\n`);
+  assert.match(marks(), new RegExp(`# added by yokoten from this machine: git name\\n${NAME}\\n$`));
+  const again = await call(['marks', 'fill']);
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stdout, /^yokoten marks · nothing new from this machine, so nothing changed$/m);
+  // A kind that is off is never filled: off takes the git name out, and fill does not put it back.
+  assert.equal((await call(['marks', 'off', 'git-name'])).status, 0);
+  const off = await call(['marks', 'fill']);
+  assert.equal(off.status, 0, off.stderr);
+  assert.ok(!marks().includes(NAME), 'the git name is off, so it is not added');
+  assert.equal((await call(['marks', 'fill', 'git-name'])).status, 1, 'fill takes no word');
+  assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });

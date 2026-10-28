@@ -126,6 +126,18 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           SHARD: ${{ matrix.shard }}
           OF: ${{ matrix.of }}
+      # A failed shard names its failing tests in the log and keeps its TAP report, so a failure that the
+      # progress lines do not show (a file whose process ended non-zero after its tests) can be read (#1115).
+      - if: ${{ failure() && needs.changes.outputs.docs_only != 'true' }}
+        run: grep -nE '^(not ok|# (pass|fail|cancelled))' "$RUNNER_TEMP/tests.tap" | head -40 || true
+      - if: ${{ failure() && needs.changes.outputs.docs_only != 'true' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tests-tap-${{ matrix.os }}-${{ matrix.shard }}
+          path: |
+            ${{ runner.temp }}/tests.tap
+            ${{ runner.temp }}/file-times.jsonl
+          retention-days: 7
       # The time and the slowest tests go in the job summary. It fails far above the slowest run
       # seen: 180 s a shard, or 90 s on Node 24 on Linux, the fastest setup (#475). Node 24 on
       # Linux took 61 to 96 s a shard on 2026-10-26, and fails past 135 s. A pull request's macOS

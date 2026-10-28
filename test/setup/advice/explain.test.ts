@@ -27,7 +27,7 @@ test('explain with no id lists the ids on stdout and exits 0; --json gives { ids
   // An unknown id is still an error.
   result = await sandbox.call(['explain', 'nope']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /no rule or step is called nope\.\nIds: release, /);
+  assert.equal(result.stderr, 'yokoten explain · no rule or step is called nope\n\nNext: `yokoten explain`\n', 'one failure, and the command that lists the ids');
 });
 
 test('explain: each rule and step, its reason and its check; ids are unique (#42)', () => {

@@ -4,14 +4,14 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Writable } from 'node:stream';
 import { test } from 'node:test';
 import { makeSandbox, runChild } from '../../repo/helpers.ts';
-import { DESK_USE_WSL, type DeskDeps, runDesk } from '../../../src/commands/desk/desk.ts';
+import { DESK_USE_WSL, type DeskDeps, runDesk, stoppedDesksScreen } from '../../../src/commands/desk/desk.ts';
 import { runWith } from '../../../src/commands/desk/clone.ts';
-import { readRecord } from '../../../src/commands/desk/list.ts';
+import { readRecord, writeRecord } from '../../../src/commands/desk/list.ts';
 import type { Look } from '../../../src/commands/desk/stall.ts';
 import { isStalled } from '../../../src/commands/desk/stall.ts';
 import type { Invocation } from '../../../src/commands/shared.ts';
@@ -94,6 +94,19 @@ test('desk: bare desk lists the desks and writes nothing (#1054)', async () => {
   assert.match(words.stderr, /name the agent, the folder and the command/);
 });
 
+test('desk --json: the desks as the screen is built from them, and nothing else on stdout (#1115)', async () => {
+  const { call, home } = makeWorld(() => {});
+  assert.deepEqual(JSON.parse((await call(['--json'])).stdout), { desks: [] });
+  mkdirSync(home, { recursive: true });
+  writeRecord(home, { name: '9', task: { kind: 'text', title: 'tidy up' }, agent: 'claude-code', branch: 'desk/9', base: 'abc', pid: 1, startedAt: '2026-10-26T10:00:00Z', activeAt: '2026-10-26T11:00:00Z', state: 'kept' });
+  const listed = await call(['--json']);
+  assert.equal(listed.status, 0);
+  assert.deepEqual(JSON.parse(listed.stdout), { desks: [{ name: '9', task: { kind: 'text', title: 'tidy up' }, agent: 'claude-code', branch: 'desk/9', startedAt: '2026-10-26T10:00:00Z', activeAt: '2026-10-26T11:00:00Z', state: 'kept', commits: [] }] });
+  const withTask = await call(['14', '--json']);
+  assert.equal(withTask.status, 1, '--json goes with the list only');
+  assert.equal(JSON.parse(withTask.stdout).ok, false);
+});
+
 test('desk <issue>: its own clone, a brief from the issue, the AI in the fence, never a push (#1054)', async () => {
   let seen = '';
   const { sandbox, remote, calls, call, home, commit } = makeWorld((desk, brief) => {
@@ -126,7 +139,7 @@ test('desk <issue>: no AI installed is one line, and nothing is written (#1054)'
   const { call, home, calls, world } = makeWorld(() => {}, { installed: false });
   const result = await call(['14']);
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'yokoten desk: no AI to start: install Claude Code (`npm install -g @anthropic-ai/claude-code`), then run this again.\n');
+  assert.equal(result.stderr, 'yokoten desk · no AI to start: neither Claude Code nor Codex is installed\n\nNext: install Claude Code with `npm install -g @anthropic-ai/claude-code`, then\n      run this again\n');
   assert.ok(!existsSync(home));
   assert.ok(!calls.some((line) => line.startsWith('git clone')));
   // The positive control: installed, the same call makes the desk.
@@ -160,7 +173,7 @@ test('desk <issue>: a failed check is the failed ending, and --pr then pushes no
   const result = await call(['14']);
   assert.equal(result.status, 1);
   assert.match(result.stdout, /^yokoten desk · desk 14 failed its checks\n/);
-  assert.match(result.stdout, /MISSING +check +failed\n +MISSING  a token in src\/x\.ts\n/);
+  assert.match(result.stdout, /MISSING +check +failed\n +MISSING a token in src\/x\.ts\n/);
   assert.match(result.stdout, /Next: `yokoten desk 14`\n$/);
   const pr = await call(['14', '--pr']);
   assert.equal(pr.status, 1);
@@ -222,7 +235,7 @@ test('desk <issue>: a desk whose .git points at a planted config is refused; no 
   });
   const result = await call(['14']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /\nyokoten desk: git does not run in this desk outside the fence: .*commondir is there: it would point git at a config the desk wrote. The desk is kept; look at it by hand.\n$/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /yokoten desk · git does not run in this desk outside the fence: .*commondir is there: it would point git at a config the desk wrote Next: look at the desk by hand: it is kept in `[^`]+` ?$/);
   assert.ok(!existsSync(marker), 'finish ran the planted filter outside the fence');
   assert.ok(existsSync(join(home, '14', '.git')), 'the desk is kept');
   assert.equal(readRecord(home, '14')?.state, 'kept');
@@ -245,14 +258,14 @@ test('desk: a running desk is not started twice (#1056)', async () => {
   writeFileSync(join(home, '14.json'), JSON.stringify({ ...record, state: 'working' }));
   const again = await call(['14']);
   assert.equal(again.status, 1);
-  assert.equal(again.stderr, 'yokoten desk: desk 14 is running in another terminal (working). Stop it there first.\n');
+  assert.equal(again.stderr, 'yokoten desk · desk 14 is running in another terminal (working)\n\nNext: stop it there, then run `yokoten desk 14` again\n');
 });
 
 test('desk: on native Windows, one line to use WSL, and nothing starts (#1054)', async () => {
   const { call, home, calls } = makeWorld(() => {});
   for (const args of [[], ['14']]) {
     const result = await call(args, 'win32');
-    assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', `${DESK_USE_WSL}\n`]);
+    assert.deepEqual([result.status, result.stdout, result.stderr], [1, '', `${DESK_USE_WSL.join('\n')}\n`]);
   }
   assert.deepEqual(calls, []);
   assert.ok(!existsSync(home));
@@ -268,4 +281,23 @@ test('desk: the guard\'s module never loads the desk statically (#1054)', () => 
   // The positive control: the pattern catches a static import.
   assert.match("import { runDesk } from './desk/desk.ts';", STATIC_DESK_IMPORT);
   assert.doesNotMatch(readFileSync(join(import.meta.dirname, '..', '..', '..', 'src', 'commands', 'hook.ts'), 'utf8'), STATIC_DESK_IMPORT);
+});
+
+// Plan D1: the desks that stopped, shown before a start, are a pure screen of the list (#1115).
+test('stoppedDesksScreen: one row each, then the first one to go on with; Windows is one failure (#1056, #1115)', () => {
+  const desk = (name: string, commits: string[]) => ({ name, task: { kind: 'text' as const, title: `task ${name}` }, agent: 'claude-code', branch: `desk/${name}`, startedAt: '2026-10-26T10:00:00Z', activeAt: '2026-10-26T11:00:00Z', state: 'stopped' as const, commits });
+  const now = new Date('2026-10-26T12:00:00Z');
+  assert.deepEqual(stoppedDesksScreen([desk('7', ['f00ba12 fix: a']), desk('8', [])], now), [
+    'yokoten desk · 2 other desks stopped mid-task',
+    '',
+    '  note        desk 7      stopped 1 h ago · claude-code · task 7 · 1 commit,',
+    '                          last: f00ba12 fix: a',
+    '',
+    '  note        desk 8      stopped 1 h ago · claude-code · task 8 · no commits',
+    '                          yet',
+    '',
+    'Next: `yokoten desk 7`',
+  ]);
+  assert.match(stoppedDesksScreen([desk('9', [])], now)[0] ?? '', /· 1 other desk stopped mid-task$/);
+  assert.deepEqual(DESK_USE_WSL, ['yokoten desk · on Windows, a desk runs in WSL, where it has a sandbox; nothing', '               was started', '', 'Next: open WSL and run `yokoten desk` there']);
 });

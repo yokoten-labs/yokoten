@@ -84,21 +84,22 @@ test('the map is built again before the next pick, so a change may collide with 
   assert.deepEqual(ids(after), ['pr:1', 'pr:3']);
 });
 
-test('train --next prints the next pick in one line and merges nothing', () => {
+test('train --next prints the next pick as one title, wrapped under itself, and merges nothing', () => {
   const sandbox = makeSandbox();
   const map = mapOf([change('pr:12'), change('pr:9', { moves: ['src/old.ts'] })]);
   sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...map, builtAt: new Date().toISOString() }));
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim().split('\n').length, 1);
-  assert.match(result.stdout, /next is PR #9: it moves or deletes 1 file, so it goes first and alone/);
+  // One title (#1027): its first line, and the lines wrapped under its text (#1115).
+  assert.deepEqual(result.stdout.trim().split('\n').slice(1).filter((line) => !line.startsWith(' '.repeat('yokoten train · '.length))), []);
+  assert.match(result.stdout.replace(/\n\s+/g, ' '), /^yokoten train · next is PR #9: it moves or deletes 1 file, so it goes first and alone/);
 });
 
 test('train --next refuses plainly when the map is missing', () => {
   const sandbox = makeSandbox();
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /no conflict map at yokoten\/conflicts\.json in this clone;\s+build\s+it,\s+then\s+start\s+the\s+train\s+again\n\nFix: `yokoten conflicts`\n$/);
+  assert.match(result.stderr, /no conflict map at yokoten\/conflicts\.json in this clone;\s+build\s+it,\s+then\s+start\s+the\s+train\s+again\n\nNext: `yokoten conflicts`\n$/);
 });
 
 test('train refuses a map more than an hour old: it names changes that merged since', () => {
@@ -107,7 +108,7 @@ test('train refuses a map more than an hour old: it names changes that merged si
   sandbox.write('.git/yokoten/conflicts.json', JSON.stringify({ ...mapOf([change('pr:12')]), builtAt: old }));
   const result = sandbox.run(['train', '--next']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /more than an hour\s+old; build it again\n\nFix: `yokoten conflicts`\n$/);
+  assert.match(result.stderr, /more than an hour\s+old; build it again\n\nNext: `yokoten conflicts`\n$/);
 });
 
 /** A gh on PATH that logs each call and answers none, so any read or merge shows in the log. */
@@ -130,8 +131,8 @@ test('bare train prints the plan with its order, says nothing merged, and calls 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten train · the plan for 3 pull requests; nothing merged\n/);
   assert.match(result.stdout, /next {8}PR #9: it moves or deletes 1 file/);
-  assert.match(result.stdout, /Order: #9 → #12 → #5/);
-  assert.match(result.stdout, /Merge: name them in this order, as in `yokoten train 9 12`/);
+  assert.match(result.stdout, /\n {2}Order {7}#9 → #12 → #5\n/);
+  assert.match(result.stdout, /\nNext: `yokoten train 9 12 5`\n$/);
   assert.doesNotMatch(result.stdout, /branch local|merged \d/);
   assert.deepEqual(gh.calls(), [], 'a bare train makes no gh call, so no merge call');
 });

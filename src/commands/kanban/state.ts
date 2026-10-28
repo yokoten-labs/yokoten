@@ -3,7 +3,7 @@
 // files and the session logs on this machine, and takes what GitHub said from the caller,
 // so the server never waits for gh. Read only: nothing here starts, stops or changes work.
 
-import { type ActionsRun, branchHealth, ghFailureCause, hideHomeIn, spacedLines, titleLines, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
+import { type ActionsRun, branchHealth, ghFailureCause, hideHomeIn, spacedLines, type KanbanEnv, type PullRow, yokotenVersion } from './ports.ts';
 import { readBoardDesks, sessionId } from './agents.ts';
 import { totalOf, type UsageCell } from './feed/read/usage.ts';
 import type { KanbanActions, KanbanCost, KanbanPull, KanbanSession, KanbanState } from './page/browser/types.ts';
@@ -170,44 +170,6 @@ export function collectState(root: string, env: KanbanEnv, sources: StateSources
   const board = collectBoardWith(root, env, sources.remote, sources.pulls, now);
   const desks = new Set(readBoardDesks(root).map((desk) => hideHomeIn(desk.path, env)));
   return stateOf(board, sources, desks, now);
-}
-
-/** The groups `--text` prints, in the page's order. */
-const GROUPS: [KanbanSession['state'], string][] = [
-  ['stuck', 'Stuck'],
-  ['waiting', 'Waiting for you'],
-  ['working', 'Working'],
-  ['done', 'Done'],
-];
-
-/** `kanban --text`: the same snapshot as the page, as plain lines. */
-export function renderStateText(state: KanbanState): string[] {
-  // The repo, then what the board is, in one line (#1115).
-  const lines = [...titleLines('kanban', `${state.repo?.name ?? 'this repo'}: sessions, pull requests and Actions, read only`), ''];
-  for (const [group, heading] of GROUPS) {
-    const sessions = state.sessions.filter((session) => session.state === group);
-    if (!sessions.length) continue;
-    lines.push(`${heading}:`);
-    for (const session of sessions) {
-      const task = session.task.number ? `${session.task.kind === 'pr' ? 'PR' : 'issue'} #${session.task.number} ${session.task.title}` : session.task.title || 'no task';
-      const extra = session.stuckMinutes !== undefined ? `, no output for ${session.stuckMinutes} min` : session.waitingFor ? `, waits for ${session.waitingFor}` : '';
-      lines.push(`- ${session.agent}${session.model ? ` (${session.model})` : ''}: ${task}${extra}`);
-    }
-    lines.push('');
-  }
-  if (!state.sessions.length) lines.push('Sessions:', '- none yet. Start one with `yokoten desk`: it shows here by itself.', '');
-  lines.push('Pull requests:');
-  if (!state.pulls.length) lines.push('- none waits on you.');
-  for (const pull of state.pulls) {
-    const said = pull.mergedAt ? 'merged' : pull.waitsOnYou ? 'waits on you' : pull.notReadyBecause.join(', ') || 'open';
-    lines.push(`- #${pull.number} ${pull.title}: ${said}`);
-  }
-  const main = state.actions.main;
-  lines.push('', `Actions: main ${main.state}${main.failingSince ? ` since ${main.failingSince}` : ''}`);
-  for (const run of state.actions.queuedOver15Min) lines.push(`- ${run.name} waits for a runner, ${run.minutes} min`);
-  for (const run of state.actions.flaky) lines.push(`- ${run.name} is flaky: ${run.passFailLast10}`);
-  if (state.problems.length) lines.push('', 'Not read:', ...notReadLines(state.problems));
-  return lines;
 }
 
 // A gh read that failed, as the board's readers word it: what was not read, and what gh said.

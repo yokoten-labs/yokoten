@@ -4,7 +4,8 @@
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { type ActionsRun, branchHealth, emptySchedule, refusalOf, scheduleOfIssues } from '../../../src/commands/kanban/ports.ts';
+import type { RowMark } from '../../../src/rules/text/screen.ts';
+import { type ActionsRun, branchHealth, emptySchedule, refusalOf, type RowState, scheduleOfIssues } from '../../../src/commands/kanban/ports.ts';
 import { summarizeActionsHealth } from '../../../src/commands/more/check.ts';
 
 const run = (fields: Partial<ActionsRun>): ActionsRun => ({ id: 1, workflow: 'CI', event: 'push', branch: 'main', status: 'completed', conclusion: 'success', createdAt: '2026-10-26T10:00:00Z', startedAt: '2026-10-26T10:00:00Z', updatedAt: '2026-10-26T10:05:00Z', url: '', ...fields });
@@ -38,4 +39,12 @@ test('refusalOf: a printed refusal comes back by its parts, and other text gives
   const text = ['yokoten stopped this: a push [no-push]', '', '  Why       A push skips review.', '  Instead   Ask the lead.', '  More      https://example.com/docs'].join('\n');
   assert.deepEqual(refusalOf(text), { id: 'no-push', title: 'yokoten stopped this: a push [no-push]', why: 'A push skips review.', fix: 'Ask the lead.', docs: 'https://example.com/docs' });
   assert.equal(refusalOf('nothing to see'), null);
+});
+
+// tsc checks both ways: a RowState is a layout RowMark and a RowMark is a RowState, so the port cannot drift from the layout.
+test('RowState: the port keeps its own name for the layout\'s row marks', () => {
+  const marks: RowMark[] = ['ok', 'done', 'next', 'to do', 'MISSING', 'note', "can't check", 'skipped'];
+  const states: RowState[] = marks;
+  const back: RowMark[] = states;
+  assert.deepEqual(back, marks);
 });

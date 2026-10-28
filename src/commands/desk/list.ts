@@ -5,7 +5,7 @@
 
 import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { count, nextLine, row, title } from '../shared.ts';
+import { count, nextLine, row, screen, spaced, title, wrap } from '../shared.ts';
 import type { DeskTask } from './brief.ts';
 
 /** One desk, as its record says. Times are UTC ISO. */
@@ -83,27 +83,52 @@ export function ago(iso: string, now: Date): string {
 /** What a desk did: its commits since the base, newest first, one line each. */
 export type CommitsOf = (record: DeskRecord) => string[];
 
-/** One desk as rows: its state, the task, and what it did. */
-export function deskRows(record: DeskRecord, state: DeskRecord['state'], commits: string[], now: Date): string[] {
-  const mark = state === 'stopped' || state === 'stalled' ? 'note' : state === 'working' ? 'next' : 'ok';
-  const when = state === 'working' ? `working ${ago(record.startedAt, now)}` : state === 'stalled' ? `stalled: quiet ${ago(record.activeAt, now)}` : state === 'stopped' ? `stopped ${ago(record.activeAt, now)} ago` : state === 'kept' ? 'ended, work kept' : 'done';
-  const did = commits.length ? `${count(commits.length, 'commit')}, last: ${commits[0]}` : 'no commits yet';
-  return row(mark, `${when} · ${record.agent} · ${record.task.title} · ${did}`, `desk ${record.name}`);
+/** One desk as the list shows it, and as `--json` gives it: its record, the state now, and what it did. */
+export interface DeskView extends Omit<DeskRecord, 'pid' | 'base'> {
+  /** The commits since the base, newest first: `<sha> <subject>`. */
+  commits: string[];
 }
 
-/** The bare `yokoten desk` screen. */
-export function listScreen(records: DeskRecord[], alive: IsAlive, commitsOf: CommitsOf, now: Date): string[] {
+/** Everything the bare `yokoten desk` screen is built from. */
+export interface DeskListResult {
+  desks: DeskView[];
+}
+
+/** The facts of the list: each record with the state now (a gone process stopped mid-task) and its commits. */
+export function deskListOf(records: DeskRecord[], alive: IsAlive, commitsOf: CommitsOf): DeskListResult {
+  return {
+    desks: records.map((record) => ({
+      name: record.name,
+      task: record.task,
+      agent: record.agent,
+      branch: record.branch,
+      startedAt: record.startedAt,
+      activeAt: record.activeAt,
+      state: stateNow(record, alive),
+      ...(record.pushed === undefined ? {} : { pushed: record.pushed }),
+      commits: commitsOf(record),
+    })),
+  };
+}
+
+/** One desk as rows: its state, the task, and what it did. */
+export function deskRows(desk: DeskView, now: Date): string[] {
+  const { state } = desk;
+  const mark = state === 'stopped' || state === 'stalled' ? 'note' : state === 'working' ? 'next' : 'ok';
+  const when = state === 'working' ? `working ${ago(desk.startedAt, now)}` : state === 'stalled' ? `stalled: quiet ${ago(desk.activeAt, now)}` : state === 'stopped' ? `stopped ${ago(desk.activeAt, now)} ago` : state === 'kept' ? 'ended, work kept' : 'done';
+  const did = desk.commits.length ? `${count(desk.commits.length, 'commit')}, last: ${desk.commits[0]}` : 'no commits yet';
+  return row(mark, `${when} · ${desk.agent} · ${desk.task.title} · ${did}`, `desk ${desk.name}`);
+}
+
+/** The bare `yokoten desk` screen, a pure function of the list. */
+export function listScreen({ desks }: DeskListResult, now: Date): string[] {
   // What a desk is, in one line, so a newcomer knows what the command makes (#1115).
-  if (!records.length) return [...title('desk', 'no desks yet'), '', 'A desk gives one task to one AI, in its own fenced clone.', '', ...nextLine('yokoten desk <issue>')];
-  const states = records.map((record) => stateNow(record, alive));
-  const stopped = records.filter((_, i) => states[i] === 'stopped');
-  const kept = records.filter((_, i) => states[i] === 'kept');
-  const next = stopped[0] ?? kept[0];
-  return [
-    ...title('desk', `${count(records.length, 'desk')}${stopped.length ? `, ${stopped.length} stopped mid-task` : ''}`),
-    '',
-    ...records.flatMap((record, i) => deskRows(record, states[i] ?? record.state, commitsOf(record), now)),
-    '',
-    ...nextLine(next === undefined ? 'yokoten desk <issue>' : next === stopped[0] ? `yokoten desk ${next.name}` : `yokoten desk ${next.name} --pr`),
-  ];
+  if (!desks.length) return screen(title('desk', 'no desks yet'), wrap('', 'A desk gives one task to one AI, in its own fenced clone.'), nextLine('yokoten desk <issue>'));
+  const stopped = desks.filter((desk) => desk.state === 'stopped');
+  const next = stopped[0] ?? desks.find((desk) => desk.state === 'kept');
+  return screen(
+    title('desk', `${count(desks.length, 'desk')}${stopped.length ? `, ${stopped.length} stopped mid-task` : ''}`),
+    spaced(desks.map((desk) => deskRows(desk, now))),
+    nextLine(next === undefined ? 'yokoten desk <issue>' : next === stopped[0] ? `yokoten desk ${next.name}` : `yokoten desk ${next.name} --pr`),
+  );
 }

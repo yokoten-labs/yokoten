@@ -12,7 +12,8 @@
 // AGENTS.md, and only with --write. It is at the end of this file.
 
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import * as antigravity from '../agents/runtimes/small/antigravity.ts';
 import { addProjectHook, addProjectSandbox as addClaudeSandbox, addProjectStopHook, checkProjectSettings, hasProjectHook as hasClaudeProjectHook, setProjectEnv } from '../agents/runtimes/claude-code.ts';
@@ -31,12 +32,13 @@ import { AGENT_STATUS_FILE } from '../run/hook.ts';
 import { DEFAULTS, type Env, loadConfig } from '../rules/config.ts';
 import { codeOwnersPath, WORKTREES_DIR } from '../rules/layout.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
+import { askLine } from '../rules/text/screen.ts';
 import { homeOf, systemHome } from '../rules/privacy.ts';
 import { CODEOWNERS_PLACES, type Gh, ghIn, isOrganization, isPrivateRepo, repoOf } from '../host/github/index.ts';
-import { readOriginUrl } from './plan.ts';
+import { type PlanResult, readOriginUrl } from './plan.ts';
 import { writeTestsJob } from './advice/tests-job.ts';
-import { type Ask, isYes, openCodePluginLine, writeOpenCodePlugin } from './install.ts';
-import { copyRuntime, describeWrite, fileHash, HOME_DIR, KIT, lfText, normalizeText, readWorkflowHashes, render, textHash, VERSION, writeNew } from './files.ts';
+import { type Ask, isYes, writeOpenCodePlugin } from './install.ts';
+import { type Change, type ChangeState, copyRuntime, fileHash, HOME_DIR, KIT, lfText, normalizeText, readWorkflowHashes, type ReportState, render, type SetupResult, textHash, VERSION, writeNew } from './files.ts';
 
 /** yokoten's own repo runs its own bin; every other project runs a vendored copy. */
 export const isSelf = (root: string): boolean => {
@@ -62,32 +64,90 @@ function walk(dir: string): string[] {
   });
 }
 
+// ---- What init did, as data (#1115) ----
+//
+// Each step of init adds changes (a file or setting written, updated or kept), notes (a word to
+// the person, never folded away, #1040) and problems (a step left for the person). The screens
+// in src/commands read these; nothing reads printed text back.
+
+/** What one step of init did. */
+export interface Step {
+  changes: Change[];
+  notes: Finding[];
+  problems: Finding[];
+}
+
+/** What `yokoten init` did: its changes, notes and problems, and the GitHub plan when asked (plan 6.3). */
+export interface InitResult extends SetupResult {
+  plan?: PlanResult;
+  /**
+   * The same result as one line each, the words `init --list` shows. Kept only for the first
+   * run's screen until it reads `changes` (#1115); nothing in init reads it back.
+   */
+  lines: string[];
+}
+
+/** A step from its parts; the parts left out are empty. */
+export const stepOf = (part: Partial<Step> = {}): Step => ({ changes: part.changes ?? [], notes: part.notes ?? [], problems: part.problems ?? [] });
+
+/** A note or a problem of setup: what is true, and the command that changes it ('' when an edit does). */
+export const setupNote = (id: string, what: string, fix = ''): Finding => ({ id, what, why: '', fix });
+
+/** One change: its state, its kind and path, and the words a `--list` row says after the state. */
+export const changeOf = (state: ChangeState, kind: Change['kind'], path: string, note: string, more: { agent?: string; yours?: boolean } = {}): Change => ({ state, kind, path, note, ...more });
+
+/** A write as `writeManaged` and the hook writers report it, as a change (#984: the user's file is kept, and says so). */
+export function writeChange(state: ReportState, kind: Change['kind'], path: string, what: string, agent?: string): Change {
+  const more = agent === undefined ? {} : { agent };
+  if (state === 'same') return changeOf('kept', kind, path, what, more);
+  if (state === 'kept (yours)') return changeOf('kept', kind, path, `${what} (yours, not yokoten's)`, { ...more, yours: true });
+  if (state === 'kept (your edit)') return changeOf('kept', kind, path, `${what} (your edit)`, { ...more, yours: true });
+  if (state === 'not there') return changeOf('skipped', kind, path, what, more);
+  return changeOf(state, kind, path, what, more);
+}
+
+/** Add `part` to `into`, in order. */
+function addStep(into: Step, part: Step): void {
+  into.changes.push(...part.changes);
+  into.notes.push(...part.notes);
+  into.problems.push(...part.problems);
+}
+
+/** The words of one change as `init --list` says them: the state, then what it was done to. */
+export const changeText = (change: Change): string => `${change.state} ${change.note ?? change.path}`;
+
+/** A note or a problem as one line: what, then the command to run when there is one. */
+const noteText = (note: Finding): string => (note.fix === '' ? note.what : `${note.what}: ${note.fix.split('\n').map((command) => `\`${command}\``).join(', ')}`);
+
+/** The result as one line each (InitResult.lines), the problems first. */
+export const resultLines = (step: Step): string[] => [...step.problems.map(noteText), ...step.changes.map(changeText), ...step.notes.map(noteText)];
+
 /**
- * One agent's hook lines, or one skip line when its file won't parse or has the wrong
- * shape (#248, #254), or is a Gemini CLI file with comments, which yokoten never rewrites
- * (#258; the line then holds the hooks to add by hand): the file stays as it was, init
- * goes on, and `ok` is false until the hooks are there.
+ * One agent's changes, or one problem when its file won't parse or has the wrong shape (#248,
+ * #254), or is a Gemini CLI file with comments, which yokoten never rewrites (#258; the problem
+ * then holds the hooks to add by hand): the file stays as it was, init goes on, and `ok` is
+ * false until the hooks are there.
  */
-function agentHooks(name: string, file: string, add: () => string[]): { ok: boolean; lines: string[] } {
+function agentHooks(name: string, file: string, add: () => Change[]): { ok: boolean; step: Step } {
   try {
-    return { ok: true, lines: add() };
+    return { ok: true, step: stepOf({ changes: add() }) };
   } catch (err) {
     if (!(err instanceof UnreadableHooksFile)) throw err;
-    return { ok: false, lines: [`skipped ${name}: ${skippedBecause(file, err.problem, 'init')}`] };
+    return { ok: false, step: stepOf({ problems: [setupNote('agent-hooks', `skipped ${name}: ${skippedBecause(file, err.problem, 'init')}`)] }) };
   }
 }
 
 /** What init did with one agent's project sandbox: added, same, kept (yours differs), or why it skipped. */
 type SandboxWrite = 'added' | 'same' | 'kept' | 'hand' | 'unreadable' | Problem;
 
-/** One init line for one agent's sandbox (#589). */
-function sandboxLine(agent: string, file: string, why: string, write: SandboxWrite): string {
-  if (write === 'added') return `added the ${agent} sandbox in ${file} (${why})`;
-  if (write === 'same') return describeWrite('same', `the ${agent} sandbox in ${file}`);
-  if (write === 'kept') return `kept your ${agent} sandbox in ${file} (doctor names what differs)`;
-  if (write === 'hand') return `skipped the ${agent} sandbox: ${file} has comments, so add ${gemini.SANDBOX_HAND_ADD} by hand, then run \`yokoten init\` again`;
-  if (write === 'unreadable') return `skipped the ${agent} sandbox: can't read ${file} (make it readable, then run \`yokoten init\` again)`;
-  return `skipped the ${agent} sandbox: ${skippedBecause(file, write, 'init')}`;
+/** One agent's sandbox (#589) as a change, or the problem that left it out. */
+function sandboxStep(agent: string, name: string, file: string, why: string, write: SandboxWrite): Step {
+  if (write === 'added') return stepOf({ changes: [changeOf('added', 'setting', file, `the ${name} sandbox in ${file} (${why})`, { agent })] });
+  if (write === 'same') return stepOf({ changes: [changeOf('kept', 'setting', file, `the ${name} sandbox in ${file}`, { agent })] });
+  if (write === 'kept') return stepOf({ changes: [changeOf('kept', 'setting', file, `your ${name} sandbox in ${file} (doctor names what differs)`, { agent, yours: true })] });
+  if (write === 'hand') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${file} has comments, so add ${gemini.SANDBOX_HAND_ADD} there by hand`, 'yokoten init')] });
+  if (write === 'unreadable') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: can't read ${file}; make it readable`, 'yokoten init')] });
+  return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${skippedBecause(file, write, 'init')}`)] });
 }
 
 /**
@@ -95,61 +155,41 @@ function sandboxLine(agent: string, file: string, why: string, write: SandboxWri
  * Grok's profile. Written whether or not the agent is installed here, like the hooks.
  * `ok` is false when a sandbox file was skipped; a sandbox the user set stays (`kept`).
  */
-function sandboxLines(root: string): { ok: boolean; lines: string[] } {
-  const writes: [string, string, string, SandboxWrite][] = [
-    ['Claude Code', '.claude/settings.json', 'shell commands stay in the project; new network hosts ask first', addClaudeSandbox(root)],
-    ['Codex', '.codex/config.toml', 'writes stay in the project; network is off; Codex asks before going beyond', codex.addProjectSandbox(root)],
-    ['Gemini', '.gemini/settings.json', 'YOLO mode, which approves everything, stays off', gemini.addProjectSandbox(root)],
-    ['Grok', '.grok/sandbox.toml', 'the yokoten profile keeps writes in the project', grok.addProjectSandbox(root)],
+function sandboxSteps(root: string): { ok: boolean; step: Step } {
+  const writes: [string, string, string, string, SandboxWrite][] = [
+    ['Claude Code', 'Claude Code', '.claude/settings.json', 'shell commands stay in the project; new network hosts ask first', addClaudeSandbox(root)],
+    ['Codex', 'Codex', '.codex/config.toml', 'writes stay in the project; network is off; Codex asks before going beyond', codex.addProjectSandbox(root)],
+    ['Gemini CLI', 'Gemini', '.gemini/settings.json', 'YOLO mode, which approves everything, stays off', gemini.addProjectSandbox(root)],
+    ['Grok CLI', 'Grok', '.grok/sandbox.toml', 'the yokoten profile keeps writes in the project', grok.addProjectSandbox(root)],
   ];
-  return {
-    ok: writes.every(([, , , write]) => write === 'added' || write === 'same' || write === 'kept'),
-    lines: writes.map(([agent, file, why, write]) => sandboxLine(agent, file, why, write)),
-  };
+  const step = stepOf();
+  for (const [agent, name, file, why, write] of writes) addStep(step, sandboxStep(agent, name, file, why, write));
+  return { ok: writes.every(([, , , , write]) => write === 'added' || write === 'same' || write === 'kept'), step };
 }
 
 /** How long init waits for GitHub to say whether the remote owner is an organization. */
 const ORG_LOOKUP_MS = 5000;
-/** A DeepSeek bridge command: the only step left that init prints or folds into the guide. */
-function isTrustStep(line: string): boolean {
-  return line.includes('dsh plugin --profile')
-    || line.includes('dsh <profile> --patch');
-}
 
 /**
- * Drop trust steps when `show` is false: the agent is not installed here. `omitted` is
- * true when a step was dropped, so the report can name the guide once. Hook lines stay.
+ * What init did, as data; `ok` is false when a hooks or settings file was skipped (#248,
+ * #254). `gh` asks GitHub two things: whether the remote owner is an organization, and
+ * whether the repo is private (#377). `noCi` keeps CI off: see `keepCiOff`. `ask` is the
+ * terminal question for the tests job (#550) and the trust (#661); without one, init only
+ * says what it would add. `platform` is the system the files are for. Each git answer is kept
+ * for the run, until init sets core.hooksPath (#453).
  */
-function keepInstalledSteps(lines: string[], show: boolean): { lines: string[]; omitted: boolean } {
-  if (show) return { lines, omitted: false };
-  let omitted = false;
-  const kept = lines.filter((line) => {
-    if (!isTrustStep(line)) return true;
-    omitted = true;
-    return false;
-  });
-  return { lines: kept, omitted };
+export function init(root: string, env: Env, gh: Gh = ghIn(root, env, ORG_LOOKUP_MS), { noCi = false, ask, platform = 'linux' }: { noCi?: boolean; ask?: Ask; platform?: NodeJS.Platform } = {}): InitResult {
+  return withGitReads(() => initRun(root, env, gh, noCi, platform, ask));
 }
 
-/**
- * One line per thing done, kept or skipped; `ok` is false when a hooks or settings file was
- * skipped (#248, #254). `gh` asks GitHub two things: whether the remote owner is an
- * organization, and whether the repo is private (#377). `noCi` keeps CI off: see `keepCiOff`.
- * `ask` is the terminal question for the tests job (#550); without one, init only says
- * what it would add. Each git answer is kept for the run, until init sets core.hooksPath (#453).
- */
-export function init(root: string, env: Env, gh: Gh = ghIn(root, env, ORG_LOOKUP_MS), { noCi = false, ask, platform }: { noCi?: boolean; ask?: Ask; platform?: NodeJS.Platform } = {}): { ok: boolean; lines: string[] } {
-  return withGitReads(() => initRun(root, env, gh, noCi, ask, platform));
-}
-
-function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask, platform?: NodeJS.Platform): { ok: boolean; lines: string[] } {
-  const report: string[] = [];
+function initRun(root: string, env: Env, gh: Gh, noCi: boolean, platform: NodeJS.Platform, ask?: Ask): InitResult {
+  const report = stepOf();
   const isOff = noCi || isCiOffIn(root);
   const cli = cliPath(root);
   const hookCli = hookCliPath(root);
   if (!isSelf(root) && root !== HOME_DIR) {
     const copied = copyRuntime(join(root, '.yokoten'), { platform });
-    report.push(copied === 'kept' ? 'kept .yokoten/ (the copy running now)' : 'wrote .yokoten/ (a copy of yokoten, about 90 files; committing it is the point)');
+    report.changes.push(changeOf(copied, 'runtime', '.yokoten/', copied === 'kept' ? '.yokoten/ (the copy running now)' : '.yokoten/ (a copy of yokoten, about 90 files; committing it is the point)'));
   }
   const hooks = readHookSetup(root, env);
   const kit = join(KIT, 'project');
@@ -160,50 +200,42 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask, platf
     // With CI off (#377), the CI files are left out. One that is there already is kept,
     // and with --no-ci, `keepCiOff` says what happens to it.
     if (isOff && isCiFile(rel)) {
-      if (!lexists(join(root, rel))) report.push(`skipped ${rel} (yokoten.json "notNow" names ci)`);
-      else if (!noCi) report.push(`kept ${rel}`);
+      if (!lexists(join(root, rel))) report.changes.push(changeOf('skipped', 'file', rel, `${rel} (yokoten.json "notNow" names ci)`));
+      else if (!noCi) report.changes.push(changeOf('kept', 'file', rel, rel));
       continue;
     }
     const text = render(readFileSync(file, 'utf8'), { cli, version: VERSION });
     // An AGENTS.md without "## This project" gets the core rules on top of its own text (#378).
-    if (rel === 'AGENTS.md' && existsSync(join(root, rel))) {
-      report.push(...addCoreRules(root, text, env));
-      continue;
-    }
-    if (rel === '.github/dependabot.yml') {
-      report.push(writeDependabot(root, text));
-      continue;
-    }
-    if (rel.startsWith(WORKFLOWS_DIR)) {
-      report.push(writeWorkflow(root, rel, text, env));
-      continue;
-    }
-    report.push(`${writeNew(join(root, rel), text)} ${rel}`);
+    if (rel === 'AGENTS.md' && existsSync(join(root, rel))) addStep(report, addCoreRules(root, text, env));
+    else if (rel === '.github/dependabot.yml') addStep(report, writeDependabot(root, text));
+    else if (rel.startsWith(WORKFLOWS_DIR)) addStep(report, writeWorkflow(root, rel, text, env));
+    else report.changes.push(changeOf(writeNew(join(root, rel), text), 'file', rel, rel));
   }
   // The tests job for the project's language (#550): asked first, never overwritten. With
   // CI off there are no workflows, so nothing to add it to.
-  if (!isOff) report.push(...writeTestsJob(root, { ask }));
+  if (!isOff) addStep(report, testsJobStep(writeTestsJob(root, { ask })));
   // Read before .githooks/ is written: whether it can run the hooks this clone has in .git/hooks (#256).
   const blocks = hooks.kind === 'plain' ? handOffBlocks(root, env) : [];
-  if (hooks.kind !== 'own') report.push(...writeGithooks(root, cli, kit, blocks.length === 0, env));
-  if (noCi) report.push(...keepCiOff(root, cli, kit));
-  else if (!isOff) report.push(...privateRepoNote(root, gh, env));
-  report.push(writeCodeOwners(root, gh, env));
-  report.push(writeGitignore(root));
+  if (hooks.kind !== 'own') addStep(report, writeGithooks(root, cli, kit, blocks.length === 0, env));
+  if (noCi) addStep(report, keepCiOff(root, cli, kit));
+  else if (!isOff) report.notes.push(...privateRepoNote(root, gh, env));
+  addStep(report, writeCodeOwners(root, gh, env));
+  report.changes.push(writeGitignore(root));
   const imported = importRules(root);
-  if (imported) report.push(imported);
+  if (imported) addStep(report, imported);
   // Claude Code's settings, the file people edit by hand most: skipped as one, never
   // rewritten, when it won't parse or has the wrong shape (#254).
   const claudeHooks = agentHooks('the Claude Code settings', '.claude/settings.json', () => {
     checkProjectSettings(root);
     const zone = setProjectEnv(root, 'TZ', 'UTC');
+    const file = '.claude/settings.json';
     return [
-      describeWrite(addProjectHook(root, hookCli), 'the tool-call hook in .claude/settings.json'),
-      describeWrite(addProjectStopHook(root, hookCli), "the stop check in .claude/settings.json (changed files, and a worker's done-when check, on Stop and SubagentStop)"),
-      // The user's own TZ stays (#988): a note, never an overwrite. The value is not printed.
+      writeChange(addProjectHook(root, hookCli), 'hook', file, `the tool-call hook in ${file}`, 'Claude Code'),
+      writeChange(addProjectStopHook(root, hookCli), 'hook', file, `the stop check in ${file} (on Stop and SubagentStop)`, 'Claude Code'),
+      // The user's own TZ stays (#988): kept, never overwritten. The value is not shown.
       zone === 'kept (yours)'
-        ? 'kept your TZ in .claude/settings.json; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there'
-        : describeWrite(zone, 'TZ=UTC for agent sessions in .claude/settings.json (commit times carry no time zone)'),
+        ? changeOf('kept', 'setting', file, `your TZ in ${file}; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there`, { agent: 'Claude Code', yours: true })
+        : writeChange(zone, 'setting', file, `TZ=UTC for agent sessions in ${file}`, 'Claude Code'),
     ];
   });
   // Codex, Gemini CLI, Antigravity CLI, OpenCode, Muse Code, DeepSeek Harness and Grok CLI get the same guard, whether or not they are
@@ -212,32 +244,37 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask, platf
   const codexHooks = agentHooks('the Codex hooks', '.codex/hooks.json', () => {
     codex.checkProjectHooks(root);
     return [
-      describeWrite(codex.addProjectHook(root, hookCli), 'the Codex tool-call hook in .codex/hooks.json'),
-      describeWrite(codex.addProjectStopHook(root, hookCli), 'the Codex stop check in .codex/hooks.json'),
+      writeChange(codex.addProjectHook(root, hookCli), 'hook', '.codex/hooks.json', 'the Codex tool-call hook in .codex/hooks.json', 'Codex'),
+      writeChange(codex.addProjectStopHook(root, hookCli), 'hook', '.codex/hooks.json', 'the Codex stop check in .codex/hooks.json', 'Codex'),
     ];
   });
   const geminiHooks = agentHooks('the Gemini CLI hooks', '.gemini/settings.json', () => {
     gemini.checkProjectHooks(root, hookCli);
     return [
-      describeWrite(gemini.addProjectHook(root, hookCli), 'the Gemini CLI tool-call hook in .gemini/settings.json'),
-      describeWrite(gemini.addProjectStopHook(root, hookCli), 'the Gemini CLI stop check in .gemini/settings.json (AfterAgent)'),
+      writeChange(gemini.addProjectHook(root, hookCli), 'hook', '.gemini/settings.json', 'the Gemini CLI tool-call hook in .gemini/settings.json', 'Gemini CLI'),
+      writeChange(gemini.addProjectStopHook(root, hookCli), 'hook', '.gemini/settings.json', 'the Gemini CLI stop check in .gemini/settings.json (AfterAgent)', 'Gemini CLI'),
     ];
   });
   const antigravityHooks = agentHooks('the Antigravity CLI hook', '.agents/hooks.json', () => {
     const added = antigravity.addProjectHook(root, hookCli);
-    // A guard the user turned off stays off, and the line says how to turn it on (#984).
-    return [added === antigravity.KEPT_OFF ? antigravity.keptOffLine('.agents/hooks.json') : describeWrite(added, 'the Antigravity CLI tool-call hook in .agents/hooks.json')];
+    // A guard the user turned off stays off, and the note says how to turn it on (#984).
+    if (added === antigravity.KEPT_OFF) return [changeOf('kept', 'hook', '.agents/hooks.json', `your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): to turn it on, ${antigravity.TURN_ON_STEP}`, { agent: 'Antigravity CLI', yours: true })];
+    return [writeChange(added, 'hook', '.agents/hooks.json', 'the Antigravity CLI tool-call hook in .agents/hooks.json', 'Antigravity CLI')];
   });
   // OpenCode has no trust step in the docs we have. The plugin loads when OpenCode starts.
-  const openCodePlugin = agentHooks('the OpenCode plugin', opencode.PLUGIN_FILE, () => [
-    openCodePluginLine(writeOpenCodePlugin(opencode.projectPluginPath(root), opencode.projectPluginSource(hookCli)), `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`, 'init'),
-  ]);
+  const openCodePlugin = agentHooks('the OpenCode plugin', opencode.PLUGIN_FILE, () => {
+    const state = writeOpenCodePlugin(opencode.projectPluginPath(root), opencode.projectPluginSource(hookCli));
+    const what = `the OpenCode tool-call plugin in ${opencode.PLUGIN_FILE}`;
+    const change = writeChange(state, 'hook', opencode.PLUGIN_FILE, what, 'OpenCode');
+    // A plugin of the user's is kept, and the note says how to get yokoten's (#984).
+    return [change.yours ? { ...change, note: `${change.note}; to get yokoten's, move that file away and run \`yokoten init\`` } : change];
+  });
   const museHooks = agentHooks('the Muse Code hooks', '.muse/hooks.json', () => {
     const added = muse.addProjectHooks(root, hookCli);
     return [
-      describeWrite(added.guard, 'the Muse Code tool-call hook in .muse/hooks.json'),
-      describeWrite(added.stop, 'the Muse Code stop check in .muse/hooks.json'),
-      describeWrite(added.doctor, 'the Muse Code session doctor in .muse/hooks.json'),
+      writeChange(added.guard, 'hook', '.muse/hooks.json', 'the Muse Code tool-call hook in .muse/hooks.json', 'Muse Code'),
+      writeChange(added.stop, 'hook', '.muse/hooks.json', 'the Muse Code stop check in .muse/hooks.json', 'Muse Code'),
+      writeChange(added.doctor, 'hook', '.muse/hooks.json', 'the Muse Code session doctor in .muse/hooks.json', 'Muse Code'),
     ];
   });
   // Grok CLI runs the project's hooks only in a folder the user trusts. `yokoten trust`
@@ -245,56 +282,65 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, ask?: Ask, platf
   const grokHooks = agentHooks('the Grok CLI hooks', grok.HOOKS_FILE, () => {
     const added = grok.addProjectHooks(root, hookCli);
     return [
-      describeWrite(added.guard, `the Grok CLI tool-call hook in ${grok.HOOKS_FILE}`),
-      describeWrite(added.stop, `the Grok CLI stop check in ${grok.HOOKS_FILE}`),
+      writeChange(added.guard, 'hook', grok.HOOKS_FILE, `the Grok CLI tool-call hook in ${grok.HOOKS_FILE}`, 'Grok CLI'),
+      writeChange(added.stop, 'hook', grok.HOOKS_FILE, `the Grok CLI stop check in ${grok.HOOKS_FILE}`, 'Grok CLI'),
     ];
   });
-  // DeepSeek Harness runs the hooks through a bridge each profile needs. init only prints
-  // how to add it: it installs nothing and leaves ~/.dsh alone (#334).
-  // On Windows the files are still written, ready for #332, but the lines say dsh is not checked.
+  // DeepSeek Harness runs the hooks through a bridge each profile needs. init only says how
+  // to add it, and only when dsh is on this computer: it installs nothing and leaves ~/.dsh
+  // alone (#334, #654). On Windows the files are still written, ready for #332, and the note
+  // says dsh is not checked.
+  const profiles = dsh.profilesWithBridge(env);
+  let dshSteps: Finding[] = [];
   const dshHooks = agentHooks('the DeepSeek Harness hook', dsh.HOOKS_FILE, () => {
     const added = dsh.addProjectHooks(root, hookCli);
-    return dsh.initLines([
-      describeWrite(added.guard, `the DeepSeek Harness tool-call hook in ${dsh.HOOKS_FILE}`),
-      describeWrite(added.patch, `the DeepSeek Harness launch patch in ${dsh.PATCH_FILE}`),
-    ]);
+    const said = dsh.initLines(
+      [
+        writeChange(added.guard, 'hook', dsh.HOOKS_FILE, `the DeepSeek Harness tool-call hook in ${dsh.HOOKS_FILE}`, 'DeepSeek Harness'),
+        writeChange(added.patch, 'hook', dsh.PATCH_FILE, `the DeepSeek Harness launch patch in ${dsh.PATCH_FILE}`, 'DeepSeek Harness'),
+      ],
+      platform,
+      profiles === null ? [] : profiles.all.filter((name) => !profiles.found.includes(name)),
+    );
+    dshSteps = [...said.notes, ...(profiles === null ? [] : said.steps)];
+    return said.changes;
   });
-  // Trust steps print only for an agent installed on this machine (#654). The hook files
-  // above are still written. Gemini CLI and Antigravity CLI have no trust step. One line
-  // names the guide when any step was left out.
-  let omittedTrustStep = false;
-  const showSteps = (lines: string[], show: boolean): string[] => {
-    const kept = keepInstalledSteps(lines, show);
-    if (kept.omitted) omittedTrustStep = true;
-    return kept.lines;
-  };
-  report.push(...claudeHooks.lines);
-  report.push(
-    ...showSteps(codexHooks.lines, codex.hasUserDir(env)),
-    ...geminiHooks.lines,
-    ...antigravityHooks.lines,
-    ...openCodePlugin.lines,
-    ...showSteps(museHooks.lines, muse.hasUserDir(env)),
-    // On Windows, initLines has no bridge command. The Windows line stays either way.
-    ...showSteps(dshHooks.lines, dsh.profilesWithBridge(env) !== null),
-    ...showSteps(grokHooks.lines, grok.hasUserDir(env)),
-  );
-  if (omittedTrustStep) report.push('other agents: see the guide');
+  addStep(report, claudeHooks.step);
+  for (const agent of [codexHooks, geminiHooks, antigravityHooks, openCodePlugin, museHooks, dshHooks, grokHooks]) addStep(report, agent.step);
+  report.notes.push(...dshSteps);
   // The guard stays off in an agent until it trusts yokoten's hooks. Ask once, here on a
   // terminal, and write only yokoten's entries (#661). With no terminal, name the command.
   // The sandboxes come first: trusting a folder is what lets its own sandbox apply, so
   // trust reads the one init has just written (#661).
-  const sandboxes = sandboxLines(root);
-  report.push(...sandboxes.lines);
+  const sandboxes = sandboxSteps(root);
+  addStep(report, sandboxes.step);
   const trust = trustLines(root, env, ask);
-  report.push(...trust.lines);
-  // Point git at the hooks last, so the files exist first. That call's first line leads
-  // the report. Its other lines stay at the end (#654).
-  const [hookLine, ...hookNotes] = setCommitCheck(root, cli, hooks, blocks, env);
-  report.unshift(hookLine);
-  report.push(...hookNotes);
-  return { ok: claudeHooks.ok && codexHooks.ok && geminiHooks.ok && antigravityHooks.ok && openCodePlugin.ok && museHooks.ok && dshHooks.ok && grokHooks.ok && sandboxes.ok && trust.ok, lines: report };
+  addStep(report, trust);
+  // Point git at the hooks last, so the files exist first. Its change leads the list (#654).
+  const commitCheck = setCommitCheck(root, cli, hooks, blocks, env);
+  report.changes.unshift(...commitCheck.changes);
+  report.notes.push(...commitCheck.notes);
+  report.problems.push(...commitCheck.problems);
+  const ok = claudeHooks.ok && codexHooks.ok && geminiHooks.ok && antigravityHooks.ok && openCodePlugin.ok && museHooks.ok && dshHooks.ok && grokHooks.ok && sandboxes.ok && trust.ok;
+  return { ok, ...report, lines: resultLines(report) };
 }
+
+/**
+ * The tests job's lines (src/setup/advice/tests-job.ts says what it did in one line) as a step:
+ * a write or a keep of the CI workflow is a change, anything else is a note to the person.
+ */
+function testsJobStep(lines: string[]): Step {
+  const step = stepOf();
+  for (const line of lines) {
+    if (line.startsWith('wrote ')) step.changes.push(changeOf('updated', 'file', TESTS_WORKFLOW, line.slice('wrote '.length)));
+    else if (line.startsWith('kept ')) step.changes.push(changeOf('kept', 'file', TESTS_WORKFLOW, line.slice('kept '.length)));
+    else step.notes.push(setupNote('tests-job', line));
+  }
+  return step;
+}
+
+/** The workflow the tests job goes into. */
+const TESTS_WORKFLOW = '.github/workflows/yokoten.yml';
 
 // ---- A project that keeps CI off (#377) ----
 //
@@ -366,30 +412,35 @@ function isKitCopy(root: string, rel: string, path: string, kitText: string): bo
  * changed is kept, and so is one reached through a symlink: init never deletes through one.
  * Each kept file is named once. Returns the report lines.
  */
-function keepCiOff(root: string, cli: string, kit: string): string[] {
-  const lines = [recordNotNow(root, 'ci', NO_CI_REASON)];
+function keepCiOff(root: string, cli: string, kit: string): Step {
+  const step = recordNotNow(root, 'ci', NO_CI_REASON);
   for (const file of walk(kit)) {
     const rel = relative(kit, file).split('\\').join('/');
     const path = join(root, rel);
     if (!isCiFile(rel) || !lexists(path)) continue;
     const link = symlinkOnPath(root, rel);
-    if (link) lines.push(`kept ${rel}: ${link} is a symlink, and init never deletes through one; delete it yourself if CI stays off`);
-    else if (isKitCopy(root, rel, path, render(readFileSync(file, 'utf8'), { cli, version: VERSION }))) {
+    if (link) {
+      step.changes.push(changeOf('kept', 'file', rel, rel));
+      step.notes.push(setupNote('ci-off', `${rel} is kept: ${link} is a symlink, and init never deletes through one; delete it yourself if CI stays off`));
+    } else if (isKitCopy(root, rel, path, render(readFileSync(file, 'utf8'), { cli, version: VERSION }))) {
       rmSync(path);
-      lines.push(`removed ${rel} (the kit's copy; CI is off)`);
-    } else lines.push(`kept ${rel}: it is not the kit's copy, so delete it yourself if CI stays off`);
+      step.changes.push(changeOf('removed', 'file', rel, `${rel} (the kit's copy; CI is off)`));
+    } else {
+      step.changes.push(changeOf('kept', 'file', rel, rel));
+      step.notes.push(setupNote('ci-off', `${rel} is kept: it is not the kit's copy, so delete it yourself if CI stays off`));
+    }
   }
-  return lines;
+  return step;
 }
 
 /**
  * Set one key of yokoten.json "notNow", unless it is there. Only the text of that key
  * changes: the rest of the file keeps its formatting. When the edit can't be placed
- * safely, the file stays as it is and the line says to add the key by hand.
+ * safely, the file stays as it is and the problem says to add the key by hand.
  */
-export function recordNotNow(root: string, key: string, reason: string): string {
+export function recordNotNow(root: string, key: string, reason: string): Step {
   const path = join(root, 'yokoten.json');
-  const byHand = `skipped "notNow" ${key} in yokoten.json: add "${key}": ${JSON.stringify(reason)} to "notNow" yourself`;
+  const byHand = stepOf({ problems: [setupNote('not-now', `"notNow" ${key} is not in yokoten.json yet; add "${key}": ${JSON.stringify(reason)} to "notNow" there by hand`)] });
   let text = '{}\n';
   let file: Record<string, unknown>;
   try {
@@ -399,7 +450,7 @@ export function recordNotNow(root: string, key: string, reason: string): string 
     return byHand;
   }
   const notNow = (file.notNow ?? {}) as Record<string, string>;
-  if (Object.hasOwn(notNow, key)) return `kept "notNow" ${key} in yokoten.json`;
+  if (Object.hasOwn(notNow, key)) return stepOf({ changes: [changeOf('kept', 'setting', 'yokoten.json', `"notNow" ${key} in yokoten.json`)] });
   const entry = `"${key}": ${JSON.stringify(reason)}`;
   // After the opening brace of "notNow", or of the file when it has no "notNow": the new
   // entry goes first, with the same space after it as the next entry has.
@@ -423,7 +474,7 @@ export function recordNotNow(root: string, key: string, reason: string): string 
     return byHand;
   }
   writeFileSync(path, edited as string);
-  return `wrote "notNow" ${key} in yokoten.json (to take CI up again, remove it and run \`yokoten init\`)`;
+  return stepOf({ changes: [changeOf('wrote', 'setting', 'yokoten.json', `"notNow" ${key} in yokoten.json (to take CI up again, remove it and run \`yokoten init\`)`)] });
 }
 
 /** A copy with the keys of every object in order, so two readings compare by content. */
@@ -434,13 +485,10 @@ const sortKeys = (value: unknown): unknown =>
  * On a private repo, a note that the workflows use Actions minutes, and how to keep them
  * out. Nothing when gh can't tell, or the repo is public. One gh call, only with a GitHub remote.
  */
-function privateRepoNote(root: string, gh: Gh, env: Env): string[] {
+function privateRepoNote(root: string, gh: Gh, env: Env): Finding[] {
   const repo = repoOf(readOriginUrl(root, env));
   if (!repo || isPrivateRepo(gh, repo) !== true) return [];
-  return [
-    'note: this repo is private, so the workflows in .github/workflows use Actions minutes from your plan',
-    'to keep CI off, run `yokoten init --no-ci`: it removes the workflows init wrote, and records the choice in yokoten.json',
-  ];
+  return [setupNote('private-repo', 'this repo is private, so the workflows in .github/workflows use Actions minutes from your plan; to keep CI off, this removes the workflows init wrote and records the choice in yokoten.json', 'yokoten init --no-ci')];
 }
 
 // ---- CODEOWNERS for the lead-only paths (#304) ----
@@ -484,17 +532,20 @@ const readRemoteOwner = (root: string, env: Env): string | null => repoOf(readOr
  * remote owner is one, the file gets the placeholder (#313). When gh can't tell, the
  * remote owner stays: most repos belong to a person.
  */
-export function writeCodeOwners(root: string, gh: Gh, env: Env): string {
+export function writeCodeOwners(root: string, gh: Gh, env: Env): Step {
   const found = CODEOWNERS_PLACES.find((place) => existsSync(join(root, place)));
-  if (found) return `kept ${found}`;
+  if (found) return stepOf({ changes: [changeOf('kept', 'file', found, found)] });
   const remote = readRemoteOwner(root, env);
   const org = remote !== null && isOrganization(gh, remote) === true;
   const owner = org ? null : remote;
   writeNew(join(root, '.github', 'CODEOWNERS'), codeOwnersText(owner, org ? remote : undefined));
-  if (org) return `wrote .github/CODEOWNERS (the lead-only paths; @${remote} is an organization, so put a person or @${remote}/<team> in place of ${OWNER_PLACEHOLDER})`;
-  return owner
-    ? `wrote .github/CODEOWNERS (the lead-only paths, owned by @${owner})`
-    : `wrote .github/CODEOWNERS (the lead-only paths; make the repo, add the remote and push, then put your GitHub handle in place of ${OWNER_PLACEHOLDER})`;
+  const file = '.github/CODEOWNERS';
+  const what = org
+    ? `${file} (the lead-only paths; @${remote} is an organization, so put a person or @${remote}/<team> in place of ${OWNER_PLACEHOLDER})`
+    : owner
+      ? `${file} (the lead-only paths, owned by @${owner})`
+      : `${file} (the lead-only paths; make the repo, add the remote and push, then put your GitHub handle in place of ${OWNER_PLACEHOLDER})`;
+  return stepOf({ changes: [changeOf('wrote', 'file', file, what)] });
 }
 
 // ---- Dependabot for the project's own packages (#379) ----
@@ -588,7 +639,7 @@ const IGNORED_FOLDERS: Record<string, string[]> = {
 const folderOf = (line: string): string => line.trim().replace(/^\//, '').replace(/\/$/, '');
 
 /** Add the worker worktrees folder, the board's agent file, and the dependency folders of the project's package managers to .gitignore. */
-export function writeGitignore(root: string): string {
+export function writeGitignore(root: string): Change {
   const folders = [...new Set([...findEcosystems(root).keys()].flatMap((name) => IGNORED_FOLDERS[name] ?? []))];
   const wanted = [`${WORKTREES_DIR}/`, ...folders, AGENT_STATUS_FILE];
   const path = join(root, '.gitignore');
@@ -597,12 +648,12 @@ export function writeGitignore(root: string): string {
   const missing = wanted.filter((line) => !have.has(folderOf(line)));
   if (old === null) {
     writeNew(path, `${missing.join('\n')}\n`);
-    return `wrote .gitignore (${missing.join(', ')})`;
+    return changeOf('wrote', 'file', '.gitignore', `.gitignore (${missing.join(', ')})`);
   }
-  if (missing.length === 0) return 'kept .gitignore';
+  if (missing.length === 0) return changeOf('kept', 'file', '.gitignore', '.gitignore');
   const lead = old === '' || old.endsWith('\n') ? '' : '\n';
   appendFileSync(path, `${lead}${missing.join('\n')}\n`);
-  return `added to .gitignore: ${missing.join(', ')}`;
+  return changeOf('added', 'file', '.gitignore', `to .gitignore: ${missing.join(', ')}`);
 }
 
 /** One update block in the kit's shape: monthly, a week old, one grouped pull request, prefix chore. */
@@ -639,19 +690,19 @@ export function dependabotText(root: string, kitText: string): { text: string; f
  * Write .github/dependabot.yml: the kit's file and a block for each ecosystem found. A
  * dependabot.yml or .yaml that is there is kept, and the line names what it doesn't update.
  */
-export function writeDependabot(root: string, kitText: string): string {
+export function writeDependabot(root: string, kitText: string): Step {
   const { text, found } = dependabotText(root, kitText);
   const existing = ['.github/dependabot.yml', '.github/dependabot.yaml'].find((place) => existsSync(join(root, place)));
   if (existing) {
     const has = readDependabotEcosystems(readFileSync(join(root, existing), 'utf8'));
     const missing = [...found.keys()].filter((name) => !has.has(name));
-    if (missing.length === 0) return `kept ${existing}`;
-    return `kept ${existing}; it does not update ${missing.join(', ')}. Copy its github-actions block for each, with prefix chore`;
+    const kept = changeOf('kept', 'file', existing, existing);
+    if (missing.length === 0) return stepOf({ changes: [kept] });
+    return stepOf({ changes: [kept], notes: [setupNote('dependabot', `${existing} does not update ${missing.join(', ')}; copy its github-actions block for each, with prefix chore`)] });
   }
   writeNew(join(root, '.github', 'dependabot.yml'), text);
-  return found.size === 0
-    ? 'wrote .github/dependabot.yml (the actions CI runs)'
-    : `wrote .github/dependabot.yml (the actions CI runs, and ${[...found.keys()].join(', ')})`;
+  const what = found.size === 0 ? 'the actions CI runs' : `the actions CI runs, and ${[...found.keys()].join(', ')}`;
+  return stepOf({ changes: [changeOf('wrote', 'file', '.github/dependabot.yml', `.github/dependabot.yml (${what})`)] });
 }
 
 // ---- The kit's workflows: update a copy the project never changed (#456) ----
@@ -803,21 +854,22 @@ export function compareWorkflow(root: string, rel: string, kitText: string, hash
 export const workflowDiffCommand = (root: string, rel: string): string => `git diff --no-index ${rel} ${isSelf(root) ? '' : '.yokoten/'}kit/project/${rel}`;
 
 /** Write one kit workflow: new, or in place of an old kit copy; a changed copy or a symlink is kept. */
-function writeWorkflow(root: string, rel: string, kitText: string, env: Env): string {
+function writeWorkflow(root: string, rel: string, kitText: string, env: Env): Step {
   const state = compareWorkflow(root, rel, kitText);
-  if (state === 'missing') return `${writeNew(join(root, rel), kitText)} ${rel}`;
-  if (state === 'same') return `kept ${rel}`;
-  if (state === 'link') return `kept ${rel}: it is a symlink, so yokoten did not write through it`;
-  if (state === 'changed') return `kept ${rel}: it has your changes. To see how the kit's newest copy differs: \`${workflowDiffCommand(root, rel)}\``;
+  const kept = (note?: Finding): Step => stepOf({ changes: [changeOf('kept', 'file', rel, rel, { yours: state === 'changed' })], notes: note ? [note] : [] });
+  if (state === 'missing') return stepOf({ changes: [changeOf(writeNew(join(root, rel), kitText), 'file', rel, rel)] });
+  if (state === 'same') return kept();
+  if (state === 'link') return kept(setupNote('kit-workflows', `${rel} is a symlink, so yokoten did not write through it`));
+  if (state === 'changed') return kept(setupNote('kit-workflows', `${rel} has your changes, so it is kept; to see how the kit's newest copy differs`, workflowDiffCommand(root, rel)));
   const path = join(root, rel);
   // Replace the file only when git can give the old one back: tracked, and the same as HEAD
   // (record 0014: unsure means keep).
   const bytes = readFileSync(path);
-  if (!isInHead(root, rel, bytes, env)) return `kept ${rel}: it is an older kit copy that is not committed, so commit it and run init again`;
+  if (!isInHead(root, rel, bytes, env)) return kept(setupNote('kit-workflows', `${rel} is an older kit copy that is not committed; commit it, then run init again`, 'yokoten init'));
   // A file with Windows line ends keeps them, so git shows only the lines that changed.
   const isCrlf = bytes.includes('\r\n');
   writeFileSync(path, isCrlf ? normalizeText(kitText).replace(/\n/g, '\r\n') : kitText);
-  return `updated ${rel} to the kit's newest copy (you had not changed it; \`git restore --source=HEAD -- ${rel}\` brings the old one back)`;
+  return stepOf({ changes: [changeOf('updated', 'file', rel, `${rel} to the kit's newest copy (you had not changed it; \`git restore --source=HEAD -- ${rel}\` brings the old one back)`)] });
 }
 
 /** The kit's workflows, by path in a project, rendered for `root`; empty when this copy of yokoten has none. */
@@ -934,11 +986,11 @@ function findMainNewline(text: string): string {
 }
 
 /** Add the AGENTS.md import to the CLAUDE.md that lacks it. Returns the report line, or null when nothing changed. */
-export function importRules(root: string): string | null {
+export function importRules(root: string): Step | null {
   const gap = findRulesGap(root);
   if (!gap) return null;
   // A link is the owner's to change: writing through it would change the file it points to (#428).
-  if (gap.link) return `left ${gap.file} as it is: it is a link to ${gap.link}, so Claude Code does not read AGENTS.md; add a line \`${gap.line}\` to that file, or make ${gap.file} a plain file`;
+  if (gap.link) return stepOf({ problems: [setupNote('claude-md', `${gap.file} is a link to ${gap.link}, so Claude Code does not read AGENTS.md; add a line \`${gap.line}\` to that file by hand, or make ${gap.file} a plain file`)] });
   const path = join(root, gap.file);
   const text = readFileSync(path, 'utf8');
   const newline = findMainNewline(text);
@@ -946,7 +998,7 @@ export function importRules(root: string): string | null {
   const kept = text.replace(/[\r\n]+$/, '');
   const spacing = kept === '' ? '' : newline + newline;
   writeFileSync(path, `${kept}${spacing}<!-- Added by yokoten: Claude Code reads AGENTS.md only through this import. -->${newline}${gap.line}${newline}`);
-  return `updated ${gap.file}: it now reads AGENTS.md (Claude Code reads AGENTS.md only when a CLAUDE.md imports it)`;
+  return stepOf({ changes: [changeOf('updated', 'file', gap.file, `${gap.file}: it now reads AGENTS.md (Claude Code reads AGENTS.md only when a CLAUDE.md imports it)`)] });
 }
 
 /** How git runs commit hooks here: yokoten's .githooks, the project's own folder, or no git repo. */
@@ -1004,9 +1056,11 @@ export function hookFile(root: string, hooksPath: string, hook: CommitHook = 'pr
 /** The lines init adds to a project's own pre-commit and pre-merge-commit. `exit 1` because a hook may go on after them. */
 export const checkLines = (cli: string): string[] => ['# yokoten: the commit check (lead-only files, test files in a fix task, layout and privacy)', commitCheckLine(cli)];
 
-/** What `addCheckLines` did, in the report's words: a hook that already ran the check is "kept". */
-function checkWords(result: ReturnType<typeof addCheckLines>): string {
-  return result === 'same' ? 'kept' : result;
+/** What `addCheckLines` did, as a change: a hook that already ran the check is kept. */
+function checkChange(result: ReturnType<typeof addCheckLines>, file: string, what: string): Change {
+  if (result === 'same') return changeOf('kept', 'git-hook', file, what);
+  if (result === 'wrote') return changeOf('wrote', 'git-hook', file, what);
+  return changeOf('updated', 'git-hook', file, `${what} (${result === 'made executable' ? 'made executable' : 'added the check'})`);
 }
 
 /**
@@ -1236,9 +1290,9 @@ const HOOK_MANAGERS = ['lefthook.yml', 'lefthook.yaml', '.lefthook.yml', '.lefth
  * the check and then the hand-off; a new other hook only hands off. One that is there is
  * kept, and gets the check when it is a commit hook that lacks it (#239, #256), and the hand-off.
  */
-function writeGithooks(root: string, cli: string, kit: string, handOff: boolean, env: Env): string[] {
+function writeGithooks(root: string, cli: string, kit: string, handOff: boolean, env: Env): Step {
   const olds = handOff ? readOldHooks(root, env).filter((old) => old.handOff === 'yes') : [];
-  const lines: string[] = [];
+  const step = stepOf();
   const others = olds.map((old) => old.hook).filter((hook) => !isCommitHook(hook));
   for (const hook of [...COMMIT_HOOKS, ...others]) {
     const rel = `.githooks/${hook}`;
@@ -1252,7 +1306,7 @@ function writeGithooks(root: string, cli: string, kit: string, handOff: boolean,
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, text, { mode: 0o755 });
       chmodSync(path, 0o755);
-      lines.push(`wrote ${rel}`);
+      step.changes.push(changeOf('wrote', 'git-hook', rel, rel));
     } else {
       const result = isCommitHook(hook) ? addCheckLines(path, cli) : 'same';
       const text = readFileSync(path, 'utf8');
@@ -1261,47 +1315,51 @@ function writeGithooks(root: string, cli: string, kit: string, handOff: boolean,
         writeFileSync(path, placed);
         chmodSync(path, statSync(path).mode | 0o111);
       }
-      lines.push(`${placed !== null ? 'updated' : checkWords(result)} ${rel}`);
+      step.changes.push(placed !== null ? changeOf('updated', 'git-hook', rel, rel) : checkChange(result, rel, rel));
     }
-    if (old) lines.push(`kept your ${old.file}: ${rel} runs it${isCommitHook(hook) ? ' after the check' : ''}`);
+    if (old) step.changes.push(changeOf('kept', 'git-hook', old.file, `your ${old.file}: ${rel} runs it${isCommitHook(hook) ? ' after the check' : ''}`, { yours: true }));
   }
-  return lines;
+  return step;
 }
 
+/** The setting init points at .githooks: a change of its own, which leads the list (#654). */
+export const HOOKS_PATH = 'core.hooksPath';
+
 /** Point git at the commit check: set .githooks, or add the check to the project's own pre-commit. */
-function setCommitCheck(root: string, cli: string, hooks: HookSetup, blocks: string[], env: Env): string[] {
-  if (hooks.kind === 'no repo') return ['not a git repo: run `git init`, then `git config core.hooksPath .githooks`'];
+function setCommitCheck(root: string, cli: string, hooks: HookSetup, blocks: string[], env: Env): Step {
+  if (hooks.kind === 'no repo') return stepOf({ problems: [setupNote('hooks-path', 'not a git repo, so the commit check is not on yet', 'git init && git config core.hooksPath .githooks')] });
   if (hooks.kind === 'plain') {
-    const unset = readLocalHooksPath(root, env) === '';
+    const before = readLocalHooksPath(root, env);
+    const unset = before === '';
     const olds = readOldHooks(root, env);
-    const dead = deadHookNotes(olds).map((line) => `note: ${line}`);
+    const dead = deadHookNotes(olds).map((line) => setupNote('git-hooks', line));
     const managers = HOOK_MANAGERS.filter((name) => existsSync(join(root, name))).join(' and ');
     if (blocks.length) {
-      const note = olds.some((old) => old.handOff === 'yes') && managers ? [`note: ${managers} is here; its hooks in .git/hooks still run, because core.hooksPath stays unset`] : [];
+      const note = olds.some((old) => old.handOff === 'yes') && managers ? [setupNote('git-hooks', `${managers} is here; its hooks in .git/hooks still run, because core.hooksPath stays unset`)] : [];
       const head = unset ? 'left core.hooksPath unset, so the commit check is not on yet' : 'a hook this clone had is switched off';
-      return [`${head}: ${blocks.join('; ')}`, ...note, ...dead];
+      return stepOf({ problems: [setupNote('hooks-path', `${head}: ${blocks.join('; ')}`)], notes: [...note, ...dead] });
     }
     const handed = olds.filter((old) => old.handOff === 'yes' && hasHandOff(readFileSync(join(root, '.githooks', old.hook), 'utf8'), old.hook));
     const list = handed.map((old) => `${old.file}${isCommitHook(old.hook) ? ' (after the check)' : ''}`).join(', ');
-    const note = handed.length && managers ? [`note: ${managers} is here; .githooks runs these hooks in .git/hooks: ${list}. A hook it installs later does not run until \`yokoten init\` hands off to it, and \`yokoten doctor\` names it`] : [];
+    const note = handed.length && managers ? [setupNote('git-hooks', `${managers} is here; .githooks runs these hooks in .git/hooks: ${list}. A hook it installs later does not run until \`yokoten init\` hands off to it, and \`yokoten doctor\` names it`)] : [];
     execFileSync('git', ['config', 'core.hooksPath', '.githooks'], { cwd: root, env, stdio: 'pipe' });
     // The answers kept so far name the old value.
     forgetGitReads();
-    // init moves this line to the start of the report (#654).
-    return ['git hook: on (the commit check runs from .githooks)', ...note, ...dead];
+    const on = changeOf(before === '.githooks' ? 'kept' : 'updated', 'git-hook', HOOKS_PATH, 'the commit check, run from .githooks');
+    return stepOf({ changes: [on], notes: [...note, ...dead] });
   }
   const { hooksPath } = hooks;
   const fileOf = (hook: CommitHook) => (hooksPath ? hookFile(root, hooksPath, hook) : `.husky/${hook}`);
   const owner = hooksPath ? `core.hooksPath (${fileOf('pre-commit') === '.husky/pre-commit' ? 'husky' : hooksPath})` : 'husky';
   if (fileOf('pre-commit') === null) {
-    return [`kept core.hooksPath: it is outside this repo, so yokoten did not change it. Add this line to its pre-commit and pre-merge-commit: ${commitCheckLine(cli)}`];
+    return stepOf({ problems: [setupNote('hooks-path', `core.hooksPath is outside this repo, so yokoten did not change it; add this line to its pre-commit and pre-merge-commit by hand: ${commitCheckLine(cli)}`)] });
   }
-  const lines = COMMIT_HOOKS.map((hook) => {
+  const changes = COMMIT_HOOKS.map((hook) => {
     const file = fileOf(hook) as string;
-    return `${checkWords(addCheckLines(join(root, file), cli))} ${file}: the commit check (kept ${owner}, so the project's own hooks still run)`;
+    return checkChange(addCheckLines(join(root, file), cli), file, `${file}: the commit check (kept ${owner}, so the project's own hooks still run)`);
   });
-  if (!hooksPath) lines.push('husky is not set up in this clone yet: run `npm install` (husky sets core.hooksPath), and the check runs from .husky/pre-commit and .husky/pre-merge-commit');
-  return lines;
+  const problems = hooksPath ? [] : [setupNote('hooks-path', 'husky is not set up in this clone yet, so the commit check is not on yet; husky sets core.hooksPath, then the check runs from .husky/pre-commit and .husky/pre-merge-commit', 'npm install')];
+  return stepOf({ changes, problems });
 }
 
 // ---- The core rules in AGENTS.md (#120) ----
@@ -1491,30 +1549,32 @@ function keepAgentsBackup(root: string, bytes: Buffer, env: Env): { backedUp: bo
  * heading. Returns the report lines. The old file can always come back: from git when
  * HEAD has it as it is, or else from a copy next to it.
  */
-function addCoreRules(root: string, kit: string, env: Env): string[] {
+function addCoreRules(root: string, kit: string, env: Env): Step {
   const path = join(root, 'AGENTS.md');
+  // AGENTS.md stays as it is, and the note or the problem says why.
+  const kept = (part: Partial<Step>, yours = false): Step => stepOf({ ...part, changes: [changeOf('kept', 'file', 'AGENTS.md', 'AGENTS.md', { yours })] });
   if (lstatSync(path).isSymbolicLink()) {
-    return [`kept AGENTS.md: it is a link to ${readlinkSync(path)}, so yokoten did not write the core rules into it. Put them in by hand, above a \`${PROJECT_HEADING}\` heading`];
+    return kept({ problems: [setupNote('agents-md', `AGENTS.md is a link to ${readlinkSync(path)}, so yokoten did not write the core rules into it; put them in by hand, above a \`${PROJECT_HEADING}\` heading`)] }, true);
   }
   const bytes = readFileSync(path);
   const project = bytes.toString('utf8');
-  if (findProjectStart(project) !== -1) return ['kept AGENTS.md (`yokoten update` brings its core rules up to date)'];
-  if (findProjectStart(kit) === -1) return [`kept AGENTS.md: the kit's AGENTS.md has no \`${PROJECT_HEADING}\` heading; report it in an issue at yokoten`];
-  const kept = keepAgentsBackup(root, bytes, env);
-  if (kept.clash) {
-    return [`kept AGENTS.md: it has no \`${PROJECT_HEADING}\` heading, and ${AGENTS_BACKUP} is there already, so yokoten kept both as they are. Move ${AGENTS_BACKUP} away, then run \`yokoten init\` again`];
+  if (findProjectStart(project) !== -1) return stepOf({ changes: [changeOf('kept', 'file', 'AGENTS.md', 'AGENTS.md (`yokoten update` brings its core rules up to date)')] });
+  if (findProjectStart(kit) === -1) return kept({ notes: [setupNote('agents-md', `the kit's AGENTS.md has no \`${PROJECT_HEADING}\` heading, so AGENTS.md is kept; report it in an issue at yokoten`)] });
+  const backup = keepAgentsBackup(root, bytes, env);
+  if (backup.clash) {
+    return kept({ notes: [setupNote('agents-md', `AGENTS.md has no \`${PROJECT_HEADING}\` heading, and ${AGENTS_BACKUP} is there already, so yokoten kept both as they are; move ${AGENTS_BACKUP} away first`, 'yokoten init')] }, true);
   }
-  const restore = kept.backedUp ? `kept the old file as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right` : 'to get the old file back: `git checkout HEAD -- AGENTS.md`';
+  const restore = backup.backedUp ? `kept the old file as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right` : 'to get the old file back: `git checkout HEAD -- AGENTS.md`';
   const moved = moveUnderProjectHeading(project, kit);
   writeFileSync(path, moved.text);
-  if (moved.lines === 0) return [`wrote AGENTS.md: it had no text${moved.frontMatter ? ' below its front matter' : ''}, so it now has the core rules and an empty \`${PROJECT_HEADING}\` section (${restore})`];
-  const lines = [`updated AGENTS.md: the core rules are on top, and your ${moved.lines} line(s) moved under \`${PROJECT_HEADING}\`; only their heading levels changed (${restore})`];
-  for (const heading of moved.headings) lines.push(`  heading one level down: ${heading.before} is now ${heading.after}`);
-  if (moved.deepest.length) lines.push(`  kept at level 6 (Markdown has no level 7): ${moved.deepest.join(', ')}`);
-  if (moved.frontMatter) lines.push('  kept the front matter at the very top, as it was');
-  if (moved.hadBom) lines.push('  dropped the byte order mark at the start: the kit version line must come first');
-  lines.push('  read the core rules, and remove any rule of yours under them that says the same thing');
-  return lines;
+  if (moved.lines === 0) return stepOf({ changes: [changeOf('wrote', 'file', 'AGENTS.md', `AGENTS.md: it had no text${moved.frontMatter ? ' below its front matter' : ''}, so it now has the core rules and an empty \`${PROJECT_HEADING}\` section (${restore})`)] });
+  const notes: Finding[] = [];
+  for (const heading of moved.headings) notes.push(setupNote('agents-md', `AGENTS.md: a heading went one level down: ${heading.before} is now ${heading.after}`));
+  if (moved.deepest.length) notes.push(setupNote('agents-md', `AGENTS.md: kept at level 6 (Markdown has no level 7): ${moved.deepest.join(', ')}`));
+  if (moved.frontMatter) notes.push(setupNote('agents-md', 'AGENTS.md: the front matter stays at the very top, as it was'));
+  if (moved.hadBom) notes.push(setupNote('agents-md', 'AGENTS.md: the byte order mark at the start is gone; the kit version line must come first'));
+  notes.push(setupNote('agents-md', 'AGENTS.md: read the core rules, and remove any rule of yours under them that says the same thing'));
+  return stepOf({ changes: [changeOf('updated', 'file', 'AGENTS.md', `AGENTS.md: the core rules are on top, and your ${moved.lines} line(s) moved under \`${PROJECT_HEADING}\`; only their heading levels changed (${restore})`)], notes });
 }
 
 // ---- The kit version in AGENTS.md (#141) ----
@@ -1700,43 +1760,47 @@ export function summarizeUpdate(rules: { changes: LineChange[]; sections: Sectio
 }
 
 /**
+ * What `yokoten update` found or did, as data (#1115). `state` says which: `preview` lists
+ * `changes` without writing, `written` replaced the core rules. Any state that is not ok
+ * carries its `problem`: what stopped it, and the command to run.
+ */
+export interface UpdateResult {
+  ok: boolean;
+  state: 'no rules' | "can't compare" | 'up to date' | 'newer' | 'link' | 'backup in the way' | 'preview' | 'written';
+  /** This yokoten's version, whose kit the rules are compared with. */
+  version: string;
+  /** The lines that differ, in the order of the file. */
+  changes: LineChange[];
+  /** The line counts and the sections a change touches, in words. */
+  summary: string;
+  /** Where the file before the write is kept, when it is. */
+  backup?: string;
+  problem?: Finding;
+}
+
+/**
  * `yokoten update`: replace the core part of AGENTS.md with the kit's. Without `write`
  * it only shows the change. `ok` is false when there is nothing it can compare.
  */
-export function updateCoreRules(root: string, { write }: { write: boolean }, env: Env): { ok: boolean; lines: string[] } {
+export function updateCoreRules(root: string, { write }: { write: boolean }, env: Env): UpdateResult {
+  const result = (state: UpdateResult['state'], more: Partial<UpdateResult> = {}): UpdateResult => ({ ok: more.problem === undefined, state, version: VERSION, changes: [], summary: '', ...more });
   const rules = readCoreRules(root);
-  if (rules === null) return { ok: false, lines: ['no AGENTS.md here; nothing was written. Run `yokoten init` to add one'] };
-  if (rules.state === "can't compare") return { ok: false, lines: [`can't compare AGENTS.md with the kit: ${rules.why}. Nothing was written. To fix it, ${rules.fix}`] };
-  if (rules.state === 'same') return { ok: true, lines: [`the core rules in AGENTS.md are up to date with yokoten ${VERSION}; nothing to change`] };
+  if (rules === null) return result('no rules', { problem: setupNote('update', 'there is no AGENTS.md here, so nothing changed', 'yokoten init') });
+  if (rules.state === "can't compare") return result("can't compare", { problem: setupNote('update', `can't compare AGENTS.md with the kit: ${rules.why}; nothing changed. To fix it, ${rules.fix}`) });
+  if (rules.state === 'same') return result('up to date');
   if (rules.state === 'newer') {
-    return { ok: false, lines: [`AGENTS.md was written by yokoten ${rules.version}, newer than this yokoten ${VERSION}. Nothing was written: an update would take the core rules back to an older kit. Update yokoten itself instead, then run \`yokoten update\` again`] };
+    return result('newer', { problem: setupNote('update', `AGENTS.md was written by yokoten ${rules.version}, newer than this yokoten ${VERSION}, so nothing changed: an update would take the core rules back to an older kit; update yokoten itself first`, 'yokoten update') });
   }
   const summary = summarizeUpdate(rules);
-  if (write) {
-    const path = join(root, 'AGENTS.md');
-    if (lstatSync(path).isSymbolicLink()) {
-      return { ok: false, lines: [`kept AGENTS.md: it is a link to ${readlinkSync(path)}, so yokoten did not write the core rules into it. Nothing was written. Update the file it points to by hand`] };
-    }
-    const kept = keepAgentsBackup(root, readFileSync(path), env);
-    if (kept.clash) {
-      return { ok: false, lines: [`kept AGENTS.md: ${AGENTS_BACKUP} is there already, so yokoten kept both as they are. Nothing was written. Move ${AGENTS_BACKUP} away, then run \`yokoten update --write\` again`] };
-    }
-    writeFileSync(path, rules.updated);
-    const backup = kept.backedUp ? `. The old file is kept as ${AGENTS_BACKUP}; delete it once the new AGENTS.md reads right` : '';
-    return { ok: true, lines: [`replaced the core rules in AGENTS.md with yokoten ${VERSION}'s: ${summary}. "${PROJECT_HEADING}" and below are unchanged${backup}`] };
+  if (!write) return result('preview', { changes: rules.changes, summary });
+  const path = join(root, 'AGENTS.md');
+  if (lstatSync(path).isSymbolicLink()) {
+    return result('link', { summary, problem: setupNote('update', `AGENTS.md is a link to ${readlinkSync(path)}, so yokoten did not write the core rules into it; nothing changed. Copy the new lines into the file it points to by hand`, 'yokoten update --all') });
   }
-  return {
-    ok: true,
-    lines: [
-      `the core rules in AGENTS.md differ from yokoten ${VERSION}'s: ${summary}`,
-      '',
-      ...rules.changes.map((change) => `${change.kind === 'added' ? '+' : '-'} ${change.line.trim() ? change.line : '(a blank line)'}`),
-      '',
-      'A line marked - is replaced. An older kit wrote it, or someone edited it by hand.',
-      `Move any rule of your own under "${PROJECT_HEADING}" first. That part stays as it is.`,
-      'Nothing was written. Run `yokoten update --write` to write it.',
-    ],
-  };
+  const kept = keepAgentsBackup(root, readFileSync(path), env);
+  if (kept.clash) return result('backup in the way', { summary, problem: setupNote('update', `${AGENTS_BACKUP} is there already, so yokoten kept both files as they are; nothing changed. Move ${AGENTS_BACKUP} away first`, 'yokoten update --write') });
+  writeFileSync(path, rules.updated);
+  return result('written', { changes: rules.changes, summary, ...(kept.backedUp ? { backup: AGENTS_BACKUP } : {}) });
 }
 
 // `yokoten trust`, and the one question `init` asks on a terminal (#661). Each agent runs
@@ -1854,28 +1918,47 @@ function whyNot(plan: TrustPlan): string {
   return `can't read ${plan.store}`;
 }
 
-/** Write the planned entries, and say what was written and how to undo it. */
-function apply(root: string, env: Env, plans: readonly Planned[]): { ok: boolean; lines: string[]; wrote: boolean } {
-  const lines: string[] = [];
+/** The entry a person adds by hand when the store has a shape yokoten won't rewrite (#1040): the exact key and value. */
+export const trustSetting = (change: TrustChange): string => `${[...change.path, change.key].join('.')} = ${change.kind === 'list' ? `[${JSON.stringify(change.value)}]` : JSON.stringify(change.value)}`;
+
+/** The problem of a store yokoten won't rewrite: what to add, and where (#1040). */
+const keptShape = (name: string, plan: TrustPlan): Finding =>
+  setupNote('trust', `${name}: ${plan.store} holds the trust in a shape yokoten won't rewrite, so the guard stays off; add this there by hand`, plan.changes.map(trustSetting).join('\n'));
+
+/**
+ * What `writeTrust` would do with `plan`, read-only (#1040: know before asking): it writes a copy
+ * of the store in a temp folder, which goes away at once. The real store is never touched.
+ */
+function wouldWrite(plan: TrustPlan): 'written' | 'kept' | 'unreadable' {
+  const first = plan.changes[0];
+  if (!first) return 'kept';
+  const dir = mkdtempSync(join(tmpdir(), 'yokoten-trust-'));
+  try {
+    const copy = join(dir, basename(first.file));
+    if (existsSync(first.file)) copyFileSync(first.file, copy);
+    return writeTrust({ ...plan, changes: plan.changes.map((change) => ({ ...change, file: copy })) });
+  } catch {
+    return 'unreadable';
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Write the planned entries: a change for each one written, and a problem for each one that could not be. */
+function apply(root: string, env: Env, plans: readonly Planned[]): { ok: boolean; step: Step } {
+  const step = stepOf();
   let ok = true;
-  let wrote = false;
   for (const { name, plan } of plans) {
     const done = writeTrust(plan);
     if (done === 'written') {
-      wrote = true;
-      const journal = record(root, env, plan);
-      lines.push(`turned on yokoten's guard in ${name} (${plan.store})`);
-      if (!journal) lines.push(`couldn't record the way back for ${name}; remove the entry in ${plan.store} by hand`);
-    } else if (done === 'kept') {
-      ok = false;
-      lines.push(`couldn't turn on yokoten's guard in ${name}: ${plan.store} holds this setting in a shape yokoten won't rewrite; set it there by hand`);
+      step.changes.push(changeOf('added', 'agent', plan.store, `the trust in ${name} (${plan.store})`, { agent: name }));
+      if (!record(root, env, plan)) step.problems.push(setupNote('trust', `couldn't record the way back for ${name}; remove the entry in ${plan.store} by hand to undo it`));
     } else {
       ok = false;
-      lines.push(`couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`);
+      step.problems.push(done === 'kept' ? keptShape(name, plan) : setupNote('trust', `couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`));
     }
   }
-  if (wrote) lines.push('undo: `yokoten trust --undo` removes only the entries yokoten wrote');
-  return { ok, lines, wrote };
+  return { ok, step };
 }
 
 /**
@@ -1885,16 +1968,18 @@ function apply(root: string, env: Env, plans: readonly Planned[]): { ok: boolean
 interface TrustWork {
   found: number;
   todo: Planned[];
-  same: string[];
+  same: Planned[];
   edited: string[];
   blocked: Planned[];
+  /** A store with a shape yokoten won't rewrite, found before anyone is asked (#1040). */
+  shaped: Planned[];
   unsafe: { name: string; problem: { what: string; fix: string } }[];
   /** What the user set on purpose, and trust leaves as it is (#984). */
   kept: { name: string; what: string; fix: string }[];
 }
 
 function trustWork(root: string, env: Env): TrustWork {
-  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], unsafe: [], kept: [] };
+  const work: TrustWork = { found: 0, todo: [], same: [], edited: [], blocked: [], shaped: [], unsafe: [], kept: [] };
   for (const plannedAgent of planned(root, env)) {
     work.found++;
     const kept = plannedAgent.plan.kept ?? [];
@@ -1902,86 +1987,100 @@ function trustWork(root: string, env: Env): TrustWork {
     if (plannedAgent.plan.state === 'kept') continue;
     // Nothing to write, but a hook the user turned off: the guard is not all on.
     if (plannedAgent.plan.state === 'same' && kept.length > 0) continue;
-    if (plannedAgent.plan.state === 'same') work.same.push(plannedAgent.name);
+    if (plannedAgent.plan.state === 'same') work.same.push(plannedAgent);
     else if (plannedAgent.plan.state === 'changed') work.edited.push(plannedAgent.name);
     else if (plannedAgent.plan.state === 'trusted' && plannedAgent.problem) work.unsafe.push({ name: plannedAgent.name, problem: plannedAgent.problem });
-    else if (plannedAgent.plan.state === 'trusted') work.todo.push(plannedAgent);
-    else work.blocked.push(plannedAgent);
+    else if (plannedAgent.plan.state === 'trusted') {
+      const would = wouldWrite(plannedAgent.plan);
+      if (would === 'written') work.todo.push(plannedAgent);
+      else if (would === 'kept') work.shaped.push(plannedAgent);
+      else work.blocked.push({ ...plannedAgent, plan: { ...plannedAgent.plan, state: 'unreadable' } });
+    } else work.blocked.push(plannedAgent);
   }
   return work;
 }
 
-/** The agents trust leaves off, and why: a changed hook, an unsafe project sandbox, an unreadable store. */
-function refusedLines(work: TrustWork): { ok: boolean; lines: string[] } {
-  const lines: string[] = [];
-  if (work.same.length > 0) lines.push(`yokoten's guard is already on in ${listOf(work.same)}`);
+/** What trust leaves as it is: the agents already on, the ones it must leave off and why, and the user's own choices. */
+function refusedStep(work: TrustWork): { ok: boolean; step: Step } {
+  const step = stepOf();
+  for (const { name, plan } of work.same) step.changes.push(changeOf('kept', 'agent', plan.store, `the trust in ${name} (yokoten's guard is already on)`, { agent: name }));
   for (const name of work.edited) {
-    lines.push(`left yokoten's guard off in ${name}: a hook yokoten wrote there was edited; run \`yokoten init\` to put it back, then \`yokoten trust\``);
+    step.problems.push(setupNote('trust', `left yokoten's guard off in ${name}: a hook yokoten wrote there was edited; the first command puts it back, the second turns the guard on`, 'yokoten init\nyokoten trust'));
   }
   // Trusting the folder is what lets the project's own settings apply (#661): a sandbox
   // problem doctor finds is a reason to leave trust off, not to write it and look on.
-  for (const { name, problem } of work.unsafe) lines.push(`left yokoten's guard off in ${name}: ${problem.what}; ${problem.fix}`);
-  for (const { name, plan } of work.blocked) lines.push(`couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`);
-  // The user's own choice is a note, not a failure: it stays, and the line says how to change it (#984).
-  for (const { name, what, fix } of work.kept) lines.push(`kept your choice in ${name}: ${what}; ${fix}`);
-  return { ok: work.edited.length === 0 && work.unsafe.length === 0 && work.blocked.length === 0, lines };
+  for (const { name, problem } of work.unsafe) step.problems.push(setupNote('trust', `left yokoten's guard off in ${name}: ${problem.what}; ${problem.fix}`));
+  for (const { name, plan } of work.shaped) step.problems.push(keptShape(name, plan));
+  for (const { name, plan } of work.blocked) step.problems.push(setupNote('trust', `couldn't turn on yokoten's guard in ${name}: ${whyNot(plan)}`));
+  // The user's own choice is a note, not a failure: it stays, and the note says how to change it (#984).
+  for (const { name, what, fix } of work.kept) step.notes.push(setupNote('trust', `kept your choice in ${name}: ${what}; ${fix}`));
+  return { ok: work.edited.length === 0 && work.unsafe.length === 0 && work.blocked.length === 0 && work.shaped.length === 0, step };
 }
 
 /**
- * The trust lines `init` prints. On a terminal it asks once about the agents installed
- * here; on yes, it writes. Without a terminal (an agent, CI) it writes nothing and names
- * the one command a person runs (#661).
+ * What `init` does about trust. On a terminal it asks once about the agents installed here
+ * whose trust it can write, and only them (#1040); on yes, it writes. Without a terminal (an
+ * agent, CI) it writes nothing and names the one command a person runs (#661).
  */
-export function trustLines(root: string, env: Env, ask?: Ask): { ok: boolean; lines: string[] } {
+export function trustLines(root: string, env: Env, ask?: Ask): Step & { ok: boolean } {
   const work = trustWork(root, env);
-  const said = refusedLines(work);
-  if (work.todo.length === 0) return work.found === 0 ? { ok: true, lines: [] } : said;
+  const said = refusedStep(work);
+  if (work.todo.length === 0) return { ok: work.found === 0 || said.ok, ...said.step };
   const names = listOf(work.todo.map(({ name }) => name));
-  if (!ask) return { ok: said.ok, lines: [...said.lines, `to turn on yokoten's guard in ${names}, run \`yokoten trust\``] };
-  if (!isYes(ask(`Turn on yokoten's guard in ${names} (the agents installed here)? [Y/n]`))) {
-    return { ok: said.ok, lines: [...said.lines, `left yokoten's guard off in ${names}: run \`yokoten trust\` when you want it on`] };
+  if (!ask) return { ok: said.ok, ...said.step, notes: [...said.step.notes, setupNote('trust', `yokoten's guard is off in ${names} until a person turns it on`, 'yokoten trust')] };
+  if (!isYes(ask(askLine(`Turn on yokoten's guard in ${names} (the agents installed here)?`)))) {
+    return { ok: said.ok, ...said.step, notes: [...said.step.notes, setupNote('trust', `yokoten's guard stays off in ${names}; to turn it on later`, 'yokoten trust')] };
   }
   const done = apply(root, env, work.todo);
-  return { ok: said.ok && done.ok, lines: [...said.lines, ...done.lines] };
+  const step = stepOf();
+  addStep(step, said.step);
+  addStep(step, done.step);
+  return { ok: said.ok && done.ok, ...step };
 }
 
-/** `yokoten trust`: turn the guard on in every agent installed here, with no question. */
-export function trust(root: string, env: Env): { ok: boolean; lines: string[] } {
+/** What `yokoten trust` and `yokoten trust --undo` did: a setup result, and whether any agent here runs yokoten's hooks. */
+export interface TrustResult extends SetupResult {
+  /** False when no agent installed here runs yokoten's hooks in this project. */
+  hasAgents: boolean;
+}
+
+/** `yokoten trust`: turn the guard on in every agent installed here whose trust it can write, with no question. */
+export function trust(root: string, env: Env): TrustResult {
   const work = trustWork(root, env);
-  if (work.found === 0) return { ok: true, lines: ['no agent installed here runs yokoten\'s hooks in this project, so there is nothing to turn on'] };
-  const said = refusedLines(work);
-  if (work.todo.length === 0) return said;
+  if (work.found === 0) return { ok: true, hasAgents: false, ...stepOf() };
+  const said = refusedStep(work);
+  if (work.todo.length === 0) return { ok: said.ok, hasAgents: true, ...said.step };
   const done = apply(root, env, work.todo);
-  return { ok: said.ok && done.ok, lines: [...said.lines, ...done.lines] };
+  const step = stepOf();
+  addStep(step, said.step);
+  addStep(step, done.step);
+  return { ok: said.ok && done.ok, hasAgents: true, ...step };
 }
 
 /** `yokoten trust --undo`: put back only the entries this command recorded for this project. */
-export function undoTrust(root: string, env: Env): { ok: boolean; lines: string[] } {
+export function undoTrust(root: string, env: Env): TrustResult {
   const all = readJournal(env);
   const mine = all.filter((entry) => entry.root === root);
-  if (mine.length === 0) return { ok: true, lines: ['nothing to undo: `yokoten trust` wrote nothing for this folder'] };
-  const lines: string[] = [];
+  if (mine.length === 0) return { ok: true, hasAgents: false, ...stepOf() };
+  const step = stepOf();
   const kept: JournalEntry[] = [];
-  const done: JournalEntry[] = [];
   let ok = true;
   const reverted = new Map<string, string>();
   const unchanged = new Map<string, string>();
   for (const entry of mine) {
     const result = revertTrust(entry.change);
-    if (result === 'reverted') {
-      done.push(entry);
-      reverted.set(entry.change.agent, entry.change.store);
-    } else if (result === 'kept') {
+    if (result === 'reverted') reverted.set(entry.change.agent, entry.change.store);
+    else if (result === 'kept') {
       kept.push(entry);
       unchanged.set(entry.change.agent, entry.change.store);
     } else {
       ok = false;
       kept.push(entry);
-      lines.push(`couldn't undo the trust in ${entry.change.agent}: can't read ${entry.change.store}`);
+      step.problems.push(setupNote('trust', `couldn't undo the trust in ${entry.change.agent}: can't read ${entry.change.store}`, 'yokoten trust --undo'));
     }
   }
-  for (const [agent, store] of reverted) lines.push(`removed the trust yokoten added in ${agent} (${store})`);
-  for (const [agent, store] of unchanged) lines.push(`left the trust in ${agent} (${store}): it changed since yokoten wrote it`);
+  for (const [agent, store] of reverted) step.changes.push(changeOf('removed', 'agent', store, `the trust yokoten added in ${agent} (${store})`, { agent }));
+  for (const [agent, store] of unchanged) step.notes.push(setupNote('trust', `${agent}: the trust in ${store} changed since yokoten wrote it, so it stays`));
   writeJournal(env, [...all.filter((entry) => entry.root !== root), ...kept]);
-  return { ok, lines };
+  return { ok, hasAgents: true, ...step };
 }

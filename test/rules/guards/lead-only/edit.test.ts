@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { foldsCase } from '../../../../src/rules/guards/lead-only/edit.ts';
 import { checkCommand, checkEdit, isGranted, isLeadOnly, stripWorktreeRoot } from '../../../../src/rules/guards/index.ts';
 import { makeSandbox, yokotenSandbox } from '../../../../test/repo/helpers.ts';
 import type { Env } from '../../../../src/rules/config.ts';
@@ -169,4 +170,13 @@ test('lead-only files: shell writes follow the edit guard\'s scope (#402, #816)'
   // A repo the hook passes in is ruled as given, with no walk: here the file system's root.
   const root = join(sandbox.repo, '..');
   assert.equal(checkCommand('echo x > other/AGENTS.md', { env: worker, cwd: root, repos: [{ root, leadOnly: DEFAULTS.leadOnly }] })?.id, 'lead-only');
+});
+
+test('platform: file names fold case on macOS and Windows only, and checkEdit follows (issue #1000)', () => {
+  const rows: [NodeJS.Platform, boolean][] = [['linux', false], ['win32', true], ['darwin', true]];
+  for (const [platform, folds] of rows) {
+    assert.equal(foldsCase(platform), folds, platform);
+    const found = checkEdit('agents.md', { config: DEFAULTS, env: { YOKOTEN_ROLE: 'worker' }, platform });
+    assert.equal(found?.id ?? null, folds ? 'lead-only' : null, `${platform}: agents.md`);
+  }
 });

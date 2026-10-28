@@ -69,6 +69,9 @@ import {
   writeAgentChecks,
 } from '../../src/run/hook.ts';
 
+/** A note line as one line: the wrapped lines under `note: ` joined back. */
+const unwrapped = (text: string): string => text.replace(/\n {6}/g, ' ');
+
 test('hook: blocks with exit 2 and a reason, allows with exit 0', async () => {
   const sandbox = makeSandbox();
   const tool = (tool_input: object) => JSON.stringify({ cwd: sandbox.repo, tool_input });
@@ -390,16 +393,16 @@ test('hook: bad JSON in yokoten.json gives the defaults and one line, and check 
   const sandbox = makeSandbox();
   sandbox.write('yokoten.json', '{ "layout": ');
   const call = (command: string) => sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_input: { command } }) });
-  const line = /^yokoten hook: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: [^\n]+\n/;
+  const line = /^note: yokoten\.json was ignored, so the defaults apply; the core checks still run\. yokoten\.json: [^\n]+\n/;
   let result = await call('git push --force');
   assert.equal(result.status, 2, result.stderr);
-  assert.match(result.stderr, line);
+  assert.match(unwrapped(result.stderr), line);
   assert.match(result.stderr, /\nyokoten stopped this: [^\n]*force/);
   assert.ok(!result.stderr.includes(sandbox.repo), 'no absolute path');
   result = await call('git status');
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, line);
-  assert.equal(result.stderr.split('\n').filter(Boolean).length, 1, 'one line');
+  assert.match(unwrapped(result.stderr), line);
+  assert.equal(unwrapped(result.stderr).split('\n').filter(Boolean).length, 1, 'one note');
   // check and doctor still see a config problem.
   result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
@@ -411,27 +414,28 @@ test('hook: a key with the wrong shape gets its default and one line; check name
   // Positive control: before #228, this made the hook crash on an edit (exit 1, guard open).
   sandbox.write('yokoten.json', '{ "leadOnly": "x" }');
   const call = (toolInput: Record<string, string>) => sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_input: toolInput }), extra: { YOKOTEN_ROLE: 'worker' } });
-  const line = /^yokoten hook: yokoten\.json "leadOnly" was ignored, so its default applies; the core checks still run\. yokoten\.json: "leadOnly" must be a list of text, such as [^\n]+\n/;
+  const line = /^note: yokoten\.json "leadOnly" was ignored, so its default applies; the core checks still run\. yokoten\.json: "leadOnly" must be a list of text, such as [^\n]+\n/;
   for (const toolInput of [{ file_path: 'AGENTS.md' }, { command: 'git push --force' }] as Record<string, string>[]) {
     const result = await call(toolInput);
     assert.equal(result.status, 2, result.stderr);
-    assert.match(result.stderr, line);
-    assert.equal(result.stderr.match(/^yokoten hook:/gm)?.length, 1, 'one line');
+    assert.match(unwrapped(result.stderr), line);
+    assert.equal(result.stderr.match(/^note:/gm)?.length, 1, 'one note');
   }
   let result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten check: yokoten\.json: "leadOnly" must be a list of text/);
+  assert.match(result.stderr, /^yokoten check · yokoten\.json: "leadOnly" must be a list of text/);
   // An unknown key is a note, and check passes.
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   result = await sandbox.call(['check', '--all']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten check: note: yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  assert.match(result.stdout, /^ {2}note {8}yokoten\.json: "colour" is not a key this version of yokoten knows/m);
   assert.equal((await call({ command: 'git status' })).stderr, '', 'the hook says nothing');
   // Every wrong key in one run.
   sandbox.write('yokoten.json', '{ "leadOnly": "x", "tests": 5, "notNow": null }');
   result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^yokoten check: yokoten\.json: 2 keys have the wrong shape:\n- "tests" must be [^\n]+\n- "leadOnly" must be /);
+  // The failure title is one line, wrapped: each key in turn, then the Next line.
+  assert.match(result.stderr.replace(/\s+/g, ' '), /^yokoten check · yokoten\.json: 2 keys have the wrong shape: - "tests" must be .+ - "leadOnly" must be .+ Next: /);
 });
 
 test('hook: a repo reached through a symlink gets the same file rules (#1)', async () => {
@@ -452,7 +456,7 @@ test('done-when: the command comes from the env or the git-folder file; a pass, 
   writeFileSync(join(sandbox.repo, '.git', 'yokoten-done-when'), '# comment\nnode --test\n');
   assert.equal(readDoneWhen({}, sandbox.repo), 'node --test');
   assert.equal(readDoneWhen({ YOKOTEN_DONE_WHEN: 'true' }, sandbox.repo), 'true', 'the env wins');
-  assert.equal(doneWhenShell(), process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
+  assert.equal(doneWhenShell(process.platform), process.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
   // `true` and `echo` are sh. On Windows the command is a node script, below.
   if (process.platform !== 'win32') {
     assert.equal((await runDoneWhen('true', sandbox.repo, sandbox.env)).ok, true);
@@ -1082,4 +1086,5 @@ test('planDoneWhenSpawn: the program, words and options for each system (#1109)'
   assert.deepEqual(env, { PATH: '/bin' }, 'the env is not changed');
   assert.equal(doneWhenShell('win32'), 'cmd.exe');
   assert.equal(doneWhenShell('linux'), '/bin/sh');
+  assert.equal(doneWhenShell('darwin'), '/bin/sh');
 });

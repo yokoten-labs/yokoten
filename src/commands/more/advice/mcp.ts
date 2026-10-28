@@ -8,8 +8,9 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../../rules/config.ts';
-import { type Finding, finding, isFailingFinding } from '../../../rules/text/message.ts';
-import { bullets, count, type Invocation, parse, print, printJson, requireRoot, row, title, usage } from '../../shared.ts';
+import { type Finding, finding, formatFindingMarks, isFailingFinding, sentence } from '../../../rules/text/message.ts';
+import { moreLine, nextLine, screen, section, spaced, title, underRow } from '../../../rules/text/screen.ts';
+import { count, type Invocation, parse, print, printJson, requireRoot, row, show, usage } from '../../shared.ts';
 
 /** The words of a `--command` value; a part in double quotes is one word, so `"C:\Program Files\nodejs\node.exe"` stays whole. A backslash is kept as it is. */
 export function commandWords(command: string): string[] {
@@ -486,10 +487,64 @@ async function checkServer(server: McpServer, { root, env }: { root: string; env
   return { name: server.name, file: server.file, tools: read.tools.length, metrics: toolMetrics(read.tools), probed: read.probed, findings, notes };
 }
 
-/** One server's line in the text form. */
-function serverLine(report: ServerReport): string {
-  if (report.skipped) return `- server "${report.name}" (${report.file}): ${report.skipped}`;
-  return `- server "${report.name}" (${report.file}): ${report.tools} tool(s), ${report.metrics.bytes} B of definitions, longest description ${report.metrics.longestDescription} characters, ${report.metrics.withOutputSchema} with outputSchema, ${report.probed} probed`;
+/** What `yokoten mcp` found: the result its screen and its --json are both made from. */
+export interface McpResult {
+  reports: ServerReport[];
+  problems: Finding[];
+  warnings: Finding[];
+  toolCount: number;
+  /** Why no server was checked, when none was named or found; `problems` then holds what the config files gave. */
+  skipped?: string;
+}
+
+/** What `mcp --json` prints (issue #1115), in the shape it has always had. */
+export type McpJson =
+  | { check: 'mcp'; ok: true; skipped: string; findings: Finding[]; notes: Finding[] }
+  | { check: 'mcp'; ok: boolean; servers: ServerReport[]; findings: Finding[]; notes: Finding[] };
+
+/** The one way a run's result becomes its --json (issue #1115): the servers, the problems as findings, the warnings as notes. */
+export function mcpJson(result: McpResult): McpJson {
+  if (result.skipped !== undefined) return { check: 'mcp', ok: true, skipped: result.skipped, findings: result.problems, notes: [] };
+  return { check: 'mcp', ok: !result.problems.length, servers: result.reports, findings: result.problems, notes: result.warnings };
+}
+
+/** One finding as rows: the mark and what, then why and fix under it. Its docs link is in --json: a link is wider than a screen. */
+function findingRows(item: Finding, mark: 'MISSING' | 'note'): string[] {
+  // Every row has a label, empty when the finding has no file, so all texts start in one column.
+  const where = item.file === undefined ? '' : `${item.file}${item.line === undefined ? '' : `:${item.line}`}`;
+  return [
+    ...row(mark, `${item.what}${formatFindingMarks(item)}`, where),
+    ...underRow(`${sentence(item.why)}. ${sentence(item.fix)}.`),
+  ];
+}
+
+/** One server as a row: its tools and sizes, or why it was not started. */
+function serverRow(report: ServerReport, mark: 'ok' | 'MISSING' | 'skipped'): string[] {
+  const text = report.skipped ?? `${count(report.tools, 'tool')}, ${report.metrics.bytes} B of definitions, longest description ${report.metrics.longestDescription} characters, ${report.metrics.withOutputSchema} with outputSchema, ${report.probed} probed`;
+  return row(mark, text, report.name);
+}
+
+/** The screen when no server was named or found: what was looked for, and how to name one. */
+export const mcpNoneScreen = (looked: string): string[] => screen(title('mcp', `no MCP server found in ${looked}`), nextLine('yokoten mcp --command "node path/to/server.ts"'));
+
+/** The screen of a run: every server ready, with a note that names the warnings; or the problems, each with its fix. */
+export function mcpScreen({ reports, problems, warnings, toolCount }: McpResult): string[] {
+  if (!problems.length) {
+    return screen(
+      title('mcp --check', `${count(toolCount, 'tool')} ready`),
+      reports.flatMap((report) => (report.skipped ? row('skipped', report.skipped, report.name) : row('ok', `${count(report.tools, 'tool')}, ${report.metrics.bytes} B`, report.name))),
+      warnings.length ? row('note', `${count(warnings.length, 'warning')}; run yokoten mcp --json`) : [],
+    );
+  }
+  const failing = new Set(reports.filter((report) => report.findings.some(isFailingFinding)).map((report) => report.name));
+  return screen(
+    title('mcp', `${count(problems.length, 'problem')} in ${count(reports.length, 'server')}`),
+    spaced(reports.map((report) => serverRow(report, report.skipped ? 'skipped' : failing.has(report.name) ? 'MISSING' : 'ok'))),
+    spaced(problems.map((item) => findingRows(item, 'MISSING'))),
+    warnings.length ? section('Notes', spaced(warnings.map((item) => findingRows(item, 'note')))) : [],
+    nextLine('yokoten mcp'),
+    moreLine('the docs link of each problem: `yokoten mcp --json`'),
+  );
 }
 
 export async function runMcp(invocation: Invocation): Promise<number> {
@@ -497,6 +552,7 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   if (typeof options === 'string') return usage(invocation, options);
   const json = options.flags.has('--json');
   const dir = options.positional[0] ?? invocation.cwd;
+  // No repo is a failure to run, not a result: its --json has no servers.
   const root = requireRoot(invocation, dir, json ? (missing) => ({ check: 'mcp', ok: false, findings: [missing], notes: [] }) : undefined);
   if (!root) return 1;
 
@@ -510,9 +566,9 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const configFindings = config.problems;
   if (!servers.length) {
     const looked = CONFIG_FILES.join(', ');
-    const what = `no MCP server found in ${looked}`;
-    if (json) printJson(invocation, { check: 'mcp', ok: true, skipped: what, findings: configFindings, notes: [] });
-    else print(invocation, [`yokoten mcp: ${what}. Name one with --command "node path/to/server.ts"`]);
+    const skipped: McpResult = { reports: [], problems: configFindings, warnings: [], toolCount: 0, skipped: `no MCP server found in ${looked}` };
+    if (json) printJson(invocation, mcpJson(skipped));
+    else show(invocation, mcpNoneScreen(looked));
     return configFindings.some(isFailingFinding) ? 1 : 0;
   }
 
@@ -523,22 +579,12 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const problems = findings.filter(isFailingFinding);
   const warnings = [...findings.filter((item) => !isFailingFinding(item)), ...notes];
   const toolCount = reports.reduce((sum, report) => sum + report.tools, 0);
+  const result: McpResult = { reports, problems, warnings, toolCount };
 
   if (json) {
-    printJson(invocation, {
-      check: 'mcp',
-      ok: !problems.length,
-      servers: reports,
-      findings: problems,
-      notes: warnings,
-    });
-  } else if (!problems.length) {
-    const lines = [...title('mcp --check', `${count(toolCount, 'tool')} ready`), ''];
-    for (const report of reports) lines.push(...row('ok', report.skipped ? report.skipped : `${count(report.tools, 'tool')}, ${report.metrics.bytes} B`, report.name));
-    if (warnings.length) lines.push('', ...row('note', `${count(warnings.length, 'warning')}; run yokoten mcp --json`));
-    print(invocation, lines);
+    printJson(invocation, mcpJson(result));
   } else {
-    print(invocation, [`yokoten mcp: ${problems.length} problem(s)`, ...reports.map(serverLine), ...bullets(problems), ...(warnings.length ? [`notes:`, ...bullets(warnings)] : [])], invocation.stderr);
+    print(invocation, mcpScreen(result), problems.length ? invocation.stderr : invocation.stdout);
   }
   return problems.length ? 1 : 0;
 }

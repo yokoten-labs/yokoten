@@ -3,7 +3,9 @@
 import '../repo/home.ts';
 import assert from 'node:assert/strict';
 import {
+  closeSync,
   mkdirSync,
+  openSync,
   readdirSync,
   symlinkSync,
   writeFileSync,
@@ -16,7 +18,8 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { canColour, isColourTerminal, paint, problemRows, say, styleLine, styleText, type Invocation } from '../../src/commands/shared.ts';
+import { askOnTerminal, canColour, fail, isColourTerminal, MARKS, paint, problemRows, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
+import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup/ask.ts';
 import type { Env } from '../../src/rules/config.ts';
 import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
 
@@ -75,7 +78,8 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   // init in a folder that does not exist creates nothing: a typo never becomes a project.
   const result = await sandbox.call(['init', '--list', 'typo'], { cwd: away });
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'note: yokoten init moved to yokoten. It runs as before this time.\n\nyokoten init: typo does not exist; nothing was written. Create it and run `git init` there first.\n');
+  // init did not move, so no moved note comes first (plan 4); the failure is the whole screen.
+  assert.equal(result.stderr, 'yokoten init · typo does not exist, so nothing was written\n\nNext: `git init typo`\n');
   assert.deepEqual(readdirSync(away), [], 'no folder made');
   // A session in a non-repo folder gets no noise, and starts.
   const session = await sandbox.call(['doctor', '--session'], { cwd: away });
@@ -406,4 +410,79 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   const plain = problemRows([finding('time-zone', 'one', 'leave history as it is')]);
   assert.ok(!plain.some((line) => line.includes('Fix: ')), plain.join('\n'));
   assert.ok(plain.join(' ').includes('Leave history as it is.'), plain.join('\n'));
+});
+
+// Issue #1115: the layout kit's runner side. One terminal-facts value, one failure form, one question writer.
+const kitInvocation = (over: { command?: string; stdinTTY?: boolean; stdoutTTY?: boolean; fd?: number | null; args?: string[] } = {}) => {
+  const out: string[] = [];
+  const err: string[] = [];
+  const invocation: Invocation = {
+    command: over.command ?? 'desk',
+    args: over.args ?? [],
+    env: {},
+    cwd: '',
+    stdout: { isTTY: over.stdoutTTY, write: (text: string) => out.push(text) } as unknown as Invocation['stdout'],
+    stderr: { write: (text: string) => err.push(text) } as unknown as Invocation['stderr'],
+    stdin: { fd: over.fd === undefined ? 0 : over.fd, text: null, stream: { isTTY: over.stdinTTY } as Invocation['stdin']['stream'] },
+    script: '',
+  };
+  return { invocation, out, err };
+};
+
+test('terminalOf: a person at a terminal can be asked and gets colour; a pipe, a hook and no stdin fd cannot (#1115)', () => {
+  assert.deepEqual(terminalOf(kitInvocation({ stdinTTY: true, stdoutTTY: true }).invocation), { isPerson: true, canAsk: true, colour: true });
+  assert.deepEqual(terminalOf(kitInvocation({ stdinTTY: false, stdoutTTY: true }).invocation), { isPerson: false, canAsk: false, colour: true }, 'stdin in a pipe: nobody to ask');
+  assert.deepEqual(terminalOf(kitInvocation({ stdinTTY: true, stdoutTTY: false }).invocation), { isPerson: false, canAsk: false, colour: false }, 'stdout in a pipe');
+  assert.deepEqual(terminalOf(kitInvocation({ stdinTTY: true, stdoutTTY: true, fd: null }).invocation), { isPerson: true, canAsk: false, colour: true }, 'no fd to read the answer from');
+  assert.equal(terminalOf(kitInvocation({ command: 'hook', stdinTTY: true, stdoutTTY: true }).invocation).colour, false, 'the hook never gets colour');
+});
+
+test('fail: the failure screen on stderr, nothing on stdout, exit 1; with --json the error as data too (#1115)', () => {
+  const plain = kitInvocation();
+  assert.equal(fail(plain.invocation, 'no desk named demo', 'yokoten desk'), 1);
+  assert.equal(plain.err.join(''), 'yokoten desk · no desk named demo\n\nNext: `yokoten desk`\n');
+  assert.deepEqual(plain.out, []);
+  const json = kitInvocation({ command: 'doctor', args: ['--json'] });
+  fail(json.invocation, 'not set up');
+  assert.deepEqual(JSON.parse(json.out.join('')), { command: 'doctor', ok: false, error: 'not set up' });
+  assert.equal(json.err.join(''), 'yokoten doctor · not set up\n');
+});
+
+test('show: a screen on stdout, as print does (#1115)', () => {
+  const { invocation, out, err } = kitInvocation();
+  show(invocation, ['yokoten desk · 2 desks', '', '  ok          one']);
+  assert.equal(out.join(''), 'yokoten desk · 2 desks\n\n  ok          one\n');
+  assert.deepEqual(err, []);
+  show(invocation, []);
+  assert.equal(out.length, 1, 'no lines print nothing');
+});
+
+test('askOnTerminal: writes the question once and reads one line back, or null at the end (#1115)', () => {
+  const sandbox = makeSandbox();
+  const answers = join(sandbox.home, 'answers.txt');
+  writeFileSync(answers, 'yes\r\nno\n');
+  const written: string[] = [];
+  const stdout = { write: (text: string) => written.push(text) } as unknown as Invocation['stdout'];
+  const fd = openSync(answers, 'r');
+  try {
+    const ask = askOnTerminal(stdout, fd);
+    assert.equal(ask('Set up yokoten here? [Y/n]'), 'yes', 'a Windows line end is dropped');
+    assert.equal(ask('Again? [Y/n]'), 'no');
+    assert.equal(ask('Once more? [Y/n]'), null, 'end of input');
+  } finally {
+    closeSync(fd);
+  }
+  assert.deepEqual(written, ['Set up yokoten here? [Y/n] ', 'Again? [Y/n] ', 'Once more? [Y/n] ']);
+  assert.equal(setupAskOnTerminal, askOnTerminal, 'setup.ts names the same writer');
+});
+
+test('styleLine: every mark of MARKS is drawn, green when it says done (#1115)', () => {
+  for (const mark of MARKS) {
+    const styled = styleLine(`  ${mark.padEnd(11)} text`, true);
+    assert.notEqual(styled, `  ${mark.padEnd(11)} text`, `${mark} is styled`);
+    assert.ok(styled.endsWith(' text'), `${mark} keeps the text`);
+    if (['ok', 'done', 'wrote', 'updated', 'linked', 'added', 'removed', 'kept'].includes(mark)) assert.match(styled, /\u001b\[32m✔ /, `${mark} is green`);
+    else assert.doesNotMatch(styled, /\u001b\[32m/, `${mark} is not green`);
+  }
+  assert.match(styleLine('note: a note line', true), /⚠ note:/, 'the older note line form');
 });

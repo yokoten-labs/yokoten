@@ -134,8 +134,10 @@ export function makeEventLog(times: string[]): { text: string; lines: string[]; 
   return { text: lines.join('\n') + '\n', lines, hashes };
 }
 
+// The parent is the real path: on macOS tmpdir() is /var/..., a link to /private/var/..., and a
+// command prints the real form, which hideHome must find as the sandbox home (#1115).
 export function makeTempDir(prefix = 'yokoten-'): string {
-  if (!tempParent) tempParent = mkdtempSync(join(tmpdir(), 'yokoten-test-'));
+  if (!tempParent) tempParent = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-test-')));
   const path = mkdtempSync(join(tempParent, prefix));
   testFolders.at(-1)?.push(path);
   return path;
@@ -158,7 +160,7 @@ export function makeGitFolder(top: string): void {
 
 /** A new empty folder that outlives the test that made it, removed when the file ends: for a template (#475). */
 function makeFileTempDir(prefix = 'yokoten-template-'): string {
-  if (!tempParent) tempParent = mkdtempSync(join(tmpdir(), 'yokoten-test-'));
+  if (!tempParent) tempParent = realpathSync(mkdtempSync(join(tmpdir(), 'yokoten-test-')));
   return mkdtempSync(join(tempParent, prefix));
 }
 
@@ -243,6 +245,13 @@ const copySandboxRepo = makeRepoTemplate((repo) => {
  * The road at a session start, as two lines (#1099): the stage title, and the Next row with
  * its wrapped lines joined, so a test reads the step whatever the width.
  */
+/**
+ * A screen with each row on one line: the lines wrapped under a row are joined to it, and the
+ * blank lines between rows go. For a test that reads what a row says, not where the screen
+ * wraps it; invoke() checks the layout itself (#1115).
+ */
+export const rowsText = (text: string): string => text.replace(/\n\n(?= {2}\S)/g, '\n').replace(/\n {3,}(?=\S)/g, ' ');
+
 export const sessionRoad = (stdout: string): string => stdout.replace(/\n {12}/g, ' ').split('\n').filter((line) => line !== '').slice(0, 2).join('\n');
 
 export function makeSandbox() {
@@ -403,8 +412,8 @@ export function handAdd(stdout: string, skip: string): Record<string, unknown[]>
 
 /** The JSON at the end of doctor's line for `id`. */
 export function doctorHandAdd(stdout: string, id: string, file: string): Record<string, unknown[]> {
-  const line = stdout.split('\n').find((l) => l.startsWith(`  note    ${id}: `)) ?? '';
-  assert.ok(line.startsWith(`  note    ${id}: ${COMMENTED(file)}: {`), `doctor: ${stdout}`);
+  const line = rowsText(stdout).split('\n').find((l) => l.startsWith(`  note        ${id}: `)) ?? '';
+  assert.ok(line.startsWith(`  note        ${id}: ${COMMENTED(file)}: {`), `doctor: ${stdout}`);
   return JSON.parse(line.slice(line.indexOf(': {') + 2));
 }
 

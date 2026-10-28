@@ -2,8 +2,9 @@
 
 import '../repo/home.ts';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { test } from 'node:test';
-import { makeSandbox } from '../repo/helpers.ts';
+import { makeSandbox, rowsText } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
 import { doctor, guardCostCheck, type MachineProbe } from '../../src/setup/doctor/index.ts';
 import { freeMemory, guardLine, isLight, measureRun, parseChildTimes, testCommand, testJobs } from '../../src/host/light.ts';
@@ -43,12 +44,17 @@ test('light: yokoten test --print shows the command and the off switch; --heavy 
   // two runs below, which check the real exit code.
   const light = await sandbox.call(['test', '--print', '--', 'a.test.ts']);
   assert.equal(light.status, 0, light.stderr);
-  assert.match(light.stdout, /^(nice -n 10 )?node --test --test-concurrency=\d+ a\.test\.ts\nlight: \d+ at once/);
-  assert.match(light.stdout, /YOKOTEN_LIGHT_TESTS=0/);
+  // One screen: the plan as the title, then the command, why, and the off switch as rows.
+  const rows = rowsText(light.stdout);
+  assert.match(rows, /^yokoten test · would run the tests you named, \d+ at once/);
+  assert.match(rows, /^ {2}command +(nice -n 10 )?node --test --test-concurrency=\d+ .*a\.test\.ts$/m);
+  assert.match(rows, /^ {2}why +\d+ at once: /m);
+  assert.match(rows, /YOKOTEN_LIGHT_TESTS=0/);
+  const uncapped = /^yokoten test · would run .*: the light run is off\n\n {2}command +node --test (?!.*--test-concurrency)/;
   const heavy = await sandbox.call(['test', '--print', '--heavy']);
-  assert.equal(heavy.stdout, 'node --test\nthe light run is off\n');
+  assert.match(heavy.stdout, uncapped);
   const off = await sandbox.call(['test', '--print'], { extra: { YOKOTEN_LIGHT_TESTS: '0' } });
-  assert.equal(off.stdout, 'node --test\nthe light run is off\n');
+  assert.match(off.stdout, uncapped);
   assert.notEqual((await sandbox.call(['test', '--nope'])).status, 0, 'an unknown option is refused');
 });
 
@@ -66,7 +72,7 @@ test('test: one screen says the plan first and ends with one row (#1027)', () =>
   sandbox.write('ok.test.mjs', "import { test } from 'node:test';\ntest('fine', () => {});\n");
   const result = sandbox.run(['test', '--', 'ok.test.mjs']);
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /^yokoten test · \d+ files? at once, /);
+  assert.match(result.stdout, /^yokoten test · (?:the tests you named|\d+ test files?), \d+ at once/);
   assert.match(result.stdout, /^ {2}done +tests passed$/m);
 });
 
@@ -80,13 +86,13 @@ test('guard cost: the shell times line gives user plus system CPU of the child, 
 
 test('guard cost: a real run is measured in wall time and, off Windows, CPU time (#461)', () => {
   const sandbox = makeSandbox();
-  const cost = measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i; process.stdout.write(String(n))'], '', { cwd: sandbox.repo, env: sandbox.env });
+  const cost = measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i; process.stdout.write(String(n))'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform);
   assert.ok(cost, 'it ran');
   assert.ok(cost.wallMs > 0);
   if (process.platform !== 'win32') assert.ok(cost.cpuMs !== null && cost.cpuMs > 0, 'the CPU time of the child is there');
-  assert.equal(measureRun(['/no/such/program'], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a program that is not there is not a cost');
-  assert.equal(measureRun([sandbox.repo], '', { cwd: sandbox.repo, env: sandbox.env }), null, 'a folder is found, but it is not a program');
-  const refused = measureRun([process.execPath, '-e', 'process.exit(2)'], '', { cwd: sandbox.repo, env: sandbox.env });
+  assert.equal(measureRun(['/no/such/program'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform), null, 'a program that is not there is not a cost');
+  assert.equal(measureRun([sandbox.repo], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform), null, 'a folder is found, but it is not a program');
+  const refused = measureRun([process.execPath, '-e', 'process.exit(2)'], '', { cwd: sandbox.repo, env: sandbox.env }, process.platform);
   assert.ok(refused, 'a program that exits nonzero still ran: the guard exits 2 on a refusal');
   assert.ok(refused.wallMs > 0);
 });
@@ -107,10 +113,18 @@ test('guard cost: full doctor reports it in one line, spawning the guard once; a
     measureGuard: () => { runs++; return { wallMs: 90.2, cpuMs: 60.4 }; },
   } satisfies MachineProbe;
   const full = doctor(sandbox.repo, { env, config: DEFAULTS, machine });
-  assert.ok(full.lines.includes('  ok      guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
+  assert.ok(full.lines.includes('  ok          guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
   assert.equal(runs, 1);
   doctor(sandbox.repo, { env, config: DEFAULTS, machine, session: true });
   assert.equal(runs, 1, 'a session must start fast: no guard run');
   assert.equal(guardCostCheck(sandbox.repo, { ...machine, measureGuard: () => null }, env), null, 'a guard that cannot run: no line');
   assert.equal(guardCostCheck(sandbox.repo, { ...machine, measureGuard: undefined }, env), null, 'a machine that cannot measure: no line');
+});
+
+test('guard cost: the platform argument picks the way to measure (issue #1000)', () => {
+  const sandbox = makeSandbox();
+  const run = (platform: string) => measureRun([process.execPath, '-e', 'let n = 0; for (let i = 0; i < 3e7; i++) n += i'], '', { cwd: sandbox.repo, env: sandbox.env }, platform);
+  // Off Windows the shell's `times` gives CPU; the win32 row has the wall time alone.
+  assert.equal(run('win32')?.cpuMs, null, 'win32: the wall time alone');
+  if (existsSync('/bin/sh')) for (const platform of ['linux', 'darwin']) assert.ok(run(platform)?.cpuMs, `${platform}: CPU time from the shell`);
 });

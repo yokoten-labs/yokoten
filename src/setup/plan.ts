@@ -115,23 +115,48 @@ export interface PlanningOptions {
 }
 
 /** One change to the host: what it is, in words, and the gh call that makes it. */
-interface Change {
+interface HostChange {
   what: string;
   run: () => void;
 }
 
+/**
+ * One line of the GitHub plan: `done` and `failed` after --yes, `kept` for what is there,
+ * `to do` for what --yes would do, and `note` for what yokoten leaves to the owner.
+ */
+export interface PlanItem {
+  state: 'done' | 'failed' | 'kept' | 'to do' | 'note';
+  what: string;
+}
+
+/**
+ * What `init --github` found and did on GitHub, as data (#1115): the screen reads this, never
+ * prose. `skip` says why GitHub was not read, and `command` is the one that does the `to do` items.
+ */
+export interface PlanResult {
+  ok: boolean;
+  skipped: boolean;
+  /** `owner/name` on GitHub, or null when it was skipped before it was known. */
+  repo: string | null;
+  /** Why GitHub was skipped, and the command or step that lets it run. */
+  skip?: { why: string; fix: string };
+  items: PlanItem[];
+  /** The command that does the `to do` items; set only when the plan was a preview. */
+  command?: string;
+}
+
 const sameName = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
-/** The area labels to make, and the report lines about the areas. */
-function planAreaLabels(gh: Gh, repo: string, areas: string[], labels: Label[]): { lines: string[]; changes: Change[] } {
+/** The area labels to make, and the items about the areas. */
+function planAreaLabels(gh: Gh, repo: string, areas: string[], labels: Label[]): { items: PlanItem[]; changes: HostChange[] } {
   // An area with a standard label's name (`docs`, `ci`) keeps the standard label.
   const standard = areas.filter((area) => LABELS.some((l) => sameName(l.name, area)));
   const wanted = areas.filter((area) => !standard.includes(area));
-  const lines = standard.length ? [`- areas that are also standard labels: ${standard.join(', ')}. They keep the standard label`] : [];
+  const items: PlanItem[] = standard.length ? [{ state: 'kept', what: `areas that are also standard labels keep the standard label: ${standard.join(', ')}` }] : [];
   if (wanted.length > MAX_AREA_LABELS) {
-    return { lines: [...lines, `- area labels: none, because yokoten.json has ${wanted.length} areas and more than ${MAX_AREA_LABELS} labels is noise. Make the few you filter by yourself`], changes: [] };
+    return { items: [...items, { state: 'note', what: `no area labels: yokoten.json has ${wanted.length} areas, and more than ${MAX_AREA_LABELS} labels is noise; make the few you filter by yourself` }], changes: [] };
   }
-  const changes: Change[] = [];
+  const changes: HostChange[] = [];
   let kept = 0;
   for (const area of wanted) {
     // A label that is there is the owner's, whatever its colour: it is kept as it is.
@@ -141,8 +166,8 @@ function planAreaLabels(gh: Gh, repo: string, areas: string[], labels: Label[]):
       changes.push({ what: `make label "${area}" (area: ${area})`, run: () => createLabel(gh, repo, label) });
     }
   }
-  if (kept) lines.push(`- ${kept} of the ${wanted.length} area labels are there; kept`);
-  return { lines, changes };
+  if (kept) items.push({ state: 'kept', what: `${kept} of the ${wanted.length} area labels are there` });
+  return { items, changes };
 }
 
 /** Makes the board, links it, and sets its Status options. Only for a board made just now. */
@@ -155,36 +180,39 @@ function makeBoard(gh: Gh, repo: string, title: string): void {
   setFieldOptions(gh, status.id, BOARD_STATUSES);
 }
 
-/** What the Status field of a board that is there says, as a report line. */
-function describeStatus(gh: Gh, repo: string, board: Board): string {
+/** What the Status field of a board that is there says, as one item. */
+function describeStatus(gh: Gh, repo: string, board: Board): PlanItem {
   const owner = repo.split('/')[0];
   let options: string[] | null = null;
   try {
     options = readStatusField(gh, owner, board.number)?.options ?? null;
   } catch {
-    return `- board "${board.title}": could not read its Status field; check it has ${BOARD_STATUSES.join(', ')}`;
+    return { state: 'note', what: `board "${board.title}": could not read its Status field; check it has ${BOARD_STATUSES.join(', ')}` };
   }
-  if (options && options.length === BOARD_STATUSES.length && options.every((o, i) => sameName(o, BOARD_STATUSES[i]))) return `- board "${board.title}" has the Status options; kept`;
+  if (options && options.length === BOARD_STATUSES.length && options.every((o, i) => sameName(o, BOARD_STATUSES[i]))) return { state: 'kept', what: `board "${board.title}" has the Status options` };
   // Changing the options would clear the status of every item on it, so the owner does it.
-  return `- board "${board.title}": its Status options are ${options?.join(', ') || 'missing'}. yokoten never changes a board that is there; set ${BOARD_STATUSES.join(', ')} by hand`;
+  return { state: 'note', what: `board "${board.title}": its Status options are ${options?.join(', ') || 'missing'}; yokoten never changes a board that is there, so set ${BOARD_STATUSES.join(', ')} by hand` };
 }
 
 /** The board: found by title among the linked ones, then among the owner's, or made. */
-function planBoard(gh: Gh, repo: string): { lines: string[]; changes: Change[] } {
+function planBoard(gh: Gh, repo: string): { items: PlanItem[]; changes: HostChange[] } {
   const title = repo.split('/')[1];
-  const skip = (err: { unread: string; fix: string }) => ({ lines: [`- board: skipped, because ${err.unread}. To make one, ${err.fix}, then run \`yokoten init --github --board --yes\` again`], changes: [] });
+  const skip = (err: { unread: string; fix: string }): { items: PlanItem[]; changes: HostChange[] } => ({
+    items: [{ state: 'note', what: `no board: ${err.unread}; to make one, ${err.fix}, then run \`yokoten init --github --board --yes\` again` }],
+    changes: [],
+  });
   const linked = readLinkedBoards(gh, repo);
   if ('unread' in linked) return skip(linked);
   const there = linked.find((b) => sameName(b.title, title));
-  if (there) return { lines: [`- board "${there.title}" is linked; kept`, describeStatus(gh, repo, there)], changes: [] };
+  if (there) return { items: [{ state: 'kept', what: `board "${there.title}" is linked` }, describeStatus(gh, repo, there)], changes: [] };
   // Made by an earlier run that stopped before the link: link it, never make a second one.
   const owned = readOwnerBoards(gh, repo.split('/')[0]);
   if ('unread' in owned) return skip(owned);
   const unlinked = owned.find((b) => sameName(b.title, title));
   if (unlinked) {
-    return { lines: [describeStatus(gh, repo, unlinked)], changes: [{ what: `link board "${unlinked.title}" to ${repo}`, run: () => linkBoard(gh, repo, unlinked.number) }] };
+    return { items: [describeStatus(gh, repo, unlinked)], changes: [{ what: `link board "${unlinked.title}" to ${repo}`, run: () => linkBoard(gh, repo, unlinked.number) }] };
   }
-  return { lines: [], changes: [{ what: `make board "${title}", link it to ${repo}, and give its Status field ${BOARD_STATUSES.join(', ')}`, run: () => makeBoard(gh, repo, title) }] };
+  return { items: [], changes: [{ what: `make board "${title}", link it to ${repo}, and give its Status field ${BOARD_STATUSES.join(', ')}`, run: () => makeBoard(gh, repo, title) }] };
 }
 
 /** gh's first line about a failure, and the fix when the token lacks the project scope. */
@@ -194,24 +222,24 @@ function describeFailure(err: unknown): string {
 }
 
 /** The command that sets up labels and a milestone once GitHub can be reached. */
-const SET_UP = `yokoten init --github --yes`;
+export const SET_UP = 'yokoten init --github --yes';
 
 /**
- * Returns the report lines, whether every change worked, and whether GitHub was skipped.
- * `remote` is the origin URL. A skip (no GitHub remote, no gh, no sign-in) is ok here:
- * the caller decides, because only `init --github --yes` asked for a change. A board that
- * can't be made for lack of the project scope is a line, not a skip: the rest still happens.
+ * What GitHub has and what `init --github` would change, or changed with `apply`, as data. `remote`
+ * is the origin URL. A skip (no GitHub remote, no gh, no sign-in) is ok here: the caller decides,
+ * because only `init --github --yes` asked for a change. A board that can't be made for lack of the
+ * project scope is a failed item, not a skip: the rest still happens.
  */
-export function setUpPlanning(gh: Gh, remote: string, { apply, removeDefaults, areas = [], board = false }: PlanningOptions): { ok: boolean; skipped: boolean; lines: string[] } {
-  const skip = (line: string) => ({ ok: true, skipped: true, lines: [line] });
-  if (!remote.trim()) return skip(`GitHub: skipped, because there is no origin remote yet. Make the repo on GitHub, add it as origin, and push; then run \`${SET_UP}\` to set up labels and a milestone`);
+export function setUpPlanning(gh: Gh, remote: string, { apply, removeDefaults, areas = [], board = false }: PlanningOptions): PlanResult {
+  const skip = (why: string, fix: string): PlanResult => ({ ok: true, skipped: true, repo: null, skip: { why, fix }, items: [] });
+  if (!remote.trim()) return skip('there is no origin remote yet; make the repo on GitHub, add it as origin and push, then set up labels and a milestone', SET_UP);
   const repo = repoOf(remote);
-  if (!repo) return skip('GitHub: skipped, because the origin remote is not on GitHub. Labels and a milestone need a GitHub repo');
+  if (!repo) return skip('the origin remote is not on GitHub; labels and a milestone need a GitHub repo', '');
   const found = readPlanning(gh, repo);
-  if ('unread' in found) return skip(`GitHub: skipped, because ${found.unread}. To set up labels and a milestone, ${found.fix}, then run \`${SET_UP}\``);
+  if ('unread' in found) return skip(`${found.unread}; to set up labels and a milestone, ${found.fix}`, SET_UP);
 
-  const lines = [`GitHub: ${found.repo}`];
-  const changes: Change[] = [];
+  const items: PlanItem[] = [];
+  const changes: HostChange[] = [];
   let kept = 0;
   for (const label of LABELS) {
     const there = found.labels.find((l) => sameName(l.name, label.name));
@@ -220,41 +248,41 @@ export function setUpPlanning(gh: Gh, remote: string, { apply, removeDefaults, a
       changes.push({ what: `update label "${there.name}" to the standard colour and description`, run: () => editLabel(gh, repo, there.name, label) });
     } else kept++;
   }
-  if (kept) lines.push(`- ${kept} of the ${LABELS.length} standard labels are there; kept`);
+  if (kept) items.push({ state: 'kept', what: `${kept} of the ${LABELS.length} standard labels are there` });
   const milestone = pickNewMilestone(found.milestones);
-  if (milestone === null) lines.push('- a milestone is open; kept');
+  if (milestone === null) items.push({ state: 'kept', what: 'a milestone is open' });
   else changes.push({ what: `make milestone "${milestone}"`, run: () => createMilestone(gh, repo, milestone) });
   const areaPlan = planAreaLabels(gh, repo, areas, found.labels);
-  lines.push(...areaPlan.lines);
+  items.push(...areaPlan.items);
   changes.push(...areaPlan.changes);
   // A project's own area is never deleted, even when GitHub has a default label of that name.
   const extra = found.labels.filter((l) => HOST_DEFAULTS.includes(l.name.toLowerCase()) && !areas.some((area) => sameName(area, l.name))).map((l) => l.name);
   if (extra.length && removeDefaults) {
     for (const name of extra) changes.push({ what: `delete label "${name}" (the host also takes it off every issue)`, run: () => deleteLabel(gh, repo, name) });
   } else if (extra.length) {
-    lines.push(`- not in the standard set: ${extra.join(', ')}. yokoten deletes them only with --remove-default-labels`);
+    items.push({ state: 'note', what: `not in the standard set: ${extra.join(', ')}; yokoten deletes them only with --remove-default-labels` });
   }
   if (board) {
     const boardPlan = planBoard(gh, repo);
-    lines.push(...boardPlan.lines);
+    items.push(...boardPlan.items);
     changes.push(...boardPlan.changes);
   }
 
-  if (!changes.length) return { ok: true, skipped: false, lines: [...lines, 'Nothing to change.'] };
+  const result: PlanResult = { ok: true, skipped: false, repo: found.repo, items };
+  if (!changes.length) return result;
   if (!apply) {
-    const command = `yokoten init --github --yes${removeDefaults ? ' --remove-default-labels' : ''}${board ? ' --board' : ''}`;
-    return { ok: true, skipped: false, lines: [...lines, 'Would do:', ...changes.map((c) => `- ${c.what}`), `Nothing changed. Run \`${command}\` to do it.`] };
+    const command = `${SET_UP}${removeDefaults ? ' --remove-default-labels' : ''}${board ? ' --board' : ''}`;
+    return { ...result, items: [...items, ...changes.map((change): PlanItem => ({ state: 'to do', what: change.what }))], command };
   }
-  // Each one on its own: one refusal does not stop the rest, and the report says which.
-  let ok = true;
+  // Each one on its own: one refusal does not stop the rest, and the result says which.
   for (const change of changes) {
     try {
       change.run();
-      lines.push(`- done: ${change.what}`);
+      items.push({ state: 'done', what: change.what });
     } catch (err) {
-      ok = false;
-      lines.push(`- could not ${change.what}: ${describeFailure(err)}`);
+      result.ok = false;
+      items.push({ state: 'failed', what: `could not ${change.what}: ${describeFailure(err)}` });
     }
   }
-  return { ok, skipped: false, lines };
+  return result;
 }

@@ -26,6 +26,7 @@ import {
   securityLacking,
   STAGES,
   type Step,
+  uncheckedHooks,
   walk,
   yokotenActions,
 } from '../../src/setup/road.ts';
@@ -697,5 +698,17 @@ test('road: the tests step names the workflow file, the job to add and the needs
     assert.match(loose, /Pin it, then run `yokoten init`/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('road: a missing commit hook needs chmod everywhere but Windows (issue #1000)', () => {
+  const sandbox = makeSandbox();
+  sandbox.git('config', 'core.hooksPath', 'hooks');
+  sandbox.write('hooks/pre-commit', '#!/bin/sh\nexit 0\n');
+  const rows: [NodeJS.Platform, boolean][] = [['linux', true], ['darwin', true], ['win32', false]];
+  for (const [platform, needsChmod] of rows) {
+    const missing = uncheckedHooks(sandbox.repo, sandbox.env, platform)?.find((hook) => hook.problem === 'missing');
+    assert.ok(missing, `${platform}: the pre-merge-commit hook is not there`);
+    assert.equal(missing.needsChmod, needsChmod, platform);
   }
 });

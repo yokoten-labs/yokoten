@@ -1,10 +1,10 @@
 // What every command uses: the command line, the parser, the repo root, and the output.
 // Everything yokoten prints goes through `print`, `say` or `printJson` (core rule 11).
 
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { row, screen, spaced, wrap } from '../rules/text/screen.ts';
+import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -110,14 +110,8 @@ export function usage(invocation: Invocation, error: string): number {
   const { command } = invocation;
   printJsonError(invocation, error);
   // The error with the word typed, what the command does in one line, then the command to run last (record 0049, #1115).
-  const name = command ?? '';
-  const entry = name ? findCommand(name) : undefined;
-  const said = screen(
-    wrap(name ? `yokoten ${name} · ` : 'yokoten · ', error.replace(/\.$/, '')),
-    entry ? wrap(`  ${entry.name.padEnd(12)}`, entry.summary) : [],
-    wrap('Next: ', name ? `\`yokoten ${name} --help\`` : '`yokoten help`'),
-  );
-  print(invocation, said, invocation.stderr);
+  const entry = command ? findCommand(command) : undefined;
+  print(invocation, screen(failure(command || undefined, error), entry ? field(entry.name, entry.summary) : [], nextLine(command ? `yokoten ${command} --help` : 'yokoten help')), invocation.stderr);
   return 1;
 }
 
@@ -169,8 +163,8 @@ export function requireRoot(invocation: Invocation, dir: string, json?: (missing
 export function noRootScreen(command: string | undefined, missing: Finding): string[] {
   const words = command === undefined ? 'yokoten' : `yokoten ${command}`;
   // What happened in the reader's words, with no path: the folder is the one they are in (issue #1115).
-  if (missing.what.startsWith(GIT_MISSING)) return screen(wrap(`${words} · `, missing.what), wrap('Next: ', `install git, or add it to PATH, then run \`${words}\` again`));
-  return screen(wrap(`${words} · `, 'this folder is not in a git repo'), wrap('Next: ', `go to your project's folder, or start one here with \`git init\``));
+  if (missing.what.startsWith(GIT_MISSING)) return failure(command, missing.what, `install git, or add it to PATH, then run \`${words}\` again`);
+  return failure(command, 'this folder is not in a git repo', "go to your project's folder, or start one here with `git init`");
 }
 
 // A person's terminal output (#707): colour and a shape that reads at a glance, like
@@ -191,9 +185,11 @@ export const paint = (text: string, code: string, isColour: boolean): string => 
  */
 export const isColourTerminal = (env: Env, stream: { isTTY?: boolean }): boolean => stream.isTTY === true && env.NO_COLOR === undefined && env.TERM !== 'dumb';
 
-// A mark at the start of a line, padded to the column the next word starts in.
-const MARK = /^(\s*)(ok|done|MISSING|note:?|next|to do|not now|can't check|wrote|linked|added|removed|kept|updated|skipped)(\s+)(.*)$/;
-const GREEN_MARKS = new Set(['ok', 'done', 'wrote', 'linked', 'added', 'removed', 'kept', 'updated']);
+// A mark at the start of a line, padded to the column the next word starts in. The words are
+// MARKS, the one list (issue #1115), longest first; `note:` is the older note line's form.
+const markWords = [...MARKS].sort((a, b) => b.length - a.length).map((mark) => (mark === 'note' ? 'note:?' : mark.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+const MARK = new RegExp(`^(\\s*)(${markWords.join('|')})(\\s+)(.*)$`);
+const GREEN_MARKS: ReadonlySet<string> = new Set(MARKS.filter(isDoneMark));
 // The ways a `kept` line says the file stays the user's, because they changed it: `describeWrite`'s
 // `kept (your edit) …` and `kept … (yours, not yokoten's)`, and init's `kept your <sandbox> in …`,
 // `kept your <hooks file>: …` and `kept <file>: it has your changes …` (#964).
@@ -203,7 +199,7 @@ const KEPT_YOURS = /^(?:\(your edit\)|your\b)|\(yours, not yokoten's\)$|: it has
 // so an old console never shows a broken glyph. `not now` and `skipped` are not among
 // the five states, so they keep their word only.
 const MARK_GLYPH: Record<string, string> = {
-  ok: '✔', done: '✔', wrote: '✔', linked: '✔', added: '✔', removed: '✔', kept: '✔', updated: '✔',
+  ...Object.fromEntries(MARKS.filter(isDoneMark).map((mark: Mark) => [mark, '✔'])),
   MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
 };
 // log-symbols' fallbacks (issue #1027, R11): the classic Windows console draws these from its code page.
@@ -221,6 +217,18 @@ export function isUnicodeTerminal(env: Env, platform: NodeJS.Platform = 'linux')
 
 /** The padding after a mark, two columns shorter, so the text after it keeps its column. */
 const trimMarkPadding = (padding: string): string => padding.slice(Math.min(2, Math.max(0, padding.length - 1)));
+
+/**
+ * The text after a mark, `short` columns narrower when it starts with a label and a gap of
+ * three or more spaces: the gap keeps one space at least. Any other text is left as it is.
+ */
+function keepTextColumn(rest: string, short: number): string {
+  if (short >= 0) return rest;
+  const labelled = /^(\S+(?: \S+)*)( {3,})(\S.*)$/.exec(rest);
+  if (!labelled) return rest;
+  const gap = labelled[2] ?? '';
+  return `${labelled[1] ?? ''}${gap.slice(Math.min(-short, gap.length - 1))}${labelled[3] ?? ''}`;
+}
 const HEADING = /^(?:yokoten \d|yokoten [a-z][a-z-]*:|yokoten [a-z][a-z -]* · |yokoten stopped this:|the road:|project:|machine:|unsaved work|server \(|Usage:|Start:|Exit codes:|Options:|Example:|Merge next:|More:|Instead:|Why:)|^[A-Z][a-z]*(?: [a-z]+)*:$/;
 // The last form is a title alone on its line, such as a group in `yokoten help` (#944).
 const STAGE = /^\s+\d+\. \S/;
@@ -251,7 +259,10 @@ export function styleLine(line: string, isColour: boolean, isUnicode = true): st
     const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
     const said = glyph === undefined ? word : `${glyph} ${word}`;
     const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
-    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${mark[4] ?? ''}`;
+    // A long mark (`can't check`) has no padding to give the glyph: a label's gap gives the
+    // rest, so the row's text keeps the column of the rows above and below it (#1115).
+    const rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
+    styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${rest}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;
   } else {
@@ -291,6 +302,61 @@ export function say(invocation: Invocation, text: string, stream: Output): void 
   stream.write(hideHome(text, invocation.env));
 }
 
+/** A screen on stdout: `print` by its plain name, for a command's result (issue #1115). */
+export const show = (invocation: Invocation, lines: string[]): void => print(invocation, lines);
+
+/**
+ * A failure to run, a refusal or a usage error, on stderr (issue #1115): the title says what is
+ * wrong, one `Next:` line says what to do. With --json, the error is on stdout as data too,
+ * as for `usage`. Returns 1, the exit code, so a runner ends with `return fail(...)`.
+ */
+export function fail(invocation: Invocation, what: string, next?: string): 1 {
+  printJsonError(invocation, what);
+  print(invocation, failure(invocation.command, what, next), invocation.stderr);
+  return 1;
+}
+
+/**
+ * What the terminal around a command allows, read in one place (gh's IOStreams, issue #1115):
+ * `isPerson` someone typed it and reads stdout, `canAsk` a question can be read back from
+ * them, `colour` stdout gets colour. A pipe, a hook and CI are none of them.
+ */
+export interface Terminal {
+  isPerson: boolean;
+  canAsk: boolean;
+  colour: boolean;
+}
+
+/** The terminal facts of one run. It reads stdin's stream, so the hook, which must not make it, never calls it. */
+export function terminalOf(invocation: Invocation): Terminal {
+  const { stdin, stdout } = invocation;
+  const isPerson = stdin.stream.isTTY === true && stdout.isTTY === true;
+  return { isPerson, canAsk: isPerson && stdin.fd !== null, colour: canColour(invocation, stdout) };
+}
+
+/**
+ * Ask one question on the terminal and read one line back, or null at end of input. Install
+ * is synchronous, so it reads stdin a byte at a time; it is used only when stdin is a terminal
+ * (`terminalOf(invocation).canAsk`). It is the one place that writes a question to a stream.
+ */
+export const askOnTerminal = (stdout: Output, fd: number): ((question: string) => string | null) => (question) => {
+  stdout.write(`${question} `);
+  const byte = Buffer.alloc(1);
+  const bytes: number[] = [];
+  for (;;) {
+    let count: number;
+    try {
+      count = readSync(fd, byte, 0, 1, null);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EAGAIN') continue;
+      return null;
+    }
+    if (count === 0) return bytes.length ? Buffer.from(bytes).toString('utf8') : null;
+    if (byte[0] === 10) return Buffer.from(bytes).toString('utf8').replace(/\r$/, '');
+    bytes.push(byte[0]);
+  }
+};
+
 // --json: stdout holds the JSON and nothing else. The home folder is hidden in every
 // string before it is encoded, as in the text form.
 export function printJson(invocation: Invocation, data: unknown): void {
@@ -315,7 +381,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
   try {
     appendFileSync(env.GITHUB_STEP_SUMMARY, hideHome(stepSummary(name, problems, notes), env));
   } catch (err) {
-    say(invocation, `${name}: the job summary was not written: ${((err as Error).message ?? String(err)).split('\n')[0]}\n`, invocation.stderr);
+    print(invocation, noteLine(`${name}: the job summary was not written: ${((err as Error).message ?? String(err)).split('\n')[0]}`), invocation.stderr);
   }
 }
 
@@ -324,11 +390,14 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // (record 0049, issue #1099): every screen, the guard's refusals in src/rules/ too, builds on it,
 // so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
-export { field, moreLine, nextLine, row, type RowMark, screen, SCREEN_WIDTH, spaced, title, wrap } from '../rules/text/screen.ts';
+export {
+  askLine, type ChangeMark, failure, field, LABEL_COLUMN, type Mark, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_TEXT_COLUMN, type RowMark,
+  screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, wrap,
+} from '../rules/text/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
 function textColumn(where: string | undefined): number {
-  return where === undefined ? 14 : 26;
+  return where === undefined ? ROW_INDENT + MARK_COLUMN : ROW_TEXT_COLUMN;
 }
 
 /** A part of a finding as a sentence: a capital first, a full stop last. */

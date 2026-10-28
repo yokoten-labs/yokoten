@@ -35,6 +35,7 @@ import {
   DOCS_URL,
   finding,
   type Finding,
+  findingRow,
   formatFinding,
   formatNote,
   formatRefusal,
@@ -45,6 +46,7 @@ import {
   type Rule,
   RULES,
 } from '../../../src/rules/text/message.ts';
+import { LABEL_COLUMN } from '../../../src/rules/text/screen.ts';
 import {
   checkApprovalFreshness,
   provenanceFindings,
@@ -483,4 +485,13 @@ test('work count: measureWork starts at zero and a throw turns it off (#754)', (
   });
   assert.equal(inner, 7);
   assert.equal(outer, 5, 'an inner measure is not added to the outer count');
+});
+
+test('findingRow: the label in its field, the text from LABEL_COLUMN, and parseRefusal reads it back (#1115)', () => {
+  assert.deepEqual(findingRow('Why', 'it matters.'), [`${'  Why'.padEnd(LABEL_COLUMN)}it matters.`]);
+  assert.equal(findingRow('Instead', 'x')[0]?.indexOf('x'), LABEL_COLUMN);
+  const long = findingRow('Why', 'word '.repeat(30).trim());
+  assert.ok(long.length > 1 && long.slice(1).every((line) => line.startsWith(' '.repeat(LABEL_COLUMN)) && line[LABEL_COLUMN] !== ' '), 'a long text wraps under itself');
+  const refusal = finding('lead-only', 'this commit changes a lead-only file', 'unstage it');
+  assert.equal(parseRefusal(formatRefusal(refusal))?.fix, 'Unstage it.');
 });

@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { addProjectHook, addProjectSandbox, addProjectStopHook, addUserHooks, blankedToml, hasUserDir, removeUserHooks, userHooksFile, hasTomlKey, hasTomlTable, hookHash, isInsideProject, parseToml, readModelIdentity, readTrust, readTrustTables, revertTrust, sandboxProblem, trustProject, type TrustChange, writeTrust } from '../../../src/agents/runtimes/codex.ts';
-import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
+import { makeSandbox, makeTempDir, rowsText } from '../../repo/helpers.ts';
 import { codexCanonicalForms, codexCurrentFolder, codexFindKey, codexKeyFold, codexLookupReadings } from '../../../src/platform/folder-keys.ts';
 import type { Env } from '../../../src/rules/config.ts';
 import { agentHooks } from '../../../src/setup/doctor/index.ts';
@@ -162,7 +162,7 @@ test('codex trust (#341): doctor says when Codex skips the hooks, and ok only wh
     mkdirSync(dirname(config), { recursive: true });
     writeFileSync(config, text);
   };
-  const doctor = async () => (await sandbox.call(['doctor', '--all'])).stdout;
+  const doctor = async () => rowsText((await sandbox.call(['doctor', '--all'])).stdout);
   // No Codex home: Codex looks unused here, so no trust line, and no claim that it is trusted.
   assert.match(await doctor(), /ok +codex-hook: \.codex\/hooks\.json is in place; trust not checked, no ~\/\.codex\n/);
   assert.doesNotMatch(await doctor(), /Codex trusts|codex-hook: can't check/);
