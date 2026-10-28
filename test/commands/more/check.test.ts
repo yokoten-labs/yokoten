@@ -1099,8 +1099,12 @@ test('writeNodeProgram: the fake program answers with its arguments, as a script
   assert.ok(existsSync(join(windowsDir, 'gh.exe')) && existsSync(join(windowsDir, 'gh.cjs')));
   const env = { PATH: process.env.PATH, NODE_OPTIONS: extra.NODE_OPTIONS };
   const ran = spawnSync(join(windowsDir, 'gh.exe'), ['issue', 'pin 12', '--repo', 'octo/demo'], { cwd: windowsDir, env, encoding: 'utf8' });
-  assert.equal(ran.stdout, '["issue","pin 12","--repo","octo/demo"]', ran.stderr);
-  assert.equal(ran.status, 0);
+  // A linked copy of node runs on Windows and Linux. On macOS a Homebrew node finds its libnode.dylib by
+  // a path relative to its own location, so the copy cannot start: the Windows form is checked for its files only.
+  if (process.platform !== 'darwin' || ran.status === 0) {
+    assert.equal(ran.stdout, '["issue","pin 12","--repo","octo/demo"]', ran.stderr);
+    assert.equal(ran.status, 0);
+  } else assert.match(ran.stderr, /Library not loaded|dyld/, 'on macOS the linked node could not start, for the known reason');
   // Positive control: in a process not named gh.exe (this one), the preload does nothing.
   createRequire(import.meta.url)(join(windowsDir, 'gh.cjs'));
   assert.equal(process.exitCode, undefined, 'the preload left this process alone');
