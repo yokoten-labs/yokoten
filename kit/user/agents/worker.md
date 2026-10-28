@@ -1,6 +1,7 @@
 ---
 name: worker
 description: Does one task from a dispatch brief, in its own worktree, and reports back. Use for a scoped code change the lead will review.
+effort: medium
 ---
 <!-- managed by yokoten; `yokoten install` updates this file, and keeps your edits -->
 
