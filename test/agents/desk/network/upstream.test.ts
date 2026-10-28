@@ -33,7 +33,8 @@ test('readHostProxy: a value it cannot use is set aside with a reason that never
     const { proxy, problem } = readHostProxy({ HTTPS_PROXY: value });
     assert.equal(proxy, null, value);
     assert.match(problem ?? '', /^HTTPS_PROXY is set but not used: .*connects to its API hosts directly\.$/, value);
-    assert.ok(!(problem ?? '').includes('s3cret') && !(problem ?? '').includes('example.com'), `the reason hides the value: ${problem}`);
+    // The reason names the variable only: neither the password nor the proxy's host shows.
+    assert.doesNotMatch(problem ?? '', /s3cret|example\.com/, `the reason hides the value: ${problem}`);
   }
 });
 
