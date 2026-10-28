@@ -503,7 +503,7 @@ const results = (docsOnly: string, jobResults: Record<string, string>): Needs =>
   ...Object.fromEntries(Object.entries(jobResults).map(([name, result]) => [name, { result }])),
 });
 
-test('ci: `changes` finds a docs-only pull request; other files, a push, or an unread list run in full (#438)', { skip: process.platform === 'win32' && 'the script is bash' }, () => {
+test('ci: `changes` finds a docs-only pull request, and a site-only one; other files, a push, or an unread list run in full (#438, record 0055)', { skip: process.platform === 'win32' && 'the script is bash' }, () => {
   const [ours, kit] = WORKFLOWS.map((path) => readFileSync(join(ROOT, path), 'utf8'));
   const script = changesScript(ours);
   assert.match(script, /docs_only=/, 'no `changes` script found; the read is broken');
@@ -564,7 +564,8 @@ test('ci: `changes` finds a docs-only pull request; other files, a push, or an u
     const run = runChanges({ EVENT: 'pull_request', BASE_SHA: baseSha, HEAD_SHA: headSha });
     assert.equal(run.output, 'docs_only=false\n', `base ${baseSha || '(none)'}, head ${headSha || '(none)'}`);
     assert.match(run.stdout, /^::warning::The pull request's changed files could not be read, so every job runs\.$/m);
-  }
+  }  // The `site` step beside it (record 0055).
+  siteStepCases();
 });
 
 test('ci: a docs-only pull request runs one test job, skips typecheck, action, lint and Windows, and `ci` is green (#438, #1051)', () => {
@@ -643,7 +644,7 @@ test('ci: a docs-only pull request runs one test job, skips typecheck, action, l
   assert.match(testJob, /- if: needs\.changes\.outputs\.docs_only != 'true'\n {8}run: node scripts\/time\/suite\.ts/);
   // `ci` is red when this is true.
   const isRed = (docsOnly: string, jobResults: Record<string, string>) => evaluate(ciRule(text), results(docsOnly, jobResults));
-  const green = { test: 'success', windows: 'success', release: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success' };
+  const green = { test: 'success', windows: 'success', release: 'success', typecheck: 'success', check: 'success', lint: 'success', action: 'success', site: 'success' };
   const docsRun = { ...green, windows: 'skipped', release: 'skipped', typecheck: 'skipped', action: 'skipped', lint: 'skipped' };
   assert.equal(isRed('true', docsRun), false, 'docs-only: typecheck and action skipped on purpose');
   assert.equal(isRed('false', green), false);
@@ -698,6 +699,102 @@ test('ci: a merge queue group skips Windows and the release checks, nothing else
   assert.equal(isRed('true', docsRun, 'merge_group'), false);
   assert.equal(isRed('true', { ...docsRun, test: 'skipped' }, 'merge_group'), true);
   assert.equal(isRed('false', docsRun, 'merge_group'), true, 'a full group that skips typecheck, lint and action is red');
+});
+
+// ---- The website by path (record 0055) ----
+//
+// The `site` step of `changes` runs here as CI runs it, in a real git repo, as the docs-only
+// script above. Then the job conditions and the `ci` rule are read from the file for a
+// site-only pull request, a pull request with no site file, and one with both.
+const siteScript = (text: string) => (jobBlock(text, 'changes').match(/- id: site\n(?: {8}.*\n)*? {8}run: \|\n((?: {10}.*\n|\n)+)/)?.[1] ?? '').replace(/^ {10}/gm, '');
+
+// Called from the docs-only test above, which runs the same bash in the same way and is the
+// one test here that skips Windows (#1078).
+function siteStepCases() {
+  const script = siteScript(readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8'));
+  assert.match(script, /site_only=/, 'no `site` step found in `changes`; the read is broken');
+  const sandbox = makeSandbox();
+  sandbox.write('README.md', '# demo\n');
+  sandbox.write('src/a.ts', 'export {};\n');
+  sandbox.git('add', '-A');
+  sandbox.git('commit', '-qm', 'base');
+  const base = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  const pullRequest = (paths: string[]) => {
+    sandbox.git('checkout', '-qB', 'topic', base);
+    for (const path of paths) sandbox.write(path, `${path} changed\n`);
+    sandbox.git('add', '-A');
+    sandbox.git('commit', '-qm', 'change');
+    return sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  };
+  const runSite = (env: Record<string, string>) => {
+    const output = join(sandbox.home, 'github-output');
+    writeFileSync(output, '');
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-c', script], { cwd: sandbox.repo, env: { ...sandbox.env, GITHUB_OUTPUT: output, ...env }, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return readFileSync(output, 'utf8');
+  };
+  const onPullRequest = (paths: string[]) => runSite({ EVENT: 'pull_request', BASE_SHA: base, HEAD_SHA: pullRequest(paths) });
+  assert.equal(onPullRequest(['web/site/package.json', 'web/site/README.md']), 'site=true\nsite_only=true\n');
+  assert.equal(onPullRequest(['src/a.ts']), 'site=false\nsite_only=false\n', 'a core change does not build the site');
+  assert.equal(onPullRequest(['docs/guide.md']), 'site=false\nsite_only=false\n');
+  assert.equal(onPullRequest(['web/site/site/src/x.astro', 'src/a.ts']), 'site=true\nsite_only=false\n', 'a change to both runs both');
+  assert.equal(onPullRequest(['web/kanban/a.ts']), 'site=false\nsite_only=false\n', 'only web/site/ is the site');
+  assert.equal(runSite({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: pullRequest(['web/site/a.mjs']) }), 'site=true\nsite_only=true\n');
+  // A push, the schedule, or a list that can't be read: the full run, the site included.
+  assert.equal(runSite({ EVENT: 'push', BASE_SHA: '', HEAD_SHA: '' }), 'site=true\nsite_only=false\n');
+  assert.equal(runSite({ EVENT: 'schedule', BASE_SHA: base, HEAD_SHA: pullRequest(['src/a.ts']) }), 'site=true\nsite_only=false\n');
+  const head = pullRequest(['web/site/a.mjs']);
+  for (const [baseSha, headSha] of [['0'.repeat(40), head], ['', head], [base, ''], [head, head]]) {
+    assert.equal(runSite({ EVENT: 'pull_request', BASE_SHA: baseSha, HEAD_SHA: headSha }), 'site=true\nsite_only=false\n', `base ${baseSha || '(none)'}, head ${headSha || '(none)'}`);
+  }
+}
+
+test('ci: a site-only pull request runs `check` and `site` and skips the core jobs; one with no site file skips `site`; `ci` stays fail closed (record 0055)', () => {
+  const text = readFileSync(join(ROOT, WORKFLOWS[0]), 'utf8');
+  const changes = (outputs: Record<string, string>, jobResults: Record<string, string> = {}): Needs => ({
+    changes: { result: 'success', outputs },
+    ...Object.fromEntries(Object.entries(jobResults).map(([name, result]) => [name, { result }])),
+  });
+  const siteOnly = { docs_only: 'false', site: 'true', site_only: 'true' };
+  const coreOnly = { docs_only: 'false', site: 'false', site_only: 'false' };
+  const both = { docs_only: 'false', site: 'true', site_only: 'false' };
+  const core = ['test', 'typecheck', 'lint', 'action', 'windows', 'release'];
+  for (const name of core) {
+    const condition = jobCondition(jobBlock(text, name));
+    assert.equal(evaluate(condition, changes(siteOnly), { event_name: 'pull_request' }), false, `${name} is skipped on a site-only pull request`);
+    assert.equal(evaluate(condition, changes(both), { event_name: 'pull_request' }), true, `${name} runs when the core changes too`);
+  }
+  const siteJob = jobBlock(text, 'site');
+  assert.match(siteJob, /^ {8}working-directory: web\/site$/m, 'the site job runs in web/site');
+  assert.match(siteJob, /- run: npm ci/, 'the site job installs its own dependencies');
+  assert.match(siteJob, /- run: npm run build$/m, 'the site job builds the site; the build ends with the language check');
+  assert.match(readFileSync(join(ROOT, 'web/site/package.json'), 'utf8'), /"build": "[^"]*astro build[^"]*npm run i18n"/, 'the site build ends with its language check');
+  const siteCondition = jobCondition(siteJob);
+  assert.equal(evaluate(siteCondition, changes(coreOnly)), false, 'a core-only pull request skips the site');
+  assert.equal(evaluate(siteCondition, changes(siteOnly)), true);
+  assert.equal(evaluate(siteCondition, changes(both)), true);
+  assert.equal(evaluate(siteCondition, { changes: { result: 'failure', outputs: {} } }), true, '`changes` failed: the site runs too');
+  assert.doesNotMatch(jobBlock(text, 'check'), /^ {4}(?:if|needs):/m, 'check runs on a site-only pull request too: it holds the layout and privacy rules');
+  const needs = inBraces(jobBlock(text, 'ci'), /^ {4}needs: \[(.*)\]$/m).split(',').map((name) => name.trim());
+  assert.ok(needs.includes('site'), '`ci` waits for the site job');
+  const green = Object.fromEntries(needs.filter((name) => name !== 'changes').map((name) => [name, 'success']));
+  const isRed = (outputs: Record<string, string>, jobResults: Record<string, string>, event = 'pull_request') => evaluate(ciRule(text), changes(outputs, jobResults), { event_name: event });
+  const siteRun = { ...green, ...Object.fromEntries(core.map((name) => [name, 'skipped'])) };
+  assert.equal(isRed(siteOnly, siteRun), false, 'a site-only pull request with the core jobs skipped is green');
+  assert.equal(isRed({ ...siteOnly, docs_only: 'true' }, siteRun), false, 'the site README alone: docs-only and site-only');
+  assert.equal(isRed(siteOnly, { ...siteRun, site: 'failure' }), true, 'a site build that fails is red');
+  assert.equal(isRed(siteOnly, { ...siteRun, site: 'skipped' }), true, 'a site-only pull request must build the site');
+  assert.equal(isRed(siteOnly, { ...siteRun, check: 'skipped' }), true, 'check always runs');
+  assert.equal(isRed(siteOnly, { ...siteRun, test: 'failure' }), true);
+  const coreRun = { ...green, site: 'skipped' };
+  assert.equal(isRed(coreOnly, coreRun), false, 'a pull request with no site file skips the site and is green');
+  for (const name of core) assert.equal(isRed(coreOnly, { ...coreRun, [name]: 'skipped' }), true, `a core pull request that skips ${name} is red`);
+  assert.equal(isRed(both, green), false);
+  assert.equal(isRed(both, { ...green, site: 'skipped' }), true, 'a change to both builds the site');
+  assert.equal(isRed(both, { ...green, test: 'skipped' }), true, 'a change to both runs the core suite');
+  // A push or the schedule: `site` comes out true, so the site job must run.
+  assert.equal(isRed({ docs_only: 'false', site: 'true', site_only: 'false' }, { ...green, site: 'skipped' }, 'push'), true);
+  assert.equal(evaluate(ciRule(text), { changes: { result: 'failure', outputs: {} }, ...Object.fromEntries(Object.entries(green).map(([name, result]) => [name, { result }])) }), true, '`changes` failed: red');
 });
 
 test('ci: the kit lets a project skip its own jobs on a docs-only pull request; check and lint always run (#438)', () => {

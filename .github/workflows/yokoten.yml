@@ -40,6 +40,8 @@ jobs:
       contents: read
     outputs:
       docs_only: ${{ steps.files.outputs.docs_only }}
+      site: ${{ steps.site.outputs.site }}
+      site_only: ${{ steps.site.outputs.site_only }}
     steps:
       # The whole history, so the base commit is there to compare with. A failed checkout
       # does not stop the job: the diff below then fails, and the run is full.
@@ -71,6 +73,31 @@ jobs:
           fi
           echo "docs_only=$docs_only"
           echo "docs_only=$docs_only" >> "$GITHUB_OUTPUT"
+      # The website, web/site (record 0055): `site` when a file under it changes, `site_only`
+      # when every file is under it. A site-only pull request builds the site and skips the core
+      # jobs; a pull request with no site file skips the site job. A push, the schedule, or a
+      # file list that can't be read: site=true, site_only=false, so every job runs. Its own
+      # step, so the kit's `changes` script above stays the same as this repo's.
+      - id: site
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          site=true
+          site_only=false
+          if { [ "$EVENT" = pull_request ] || [ "$EVENT" = merge_group ]; } && [ -n "$BASE_SHA" ] && [ -n "$HEAD_SHA" ] && files=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" --) && [ -n "$files" ]; then
+            site=false
+            site_only=true
+            while IFS= read -r file; do
+              case "$file" in
+                web/site/*) site=true ;;
+                *) site_only=false ;;
+              esac
+            done <<< "$files"
+          fi
+          echo "site=$site site_only=$site_only"
+          { echo "site=$site"; echo "site_only=$site_only"; } >> "$GITHUB_OUTPUT"
   # On a docs-only pull request, ubuntu and Node 24 only: the architecture and
   # translation tests read the docs. `!cancelled()`: if `changes` failed, run in full.
   # Each setup runs in three shards, a third of the test files each, so a pull request
@@ -82,7 +109,7 @@ jobs:
   # the full three-shard macOS matrix runs on the daily schedule.
   test:
     needs: changes
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.changes.outputs.site_only != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -162,7 +189,7 @@ jobs:
   # Not in a merge queue group: the pull request ran it, and a push to main runs it again (#1084).
   windows:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && github.event_name != 'merge_group' }}
     runs-on: windows-latest
     timeout-minutes: 20
     permissions:
@@ -198,7 +225,7 @@ jobs:
   # takes longer, so the wait does not grow. Not in a merge queue group, as Windows.
   release:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && github.event_name != 'merge_group' }}
     uses: ./.github/workflows/release-checks.yml
     permissions:
       contents: read
@@ -206,7 +233,7 @@ jobs:
   # Skipped on a docs-only pull request.
   typecheck:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -252,7 +279,7 @@ jobs:
   # Skipped on a docs-only pull request: it reads only workflow files, and .github/ is never docs-only.
   lint:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -288,7 +315,7 @@ jobs:
   # Skipped on a docs-only pull request.
   action:
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -302,17 +329,43 @@ jobs:
       - uses: ./
         with:
           pr-check: false
+  # The website, web/site (record 0055): its own dependencies, its build, and its language
+  # check, which runs last in the build. Only when a file under web/site/ changes, or on a
+  # full run (a push, the schedule, a file list that can't be read). The build reads the
+  # facts from this repo's newest release tag, so the checkout keeps the whole history.
+  site:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.site != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: web/site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '^24.22.1'
+      - run: npm ci --no-audit --no-fund
+      # mark, how-flow, video sizes, the facts, astro build, then the language check.
+      - run: npm run build
   # The one required check. It runs even when a job it needs failed, and goes red if
-  # any of them did not succeed (failed, cancelled or skipped). Two exceptions, skipped on
+  # any of them did not succeed (failed, cancelled or skipped). The exceptions, skipped on
   # purpose: on a docs-only pull request, `windows`, `release`, `typecheck`, `lint` and
-  # `action` (#438); in a merge queue group, `windows` and `release`, nothing else (#1084, #1149).
-  # A job that never started is named in the summary, so a queued timeout reads as
-  # "no runner was free", not as a test failure (#568).
+  # `action` (#438); on a site-only pull request, every core job but `check` (record 0055);
+  # on a pull request with no site file, `site`; in a merge queue group, `windows` and
+  # `release` (#1084, #1149). A job that never started is named in the summary, so a queued
+  # timeout reads as "no runner was free", not as a test failure (#568).
   ci:
     # always(), never !cancelled(): a skipped required check counts as passed, so a
     # cancelled run (in the merge queue too) must still end red here.
     if: always()
-    needs: [changes, test, windows, release, typecheck, check, lint, action]
+    needs: [changes, test, windows, release, typecheck, check, lint, action, site]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -339,9 +392,11 @@ jobs:
           echo "This run was cancelled (a newer push, or by hand). Its red ci is not a test failure; see the newest run." >> "$GITHUB_STEP_SUMMARY"
       - if: >-
           contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') ||
-          (contains(needs.*.result, 'skipped') && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group') ||
-          needs.changes.result != 'success' || needs.test.result != 'success' || needs.check.result != 'success' ||
-          (needs.changes.outputs.docs_only != 'true' && (needs.typecheck.result != 'success' || needs.lint.result != 'success' || needs.action.result != 'success')) ||
-          (needs.windows.result != 'success' && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group') ||
-          (needs.release.result != 'success' && needs.changes.outputs.docs_only != 'true' && github.event_name != 'merge_group')
+          (contains(needs.*.result, 'skipped') && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && needs.changes.outputs.site != 'false' && github.event_name != 'merge_group') ||
+          needs.changes.result != 'success' || needs.check.result != 'success' ||
+          (needs.changes.outputs.site_only != 'true' && needs.test.result != 'success') ||
+          (needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && (needs.typecheck.result != 'success' || needs.lint.result != 'success' || needs.action.result != 'success')) ||
+          (needs.windows.result != 'success' && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && github.event_name != 'merge_group') ||
+          (needs.release.result != 'success' && needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.site_only != 'true' && github.event_name != 'merge_group') ||
+          (needs.site.result != 'success' && needs.changes.outputs.site != 'false')
         run: exit 1

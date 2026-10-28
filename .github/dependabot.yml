@@ -21,6 +21,21 @@ updates:
       # @types/node follows the Node floor (22), not the newest Node.
       - dependency-name: '@types/node'
         update-types: ['version-update:semver-major']
+  # The website (web/site, record 0055): Astro, the Cloudflare Worker tools and their
+  # helpers. Not in the npm package, so its own group and pull request.
+  - package-ecosystem: npm
+    directory: /web/site
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      site:
+        patterns: ['*']
+    commit-message:
+      prefix: chore
+      include: scope
+    labels: [ci]
   - package-ecosystem: github-actions
     # The repo's own workflows, and the kit's, which every project gets from `init`.
     directories: [/, /kit/project]
