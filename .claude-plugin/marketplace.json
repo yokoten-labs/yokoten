@@ -11,7 +11,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/yokoten-labs/yokoten.git",
-        "ref": "v0.1.2"
+        "ref": "v0.1.0"
       },
       "description": "Stable: the latest release, with a changelog. Rules, guards and skills for AI coding agents."
     },
@@ -20,7 +20,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/yokoten-labs/yokoten.git",
-        "ref": "v0.1.2"
+        "ref": "v0.1.0"
       },
       "description": "Beta: the latest pre-release, for people who want new features early and can report problems."
     },

@@ -1,0 +1,3 @@
+Changed
+
+`yokoten bot` now checks the body it sends. It reads each body, note or input file once, as it sends, and runs the privacy check on it. Then it hands gh that same text on standard input, so a file changed after the check can't change what is sent. A file it can't read is never sent, and neither is a command that reads its text from more than one place. A short-option cluster that holds `-F` or `-b`, such as `-dF body.md`, is refused by the bot and the guard: spell each option out. The guard still reads the body file of a `yokoten bot` call before it runs, as for a bare `gh`, so write the file in one command and post it in the next (#1077).

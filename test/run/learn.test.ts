@@ -24,7 +24,6 @@ import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { makeSandbox, makeTempDir } from '../repo/helpers.ts';
 import { DEFAULTS } from '../../src/rules/config.ts';
-import { VERSION } from '../../src/setup/files.ts';
 import {
   homeOf,
   marksFile,
@@ -773,7 +772,7 @@ test('upstream: every owner segment of a remote URL is an owner; the last one is
 });
 
 test('learn screens: ship, export, import and the inbox are pure functions of their results (#1115)', () => {
-  const ship = shipScreen({ id: 'incident-12', folder: '1/incident-12', url: 'https://example.com/issues/12', version: VERSION }, VERSION);
+  const ship = shipScreen({ id: 'incident-12', folder: '1/incident-12', url: 'https://example.com/issues/12', version: '0.1.2' }, '0.1.2');
   assert.equal(ship[0], 'yokoten learn --ship · incident-12 is in kit/lessons/1/incident-12/');
   assert.equal(ship.at(-1), 'More: commit it in a pull request');
   const pack = { version: 1, id: 'incident-12', incident: 'https://example.com/issues/12', files: [{ path: 'lesson.ts', text: 'x' }] } as Parameters<typeof exportedScreen>[0];
