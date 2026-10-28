@@ -569,7 +569,8 @@ export function problemRows(problems: readonly Finding[]): string[][] {
   }
   // The follow-up ("and type your name") stays, as check's screen keeps it: the same finding says the same on both.
   return [
-    ...[...byFix].map(([command, { whats, thens }]) => [...row('MISSING', whats.join('; ')), ...thens.flatMap((then) => underRow(`${sentence(then)}${/[.!?]$/.test(then) ? '' : '.'}`, false)), ...underRow(`Fix: \`${command}\``, false)]),
+    // The follow-ups of one fix are one paragraph under the row, not one orphan line each (#1115).
+    ...[...byFix].map(([command, { whats, thens }]) => [...row('MISSING', whats.join('; ')), ...(thens.length ? underRow(thens.map((then) => `${sentence(then)}${/[.!?]$/.test(then) ? '' : '.'}`).join(' '), false) : []), ...underRow(`Fix: \`${command}\``, false)]),
     ...plain,
   ];
 }
