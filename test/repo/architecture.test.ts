@@ -558,6 +558,17 @@ test('ci: `changes` finds a docs-only pull request, and a site-only one; other f
   assert.equal(runChanges({ EVENT: 'merge_group', BASE_SHA: '', HEAD_SHA: '' }).output, 'docs_only=false\n');
   // Any other event, such as the daily schedule, is a full run.
   assert.equal(runChanges({ EVENT: 'schedule', BASE_SHA: base, HEAD_SHA: docsHead }).output, 'docs_only=false\n');
+  // A pull request from `base` that moves src/a.ts, unchanged, to `to`: git sees a rename.
+  const moved = (to: string) => {
+    sandbox.git('checkout', '-qB', 'topic', base);
+    sandbox.git('rm', '-q', 'src/a.ts');
+    sandbox.write(to, 'export {};\n');
+    sandbox.git('add', '-A');
+    sandbox.git('commit', '-qm', 'move');
+    return sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  };
+  // A code file moved into docs/ is not docs-only: the old path counts too (--no-renames).
+  assert.equal(runChanges({ EVENT: 'pull_request', BASE_SHA: base, HEAD_SHA: moved('docs/a.md') }).output, 'docs_only=false\n', 'a move out of src/ runs in full');
   // The file list can't be read: the full run, and a warning says why.
   const head = pullRequest(['docs/guide.md']);
   for (const [baseSha, headSha] of [['0'.repeat(40), head], ['', head], [base, ''], [head, head]]) {
@@ -740,6 +751,17 @@ function siteStepCases() {
   assert.equal(onPullRequest(['web/site/site/src/x.astro', 'src/a.ts']), 'site=true\nsite_only=false\n', 'a change to both runs both');
   assert.equal(onPullRequest(['web/kanban/a.ts']), 'site=false\nsite_only=false\n', 'only web/site/ is the site');
   assert.equal(runSite({ EVENT: 'merge_group', BASE_SHA: base, HEAD_SHA: pullRequest(['web/site/a.mjs']) }), 'site=true\nsite_only=true\n');
+  // A pull request from `base` that moves src/a.ts, unchanged, to `to`: git sees a rename.
+  const moved = (to: string) => {
+    sandbox.git('checkout', '-qB', 'topic', base);
+    sandbox.git('rm', '-q', 'src/a.ts');
+    sandbox.write(to, 'export {};\n');
+    sandbox.git('add', '-A');
+    sandbox.git('commit', '-qm', 'move');
+    return sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  };
+  // A move counts both paths (--no-renames): a core file moved into the site runs both.
+  assert.equal(runSite({ EVENT: 'pull_request', BASE_SHA: base, HEAD_SHA: moved('web/site/a.ts') }), 'site=true\nsite_only=false\n', 'a core file moved into web/site/ still runs the core');
   // A push, the schedule, or a list that can't be read: the full run, the site included.
   assert.equal(runSite({ EVENT: 'push', BASE_SHA: '', HEAD_SHA: '' }), 'site=true\nsite_only=false\n');
   assert.equal(runSite({ EVENT: 'schedule', BASE_SHA: base, HEAD_SHA: pullRequest(['src/a.ts']) }), 'site=true\nsite_only=false\n');
