@@ -29,7 +29,7 @@ import { guardCommand, missingProjectRuntime } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
 import { type FolderTrust, folderKeys, isFolder, TRUST_COMMAND } from '../folder-trust.ts';
 import { type Added, addHook, checkHooksFile, hasHook, type HookState, hookState, isObject, removeHook, writeSafely } from '../hooks-file.ts';
-import { blankedToml, hasTomlArray, hasTomlHeader, hasTomlKey, hasTomlTable, isInsideProject, parseToml, readTomlTables, type TrustChange, type TrustPlan } from './codex.ts';
+import { blankedToml, hasTomlArray, hasTomlHeader, hasTomlKey, hasTomlTable, isInsideProject, optionValues, parseToml, readTomlTables, type TrustChange, type TrustPlan } from './codex.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
 import type { AgentAdapter } from './runtime.ts';
@@ -361,6 +361,11 @@ export const AGENT_ENV: RuntimeEnv = { login: ['XAI_API_KEY', 'GROK_API_KEY'], c
  * What a desk (#637) gives Grok CLI. GROK_HOME points at the desk's own folder; only
  * `auth.json` is copied in. Grok's program sits in the lead's `~/.grok/bin`, so that one
  * folder is shown read-only. Host: xAI's API. The binary names HTTPS_PROXY.
+ *
+ * Its own sandbox goes off with `--sandbox off` (#1171). Source: `grok --help` (1.0.52) and
+ * `~/.grok/docs/user-guide/18-sandbox.md`: `off` is the built-in profile with no sandbox,
+ * and "An explicit `--sandbox <profile>` flag" comes first for a new session. A command
+ * that asks for another profile (such as `yokoten`) is refused: it can't apply in a desk.
  */
 export const DESK: RuntimeDesk = {
   leadState: (env) => [env.GROK_HOME || join(homeIn(env), '.grok')],
@@ -368,7 +373,18 @@ export const DESK: RuntimeDesk = {
   stateEnv: (state) => ({ GROK_HOME: state }),
   programParts: (env) => [join(env.GROK_HOME || join(homeIn(env), '.grok'), 'bin')],
   hosts: ['api.x.ai'],
+  ownSandbox: { program: 'grok', turnOff: turnSandboxOff },
 };
+
+/** The words a desk adds after `grok`: its own sandbox off for this run (#1171). */
+export const DESK_SANDBOX_WORDS: readonly string[] = ['--sandbox', 'off'];
+
+/** `grok` with its own sandbox off for this run, or why a command that picks a profile can't be. */
+function turnSandboxOff(command: readonly string[]): string[] | { fail: string } {
+  const profile = optionValues(command, '--sandbox').find((value) => value !== 'off');
+  if (profile !== undefined) return { fail: `the command asks for --sandbox ${profile}, and in a desk the desk's fence is the sandbox. Leave it out` };
+  return [command[0], ...DESK_SANDBOX_WORDS, ...command.slice(1)];
+}
 
 /** The contract every adapter fills (#395). */
 export const ADAPTER: AgentAdapter = {

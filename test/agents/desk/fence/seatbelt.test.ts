@@ -20,6 +20,7 @@ const PLAN: DeskPlan = {
   hosts: ['api.example.com'],
   env: { YOKOTEN_ROLE: 'worker', TZ: 'UTC' },
   command: ['codex', 'exec', 'hello'],
+  isOwnSandboxOff: false,
 };
 
 

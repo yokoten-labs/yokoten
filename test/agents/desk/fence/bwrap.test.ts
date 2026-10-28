@@ -16,6 +16,7 @@ const PLAN: DeskPlan = {
   hosts: ['api.example.com'],
   env: { YOKOTEN_ROLE: 'worker', TZ: 'UTC' },
   command: ['agent', '-p', 'hello'],
+  isOwnSandboxOff: false,
 };
 
 test('orderMounts: outer folders first; a folder is hidden before anything is shown in it', () => {
