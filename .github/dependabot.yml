@@ -13,9 +13,9 @@ updates:
     groups:
       dev:
         patterns: ['*']
+    # The title needs an area from yokoten.json (Dependabot's own scope, deps-dev, is not one).
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: chore(repo)
     labels: [ci]
     ignore:
       # @types/node follows the Node floor (22), not the newest Node.
@@ -33,9 +33,12 @@ updates:
       site:
         patterns: ['*']
     commit-message:
-      prefix: chore
-      include: scope
+      prefix: chore(site)
     labels: [ci]
+    ignore:
+      # @astrojs/check 0.9 takes TypeScript 5 or 6, not 7; a major waits until its checker supports it.
+      - dependency-name: typescript
+        update-types: ['version-update:semver-major']
   - package-ecosystem: github-actions
     # The repo's own workflows, and the kit's, which every project gets from `init`.
     directories: [/, /kit/project]
