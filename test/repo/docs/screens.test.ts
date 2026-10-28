@@ -789,6 +789,19 @@ test('screens: every screen the command list reaches keeps the limits of record 
   console.log(`screens: ${runs.length} rendered, ${Object.keys(WAIVED).length} waived, ${Math.round(performance.now() - started)} ms`);
 });
 
+// The first-run block of the README and its three translations is the screen the first run prints
+// (#1145). The version is normalized on both sides, so a release bump never breaks this.
+test('screens: the first-run block of every README is the screen the first run prints (#1145)', async () => {
+  const withoutVersion = (text: string): string => text.replace(/^yokoten \d+\.\d+\.\d+/, 'yokoten VERSION').trimEnd();
+  const printed = withoutVersion((await makeSandbox().call([])).output);
+  assert.match(printed, /^yokoten VERSION · /, `the first run prints its header: ${printed}`);
+  for (const file of ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md']) {
+    const found = /<!-- The first run[^\n]*-->\n```text\n([\s\S]*?)\n```/.exec(readFileSync(join(ROOT, file), 'utf8'));
+    assert.ok(found, `${file} has the first-run block under its comment`);
+    assert.equal(withoutVersion(found[1]), printed, `${file}: regenerate the first-run block from the first run`);
+  }
+});
+
 test('screens: desk --help is built from the help spec and keeps every limit (#1099)', () => {
   const desk = COMMANDS.find((command) => command.name === 'desk');
   assert.ok(desk && 'help' in desk, 'desk has a help spec');

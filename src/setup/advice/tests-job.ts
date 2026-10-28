@@ -332,6 +332,18 @@ export const nodeTestsFix = (root: string): string | null => {
 };
 
 /**
+ * The short `tests` job `explain tests` shows on several lines, for the same project as
+ * `nodeTestsFix` (a Node project with a test script and a pinned checkout in the workflow).
+ * Null otherwise. The checkout line is a placeholder: the real pin is in the fix of
+ * `doctor --all`, and `yokoten init` writes the whole job.
+ */
+export const nodeTestsSnippet = (root: string): string[] | null => {
+  const picked = pickedJob(root);
+  if (!picked || picked.job.language !== 'Node.js' || !('checkout' in workflowCheckout(root))) return null;
+  return ['tests:', '  runs-on: ubuntu-latest', '  steps: [{uses: <your checkout step>},', `          {run: ${picked.job.install}}, {run: ${picked.runner}}]`];
+};
+
+/**
  * Write the `tests` job for the project's language into its workflow. Quiet (no lines)
  * when no language we write for is found. A test script is Node only when no other
  * language is detected. With `ask` (a terminal), it asks once before it writes;
