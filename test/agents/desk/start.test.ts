@@ -74,7 +74,7 @@ answer.gitConfigCommand = spawnSync('git', ['config', 'alias.st', 'status'], { e
 answer.hostDoors = ['/run/WSL', '/run/user', '/var/run/docker.sock'].filter((path) => fs.existsSync(path));
 answer.pipes = piped.error ? 'failed: ' + piped.error.code : piped.stdout;
 answer.temp = [process.env.TMPDIR, process.env.TEMP, process.env.TMP];
-answer.tempWrite = tryIt(() => { fs.rmSync(fs.mkdtempSync(require('node:os').tmpdir() + '/probe-'), { recursive: true }); return 'ok'; });
+answer.tempWrite = tryIt(() => { const file = require('node:os').tmpdir() + '/probe.txt'; fs.writeFileSync(file, 'x'); fs.rmSync(file); return 'ok'; });
 answer.role = process.env.YOKOTEN_ROLE;
 answer.tz = process.env.TZ;
 answer.token = process.env.GH_TOKEN === undefined ? 'absent' : 'present';
