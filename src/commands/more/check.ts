@@ -69,7 +69,7 @@ export async function runCheck(invocation: Invocation): Promise<number> {
   const number = options.positional[0];
   if (number !== undefined && mode !== 'pr') return usage(invocation, `unexpected argument ${number}: a number goes with --pr`);
   const json = options.flags.has('--json');
-  const root = requireRoot(invocation, invocation.cwd, json ? (missing) => ({ check: mode, ok: false, findings: [missing], notes: [] }) : undefined);
+  const root = requireRoot(invocation, invocation.cwd, json ? (missing) => checkJson({ mode, problems: [missing], notes: [], hints: [] }) : undefined);
   if (!root) return 1;
   const config = loadConfig(root);
   const result: CheckResult = { mode, number, problems: [], notes: [], hints: [] };
@@ -83,16 +83,31 @@ export async function runCheck(invocation: Invocation): Promise<number> {
     result.problems = [gitReadFinding(err)];
   }
   if (result.skipped !== undefined) {
-    if (json) printJson(invocation, { check: mode, ok: true, skipped: result.skipped, findings: [], notes: [] });
+    if (json) printJson(invocation, checkJson(result));
     else show(invocation, checkScreen(result));
     return 0;
   }
   result.hints = unstageLines(root, invocation.env, mode, result.problems);
   // In a GitHub Actions job, the annotations come first: the screen is the last thing a person reads.
   showOnPullRequest(invocation, `yokoten ${checkCommand(mode)}`, result.problems, result.notes, { json, isPlaceAFile: mode !== 'history' });
-  if (json) printJson(invocation, { check: mode, ok: !result.problems.length, findings: result.problems, notes: result.notes });
+  if (json) printJson(invocation, checkJson(result));
   else print(invocation, checkScreen(result, { isAll: options.flags.has('--all') }), result.problems.length ? invocation.stderr : invocation.stdout);
   return result.problems.length ? 1 : 0;
+}
+
+/** What `check --json` prints (issue #1115): the result the screen is built from, in the shape --json has always had. A skipped check has no findings and no notes. */
+export interface CheckJson {
+  check: CheckMode;
+  ok: boolean;
+  skipped?: string;
+  findings: Finding[];
+  notes: Finding[];
+}
+
+/** The one way a check's result becomes its --json (issue #1115). */
+export function checkJson(result: CheckResult): CheckJson {
+  if (result.skipped !== undefined) return { check: result.mode, ok: true, skipped: result.skipped, findings: [], notes: [] };
+  return { check: result.mode, ok: !result.problems.length, findings: result.problems, notes: result.notes };
 }
 
 /** The words after `yokoten` that ran this check: `check`, or `check --pr`. */
@@ -362,6 +377,11 @@ const agentsText = (agents: { vendor: string; model: string }[]): string => (age
 /** One commit's provenance, with the approver the host's reviews name ('' when unknown). It is what --json prints. */
 export type ProvenanceRow = ReturnType<typeof parseProvenance> & { approver: string };
 
+/** What `provenance --json` prints (issue #1115): one object per row the screen shows, an unknown approver as null. */
+export function provenanceJson(rows: readonly ProvenanceRow[]): { commit: string; subject: string; writers: ProvenanceRow['writers']; reviewers: ProvenanceRow['reviewers']; approver: string | null; tier: ProvenanceRow['tier']; issues: ProvenanceRow['issues'] }[] {
+  return rows.map((row) => ({ commit: row.commit, subject: row.subject, writers: row.writers, reviewers: row.reviewers, approver: row.approver || null, tier: row.tier, issues: row.issues }));
+}
+
 /** The screen of `yokoten provenance` (#756, #1115): per commit, its title, then one field per role. */
 export function provenanceScreen(rows: readonly ProvenanceRow[], ref: string): string[] {
   if (!rows.length) return title('provenance', `no commit in ${ref}`);
@@ -404,7 +424,7 @@ export async function runProvenance(invocation: Invocation): Promise<number> {
     return 1;
   }
   if (!records.length) {
-    if (json) printJson(invocation, []);
+    if (json) printJson(invocation, provenanceJson([]));
     else show(invocation, provenanceScreen([], ref));
     return 0;
   }
@@ -417,7 +437,7 @@ export async function runProvenance(invocation: Invocation): Promise<number> {
     return approvers.get(number) ?? '';
   };
   const rows: ProvenanceRow[] = records.map((record) => ({ ...record, approver: approverOf(record.subject) }));
-  if (json) printJson(invocation, rows.map((row) => ({ commit: row.commit, subject: row.subject, writers: row.writers, reviewers: row.reviewers, approver: row.approver || null, tier: row.tier, issues: row.issues })));
+  if (json) printJson(invocation, provenanceJson(rows));
   else show(invocation, provenanceScreen(rows, ref));
   return 0;
 }
@@ -617,7 +637,7 @@ export function runTest(invocation: Invocation): number {
 
 // ---- `yokoten marks` (#447) ----
 
-const MARK_ACTIONS = ['allow', 'add', 'remove', 'off', 'on'];
+const MARK_ACTIONS = ['allow', 'add', 'remove', 'fill', 'off', 'on'];
 const SHAPE = '`yokoten marks allow <mark> --here`, or `yokoten marks allow --remove <mark> --here`';
 
 /** What to type when a write failed: the doctor, which says why. */
@@ -644,7 +664,7 @@ export function runMarks(invocation: Invocation): number | Promise<number> {
     if (options.flags.size) return usage(invocation, `--here and --remove go with allow only: ${SHAPE}`);
     return runMarkAction(invocation, action, mark);
   }
-  if (!MARK_ACTIONS.includes(action)) return usage(invocation, `the action is add, remove, off, on or allow; run \`yokoten marks\` alone to count your marks`);
+  if (!MARK_ACTIONS.includes(action)) return usage(invocation, `the action is add, remove, fill, off, on or allow; run \`yokoten marks\` alone to count your marks`);
   if (mark === undefined || !mark.trim()) return usage(invocation, `give the mark: ${SHAPE}`);
   if (!options.flags.has('--here')) return usage(invocation, `add --here: an allow is always for one repo, the one you are in`);
   return allowHere(invocation, mark.trim().toLowerCase(), { isRemoving: options.flags.has('--remove') });
@@ -662,7 +682,7 @@ const SOURCES: Record<string, string> = {
   'forge login': 'gh is not signed in here',
 };
 
-/** Run `yokoten marks [add | remove | off <kind> | on <kind>]`. `word` is the second word, if any. */
+/** Run `yokoten marks [add | remove | fill | off <kind> | on <kind>]`. `word` is the second word, if any. */
 export function runMarkAction(invocation: Invocation, action: string | undefined, word: string | undefined): number | Promise<number> {
   try {
     marksFile(invocation.env);
@@ -674,6 +694,10 @@ export function runMarkAction(invocation: Invocation, action: string | undefined
     // A mark on the command line would land in the shell history, so it is refused, and never repeated.
     if (word !== undefined) return usage(invocation, `the mark is never a word on the command line, where your shell history keeps it. Run \`yokoten marks ${action}\` and type it, or pipe it in`);
     return readHidden(invocation).then((value) => changeOne(invocation, action, value));
+  }
+  if (action === 'fill') {
+    if (word !== undefined) return usage(invocation, 'fill takes no word: run `yokoten marks fill`');
+    return fill(invocation);
   }
   const kind = word === undefined ? undefined : SWITCHED_KINDS[word];
   if (!kind) return usage(invocation, `name the kind: ${KIND_WORDS}, as in \`yokoten marks ${action} git-name\``);
@@ -699,19 +723,85 @@ export interface MarkCounts {
   files: string[];
 }
 
-/** `yokoten marks`: one screen, a count per kind, and the way to add one. Never a value. */
-export function marksScreen(counts: MarkCounts): string[] {
-  const total = counts.kinds.reduce((sum, kind) => sum + kind.count, 0);
-  const rows = counts.kinds.map(({ kind, count: found, isOff, isFromInstall }) => field(kindLabel(kind), `${found}${isOff ? ', off: install does not add it' : isFromInstall ? ', added by install' : ''}`));
-  return screen(
-    title('marks', `${total} private ${total === 1 ? 'mark' : 'marks'}, values never shown`),
-    spaced([
-      ...(rows.length ? rows : [row('note', 'no private marks yet')]),
-      // The count is of every file the check reads (#656): the setting's file adds to the default.
-      ...(counts.files.length > 1 ? [row('note', `read from ${counts.files[0]} and the file YOKOTEN_PRIVATE_MARKS names`)] : []),
-    ]),
-    wrap('Add one: ', '`yokoten marks add`'),
-  );
+/**
+ * What one `yokoten marks` run did, as plain data (issue #1115): the screen is built from it
+ * and from nothing else. It holds kinds, counts and file names, never a mark's value.
+ */
+export type MarksResult =
+  /** `yokoten marks`: the counts, read only. */
+  | ({ action: 'list' } & MarkCounts)
+  /** `marks add`: added, or already there. */
+  | { action: 'add'; isAdded: boolean }
+  /** `marks remove`: removed or not there; `from` is the kind install found it as, when it did. */
+  | { action: 'remove'; isRemoved: boolean; from?: string; isSwitched: boolean }
+  /** `marks off <kind>`: how many marks of the kind install had added were taken out. */
+  | { action: 'off'; kind: string; removed: number }
+  /** `marks on <kind>`: whether this machine has one of the kind, and whether it was added now. */
+  | { action: 'on'; kind: string; found: number; isAdded: boolean }
+  /** `marks fill`: the kinds this machine gave that the file lacked, and the file they went in. */
+  | { action: 'fill'; found: number; kinds: string[]; file: string }
+  /** `marks allow [--remove] <mark> --here`: whether the allow file changed. */
+  | { action: 'here'; isRemoving: boolean; isChanged: boolean };
+
+/** Words in a list: `a`, `a and b`, `a, b and c`. */
+const andList = (words: readonly string[]): string => (words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words.at(-1)}`);
+
+/** The words of the kinds this machine can give, for when it gave none. */
+const MACHINE_KINDS = 'a git name, a git email, a gh login or a private git host';
+
+/** The screen of a `yokoten marks` run (#434, #447, #1115): what is true now, never a value. */
+export function marksScreen(result: MarksResult): string[] {
+  switch (result.action) {
+    case 'list': {
+      const total = result.kinds.reduce((sum, kind) => sum + kind.count, 0);
+      const rows = result.kinds.map(({ kind, count: found, isOff, isFromInstall }) => field(kindLabel(kind), `${found}${isOff ? ', off: install does not add it' : isFromInstall ? ', added by install' : ''}`));
+      return screen(
+        title('marks', `${total} private ${total === 1 ? 'mark' : 'marks'}, values never shown`),
+        spaced([
+          ...(rows.length ? rows : [row('note', 'no private marks yet')]),
+          // The count is of every file the check reads (#656): the setting's file adds to the default.
+          ...(result.files.length > 1 ? [row('note', `read from ${result.files[0]} and the file YOKOTEN_PRIVATE_MARKS names`)] : []),
+        ]),
+        wrap('Add one: ', '`yokoten marks add`'),
+      );
+    }
+    case 'add':
+      return title('marks', result.isAdded ? 'added the mark to your private marks (not shown)' : 'that mark is already in your private marks, so nothing changed');
+    case 'remove': {
+      if (!result.isRemoved) return title('marks', 'that mark is not in your private marks, so nothing changed');
+      const { from } = result;
+      return screen(
+        title('marks', 'removed the mark from your private marks'),
+        from === undefined ? [] : row('note', result.isSwitched ? `it came from this machine (your ${from}), so install adds it again` : `it came from this machine (a ${from}), so install adds it again while this machine has it`),
+        result.isSwitched && from !== undefined ? field('stop it', `\`yokoten marks off ${kindWord(from)}\``) : [],
+      );
+    }
+    case 'off':
+      return screen(
+        title('marks', `install no longer adds your ${result.kind}`),
+        [...row('done', `removed ${count(result.removed, 'mark')} it had added; marks you added yourself are kept`), ...field('undo', `\`yokoten marks on ${kindWord(result.kind)}\``)],
+      );
+    case 'on': {
+      const back = `install adds your ${result.kind} again`;
+      return title('marks', result.isAdded ? `${back}, and added it now (not shown)` : result.found ? `${back}; there is nothing new to add now` : `${back}, but there is none to add now: ${SOURCES[result.kind]}`);
+    }
+    case 'fill':
+      if (result.kinds.length) {
+        return screen(
+          title('marks', `added your ${andList(result.kinds)} from this machine (not shown)`),
+          field('file', result.file),
+        );
+      }
+      return title('marks', result.found ? 'nothing new from this machine, so nothing changed' : `this machine has none to add (${MACHINE_KINDS}), so nothing changed`);
+    case 'here':
+      if (!result.isChanged) return title('marks', result.isRemoving ? 'that mark is not allowed here, so nothing changed' : 'that mark is already allowed here, so nothing changed');
+      return result.isRemoving
+        ? title('marks', 'the allow is taken back; the checks stop that mark in this repo again')
+        : screen(
+            title('marks', 'that mark is allowed in this repo only'),
+            [...row('note', 'the allow is kept on this machine, not in the repo'), ...field('undo', '`yokoten marks allow --remove <mark> --here`')],
+          );
+  }
 }
 
 /** `yokoten marks`: the counts, read only. */
@@ -727,7 +817,7 @@ function showCounts(invocation: Invocation): number {
     .filter((kind) => (counts.get(kind) ?? 0) > 0 || off.has(kind))
     .map((kind) => ({ kind, count: counts.get(kind) ?? 0, isOff: off.has(kind), isFromInstall: INSTALL_KINDS.has(kind) }));
   const files = marksFiles(invocation.env).length > 1 ? [paths(invocation.env).marks, 'YOKOTEN_PRIVATE_MARKS'] : [paths(invocation.env).marks];
-  show(invocation, marksScreen({ kinds, files }));
+  show(invocation, marksScreen({ action: 'list', kinds, files }));
   return 0;
 }
 
@@ -781,7 +871,7 @@ function changeOne(invocation: Invocation, action: 'add' | 'remove', value: stri
     } catch {
       return fail(invocation, "your private-marks file can't be written, so nothing changed", DOCTOR_NEXT);
     }
-    show(invocation, title('marks', isAdded ? 'added the mark to your private marks (not shown)' : 'that mark is already in your private marks, so nothing changed'));
+    show(invocation, marksScreen({ action: 'add', isAdded }));
     return 0;
   }
   let removed: Mark[];
@@ -791,20 +881,13 @@ function changeOne(invocation: Invocation, action: 'add' | 'remove', value: stri
     return fail(invocation, "your private-marks file can't be changed, so nothing changed", DOCTOR_NEXT);
   }
   if (!removed.length) {
-    show(invocation, title('marks', 'that mark is not in your private marks, so nothing changed'));
+    show(invocation, marksScreen({ action: 'remove', isRemoved: false, isSwitched: false }));
     return 0;
   }
   const off = new Set(kindsTurnedOff(env));
   const from = removed.map((one) => one.kind).find((kind): kind is string => kind !== null && !off.has(kind));
   const isSwitched = from !== undefined && (Object.values(SWITCHED_KINDS) as string[]).includes(from);
-  show(
-    invocation,
-    screen(
-      title('marks', 'removed the mark from your private marks'),
-      from === undefined ? [] : row('note', isSwitched ? `it came from this machine (your ${from}), so install adds it again` : `it came from this machine (a ${from}), so install adds it again while this machine has it`),
-      isSwitched ? field('stop it', `\`yokoten marks off ${kindWord(from)}\``) : [],
-    ),
-  );
+  show(invocation, marksScreen({ action: 'remove', isRemoved: true, isSwitched, ...(from === undefined ? {} : { from }) }));
   return 0;
 }
 
@@ -818,13 +901,7 @@ function turnOff(invocation: Invocation, kind: string): number {
   } catch {
     return fail(invocation, "the machine state or your private-marks file can't be written, so the kind may still be on", `run \`yokoten marks off ${kindWord(kind)}\` again`);
   }
-  show(
-    invocation,
-    screen(
-      title('marks', `install no longer adds your ${kind}`),
-      [...row('done', `removed ${count(removed.length, 'mark')} it had added; marks you added yourself are kept`), ...field('undo', `\`yokoten marks on ${kindWord(kind)}\``)],
-    ),
-  );
+  show(invocation, marksScreen({ action: 'off', kind, removed: removed.length }));
   return 0;
 }
 
@@ -842,8 +919,28 @@ function turnOn(invocation: Invocation, kind: string): number {
   } catch {
     return fail(invocation, "the machine state or your private-marks file can't be written", `run \`yokoten marks on ${kindWord(kind)}\` again`);
   }
-  const back = `install adds your ${kind} again`;
-  show(invocation, title('marks', added.length ? `${back}, and added it now (not shown)` : found ? `${back}; there is nothing new to add now` : `${back}, but there is none to add now: ${SOURCES[kind]}`));
+  show(invocation, marksScreen({ action: 'on', kind, found, isAdded: added.length > 0 }));
+  return 0;
+}
+
+/**
+ * `marks fill`: the marks this machine gives (git name and email, the gh login, private git
+ * hosts) that the file lacks, added at its end, as doctor used to do on its own. A kind that is
+ * off is never added. It says the kinds it wrote and the file, never a value.
+ */
+function fill(invocation: Invocation): number {
+  const { env, cwd } = invocation;
+  let found: number;
+  let kinds: string[];
+  try {
+    // gh may reach the network for the login: three seconds at most.
+    const marks = machineMarks(env, { cwd, gh: ghIn(cwd, env, 3000) });
+    found = marks.length;
+    kinds = fillMarks(env, marks);
+  } catch {
+    return fail(invocation, "your private-marks file can't be written, so it may not have every mark", 'run `yokoten doctor` to see why, then `yokoten marks fill` again');
+  }
+  show(invocation, marksScreen({ action: 'fill', found, kinds, file: paths(env).marks }));
   return 0;
 }
 
@@ -899,14 +996,14 @@ function allowHere(invocation: Invocation, mark: string, { isRemoving }: { isRem
     let entries: AllowEntry[];
     if (isRemoving) {
       if (!entry || !has) {
-        show(invocation, title('marks', 'that mark is not allowed here, so nothing changed'));
+        show(invocation, marksScreen({ action: 'here', isRemoving, isChanged: false }));
         return 0;
       }
       const left = entry.allow.filter((allowed) => allowed.toLowerCase() !== mark);
       entries = left.length ? read.entries.map((one) => (one === entry ? { ...one, allow: left } : one)) : read.entries.filter((one) => one !== entry);
     } else {
       if (has) {
-        show(invocation, title('marks', 'that mark is already allowed here, so nothing changed'));
+        show(invocation, marksScreen({ action: 'here', isRemoving, isChanged: false }));
         return 0;
       }
       entries = entry ? read.entries.map((one) => (one === entry ? { ...one, allow: [...one.allow, mark] } : one)) : [...read.entries, { remote: key.remote, allow: [mark] }];
@@ -920,15 +1017,7 @@ function allowHere(invocation: Invocation, mark: string, { isRemoving }: { isRem
     const now = machineAllowed(env, root);
     const isAllowed = now.allow.includes(mark);
     if (now.unsure || isAllowed === isRemoving) return fail(invocation, 'the allow file does not say what was asked', DOCTOR_NEXT);
-    show(
-      invocation,
-      isRemoving
-        ? title('marks', 'the allow is taken back; the checks stop that mark in this repo again')
-        : screen(
-            title('marks', 'that mark is allowed in this repo only'),
-            [...row('note', 'the allow is kept on this machine, not in the repo'), ...field('undo', '`yokoten marks allow --remove <mark> --here`')],
-          ),
-    );
+    show(invocation, marksScreen({ action: 'here', isRemoving, isChanged: true }));
     return 0;
   } finally {
     rmSync(lock, { force: true });
@@ -1576,6 +1665,9 @@ export function hasOpenIssue(gh: Gh, source: string): boolean {
 export interface BorrowedIssueOutcome {
   change: BorrowedChange;
   title: string;
+  /** The issue's body and labels, as it is (or would be) opened. */
+  body: string;
+  labels: string[];
   state: 'would open' | 'opened' | 'open already' | 'failed';
   /** Why the issue was not opened, for `failed`. */
   reason?: string;
@@ -1587,6 +1679,18 @@ export interface BorrowedResult {
   sources: number;
   outcomes: BorrowedIssueOutcome[];
   unreadable: BorrowedWatch['unreadable'];
+}
+
+/**
+ * What `borrowed --json` prints (issue #1115): the sources that moved and the ones the host
+ * could not answer for, then the issue each moved source gets. It is made from the result
+ * the screen is built from; with --json nothing is opened, so each outcome is `would open`.
+ */
+export function borrowedJson(result: BorrowedResult): { borrowed: BorrowedWatch; issues: { source: string; title: string; body: string; labels: string[] }[] } {
+  return {
+    borrowed: { changed: result.outcomes.map((outcome) => outcome.change), unreadable: result.unreadable },
+    issues: result.outcomes.map((outcome) => ({ source: outcome.change.source, title: outcome.title, body: outcome.body, labels: outcome.labels })),
+  };
 }
 
 /** Text from the host in a row: one line, and no backticks, so it never reads as a command to type. */
@@ -1640,27 +1744,29 @@ export async function runBorrowed(invocation: Invocation): Promise<number> {
   });
   const gh = ghIn(root, env, GH_TIMEOUT_MS);
   const watch = watchBorrowed(files, borrowedHost(gh));
-  const issues = watch.changed.map((change) => ({ change, issue: borrowedIssue(change) }));
-  if (json) {
-    printJson(invocation, { borrowed: watch, issues: issues.map(({ change, issue }) => ({ source: change.source, ...issue })) });
-    return watch.unreadable.length ? 1 : 0;
-  }
   const result: BorrowedResult = { sources: new Set(files.map((file) => file.source)).size, outcomes: [], unreadable: watch.unreadable };
-  for (const { change, issue } of issues) {
-    if (isDryRun) {
-      result.outcomes.push({ change, title: issue.title, state: 'would open' });
+  for (const change of watch.changed) {
+    const issue = borrowedIssue(change);
+    const outcome = (state: BorrowedIssueOutcome['state'], reason?: string): BorrowedIssueOutcome => ({ change, ...issue, state, ...(reason === undefined ? {} : { reason }) });
+    // --json writes nothing, as --dry-run does: it says what would be opened.
+    if (isDryRun || json) {
+      result.outcomes.push(outcome('would open'));
       continue;
     }
     try {
       if (hasOpenIssue(gh, change.source)) {
-        result.outcomes.push({ change, title: issue.title, state: 'open already' });
+        result.outcomes.push(outcome('open already'));
         continue;
       }
       gh(['issue', 'create', ...issue.labels.flatMap((label) => ['--label', label]), '--title', issue.title, '--body', issue.body]);
-      result.outcomes.push({ change, title: issue.title, state: 'opened' });
+      result.outcomes.push(outcome('opened'));
     } catch (error) {
-      result.outcomes.push({ change, title: issue.title, state: 'failed', reason: error instanceof Error ? error.message : String(error) });
+      result.outcomes.push(outcome('failed', error instanceof Error ? error.message : String(error)));
     }
+  }
+  if (json) {
+    printJson(invocation, borrowedJson(result));
+    return watch.unreadable.length ? 1 : 0;
   }
   const isFailed = watch.unreadable.length > 0 || result.outcomes.some((outcome) => outcome.state === 'failed');
   print(invocation, borrowedScreen(result), isFailed ? invocation.stderr : invocation.stdout);

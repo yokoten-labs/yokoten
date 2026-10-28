@@ -493,6 +493,19 @@ export interface McpResult {
   problems: Finding[];
   warnings: Finding[];
   toolCount: number;
+  /** Why no server was checked, when none was named or found; `problems` then holds what the config files gave. */
+  skipped?: string;
+}
+
+/** What `mcp --json` prints (issue #1115), in the shape it has always had. */
+export type McpJson =
+  | { check: 'mcp'; ok: true; skipped: string; findings: Finding[]; notes: Finding[] }
+  | { check: 'mcp'; ok: boolean; servers: ServerReport[]; findings: Finding[]; notes: Finding[] };
+
+/** The one way a run's result becomes its --json (issue #1115): the servers, the problems as findings, the warnings as notes. */
+export function mcpJson(result: McpResult): McpJson {
+  if (result.skipped !== undefined) return { check: 'mcp', ok: true, skipped: result.skipped, findings: result.problems, notes: [] };
+  return { check: 'mcp', ok: !result.problems.length, servers: result.reports, findings: result.problems, notes: result.warnings };
 }
 
 /** One finding as rows: the mark and what, then why and fix under it. Its docs link is in --json: a link is wider than a screen. */
@@ -539,6 +552,7 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   if (typeof options === 'string') return usage(invocation, options);
   const json = options.flags.has('--json');
   const dir = options.positional[0] ?? invocation.cwd;
+  // No repo is a failure to run, not a result: its --json has no servers.
   const root = requireRoot(invocation, dir, json ? (missing) => ({ check: 'mcp', ok: false, findings: [missing], notes: [] }) : undefined);
   if (!root) return 1;
 
@@ -552,8 +566,8 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const configFindings = config.problems;
   if (!servers.length) {
     const looked = CONFIG_FILES.join(', ');
-    const what = `no MCP server found in ${looked}`;
-    if (json) printJson(invocation, { check: 'mcp', ok: true, skipped: what, findings: configFindings, notes: [] });
+    const skipped: McpResult = { reports: [], problems: configFindings, warnings: [], toolCount: 0, skipped: `no MCP server found in ${looked}` };
+    if (json) printJson(invocation, mcpJson(skipped));
     else show(invocation, mcpNoneScreen(looked));
     return configFindings.some(isFailingFinding) ? 1 : 0;
   }
@@ -568,13 +582,7 @@ export async function runMcp(invocation: Invocation): Promise<number> {
   const result: McpResult = { reports, problems, warnings, toolCount };
 
   if (json) {
-    printJson(invocation, {
-      check: 'mcp',
-      ok: !problems.length,
-      servers: reports,
-      findings: problems,
-      notes: warnings,
-    });
+    printJson(invocation, mcpJson(result));
   } else {
     print(invocation, mcpScreen(result), problems.length ? invocation.stderr : invocation.stdout);
   }
