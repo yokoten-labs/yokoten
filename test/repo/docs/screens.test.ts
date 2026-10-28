@@ -808,6 +808,7 @@ test('every render: RENDER_WAIVED holds old screens only, each naming #1115, and
   const keys = Object.keys(RENDER_WAIVED);
   assert.ok(keys.length <= RENDER_WAIVED_MOST, `RENDER_WAIVED holds ${keys.length}; the most is ${RENDER_WAIVED_MOST}, and it only goes down`);
   assert.deepEqual(keys.filter((key) => !RENDER_WAIVED[key]?.reason.includes('#1115')), [], 'each waiver names issue #1115');
+  assert.deepEqual(keys.filter((key) => /\bgroup [A-Z]\d|\bmoved? (it|check|doctor|hook|learn|msg|tidy)\b/.test(RENDER_WAIVED[key]?.reason ?? '') || !/test|text|answer/.test(RENDER_WAIVED[key]?.reason ?? '')), [], 'each reason says what still breaks, not which group moves it');
   assert.deepEqual(keys.filter((key) => renderKey(key.split(' ')) !== key), [], 'each key is a render key: the command, then its flags sorted');
   const ids = new Set<string>(SCREEN_RULES.map((rule) => rule.id));
   assert.deepEqual(keys.filter((key) => !RENDER_WAIVED[key]?.rules.length || RENDER_WAIVED[key]?.rules.some((rule) => !ids.has(rule))), [], 'each waiver lists rules of SCREEN_RULES');
