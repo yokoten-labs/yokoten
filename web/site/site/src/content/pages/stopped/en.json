@@ -1,0 +1,53 @@
+{
+  "intro": {
+    "label": "When it stops something",
+    "title": "When yokoten stops a command",
+    "body": "yokoten stops a command before it runs, and prints why. Nothing was done, so there is nothing to undo. This is a real stop:"
+  },
+  "read": {
+    "title": "How to read a stop",
+    "body": "Every stop has the same four parts:",
+    "parts": [
+      "The command, what it would do, and the rule's name in brackets.",
+      "What could go wrong.",
+      "The safe way to do it, or who must do it.",
+      "Where the rule is explained."
+    ]
+  },
+  "tell": {
+    "title": "What to tell your agent",
+    "body": "Usually nothing. Your agent reads the same lines and takes the Instead route on its own.",
+    "only": "When the Instead line says only you can do it, such as a release, the agent stops and leaves it to you. Do that step yourself, when you are ready."
+  },
+  "protects": {
+    "title": "What it protects",
+    "body": "yokoten protects five things. All five are on in every project after `npx yokoten`, with nothing to set.",
+    "items": [
+      {
+        "title": "Your work",
+        "body": "a force push, a hard reset, deleting `.git`, and other ways to lose work."
+      },
+      {
+        "title": "Your secrets",
+        "body": "a commit that adds a key, a private email or an IP address."
+      },
+      {
+        "title": "Your releases",
+        "body": "a new tag, a package publish, or making a repo public. Only you decide when to release."
+      },
+      {
+        "title": "The code you run",
+        "body": "a download that a program would run before anyone reads it."
+      },
+      {
+        "title": "The guard itself",
+        "body": "skipping the commit check, or switching it off."
+      }
+    ]
+  },
+  "wrong": {
+    "title": "If a stop looks wrong",
+    "body": "Open an issue on GitHub and paste the line that starts with `yokoten stopped this:`. Leave out keys, emails and server names.",
+    "link": "Open an issue"
+  }
+}

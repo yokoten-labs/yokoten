@@ -1,0 +1,73 @@
+{
+  "skip": "Skip to the content",
+  "home": "yokoten, home",
+  "nav": {
+    "label": "Pages",
+    "how": "How it works",
+    "docs": "Docs",
+    "road": "Road",
+    "about": "About"
+  },
+  "docs": {
+    "label": "Docs",
+    "onPage": "On this page",
+    "groups": {
+      "start": "Get started",
+      "learn": "Learn",
+      "reference": "Reference"
+    },
+    "docs": "Quick start",
+    "stopped": "When it stops something",
+    "overview": "Overview",
+    "docsRoad": "The road",
+    "guide": "The guide",
+    "docsDescription": "Start using yokoten in three steps: check Node, run npx yokoten in your project, and do what its Next line says.",
+    "stoppedDescription": "What a yokoten stop means, how to read its Why, Instead and More lines, what to tell your agent, and what to do if a stop looks wrong.",
+    "overviewDescription": "What yokoten is, what it stops and how it works: the README of the yokoten repository.",
+    "docsRoadDescription": "Every stage of the yokoten road and every step in it, with why it matters, as the CLI words them.",
+    "guideDescription": "Everything else about yokoten, one chapter a page: how it works, the rules, every command, and what it can't do.",
+    "chapterDescription": "{chapter}: a chapter of the yokoten guide.",
+    "chapters": "Chapters",
+    "previous": "Previous",
+    "next": "Next",
+    "onThisPage": "On this page",
+    "untranslated": "This page is not translated yet, so it is shown in English.",
+    "source": "Source"
+  },
+  "language": "Language",
+  "theme": {
+    "label": "Switch the theme",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "notice": {
+    "text": "Node.js security releases (October 2026): update Node to 22.23.4, 24.22.1 or 26.12.1 before you use yokoten"
+  },
+  "footer": {
+    "note": "Yokoten (横展) comes from Toyota's factories: the lessons learned on one line spread to every line. yokoten does that for your projects: a lesson one project learns is offered to the rest.",
+    "project": {
+      "title": "Project",
+      "docs": "Docs",
+      "about": "About",
+      "contact": "Contact",
+      "privacy": "Privacy"
+    },
+    "more": {
+      "title": "More",
+      "contribute": "Contribute",
+      "board": "Board",
+      "github": "GitHub",
+      "onGithub": "(on GitHub)"
+    }
+  },
+  "terminal": {
+    "stopped": "STOPPED",
+    "firstRun": "FIRST RUN",
+    "exit": "exit"
+  },
+  "copy": {
+    "label": "Copy the command",
+    "done": "Copied"
+  }
+}

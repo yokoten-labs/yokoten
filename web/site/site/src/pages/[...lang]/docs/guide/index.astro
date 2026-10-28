@@ -1,0 +1,40 @@
+---
+// The guide's index, /docs/guide: the guide's intro and its chapters, one page each. The guide was
+// one page before, so links to its old anchors (/docs/guide#privacy) still come here: the anchors,
+// each to its chapter and section, are a JSON block on the page, and public/js/guide-anchors.js
+// (a file, as the CSP blocks inline scripts) sends the reader on.
+import DocsShell from '../../../../components/frame/DocsShell.astro';
+import { href, langPaths, LANG_INFO, type Lang } from '../../../../lib/i18n';
+import { pageData } from '../../../../lib/content/data';
+import { guideOf } from '../../../../lib/content/docs';
+import { render } from 'astro:content';
+
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const t = await pageData('site', lang);
+const { index, chapters } = await guideOf(lang);
+const { Content } = await render(index);
+const anchors = Object.fromEntries(Object.entries(index.data.anchors).map(([id, [chapter, section]]) => [id, href('guide', lang, section ? `#${section}` : '', chapter)]));
+// a JSON block may not hold "</script>": < is written as <
+const json = JSON.stringify(anchors).replace(/</g, '\\u003c');
+---
+<DocsShell lang={lang} page="guide" name={t.docs.guide} description={t.docs.guideDescription} toc={[]} translated={index.data.translated}>
+  <h1 class="page-title">{index.data.title}</h1>
+  <p class="source">{t.docs.source}: <a href={index.data.source}>{index.data.source.replace(/^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\//, '')}</a> · {index.data.ref}</p>
+  <div class="prose">
+    <Content />
+    <h2 id="chapters" lang={index.data.translated ? undefined : LANG_INFO[lang].html}>{t.docs.chapters}</h2>
+    <ol class="chapter-index">
+      {chapters.map((c) => <li lang={c.data.translated || !index.data.translated ? undefined : 'en'}><a href={href('guide', lang, '', c.data.slug)}>{c.data.title}</a></li>)}
+    </ol>
+  </div>
+  <script type="application/json" id="guide-anchors" set:html={json} />
+  <script is:inline src="/js/guide-anchors.js"></script>
+</DocsShell>
+<style>
+  /* two digits line up: 1. and 10. share one edge */
+  .chapter-index { padding-left: 2.5ch; font-variant-numeric: tabular-nums; }
+  .chapter-index li { margin: 0.45rem 0; }
+  .chapter-index a { font-weight: 600; text-decoration: none; }
+  .chapter-index a:hover { text-decoration: underline; text-decoration-color: var(--link); }
+</style>

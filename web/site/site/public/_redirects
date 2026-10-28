@@ -1,0 +1,33 @@
+# Old URLs, 301 to where their content now lives, in every language.
+# Cloudflare reads this file from the assets (site-content-refactor.md, the page map).
+# The Start and Guard pages became the docs: /start is the README at /docs, /guard is the guide.
+/start /docs 301
+/guard /docs/guide 301
+/how-it-works /docs/guide 301
+/roadmap /road 301
+/contact /about#contact 301
+/privacy /about#privacy 301
+/zh/start /zh/docs 301
+/zh/guard /zh/docs/guide 301
+/zh/how-it-works /zh/docs/guide 301
+/zh/roadmap /zh/road 301
+/zh/contact /zh/about#contact 301
+/zh/privacy /zh/about#privacy 301
+/zh-tw/start /zh-tw/docs 301
+/zh-tw/guard /zh-tw/docs/guide 301
+/zh-tw/how-it-works /zh-tw/docs/guide 301
+/zh-tw/roadmap /zh-tw/road 301
+/zh-tw/contact /zh-tw/about#contact 301
+/zh-tw/privacy /zh-tw/about#privacy 301
+/ja/start /ja/docs 301
+/ja/guard /ja/docs/guide 301
+/ja/how-it-works /ja/docs/guide 301
+/ja/roadmap /ja/road 301
+/ja/contact /ja/about#contact 301
+/ja/privacy /ja/about#privacy 301
+# Files that moved into folders when the site joined the yokoten repo (record 0055).
+/theme.js /js/theme.js 301
+/guide-anchors.js /js/guide-anchors.js 301
+/favicon.svg /images/favicon.svg 301
+/og-en.png /images/og-en.png 301
+/og-zh.png /images/og-zh.png 301

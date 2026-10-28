@@ -1,0 +1,162 @@
+---
+// Home: for anyone who lets an AI write code, from a first-time builder to a senior engineer.
+// One idea per screen, in this order: the promise and the one command (with a real refusal beside
+// it), what it stops (in plain words first, the real screen line under), the first
+// minute, three questions, and the promise once more. The commands and the agents are in the docs.
+// The words live in content/pages/home/<lang>.json; this file only lays them out.
+import Sheet from '../../layouts/Sheet.astro';
+import Row from '../../components/blocks/Row.astro';
+import Terminal from '../../components/blocks/Terminal.astro';
+import Cmd from '../../components/blocks/Cmd.astro';
+import { langPaths, type Lang } from '../../lib/i18n';
+import { pageData } from '../../lib/content/data';
+import { screens, version } from '../../lib/content/facts';
+import { guideLink } from '../../lib/content/docs';
+import { stopLines } from '../../lib/terminal/screen';
+import StopArt from '../../components/brand/StopArt.astro';
+import { inline } from '../../lib/page/text';
+import { brandsFor } from '../../lib/page/brands';
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const d = await pageData('home', lang);
+const t = await pageData('site', lang);
+const rulesLink = await guideLink(lang, 'coreRules');
+---
+<Sheet lang={lang} page="home" title={d.meta.title} description={d.meta.description}>
+  <section id="hero" class="hero" aria-labelledby="hero-title">
+    <div class="copy">
+      <ul class="tags">
+        <li class="tag tag-running">v{version.version}</li>
+        {d.hero.tags.map((tag) => <li class="tag">{tag}</li>)}
+      </ul>
+      <h1 id="hero-title">{d.hero.headline}</h1>
+      <p class="sub">{d.hero.sub}</p>
+      <div class="actions">
+        <Cmd t={t} size="lg" />
+        <a class="ghost" href="#stops">{d.stops.title} <span aria-hidden="true">↓</span></a>
+      </div>
+      <dl class="works">
+        {([['works', d.hero.works], ['platforms', d.hero.platforms]] as const).map(([row, g]) => {
+          const brands = brandsFor(row, g.items);
+          return <div class={row}><dt>{g.label}</dt><dd><ul>{g.items.map((it, i) => (
+            <li>{brands[i].url ? <a class="chip" href={brands[i].url} rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule={brands[i].rule} aria-hidden="true" set:html={brands[i].body} />{it}</a> : <span class="chip"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule={brands[i].rule} aria-hidden="true" set:html={brands[i].body} />{it}</span>}</li>
+          ))}</ul></dd></div>;
+        })}
+      </dl>
+    </div>
+    <div class="proof">
+      <Terminal screen="guard, force push" head={t.terminal.stopped} exit={t.terminal.exit} window />
+    </div>
+  </section>
+
+  <Row id="stops" no="01" label={d.stops.label} tone="band">
+    <h2 id="stops-title">{d.stops.title}</h2>
+    <ul class="stops body">
+      {d.stops.cards.map((card) => {
+        const s = stopLines(screens[card.screen].text);
+        return (
+          <li class="card">
+            <StopArt screen={card.screen} />
+            <p class="caption">{card.caption}</p>
+            <p class="stopped" lang="en">{s.stopped}</p>
+          </li>
+        );
+      })}
+    </ul>
+    <p class="more"><a href={rulesLink}>{d.stops.more} →</a></p>
+  </Row>
+
+  <Row id="first-minute" no="02" label={d.firstMinute.label}>
+    <h2 id="first-minute-title" set:html={inline(d.firstMinute.title)} />
+    <div class="minute body">
+      <ol class="steps">{d.firstMinute.callouts.map((c) => <li>{c}</li>)}</ol>
+      <Terminal screen="first run" head={t.terminal.firstRun} exit={t.terminal.exit} window />
+    </div>
+  </Row>
+
+  <Row id="questions" no="03" label={d.questions.label}>
+    <h2 id="questions-title">{d.questions.title}</h2>
+    <dl class="faq body">
+      {d.questions.items.map((item) => <div><dt>{item.q}</dt><dd set:html={inline(item.a)} /></div>)}
+    </dl>
+  </Row>
+
+  <section id="again" class="row band-ink again" aria-labelledby="again-title">
+    <div class="again-copy">
+      <p id="again-title" class="again-title">{d.hero.headline}</p>
+      <p class="lede">{d.hero.sub}</p>
+    </div>
+  </section>
+</Sheet>
+<style>
+  /* One left edge for the whole page: every heading, every paragraph and the left column start on
+     the container's edge (owner, 2026-10-28: "所有topic全部居左"). Two-column rows use the same
+     grid as the hero, words left and the screen right, so the pair fills the centred container.
+     Phone under 48rem: one column. Tablet 48-64rem: one column, wider cards. Desktop: two columns. */
+  .hero { display: grid; gap: 3rem; padding-block: 3.5rem 5rem; }
+  .copy { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+  .hero .tags { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1.75rem; }
+  h1 { font-size: clamp(2.5rem, 10vw, 3.75rem); letter-spacing: -0.03em; line-height: 0.98; margin: 0; max-width: 13ch; text-wrap: balance; }
+  .sub { font-size: 1.125rem; line-height: 1.5; margin: 1.5rem 0 0; color: var(--muted); }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; margin-top: 2.25rem; }
+  .ghost { font-weight: 600; text-decoration: none; padding: 0.5rem 0.25rem; border-bottom: 2px solid var(--link); }
+  /* what it works with and where it runs: one labelled row each, every name its own chip */
+  .works { display: grid; gap: 0.75rem; margin: 2rem 0 0; max-width: 40rem; }
+  .works div { display: grid; grid-template-columns: 5.75rem 1fr; gap: 0.75rem; align-items: baseline; }
+  .works dt { color: var(--muted); font-size: 0.875rem; font-weight: 600; }
+  .works dd { margin: 0; }
+  .works ul { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.375rem; margin: 0; padding: 0; list-style: none; }
+  .works .platforms ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .works .chip { display: flex; align-items: center; gap: 0.3rem; font-size: 0.8125rem; line-height: 1.15; min-width: 0; padding: 0.375rem 0.5rem 0.375rem 0.45rem; border-radius: 999px; background: var(--raised); color: var(--fg); white-space: nowrap; text-decoration: none; border: 1px solid transparent; }
+  .works a.chip:hover { border-color: var(--line); background: var(--bg); }
+  .works li svg { flex: none; }
+  @media (max-width: 30rem) {
+    .works div { grid-template-columns: 1fr; gap: 0.375rem; }
+    .works ul { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .works .chip { white-space: normal; }
+  }
+  .proof { min-width: 0; }
+  /* The refusal on the first screen wraps its lines rather than scrolling: it is read, not compared. */
+  /* Only on a wide screen: on a phone the 80-column screen scrolls sideways, so its own line breaks hold. */
+  @media (min-width: 64rem) { .proof :global(.term pre) { white-space: pre-wrap; overflow-wrap: anywhere; } }
+  @media (min-width: 64rem) {
+    .hero { grid-template-columns: minmax(0, 36rem) minmax(0, 44rem); justify-content: space-between; align-items: center; gap: 4rem; padding-block: 5rem 6rem; }
+    h1 { font-size: clamp(3rem, 4.4vw, 4rem); }
+  }
+
+  /* What it stops: three cards. The plain caption leads, the reason follows, the screen's own line
+     closes in mono, so a newcomer reads the first two and an engineer checks the third. */
+  .stops { list-style: none; padding: 0; display: grid; gap: 1.25rem; }
+  @media (min-width: 48rem) { .stops { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  /* flat, as Vercel draws a card: a line, no shadow */
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .stops .card { display: flex; flex-direction: column; gap: 0.75rem; padding: 1.25rem; }
+  .caption { font-family: var(--font-cond); font-weight: 700; font-size: 1.125rem; line-height: 1.25; margin: 0; text-wrap: balance; }
+  .stopped { margin: auto 0 0; padding-top: 0.9rem; border-top: 1px dashed var(--line); font-family: var(--font-mono); font-size: 0.78rem; line-height: 1.5; color: var(--andon); overflow-wrap: anywhere; }
+
+  /* The first minute: the three things it does as big numbered steps beside the real screen,
+     on the hero's grid. The steps sit in the middle of the screen's height, so neither column
+     leaves a tall empty strip. */
+  .minute { display: grid; gap: 2.5rem; }
+  @media (min-width: 64rem) { .minute { grid-template-columns: minmax(0, 36rem) minmax(0, 44rem); justify-content: space-between; align-items: center; gap: 4rem; } }
+  .steps { list-style: none; margin: 0; padding: 0; counter-reset: s; display: grid; gap: 2.5rem; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 3rem 1fr; gap: 1rem; align-items: center; font-size: 1.25rem; line-height: 1.4; }
+  .steps li::before { content: counter(s); display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--notice); color: #ffffff; font-family: var(--font-mono); font-weight: 600; font-size: 0.875rem; }
+  .minute :global(.term) { min-width: 0; width: 100%; }
+  /* on a phone the first run keeps its columns and scrolls sideways inside its card (global.css) */
+
+  /* Next: the board, on ink, at the row heading size. */
+  h2 .tag { vertical-align: middle; margin-left: 0.5rem; font-size: 0.8rem; }
+
+  .faq { display: grid; gap: 2rem 3rem; margin-bottom: 0; }
+  @media (min-width: 48rem) { .faq { grid-template-columns: 1fr 1fr; } }
+  .faq > div { border-top: 1px solid var(--line); padding-top: 1.25rem; }
+  .faq dt { font-weight: 700; font-size: 1rem; margin-bottom: 0.5rem; }
+  .faq dd { margin: 0; color: var(--muted); }
+
+  /* The promise once more, before the footer: the words alone, no second command box. */
+  .again { padding-block: 4rem; }
+  .again-copy { display: grid; gap: 1rem; }
+  .again-title { font-family: var(--font-cond); font-weight: 700; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.02em; margin: 0; max-width: 16ch; text-wrap: balance; }
+  .again .lede { margin: 0; }
+</style>

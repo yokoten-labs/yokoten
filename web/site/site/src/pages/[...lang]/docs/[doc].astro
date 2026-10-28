@@ -1,0 +1,24 @@
+---
+// The repo's docs shown whole: the README (/docs/overview) and the road (/docs/road), in every
+// language, from the yokoten repo at the tag the facts were read from (generated/docs/, written by
+// tools/steps/from-package.mjs). A doc with no translation shows the English one with a note.
+import DocsShell from '../../../components/frame/DocsShell.astro';
+import { buildLangs, DOC_PAGE, DOCS, LANG_INFO, type Doc, type Lang } from '../../../lib/i18n';
+import { pageData } from '../../../lib/content/data';
+import { docEntry } from '../../../lib/content/docs';
+import { render } from 'astro:content';
+
+// getStaticPaths runs on its own: the slugs are written inside it
+export const getStaticPaths = () =>
+  buildLangs().flatMap((lang) => DOCS.map((doc) => ({ params: { lang: LANG_INFO[lang].dir || undefined, doc: doc === 'start' ? 'overview' : doc }, props: { lang, doc } })));
+const { lang, doc } = Astro.props as { lang: Lang; doc: Doc };
+const t = await pageData('site', lang);
+const { entry, translated } = await docEntry(doc, lang);
+const { Content, headings } = await render(entry);
+const page = DOC_PAGE[doc] as 'overview' | 'docsRoad';
+---
+<DocsShell lang={lang} page={page} name={t.docs[page]} description={t.docs[`${page}Description`]} toc={headings.filter((h) => h.depth === 2)} translated={translated}>
+  <h1 class="page-title">{entry.data.title}</h1>
+  <p class="source">{t.docs.source}: <a href={entry.data.source}>{entry.data.source.replace(/^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/[^/]+\//, '')}</a> · {entry.data.ref}</p>
+  <div class="prose"><Content /></div>
+</DocsShell>

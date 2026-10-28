@@ -1,0 +1,58 @@
+---
+// About: who makes it, how, and what about my data? Numbers read from the repo at build.
+import Sheet from '../../layouts/Sheet.astro';
+import Row from '../../components/blocks/Row.astro';
+import { langPaths, type Lang } from '../../lib/i18n';
+import { pageData } from '../../lib/content/data';
+import { version } from '../../lib/content/facts';
+import { inline } from '../../lib/page/text';
+export const getStaticPaths = langPaths;
+const { lang } = Astro.props as { lang: Lang };
+const d = await pageData('about', lang);
+const facts = [
+  [version.mergedPrs, d.built.facts.mergedPrs],
+  [version.records, d.built.facts.records],
+  [version.testFiles, d.built.facts.testFiles],
+  [`v${version.version}`, d.built.facts.version],
+] as const;
+---
+<Sheet lang={lang} page="about" title={d.meta.title} description={d.meta.description}>
+  <section id="intro" class="intro" aria-labelledby="intro-title">
+    <p class="eyebrow">{d.intro.label}</p>
+    <h1 id="intro-title" class="page-title">{d.intro.title}</h1>
+    <p class="lede">{d.intro.body}</p>
+  </section>
+
+  <Row id="built" no="01" label={d.built.label}>
+    <h2 id="built-title">{d.built.title}</h2>
+    <p class="lede">{d.built.body}</p>
+    <dl class="facts body">{facts.map(([n, what]) => <div><dt>{what}</dt><dd>{n}</dd></div>)}</dl>
+  </Row>
+
+
+  <Row id="privacy" no="02" label={d.privacy.label}>
+    <h2 id="privacy-title">{d.privacy.title}</h2>
+    <dl class="items body">{d.privacy.items.map((i) => <div><dt>{i.title}</dt><dd set:html={inline(i.body)} /></div>)}</dl>
+  </Row>
+
+  <Row id="contact" no="03" label={d.contact.label}>
+    <h2 id="contact-title">{d.contact.title}</h2>
+    <dl class="items body">{d.contact.items.map((i) => <div><dt>{i.title}</dt><dd set:html={inline(i.body)} /></div>)}</dl>
+  </Row>
+
+  <Row id="license" no="04" label={d.license.label}>
+    <h2 id="license-title">{d.license.title}</h2>
+    <p class="lede" set:html={inline(d.license.body)} />
+  </Row>
+</Sheet>
+<style>
+  .facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin-bottom: 0; border-top: 1px solid var(--fg); }
+  @media (min-width: 48rem) { .facts { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .facts div { padding: 0.9rem 1rem 0.9rem 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column-reverse; gap: 0.2rem; }
+  .facts dt { font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  .facts dd { margin: 0; font-family: var(--font-cond); font-weight: 700; font-size: 2rem; line-height: 1; }
+  .items { display: grid; gap: 2rem 3rem; margin-bottom: 0; }
+  @media (min-width: 48rem) { .items { grid-template-columns: 1fr 1fr; } }
+  .items dt { font-weight: 700; margin-bottom: 0.5rem; }
+  .items dd { margin: 0; color: var(--muted); }
+</style>

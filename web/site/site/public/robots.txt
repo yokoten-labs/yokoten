@@ -1,0 +1,9 @@
+# Content Signals (https://contentsignals.org): search engines, AI answers and AI training may all use this site.
+User-agent: *
+Content-Signal: search=yes, ai-input=yes, ai-train=yes
+Allow: /
+
+# For AI agents: an index of the site in Markdown (llmstxt.org).
+# https://yokoten.app/llms.txt
+
+Sitemap: https://yokoten.app/sitemap.xml

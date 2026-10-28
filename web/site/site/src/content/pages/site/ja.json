@@ -1,0 +1,73 @@
+{
+  "skip": "本文へ移動",
+  "home": "yokoten ホーム",
+  "nav": {
+    "label": "ページ",
+    "how": "仕組み",
+    "docs": "ドキュメント",
+    "road": "道のり",
+    "about": "概要"
+  },
+  "docs": {
+    "label": "ドキュメント",
+    "onPage": "このページの内容",
+    "groups": {
+      "start": "はじめに",
+      "learn": "知る",
+      "reference": "リファレンス"
+    },
+    "docs": "クイックスタート",
+    "stopped": "止められたとき",
+    "overview": "概要",
+    "docsRoad": "道のり",
+    "guide": "ガイド",
+    "docsDescription": "三つの手順で yokoten を使いはじめる：Node を確かめ、プロジェクトで npx yokoten を実行し、Next の行のとおりに進める。",
+    "stoppedDescription": "yokoten がコマンドを止めたときの意味。Why、Instead、More の読み方、エージェントへの伝え方、止め方がおかしいと思ったときにすること。",
+    "overviewDescription": "yokoten とは何か、何を止めるのか、どう動くのか。yokoten リポジトリの README です。",
+    "docsRoadDescription": "yokoten の道のりのすべての段階と手順、そしてその理由。CLI の表示のままです。",
+    "guideDescription": "yokoten のそれ以外のすべてを一章一ページで：仕組み、ルール、すべてのコマンド、そしてできないこと。",
+    "chapterDescription": "「{chapter}」：yokoten ガイドの一章。",
+    "chapters": "章の一覧",
+    "previous": "前の章",
+    "next": "次の章",
+    "onThisPage": "このページの内容",
+    "untranslated": "このページはまだ翻訳されていないため、英語の原文を表示しています。",
+    "source": "出典"
+  },
+  "language": "言語",
+  "theme": {
+    "label": "テーマを切り替える",
+    "system": "システム",
+    "light": "ライト",
+    "dark": "ダーク"
+  },
+  "notice": {
+    "text": "Node.js 10 月のセキュリティ更新：yokoten を使う前に、Node を 22.23.4、24.22.1、26.12.1 に上げてください"
+  },
+  "footer": {
+    "note": "横展（横展開）はトヨタの工場で生まれた言葉で、あるラインで得た教訓をすべてのラインに広げることを指します。yokoten はそれをあなたのプロジェクトで行います。あるプロジェクトが学んだ教訓を、ほかのプロジェクトにも届けます。",
+    "project": {
+      "title": "プロジェクト",
+      "docs": "ドキュメント",
+      "about": "yokoten について",
+      "contact": "お問い合わせ",
+      "privacy": "プライバシー"
+    },
+    "more": {
+      "title": "その他",
+      "contribute": "コントリビュート",
+      "board": "ボード",
+      "github": "GitHub",
+      "onGithub": "（GitHub）"
+    }
+  },
+  "terminal": {
+    "stopped": "停止",
+    "firstRun": "初回実行",
+    "exit": "終了コード"
+  },
+  "copy": {
+    "label": "コマンドをコピー",
+    "done": "コピーしました"
+  }
+}

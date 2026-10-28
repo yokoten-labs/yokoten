@@ -1,0 +1,32 @@
+{
+  "meta": {
+    "title": "Road · yokoten",
+    "description": "The five stages of the yokoten road, then the desk and the kanban. Every step is listed in the docs."
+  },
+  "intro": {
+    "label": "The road",
+    "title": "What happens after day one",
+    "body": "Day one is the safety net. After that, yokoten walks your project through how good teams work, one step at a time. You can say \"not now\" to any step."
+  },
+  "stages": {
+    "label": "Five stages",
+    "title": "Five stages, one step at a time",
+    "stage": "Stage",
+    "steps": "{n} steps",
+    "all": "All {n} steps"
+  },
+  "desk": {
+    "label": "The desk",
+    "title": "One task, one AI, one fence",
+    "body": "An AI agent works inside a fence around its own copy of a folder: it writes only there, and your other files stay hidden.",
+    "more": "How the desk works",
+    "tag": "v0.1.1"
+  },
+  "kanban": {
+    "label": "The kanban",
+    "title": "The whole line on one board",
+    "body": "A preview in v0.1.2: `yokoten kanban --text` shows each session and its state, the pull requests that wait on you, and the health of Actions. It only reads; the page in your browser comes next.",
+    "more": "About the kanban",
+    "tag": "preview"
+  }
+}

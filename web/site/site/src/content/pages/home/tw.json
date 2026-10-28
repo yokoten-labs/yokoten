@@ -1,0 +1,81 @@
+{
+  "meta": {
+    "title": "yokoten",
+    "description": "yokoten 替你擋下 AI 程式 agent 那些收不回來的錯誤。一個指令就裝好：npx yokoten。"
+  },
+  "hero": {
+    "headline": "擋下 AI agent 那些收不回來的錯誤。",
+    "sub": "一個指令裝好，不用改任何設定。",
+    "works": {
+      "label": "適用於",
+      "items": [
+        "Claude Code",
+        "Codex",
+        "Copilot",
+        "Antigravity",
+        "Muse Code",
+        "OpenCode",
+        "Grok",
+        "DeepSeek"
+      ]
+    },
+    "platforms": {
+      "label": "系統",
+      "items": [
+        "Linux",
+        "macOS",
+        "Windows（WSL）",
+        "原生 Windows（測試版）"
+      ]
+    },
+    "tags": [
+      "MIT"
+    ]
+  },
+  "stops": {
+    "label": "拉停整條線",
+    "title": "它擋什麼",
+    "cards": [
+      {
+        "screen": "guard, force push",
+        "caption": "強制推送，會把別人的工作沖掉。"
+      },
+      {
+        "screen": "guard, wipe home",
+        "caption": "一條指令，清空你的家目錄。"
+      },
+      {
+        "screen": "guard, tag push",
+        "caption": "發版這件事，只該由專案擁有者來做。"
+      }
+    ],
+    "more": "全部規則"
+  },
+  "firstMinute": {
+    "label": "第一分鐘",
+    "title": "`npx yokoten` 做了什麼",
+    "callouts": [
+      "開啟守衛。",
+      "加上規則，不改你的檔案。",
+      "告訴你下一條指令。"
+    ]
+  },
+  "questions": {
+    "label": "常見問題",
+    "title": "三個問題",
+    "items": [
+      {
+        "q": "要收費嗎？",
+        "a": "不收費。MIT 開源，不用註冊帳號。"
+      },
+      {
+        "q": "會把我的程式碼傳出去嗎？",
+        "a": "不會。只在你的電腦和 CI 上執行，沒有遙測。"
+      },
+      {
+        "q": "怎麼移除它？",
+        "a": "執行 `yokoten uninstall`；它加進專案的檔案是一般檔案，直接刪掉就行。"
+      }
+    ]
+  }
+}

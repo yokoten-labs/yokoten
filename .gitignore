@@ -9,3 +9,16 @@ dist/
 .yokoten-agent.json
 # The board's start and stop log, at the repo root. Never committed.
 .yokoten-board.log
+# The website (web/site, record 0055): what its build and tools write. node_modules/ and
+# dist/ above cover its dependencies and its built pages.
+web/site/**/.astro/
+web/site/**/.wrangler/
+web/site/dist-server/
+web/site/**/*.log
+web/site/site/public/fonts/
+web/site/tools/promo/out/
+web/site/tools/promo/build/
+web/site/tools/promo/stills/
+web/site/tools/promo/sheet/
+web/site/tools/promo/chk/
+web/site/tools/promo/public/music.wav
