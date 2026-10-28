@@ -73,6 +73,8 @@ answer.gitHookWrite = tryIt(() => { fs.writeFileSync('.git/hooks/post-checkout',
 answer.gitConfigCommand = spawnSync('git', ['config', 'alias.st', 'status'], { encoding: 'utf8' }).status;
 answer.hostDoors = ['/run/WSL', '/run/user', '/var/run/docker.sock'].filter((path) => fs.existsSync(path));
 answer.pipes = piped.error ? 'failed: ' + piped.error.code : piped.stdout;
+answer.temp = [process.env.TMPDIR, process.env.TEMP, process.env.TMP];
+answer.tempWrite = tryIt(() => { fs.rmSync(fs.mkdtempSync(require('node:os').tmpdir() + '/probe-'), { recursive: true }); return 'ok'; });
 answer.role = process.env.YOKOTEN_ROLE;
 answer.tz = process.env.TZ;
 answer.token = process.env.GH_TOKEN === undefined ? 'absent' : 'present';
@@ -149,7 +151,8 @@ async function holdsContract(backend: DeskBackend): Promise<void> {
       runtime: 'claude-code',
       desk,
       command: [process.execPath, 'probe.cjs', CLI, outsideFile, other, String(echoPort), team],
-      env: { ...process.env, GH_TOKEN: 'not-a-real-token' },
+      // A Claude Code shell's TMPDIR, read-only in the fence (#1172): the desk must give its own.
+      env: { ...process.env, GH_TOKEN: 'not-a-real-token', TMPDIR: '/tmp/claude', TEMP: '/tmp/claude', TMP: '/tmp/claude' },
       extraHosts: [`localhost:${echoPort}`],
       team: { folder: team, name: 'probe' },
       markDesk: (folder) => markWorktree(origin, folder, process.env),
@@ -179,6 +182,9 @@ async function holdsContract(backend: DeskBackend): Promise<void> {
     assert.notEqual(answer.gitConfigCommand, 0, "git config can't change it either");
     assert.deepEqual(answer.hostDoors, [], 'no socket to the host: WSL interop, the session bus, Docker');
     assert.equal(answer.pipes, 'through a pipe', 'a child process with pipes works');
+    assert.notEqual(answer.temp[0], '/tmp/claude', "the caller's TMPDIR is not passed in (#1172)");
+    assert.deepEqual(answer.temp, [answer.temp[0], answer.temp[0], answer.temp[0]], 'TMPDIR, TEMP and TMP name one folder');
+    assert.equal(answer.tempWrite, 'ok', "the desk's TMPDIR is writable");
     assert.deepEqual([answer.role, answer.tz, answer.token], ['worker', 'UTC', 'absent'], 'role and time zone are set; a token is not passed in');
     assert.match(answer.msgSend, /^0 /, 'the agent sends from its own outbox');
     assert.match(readFileSync(join(team, 'outbox', 'probe.jsonl'), 'utf8'), /"text":"hello from the desk".*"from":"probe","to":"lead"/);

@@ -1013,11 +1013,12 @@ export async function runDesk(invocation: Invocation, options: Parsed): Promise<
 }
 
 /** The one screen before a desk's agent starts (#1027): where it writes, what it reaches, its fence and its role. */
-export function deskStartScreen({ runtime, folder, hosts, fence }: { runtime: string; folder: string; hosts: readonly string[]; fence: string }): string[] {
+export function deskStartScreen({ runtime, folder, hosts, fence, upstream }: { runtime: string; folder: string; hosts: readonly string[]; fence: string; upstream?: string }): string[] {
   return screen(
     title('desk', `${runtime} in ${folder}`),
     // The hosts it can reach, named in full: an extra --host is never hidden (#1027 review).
-    spaced([field('writes', `${folder} only`), field('network', hosts.join(', ') || 'none'), field('fence', fence), field('role', 'worker, TZ=UTC, no tokens')]),
+    // The host's proxy (#1172) by host and port only: `upstream` is UpstreamProxy.shown, never its URL.
+    spaced([field('writes', `${folder} only`), field('network', hosts.join(', ') || 'none'), ...(upstream ? [field('through', `${upstream} (HTTPS_PROXY)`)] : []), field('fence', fence), field('role', 'worker, TZ=UTC, no tokens')]),
     wrap('', 'Starting… (stop with Ctrl+C)'),
   );
 }
@@ -1073,7 +1074,8 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
     return { fail: (error as Error).message };
   }
   // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
-  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFrom(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name }), invocation.stderr);
+  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFrom(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name, upstream: plan.upstream?.proxy?.shown }), invocation.stderr);
+  if (isShown && plan.upstream?.problem) print(invocation, noteLine(plan.upstream.problem), invocation.stderr);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
   if (isShown && unlisted) print(invocation, noteLine(`the board won't show this desk: ${unlisted}.`), invocation.stderr);
