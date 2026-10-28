@@ -779,6 +779,11 @@ export function shownFolder(cwd: string, folder: string): string {
   return !isAbsolute(path) && path.split(/[\\/]/).filter((part) => part === '..').length <= 2 ? path : folder;
 }
 
+// The same, read through symlinks on both sides: git names a folder by its real path, and the
+// session's folder may come through a link (on macOS, /var is /private/var), so a near folder
+// would show as a long machine path.
+const shownFrom = (cwd: string, folder: string): string => shownFolder(realPath(cwd), realPath(folder));
+
 /**
  * Mark the worktree at `dir` (from `cwd`) as a worker's, exactly as `yokoten worker
  * mark` does: the mark file in its own git folder, and its path on the worker list.
@@ -787,7 +792,7 @@ export function shownFolder(cwd: string, folder: string): string {
  */
 export function markWorktree(cwd: string, dir: string, callerEnv: Env): { top: string; kind: 'worktree' | 'clone' } | MarkFailure {
   const folder = resolve(cwd, dir);
-  const shown = (path: string) => shownFolder(cwd, path);
+  const shown = (path: string) => shownFrom(cwd, path);
   // In a sentence, the folder the lead is in reads as "this folder"; a command keeps `.`.
   const named = (path: string) => (shown(path) === '.' ? 'this folder' : shown(path));
   // Git reads the folder from the caller's GIT_DIR before the path: dropped, so the mark goes where `dir` is (#672).
@@ -936,7 +941,7 @@ export function runWorker(invocation: Invocation): number | Promise<number> {
   if (workerRole(invocation.env, [invocation.cwd]) !== null) return fail(invocation, 'only the lead marks a worktree or a clone: this session is a worker', leadOutside('mark'));
   const marked = markWorktree(invocation.cwd, dir, invocation.env);
   if ('fail' in marked) return fail(invocation, marked.what, marked.next);
-  show(invocation, workerMarkedScreen({ kind: marked.kind, folder: shownFolder(invocation.cwd, marked.top) }));
+  show(invocation, workerMarkedScreen({ kind: marked.kind, folder: shownFrom(invocation.cwd, marked.top) }));
   return 0;
 }
 
@@ -984,7 +989,7 @@ function runUnmark(invocation: Invocation, dir: string): number {
   } catch (error) {
     return fail(invocation, `can't clear the worker list (${firstLine(error)})`, `check HOME, then run \`yokoten worker unmark ${dir}\` again`);
   }
-  show(invocation, workerUnmarkedScreen(shownFolder(invocation.cwd, top)));
+  show(invocation, workerUnmarkedScreen(shownFrom(invocation.cwd, top)));
   return 0;
 }
 
@@ -1068,7 +1073,7 @@ export async function startFencedDesk(invocation: Invocation, request: FencedDes
     return { fail: (error as Error).message };
   }
   // One screen before the agent starts (#1027): where it writes, what it reaches, and its role.
-  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFolder(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name }), invocation.stderr);
+  if (isShown) print(invocation, deskStartScreen({ runtime, folder: shownFrom(invocation.cwd, plan.desk), hosts: plan.hosts, fence: backend.name }), invocation.stderr);
   // The board shows the desk's agent (#685). A desk that can't be noted still starts.
   const unlisted = registerDesk(invocation.cwd, plan.desk);
   if (isShown && unlisted) print(invocation, noteLine(`the board won't show this desk: ${unlisted}.`), invocation.stderr);

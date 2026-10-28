@@ -1516,7 +1516,7 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   // --github --yes asked for changes on GitHub; with no remote none were made, so it fails (#208).
   result = await sandbox.call(['init', '--list', '--github', '--yes'], { extra });
   assert.equal(result.status, 1);
-  assert.match(result.stdout, /^ {2}note {8}GitHub was not read: there is no origin remote yet;/m);
+  assert.match(result.stderr, /^ {2}note {8}GitHub was not read: there is no origin remote yet;/m);
   assert.match(result.stderr, /^yokoten init · --github --yes changed nothing on GitHub; the project files are\n {15}as shown above\n\nNext: `yokoten init --github --yes`\n$/m);
   assert.equal(calls().length, 0);
   // With a remote: plain init only reads GitHub and says what it would do; --github --yes

@@ -285,7 +285,8 @@ test('help: the help table and the parser list the same commands and options (#2
   const parsed = [...source.matchAll(/\b(?:parse|parseWords)\('([a-z]+(?:-[a-z]+)*)'/g)].map((m) => m[1]);
   assert.deepEqual([...parsed].sort(), COMMANDS.map((command) => command.name).sort(), 'each command parses its words by its help entry');
   assert.doesNotMatch(source, /flags: \[/, 'no option list outside the help table');
-  const cases = [...source.matchAll(/^ {4}case '([a-z]+(?:-[a-z]+)*)':/gm)].map((m) => m[1]);
+  // The dispatch switch is bin/main.ts's alone: a command's own switch (marks' actions) names no command.
+  const cases = [...readFileSync(join(dirname(CLI), 'main.ts'), 'utf8').matchAll(/^ {4}case '([a-z]+(?:-[a-z]+)*)':/gm)].map((m) => m[1]);
   assert.deepEqual([...cases].sort(), COMMANDS.map((command) => command.name).sort(), 'each command in the switch has a help entry, and the reverse');
   // Each option the help lists is accepted: with it, the parser gives no "unknown option".
   const sandbox = makeSandbox();

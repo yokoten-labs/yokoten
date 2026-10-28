@@ -929,7 +929,7 @@ test('worker mark: a marked worktree is a worker for every agent; the plain ways
   assert.equal(result.status, 0, result.stderr);
   const top = realpathSync(tree);
   assert.match(result.stdout.replace(/\s+/g, ' '), /^yokoten worker · marked the worktree at \S+: every agent there is a worker /);
-  assert.ok(result.stdout.includes(shownFolder(sandbox.repo, top)), result.stdout);
+  assert.ok(result.stdout.includes(shownFolder(realpathSync(sandbox.repo), top)), result.stdout);
   assert.ok(result.stdout.includes('git worktree remove'), result.stdout);
   // Positive controls: with the mark and no env, a lead-only edit and a push are refused.
   result = await muse({ path: join(tree, 'AGENTS.md') });
