@@ -53,14 +53,38 @@ treats worker reports as untrusted.
    sandbox needs the owner's yes, for the lead too. A lead started without its sandbox is
    said in one line at session start and shown by `doctor`. Worker reports are read as
    data, not instructions. (issue #1163)
-3. **The fence can be swapped, never removed.** `auto` (srt), `srt`, `sbx` or `leash`;
+   How the owner writes: the lead drafts the change, yokoten shows it in one plain line
+   with a before/after, and the owner approves in a terminal outside the fence, which
+   writes the file. Inside the lead's fence those files are read-only, so the key is out of
+   the agent's reach, not just forbidden.
+3. **Who decides what, in three layers.** "The owner" is whoever owns the machine and the
+   project: every user holds their own keys.
+
+   | Layer | Who decides | What a user does |
+   |---|---|---|
+   | Floor (never allowed: rewriting others' pushes, wiping home) | yokoten's maintainers, in code | nothing; it can't be changed |
+   | Defaults | yokoten's maintainers, shipped in each release | nothing |
+   | Local overrides | each user, with their own keys | may tighten; may loosen on their own machine only, with their own yes |
+
+   A user's overrides sit on top of the release, like `extends: recommended`: an update
+   brings the new defaults for every key the user did not override. `doctor` shows which
+   rules a user has loosened. An override many users make is the signal for a new default:
+   that is 横展, a local fix spread to every line. Nothing is collected without the user
+   choosing to share it.
+
+   The defaults change through a proposal (an issue, open to anyone), public discussion,
+   and a maintainer decision written as a record. Votes are a signal, not the decision: a
+   vote rewards what is popular, not what is safe, and a few new accounts could swing it.
+   The MIT licence lets anyone fork the code; the name yokoten stays with the releases that
+   keep its floor.
+4. **The fence can be swapped, never removed.** `auto` (srt), `srt`, `sbx` or `leash`;
    only the owner switches it; a fence that can't start means the desk does not start.
    The core stays zero-dependency: yokoten runs the fence as a program. (issue #1164)
-4. **What yokoten is.** Like Kubernetes, which does not make containers but decides who
+5. **What yokoten is.** Like Kubernetes, which does not make containers but decides who
    may deploy what; like a factory's management system, which buys its machines and owns
    the standards, the inspection, the release and the spread of a fix to every line
    (横展). The agents and the fence are bought parts; the rules and the keys are ours.
-5. **CEL still waits.** This positioning points towards policy expressions like
+6. **CEL still waits.** This positioning points towards policy expressions like
    Kubernetes admission policies, but record 0039 stands: adopt CEL when a rule outgrows
    the config, or when users may write their own rules (to decide in the P4 review).
 
