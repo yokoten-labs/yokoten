@@ -248,6 +248,12 @@ test('hook: a heavy job asks when the kept host drive is low, and a light one ne
   assert.equal(question.hookSpecificOutput.permissionDecision, 'ask');
   assert.match(question.hookSpecificOutput.permissionDecisionReason, /`npm test` is a heavy job/);
   assert.match(question.hookSpecificOutput.permissionDecisionReason, /free some space on that drive in Windows/);
+  // A cloud session has no one to answer: the question becomes a refusal (#1215).
+  result = await sandbox.call(['hook'], { extra: { ...defaultLimit, CLAUDE_CODE_REMOTE: 'true' }, input: tool('npm test') });
+  const refused = JSON.parse(result.stdout).hookSpecificOutput ?? JSON.parse(result.stdout);
+  assert.equal(refused.permissionDecision, 'deny');
+  assert.match(refused.permissionDecisionReason, /owner's yes, and a cloud session/);
+  assert.match(refused.permissionDecisionReason, /free some space on that drive in Windows/, 'the way out stays');
   // A light command asks nothing.
   assert.equal((await sandbox.call(['hook'], { extra: defaultLimit, input: tool('git status') })).stdout, '');
   // An old reading, or a WSL 1 one, is not repeated.

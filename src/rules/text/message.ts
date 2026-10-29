@@ -213,6 +213,18 @@ export const RULES = {
     check: 'for a worker (YOKOTEN_ROLE=worker, a subagent named worker, or any agent in a worktree `yokoten worker mark` marked), the tool-call guard stops an edit or a shell write to a file that yokoten.json "leadOnly" matches, and a git commit that changes one; for a worker by YOKOTEN_ROLE=worker or the mark, the commit check refuses it too. YOKOTEN_LEAD_ONLY_OK lists the paths the lead allows',
     docs: guide('the-core-rules'),
   },
+  'guard-settings': {
+    rule: "the guard, hook, sandbox and fence settings change only with the owner's yes (record 0054)",
+    why: 'an agent that changes the guard or its hooks can turn off the rules it works under, and nobody would see it',
+    check: 'the tool-call guard asks the owner before the lead edits or writes an agent\'s settings file: the ones that hold hooks, permissions, sandbox or fence settings (yokoten.json, .githooks/, .claude/settings.json and settings.local.json, .codex/config.toml and hooks.json, .gemini/settings.json, .grok/ hooks, sandbox and config, .muse/hooks.json, .agents/hooks.json, .dsh/ hooks), and the same user settings under home. Skills, agents and commands are not asked about. A worker is refused by lead-only. Where no one can answer, in a cloud session or an agent whose hook has no ask, the guard refuses',
+    docs: guide('the-core-rules'),
+  },
+  'leave-sandbox': {
+    rule: "a command runs outside the sandbox only with the owner's yes (record 0054)",
+    why: 'outside the sandbox a command can write anywhere and reach any host, so the fence no longer holds it',
+    check: "the tool-call guard asks the owner before the lead's shell call that asks to leave the agent's own sandbox (the runtime adapter reads the flag), and refuses a worker's. In a cloud session it refuses the lead's too, since no one can answer",
+    docs: guide('the-core-rules'),
+  },
   'worker-push': {
     rule: 'a worker commits in its worktree and never pushes or posts',
     why: 'the lead reviews the work before it leaves the machine, and pushes and posts it as the bot',
@@ -637,7 +649,7 @@ export const RULES = {
   'disk-space': {
     rule: 'the disk that holds the repo has room left (record 0012)',
     why: 'on a full disk, every agent session stops, and the agent cannot tell you why',
-    check: '`doctor` reads the free space of the disk that holds the repo, with no child process; it warns below 20 GB when that is also under 10% of the disk (YOKOTEN_MIN_FREE_GB sets another limit). In WSL, full `doctor` also reads the Windows drive that holds the Linux disk file, and a session repeats the last reading. When a heavy job starts and that reading is low, the tool-call guard asks first; it never refuses',
+    check: '`doctor` reads the free space of the disk that holds the repo, with no child process; it warns below 20 GB when that is also under 10% of the disk (YOKOTEN_MIN_FREE_GB sets another limit). In WSL, full `doctor` also reads the Windows drive that holds the Linux disk file, and a session repeats the last reading. When a heavy job starts and that reading is low, the tool-call guard asks first; it refuses only where no one can answer: a cloud session or an agent whose hook has no ask',
     docs: guide('machine-notes'),
   },
   'guard-cost': {

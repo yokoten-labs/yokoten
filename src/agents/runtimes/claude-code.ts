@@ -8,7 +8,7 @@ import type { Env } from '../../rules/config.ts';
 import { envFolder, folderIn, folderOf, homeIn } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runsByPath } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
-import type { AgentAdapter } from './runtime.ts';
+import type { AgentAdapter, AskRewrite } from './runtime.ts';
 import { type Added, addHook, checkHooksFile, hasHook, isObject, type Problem, readTable, removeHook, type Settings, UnreadableHooksFile, writeSettings } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
@@ -22,12 +22,15 @@ export function readToolCall(input: unknown): Action {
   const call = (input ?? {}) as { cwd?: unknown; agent_type?: unknown; tool_input?: Record<string, unknown> };
   const tool = call.tool_input ?? {};
   const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
-  return {
+  const action: Action = {
     command: typeof tool.command === 'string' ? tool.command : undefined,
     paths: [tool.file_path, tool.path, tool.notebook_path].map(text).filter((p) => p !== undefined),
     cwd: text(call.cwd),
     worker: isWorkerType(text(call.agent_type) ?? ''),
   };
+  // A shell call that leaves the sandbox asks the owner first (#1212); only `true` leaves it.
+  if (tool.dangerouslyDisableSandbox === true) action.leavesSandbox = true;
+  return action;
 }
 
 /**
@@ -55,11 +58,25 @@ export const formatDenial = (reason: string, env: Env = {}): { stdout: string; e
 export const fallbackDenial = (reason: string): { stdout: string; exitCode: number } => ({ stdout: JSON.stringify({ permissionDecision: 'deny', permissionDecisionReason: reason }), exitCode: 2 });
 
 /**
+ * A Claude Code cloud session or routine (#1215): a VM per task, with `CLAUDE_CODE_REMOTE`
+ * set and no one at the prompt, so an ask there has no one to answer it. Any non-empty
+ * value counts.
+ */
+export const isUnattended = (env: Env): boolean => Boolean(env.CLAUDE_CODE_REMOTE);
+
+/**
  * How a question reaches the person before the call runs (#401): PreToolUse's `ask`
  * decision, on exit 0. Claude Code shows the reason and runs the call only after a yes.
- * A runtime that has no such question gets the ask from commands/hook.ts as a note.
+ * A runtime that has no such question gets a refusal from commands/hook.ts (#1212).
  */
-export const formatAsk = (reason: string): string => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason } });
+export const formatAsk = (reason: string, rewrite?: AskRewrite): string =>
+  JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason, ...(rewrite ? { updatedInput: { ...toolInputOf(rewrite.input), command: rewrite.command } } : {}) } });
+
+/** The call's `tool_input`, or an empty object when it has none. */
+const toolInputOf = (input: unknown): object => {
+  const call = (input ?? {}) as { tool_input?: unknown };
+  return call.tool_input && typeof call.tool_input === 'object' ? call.tool_input : {};
+};
 
 /**
  * Text added to the agent's context by an allowed PreToolUse call (#674): `additionalContext`
@@ -76,9 +93,7 @@ export const formatContext = (text: string): string => JSON.stringify({ hookSpec
  * that changes or sends anything.
  */
 export function formatRewrite(input: unknown, command: string, reason: string): string {
-  const call = (input ?? {}) as { tool_input?: unknown };
-  const tool = call.tool_input && typeof call.tool_input === 'object' ? call.tool_input : {};
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: reason, updatedInput: { ...tool, command } } });
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: reason, updatedInput: { ...toolInputOf(input), command } } });
 }
 
 /**
@@ -493,6 +508,7 @@ export const ADAPTER: AgentAdapter = {
   readStop,
   formatDenial,
   formatAsk,
+  isUnattended,
   formatContext,
   formatRewrite,
   agentEnv: AGENT_ENV,

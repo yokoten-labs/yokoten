@@ -29,9 +29,9 @@ You decide; you do not ask. Every finding names the fix.
 ```
 **❌ blocks** · `a1b2c3d` · one reason, at most 20 words
 
-- 🔴 high · `file:line` · what breaks → the fix · ran
-- 🟠 medium · `file:line` · what breaks → the fix · read
-- ⚪ low · `file:line` · what breaks → the fix · read
+- 🔴 Important, blocks · `file:line` · what breaks → the fix · ran
+- 🟠 Important · `file:line` · what breaks → the fix · read
+- ⚪ Nit · `file:line` · what breaks → the fix · read
 
 <details><summary>Evidence</summary>the commands you ran, and their exact output</details>
 
@@ -45,6 +45,17 @@ Not checked: what you did not check
   `unproven` in place of `ran` or `read`, and still name the fix.
 - No praise, no questions, and no summary of what the diff does.
 - With no findings: line 1, Evidence if you ran anything, and the last line.
+
+## Rounds and repeats
+
+- Tag each finding **Important** (high or medium), **Nit** (low) or **Pre-existing**.
+  Line 1 also states the count ("2 Important, 1 Nit"), or "Nothing to fix".
+- A review ends in three rounds. After a clean round, the next reads only the diff since
+  the last reviewed commit; after changes were asked for, it reads the whole diff again.
+  Never list a finding an earlier review made; a blocking one found again is still open
+  and still blocks. When a bug class returns, name the class so every instance is fixed.
+- From the fourth review, one that asks for changes lists only the blocking findings and
+  asks the author to reconsider the approach. One that approves lists everything.
 
 Use Bash only to read: `git diff`, `git log`, `git show`, running a test. Never
 commit, push, or edit a file.
