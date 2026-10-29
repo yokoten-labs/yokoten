@@ -401,6 +401,22 @@ test('guard: a worker command with a part the guard cannot read, or a shell mode
 // #1135: a project declares the test settings its workers may make, in the yokoten.json of
 // the repo the shell is in. Each pass has its control: the same command in a repo that does
 // not declare the name is refused.
+// #1225: on Windows a worker types a full path with its drive and forward slashes, `C:/x`.
+// The drive is plain; where the path leads is still judged by the box. Here the drive is a
+// folder named `C:` inside the box, so Linux and macOS read the same characters.
+test('guard: a worker cd may name a path that starts with a drive, and stays in its box (#1225)', () => {
+  const base = makeTempDir('yokoten-box-drive-');
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const box = join(base, 'box');
+  mkdirSync(join(box, 'C:', 'wt'), { recursive: true });
+  writeFileSync(join(box, '.git'), 'gitdir: ' + join(base, 'store') + '\n');
+  mkdirSync(join(base, 'store'));
+  const check = (command: string) => checkCommand(command, { cwd: box, env: worker });
+  assert.equal(check('cd C:/wt && ls'), null, 'a drive and forward slashes');
+  assert.equal(check('cd C:/wt/../../.. && ls')?.id, 'worker-mark', 'out of the box');
+  for (const command of ['cd C: && ls', 'cd C:wt && ls', 'cd CD:/wt && ls', 'cd /wt/C:/x && ls']) assert.equal(check(command)?.id, 'worker-mark', command);
+});
+
 test('guard: a worker may set a name its own repo declares in worker.settings, and no other (#1135)', () => {
   const base = makeTempDir('yokoten-box-settings-');
   const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };

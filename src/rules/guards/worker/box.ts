@@ -61,8 +61,9 @@ export function workerSettingProblem(name: string): string | null {
 const DECLARERS = new Set(['export', 'declare', 'typeset', 'readonly', 'local']);
 const FOLDER_MOVERS = new Set(['cd', 'pushd', 'popd']);
 const VARIABLE_SETTERS = new Set(['read', 'mapfile', 'readarray', 'getopts', 'eval', 'source', '.']);
-// A plain path: letters, digits, `.`, `_`, `/`, `-`, and `~` only as home at the start.
-const PLAIN_PATH = /^(~(?=\/|$))?[A-Za-z0-9._/-]*$/;
+// A plain path: letters, digits, `.`, `_`, `/`, `-`, and at the start only `~` as home or a
+// drive with a slash (`C:/x`, as a Windows worker types a full path, #1225).
+const PLAIN_PATH = /^(~(?=\/|$)|[A-Za-z]:(?=\/))?[A-Za-z0-9._/-]*$/;
 // git options a worker may give before the subcommand: none of them moves a folder.
 export const GIT_PLAIN_OPTIONS = new Set(['--no-pager', '-P', '--version', '--help']);
 const GIT_CONFIG_READS = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l']);
@@ -206,7 +207,7 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         const paths = args.filter((arg) => !/^-L+$/.test(arg));
         const target = paths[0];
         if (paths.length !== 1 || target === '-' || target.startsWith('-') || !PLAIN_PATH.test(target) || target === '') {
-          return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / - and a leading ~), not ${paths.join(' ') || 'no path'}`);
+          return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / -, and a leading ~ or drive such as C:/), not ${paths.join(' ') || 'no path'}`);
         }
         const read = target.startsWith('~') ? (home === null ? null : home + target.slice(1)) : target;
         // Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015); a folder it can't place is outside.
