@@ -338,6 +338,13 @@ test('unmarked commit: a commit in a checkout with no mark is caught; a marked o
   assert.equal(checkUnmarkedCommit(['git', 'status'], tree), null);
   assert.equal(checkUnmarkedCommit(commit, null), null, 'an unknown folder is left to the rules that refuse it');
   assert.equal(checkUnmarkedCommit(commit, base), null, 'no checkout, nothing to commit to');
+  // A main checkout is the lead's: caught, and the fix asks for a worktree, not a mark on it.
+  const main = join(base, 'main');
+  makeGitFolder(main);
+  const inMain = checkUnmarkedCommit(commit, main);
+  assert.equal(inMain?.id, 'unmarked-worktree');
+  assert.ok(!(inMain?.fix ?? '').includes(`yokoten worker mark ${main}`), inMain?.fix);
+  assert.match(inMain?.fix ?? '', /own worktree \(`git worktree add <folder>`, then `yokoten worker mark <folder>`\)/);
   // The mark lets it through.
   writeFileSync(join(store, 'yokoten-worker'), 'x');
   assert.equal(checkUnmarkedCommit(commit, tree), null);

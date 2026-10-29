@@ -234,6 +234,14 @@ export function checkUnmarkedCommit(words: string[], folder: string | null, env:
     if (sub !== 'commit' || dir === null) continue;
     const link = gitLinkAbove(dir);
     if (link === null || workerMarkAt(dir, env) !== null) continue;
+    // A main checkout is the lead's own: marking it would make the lead a worker.
+    if (link.kind === 'folder') {
+      return finding(
+        'unmarked-worktree',
+        `this commits in ${link.top}, a main checkout with no worker mark: the lead's checkout, where the commit check can't tell that a worker made this commit`,
+        'a worker does not commit in the lead\'s checkout; stop and ask the lead to give you your own worktree (`git worktree add <folder>`, then `yokoten worker mark <folder>`)',
+      );
+    }
     return finding(
       'unmarked-worktree',
       `this commits in ${link.top}, which has no worker mark, so the commit check can't tell that a worker made this commit`,

@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  makeGitFolder,
   makeTranslatedRepo,
   NAMED,
   makeTempDir,
@@ -344,6 +345,10 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   mkdirSync(join(unmarked, 'store'), { recursive: true });
   writeFileSync(join(unmarked, '.git'), `gitdir: ${join(unmarked, 'store')}\n`);
   add(checkUnmarkedCommit(['git', 'commit', '-m', 'x'], unmarked));
+  // And in a main checkout, the lead's, whose fix asks for a worktree.
+  const mainCheckout = join(makeTempDir(), 'main');
+  makeGitFolder(mainCheckout);
+  add(checkUnmarkedCommit(['git', 'commit', '-m', 'x'], mainCheckout));
 
   const known = new Set(ids());
   for (const f of found) {

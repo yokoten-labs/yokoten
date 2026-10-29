@@ -295,6 +295,11 @@ test('hook: a worker by agent type may not commit in a worktree with no worker m
   assert.equal(commit('git commit -m x', { cwd: tree })?.id, 'unmarked-worktree', 'no cd, in its own cwd');
   assert.equal(commit(`git -C ${tree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
   assert.equal(commit(`cd ${tree} && TZ=UTC git commit -m x`)?.id, 'unmarked-worktree', 'a setting in front');
+  // The lead's main checkout: refused too, but the fix asks for a worktree, never a mark on it.
+  const main = commit('git commit -m x');
+  assert.equal(main?.id, 'unmarked-worktree', 'a commit in the main checkout');
+  assert.ok(!main?.fix.includes(`yokoten worker mark ${sandbox.repo}`), main?.fix);
+  assert.ok(main?.fix.includes('git worktree add'), main?.fix);
   // Negative controls: a lead, a worker with YOKOTEN_ROLE=worker, and a command that is not a commit.
   assert.equal(commit(`cd ${tree} && git commit -m x`, { worker: false }), null, 'a lead passes');
   assert.equal(commit(`cd ${tree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
