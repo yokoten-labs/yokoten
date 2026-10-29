@@ -148,6 +148,18 @@ test('guard: a worker does not clear or hide YOKOTEN_ROLE; a read of it and the 
     assert.match(check(command, worker)?.what ?? '', /^`exec -c` starts a program with an empty environment/, command);
     assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
   }
+  // Setting or dropping the role another way is refused by the older worker-settings rule; kept
+  // here so each route to a lead-looking commit is in one place.
+  for (const command of [
+    'export YOKOTEN_ROLE=lead; git commit -m x',
+    'export YOKOTEN_ROLE=; git commit -m x',
+    'declare -x YOKOTEN_ROLE=lead; git commit -m x',
+    'YOKOTEN_ROLE=lead git commit -m x',
+    'env -u YOKOTEN_ROLE git commit -m x',
+    'env --unset=YOKOTEN_ROLE git commit -m x',
+    'env -uYOKOTEN_ROLE git commit -m x',
+    'env -i git commit -m x',
+  ]) assert.equal(check(command, worker)?.id, 'worker-mark', command);
   for (const command of ['echo $YOKOTEN_ROLE', 'unset FOO', 'unset FOO BAR', 'exec git status']) allowed(command, worker);
 });
 
