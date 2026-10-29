@@ -168,9 +168,9 @@ function isFinding(item: unknown): item is { severity: (typeof SEVERITIES)[numbe
 const capFindings = (findings: string[], max: number): string[] =>
   findings.length > max ? [...findings.slice(0, max), `${findings.length - max} more findings not shown.`] : findings;
 
-/** Text cut to MAX_TEXT_CHARS, between code points, marked with … when cut. */
 /** A finding or summary on one line: a newline in model text would post as a line of its own, and read back next round as an earlier finding. */
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+/** Text cut to MAX_TEXT_CHARS, between code points, marked with … when cut. */
 const cut = (text: string): string => (text.length > MAX_TEXT_CHARS ? `${codePointsWithin(text, MAX_TEXT_CHARS - 1)[0].trimEnd()}…` : text);
 
 /**
