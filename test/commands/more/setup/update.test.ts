@@ -120,6 +120,6 @@ test('trust: not at a terminal it writes nothing, and the failure names the comm
   const result = await sandbox.call(['trust']);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^yokoten trust · a person runs this at a terminal/m);
-  assert.match(result.stderr, /\n\nNext: open a terminal yourself and type `yokoten trust` there\n$/);
+  assert.match(result.stderr, /\n\nNext: open a terminal yourself and type `yokoten trust` there\.\n$/);
   checked(failure('trust', TRUST_NEEDS_A_PERSON.what, TRUST_NEEDS_A_PERSON.next), true);
 });
