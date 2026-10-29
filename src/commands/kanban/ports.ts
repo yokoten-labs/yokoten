@@ -15,7 +15,7 @@ import { machineMarks, machineUserNames } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { EMPTY_SCHEDULE, planSchedule, scheduleIssueOf, summarizeSchedule } from '../more/advice/schedule.ts';
 import { actionsRunPage, actionsRunsQuery, healthReadFailed, readActionsRuns, readDefaultBranch, summarizeActionsHealth } from '../more/check.ts';
-import { count, fail, field, moreLine, parse, print, printJson, requireRoot, type RowMark, row, screen, spaced, title, usage, wrap } from '../shared.ts';
+import { count, fail, field, moreLine, parse, print, printJson, requireRoot, type RowMark, row, screen, spaced, title, usage, utcText, wrap } from '../shared.ts';
 
 // ---- Shapes ----
 
@@ -156,6 +156,8 @@ export const spacedLines = (items: readonly (readonly string[])[]): string[] => 
 export const wrapLines = (prefix: string, text: string): string[] => wrap(prefix, text);
 /** A whole screen from its blocks, one blank line between them. */
 export const screenLines = (...blocks: readonly (readonly string[])[]): string[] => screen(...blocks);
+/** A time as `2026-10-26 10:00 UTC`. */
+export const utcLine = (stamp: string): string => utcText(stamp);
 /** "1 file", "3 files". */
 export const counted = (n: number, one: string, many?: string): string => count(n, one, many);
 /** Text with control and bidi characters escaped, safe to print on a terminal. */

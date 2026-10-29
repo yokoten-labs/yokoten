@@ -400,7 +400,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
 export {
   askLine, type ChangeMark, failure, field, LABEL_COLUMN, type Mark, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_TEXT_COLUMN, type RowMark,
-  screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, wrap,
+  screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, utcText, wrap,
 } from '../rules/text/screen.ts';
 
 /** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
