@@ -216,7 +216,7 @@ const sandboxEnv = (home: string) => ({ PATH: process.env.PATH, HOME: home, NODE
 // for that host, so the same test can pass outside an agent and fail inside one.
 // `hookEnvironment` is this process's environment with those markers cleared; `host` sets
 // the ones a test wants back, after the clear.
-const HOST_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'YOKOTEN_HOOK_DENIAL'] as const;
+const HOST_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_REMOTE', 'YOKOTEN_HOOK_DENIAL'] as const;
 
 export function hookEnvironment(host: Env = {}): Env {
   const env: Env = { ...process.env };

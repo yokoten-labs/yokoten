@@ -61,6 +61,34 @@ export const DEFAULTS: Config = {
   worker: { timeLimitMinutes: 180, settings: [] },
 };
 
+// The default "leadOnly" entries that are not the guard's own settings: the rules in words,
+// who approves, and CI. The rest of that list is the guard, hook, sandbox and fence settings.
+const NOT_GUARD_SETTINGS = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEOWNERS', 'docs/CODEOWNERS', '.github/**']);
+
+/**
+ * The guard, hook, sandbox and fence settings of every agent, from the repo root (#1212):
+ * the agent-config part of the default "leadOnly", so the two lists never drift. A worker's
+ * change to one is refused by lead-only; the lead's asks the owner first (record 0054). A
+ * project's own "leadOnly" does not change this list.
+ */
+export const GUARD_SETTINGS: readonly string[] = DEFAULTS.leadOnly.filter((path) => !NOT_GUARD_SETTINGS.has(path));
+
+/**
+ * The same settings in the home folder, from home (#1212): the user hooks `yokoten install`
+ * writes and each agent's own user settings. A user-level hook there turns the guard off
+ * in every repo.
+ */
+export const HOME_GUARD_SETTINGS: readonly string[] = [
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.codex/config.toml',
+  '.codex/hooks.json',
+  '.gemini/settings.json',
+  '.grok/**',
+  '.config/muse/settings.json',
+  '.config/opencode/plugins/**',
+];
+
 /**
  * The part of yokoten.json the hook ignored: "file" for the whole file, or the key path
  * of one key that has the wrong shape, such as "leadOnly" or "layout.maxEntries".

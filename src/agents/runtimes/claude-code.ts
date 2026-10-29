@@ -22,12 +22,15 @@ export function readToolCall(input: unknown): Action {
   const call = (input ?? {}) as { cwd?: unknown; agent_type?: unknown; tool_input?: Record<string, unknown> };
   const tool = call.tool_input ?? {};
   const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
-  return {
+  const action: Action = {
     command: typeof tool.command === 'string' ? tool.command : undefined,
     paths: [tool.file_path, tool.path, tool.notebook_path].map(text).filter((p) => p !== undefined),
     cwd: text(call.cwd),
     worker: isWorkerType(text(call.agent_type) ?? ''),
   };
+  // A shell call that leaves the sandbox asks the owner first (#1212); only `true` leaves it.
+  if (tool.dangerouslyDisableSandbox === true) action.leavesSandbox = true;
+  return action;
 }
 
 /**

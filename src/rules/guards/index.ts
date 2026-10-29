@@ -19,6 +19,7 @@ export type { RuledRepo } from './commands/check.ts';
 export { hookFile, runsCheck } from './hooks/read.ts';
 export { checkEdit, stripWorktreeRoot, isLeadOnly, isGranted } from './lead-only/edit.ts';
 export { plainArgs } from './lead-only/targets.ts';
+export { guardSettingsWrite, homeGuardSetting, isGuardSetting, leaveSandboxAsk, settingsEditAsk, settleAsk, workerLeavesSandbox } from './lead-only/owner.ts';
 export { checkWorkerMarkEdit, checkTeamEdit, useHostCommands } from './worker/config-command.ts';
 export type { HostCommands } from './worker/config-command.ts';
 export { configFolder, STOPS_FILE, STOPS_OFF_FILE, stopsFile, stopsOffFile } from './worker/config.ts';

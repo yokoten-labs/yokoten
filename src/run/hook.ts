@@ -11,7 +11,7 @@ import module from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '../rules/config.ts';
-import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, realPath as real, stopsFile, stopsOffFile } from '../rules/guards/index.ts';
+import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, homeGuardSetting, isGuardSetting, leaveSandboxAsk, realPath as real, settingsEditAsk, stopsFile, stopsOffFile, workerLeavesSandbox } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
 import { noteLine } from '../rules/text/screen.ts';
@@ -205,6 +205,8 @@ export interface Action {
   cwd?: string;
   /** The action comes from a worker, whatever the session's own role. */
   worker: boolean;
+  /** The shell call asks to run outside the agent's sandbox (Claude Code's `dangerouslyDisableSandbox`, #1212). */
+  leavesSandbox?: boolean;
 }
 
 /**
@@ -1804,6 +1806,10 @@ function leaseFinding(path: string, folder: string, now: number, branches: Map<s
  * repo that holds it.
  *
  * `cwd` is the folder the hook runs in, for an action that names no folder and has no root.
+ *
+ * A finding with `ask: true` is not a refusal: nothing refuses the action, and the lead's
+ * action needs the owner's yes first (#1212): a change to a guard setting, or a command
+ * outside the sandbox. A refusal anywhere in the call always wins over a question.
  */
 export function judge(
   action: Action,
@@ -1817,14 +1823,24 @@ export function judge(
   // The command runs in the call's folder: a hooks setting is judged in that repo (#217).
   // Every command the call carries is judged: `commands` and `command` both, so an empty list never hides one.
   const commands = [...(action.commands ?? []), ...(action.command !== undefined && !action.commands?.includes(action.command) ? [action.command] : [])];
+  // The lead's first question for the owner, kept while the rest is read: a refusal wins (#1212).
+  let asked: Finding | null = null;
+  const isLead = env.YOKOTEN_ROLE !== 'worker';
+  const platform = hostPathPlace().platform;
   if (commands.length > 0) {
     // Titles follow a project's own rules: only its hook checks them, never the user-level one (#391).
     const titles = !commandsOnly && root !== null && existsSync(join(root, 'yokoten.json'));
     const ruledRepos = ruled.map((repo) => ({ root: repo.root, leadOnly: repo.config.leadOnly }));
     for (const command of commands) {
       const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, place: hostPathPlace() });
-      if (reason) return reason;
+      if (reason?.ask) asked ??= reason;
+      else if (reason) return reason;
     }
+  }
+  // Leaving the sandbox (#1212): the owner says yes to the lead's; a worker's is refused.
+  if (action.leavesSandbox) {
+    if (env.YOKOTEN_ROLE === 'worker') return workerLeavesSandbox();
+    asked ??= leaveSandboxAsk();
   }
   // A worker's edit inside a git folder may change the worker mark (#555), in any repo;
   // one inside a team folder may speak for another agent (#674);
@@ -1836,7 +1852,17 @@ export function judge(
       if (reason) return reason;
     }
   }
-  if (!ruled.length) return null;
+  // The lead's edit of a user settings file under home asks the owner, in any folder (#1212).
+  if (isLead && asked === null) {
+    for (const p of action.paths) {
+      const home = homeGuardSetting(real(resolve(action.cwd ?? root ?? cwd, p)), env, platform);
+      if (home !== null) {
+        asked = settingsEditAsk(home);
+        break;
+      }
+    }
+  }
+  if (!ruled.length) return asked;
   const reals = ruled.map((repo) => ({ config: repo.config, root: repo.root, real: real(repo.root) }));
   // One map and one branch read for each repo a call touches, and one clock for its leases.
   const branches = new Map<string, string>();
@@ -1854,8 +1880,9 @@ export function judge(
     const rel = best.rel.split(sep).join('/');
     const reason = checkEdit(rel, { config: best.config, env }) ?? leaseFinding(rel, best.root, now, branches);
     if (reason) return reason;
+    if (isLead && asked === null && isGuardSetting(rel, platform)) asked = settingsEditAsk(rel);
   }
-  return null;
+  return asked;
 }
 
 /** How long the guard may read one tool call. YOKOTEN_GUARD_DEADLINE_MS changes it. */

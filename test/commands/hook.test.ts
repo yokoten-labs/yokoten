@@ -1497,3 +1497,64 @@ test('hook: a commit that adds a secret is refused with no yokoten.json (#824)',
   const clean = await call('git commit -m x');
   assert.equal(clean.status, 0, clean.stderr);
 });
+
+// #1212, #1215: the guard's own settings and leaving the sandbox need the owner's yes. The
+// lead's call asks in Claude Code; a worker's, a cloud session's and another agent's refuse.
+test('hook: a guard setting or a call outside the sandbox asks for the lead, and refuses where no one can answer (#1212, #1215)', async () => {
+  const sandbox = makeSandbox();
+  const cloud = { CLAUDE_CODE_REMOTE: 'true' };
+  const edit = (extra: Record<string, string> = {}) =>
+    sandbox.call(['hook', '--agent', 'claude-code'], { input: JSON.stringify({ cwd: sandbox.repo, tool_name: 'Edit', tool_input: { file_path: join(sandbox.repo, '.claude', 'settings.json') } }), extra });
+  const bash = (toolInput: Record<string, unknown>, extra: Record<string, string> = {}, agentType?: string) =>
+    sandbox.call(['hook', '--agent', 'claude-code'], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: agentType, tool_name: 'Bash', tool_input: toolInput }), extra });
+  const decision = (stdout: string) => JSON.parse(stdout).hookSpecificOutput as { permissionDecision: string; permissionDecisionReason: string };
+
+  // The lead: Claude Code asks the owner.
+  let result = await edit();
+  assert.equal(result.status, 0);
+  assert.equal(decision(result.stdout).permissionDecision, 'ask');
+  assert.match(decision(result.stdout).permissionDecisionReason, /\.claude\/settings\.json, which holds guard, hook or sandbox settings/);
+  result = await bash({ command: 'echo {} > .claude/settings.json' });
+  assert.equal(decision(result.stdout).permissionDecision, 'ask', 'a shell write too');
+  result = await bash({ command: 'ls', dangerouslyDisableSandbox: true });
+  assert.equal(decision(result.stdout).permissionDecision, 'ask');
+  assert.match(decision(result.stdout).permissionDecisionReason, /outside the sandbox/);
+  assert.equal((await bash({ command: 'ls', dangerouslyDisableSandbox: false })).stdout, '', 'only true leaves the sandbox');
+  assert.equal((await bash({ command: 'ls' })).stdout, '');
+
+  // A worker: refused, by lead-only for the settings and by leave-sandbox for the sandbox.
+  result = await edit({ YOKOTEN_ROLE: 'worker' });
+  assert.equal(decision(result.stdout).permissionDecision, 'deny');
+  assert.match(decision(result.stdout).permissionDecisionReason, /\[lead-only\]/);
+  result = await bash({ command: 'ls', dangerouslyDisableSandbox: true }, {}, 'yokoten:worker');
+  assert.equal(decision(result.stdout).permissionDecision, 'deny');
+  assert.match(decision(result.stdout).permissionDecisionReason, /\[leave-sandbox\]/);
+
+  // A cloud session: every ask refuses, with the owner's-yes reason.
+  for (const [call, id] of [[() => edit(cloud), 'guard-settings'], [() => bash({ command: 'ls', dangerouslyDisableSandbox: true }, cloud), 'leave-sandbox']] as const) {
+    result = await call();
+    assert.equal(decision(result.stdout).permissionDecision, 'deny');
+    const reason = decision(result.stdout).permissionDecisionReason;
+    assert.equal(parseRefusal(reason)?.id, id);
+    assert.match(reason, /owner's yes/);
+    assert.match(reason, /cloud session/);
+  }
+  assert.equal((await bash({ command: 'ls' }, cloud)).stdout, '', 'a plain call still runs');
+
+  // Codex's hook has no ask: the lead's write is refused, with the owner's-yes reason.
+  const codex = (command: string) => sandbox.call(['hook', '--agent', 'codex'], { input: JSON.stringify({ cwd: sandbox.repo, tool_name: 'Bash', tool_input: { command } }) });
+  result = await codex('echo {} > .codex/config.toml');
+  const codexText = `${result.stdout}\n${result.stderr}`;
+  assert.notEqual(result.status === 0 && result.stdout === '', true, 'not let through');
+  assert.match(codexText, /\[guard-settings\]/);
+  assert.match(codexText, /owner's yes, and Codex CLI's hook can't ask/);
+  assert.deepEqual([(await codex('ls')).status, (await codex('ls')).stdout], [0, '']);
+
+  // The protocol has an ask answer; a cloud session refuses it.
+  const protocol = (extra: Record<string, string> = {}) =>
+    sandbox.call(['hook', '--protocol'], { input: JSON.stringify({ protocol: 'yokoten-guard/1', action: { paths: ['.claude/settings.json'] }, role: 'lead', project: sandbox.repo }), extra });
+  result = await protocol();
+  assert.deepEqual([result.status, JSON.parse(result.stdout).decision, JSON.parse(result.stdout).reason?.id], [0, 'ask', 'guard-settings']);
+  result = await protocol(cloud);
+  assert.deepEqual([result.status, JSON.parse(result.stdout).decision], [2, 'refuse']);
+});

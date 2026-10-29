@@ -54,7 +54,10 @@ test('lead-only files: each shell writer form stops a worker, not the lead (#402
     'nice -n 10 tee AGENTS.md < x',
   ]) {
     assert.equal(run(command, worker)?.id, 'lead-only', `should stop a worker: ${JSON.stringify(command)}`);
-    assert.equal(run(command, {}), null, `should let the lead: ${JSON.stringify(command)}`);
+    // The lead is never refused; a guard setting asks the owner first (#1212).
+    const lead = run(command, {});
+    assert.ok(lead === null || lead.ask === true, `should let the lead: ${JSON.stringify(command)}`);
+    assert.equal(lead?.id === 'guard-settings', /yokoten\.json|\.claude/.test(command), `asks only for a guard setting: ${JSON.stringify(command)}`);
   }
   // The sudo row shows the reader seeing through a launcher's option. No root for agents
   // (#969) refuses the sudo for the lead too; the worker still hears lead-only first.

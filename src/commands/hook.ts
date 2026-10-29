@@ -8,7 +8,7 @@ import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
 import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
-import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
+import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, settleAsk, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { DESK_OWN_SANDBOX_NOTE, type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
 import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
@@ -549,7 +549,14 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   const env = isWorker ? { ...callEnv, YOKOTEN_ROLE: 'worker' } : callEnv;
   const config = loadHookConfig(root, (line) => say(invocation, `${line}\n`, invocation.stderr));
   const repos = editRepos(invocation, action, action.cwd ?? root ?? base, root ? { root, config } : null, commandsOnly);
-  let found = await judgeWithDeadline(action, { root, config, env, cwd: base, commandsOnly, repos }, guardDeadline(env.YOKOTEN_GUARD_DEADLINE_MS), guard);
+  const judged = await judgeWithDeadline(action, { root, config, env, cwd: base, commandsOnly, repos }, guardDeadline(env.YOKOTEN_GUARD_DEADLINE_MS), guard);
+  // A question for the owner (#1212), then a heavy job on a nearly full host drive (#401).
+  // The protocol has an ask answer; a cloud session still refuses it (#1215).
+  const question = judged?.ask ? judged : !judged && action.command !== undefined ? askForHeavyJob(action.command, env) : null;
+  const settled = question ? settleAsk(question, { env, canAsk: true, agent: vendor }) : null;
+  const ask = settled && 'ask' in settled ? settled.ask : null;
+  let found = judged?.ask ? null : judged;
+  if (settled && 'refuse' in settled) found = settled.refuse;
   // A worker by the mark hears why, and where the lead works (#555).
   if (found && marked === 'mark' && WORKER_RULES.has(found.id)) found = { ...found, fix: `${found.fix}. ${capital(markNote(folders, callEnv))}` };
   if (found) {
@@ -564,8 +571,6 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   }
   noteToolCall(cwd, vendor, action, isWorker, found);
   if (found) return answer(refusedOutput(found));
-  // A heavy job on a nearly full host drive asks first, and never refuses (#401).
-  const ask = action.command !== undefined ? askForHeavyJob(action.command, env) : null;
   return answer(ask ? askedOutput(ask) : allowedOutput());
 }
 
@@ -625,9 +630,11 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   const sessionKey = repeatKeyOf(sessionIdOf(input), agentIdOf(input));
   const shape = commandShape(action.command, action.paths);
   return judged.then((judgedFinding) => {
-    let found = judgedFinding;
+    // A question for the owner (#1212) is not a refusal, and no rewrite runs before the yes.
+    let ask = judgedFinding?.ask ? judgedFinding : null;
+    let found = ask ? null : judgedFinding;
     // A command that may print the owner's details runs through `yokoten redact` (#390).
-    const printed = !found && action.command !== undefined ? printsAccount(action.command) : null;
+    const printed = !found && !ask && action.command !== undefined ? printsAccount(action.command) : null;
     if (printed && action.command !== undefined) {
       const wrapped = wrapForRedact(hardenRead(action.command), redactCommand(process.execPath, invocation.script, env.HOME));
       const rewritten = rewriteOf(agent, input, wrapped, `yokoten: ${printed}, so its output goes through yokoten redact`);
@@ -640,6 +647,16 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
         return finish(0);
       }
       if (config.privacy.output === 'stop') found = privateOutput(printed, wrapped);
+    }
+    // A heavy job on a nearly full host drive asks first (#401). Where no one can answer,
+    // a question becomes a refusal: a cloud session, or a runtime with no ask (#1212, #1215).
+    if (!found && !ask && action.command !== undefined) ask = askForHeavyJob(action.command, env);
+    if (!found && ask) {
+      const settled = settleAsk(ask, { env, canAsk: askOf(agent) !== null, agent: adapterFor(agent)?.label ?? agent });
+      if ('refuse' in settled) {
+        found = settled.refuse;
+        ask = null;
+      }
     }
     // A worker by the mark hears why, and where the lead works (#555).
     const markReason = found != null && role === 'mark' && WORKER_RULES.has(found.id) ? capital(markNote(folders, invocation.env)) : undefined;
@@ -660,8 +677,6 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
     } else if (sessionKey !== null) {
       clearRepeats(env, sessionKey);
     }
-    // A heavy job on a nearly full host drive asks first, and never refuses (#401).
-    const ask = !found && action.command !== undefined ? askForHeavyJob(action.command, env) : null;
     noteToolCall(cwd, agent, action, role !== null || action.worker, found);
     if (json) printJson(answerInvocation, found ? { blocked: true, finding: found } : ask ? { blocked: false, toolCall: true, ask } : { blocked: false, toolCall: true });
     if (!found && ask) {
