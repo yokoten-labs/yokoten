@@ -270,6 +270,8 @@ const READ_CASES: [word: string, linux: string | null, darwin: string | null, wi
   ['~', '/home/alice', '/Users/alice', 'C:\\Users\\alice'],
   ['~/x', '/home/alice/x', '/Users/alice/x', 'C:\\Users\\alice\\x'],
   ['~bob/x', null, null, null],
+  // Bash reads `~\x` as a name, not home; Windows reads `\` as a separator.
+  ['~\\x', null, null, 'C:\\Users\\alice\\x'],
   ['~+/x', null, null, null],
   // A drive, with either slash: Windows only; POSIX reads it as a folder named `C:`.
   ['C:/wt/a', '/home/alice/wt/C:/wt/a', '/Users/alice/wt/C:/wt/a', 'C:\\wt\\a'],

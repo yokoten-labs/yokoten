@@ -551,7 +551,9 @@ test('output: a Windows home is hidden with either slash, any case, and in MSYS 
   assert.equal(hideHome('C:\\Users\\me\\a, c:/users/ME/b, /c/Users/me/c', {}, options), '~\\a, ~/b, ~/c');
   // Another account's home is no home of ours, and it still names a person (#1237).
   assert.equal(hideHome('C:\\Users\\meg\\a', {}, options), 'C:\\Users\\<user>\\a');
-  assert.equal(hideHome('/C/USERS/me', {}, { ...options, platform: 'linux' }), '/C/USERS/me', 'case counts off Windows');
+  // A drive form is Windows, where case never counts, so it folds on any platform (#1237).
+  assert.equal(hideHome('/C/USERS/me', {}, { ...options, platform: 'linux' }), '/C/USERS/<user>', 'a drive form folds case');
+  assert.equal(hideHome('/HOME/me', {}, { ...options, platform: 'linux' }), '/HOME/me', '/home matches as written');
 });
 
 test('output: a home path cut short at the end of a line is hidden (#404)', () => {
@@ -2802,28 +2804,56 @@ test('hideHome: the platform decides whether case counts, and an unknown platfor
 
 // #1237: the redactor hid only the current home, in the forms that home takes. A WSL user's
 // Windows home and another account's home passed, and the post scan did not catch them.
-// Each row of the issue's table, with each HOME form and none, is a test: no name is left.
+// Each row is a text and how sure the post scan is; with each HOME form and none, no name is left.
 const USERS_FOLDER_HOMES: (string | undefined)[] = ['C:\\Users\\alice', 'C:/Users/alice', '/home/alice', '/Users/alice', '/c/Users/alice', '/mnt/c/Users/alice', undefined];
-const USERS_FOLDER_TEXTS = [
-  'C:\\Users\\alice\\proj\\a.ts',
-  'C:/Users/alice/proj',
-  'c:\\users\\ALICE',
-  '/c/Users/alice',
-  '/mnt/c/Users/alice/proj',
-  '/home/alice/proj',
-  '/Users/alice/proj',
-  'see "C:\\\\Users\\\\alice\\\\proj" in the JSON',
-  'C:\\Users\\bob\\proj',
-  '/home/bob/x and /Users/bob.',
-  'C:\\Users\\Jane Doe\\proj',
+const USERS_FOLDER_ROWS: [text: string, grade: 'sure' | 'unknown'][] = [
+  // The issue's table.
+  ['C:\\Users\\alice\\proj\\a.ts', 'sure'],
+  ['C:/Users/alice/proj', 'sure'],
+  ['c:\\users\\ALICE', 'sure'],
+  ['/c/Users/alice', 'sure'],
+  ['/mnt/c/Users/alice/proj', 'sure'],
+  ['/home/alice/proj', 'unknown'],
+  ['/Users/alice/proj', 'sure'],
+  ['see "C:\\\\Users\\\\alice\\\\proj" in the JSON', 'sure'],
+  ['C:\\Users\\bob\\proj', 'sure'],
+  ['/home/bob/x and /Users/bob.', 'sure'],
+  // Names with spaces and punctuation, with or without a separator after them (review round 1).
+  ['C:\\Users\\Jane Doe\\proj', 'sure'],
+  ['C:\\Users\\Jane Doe', 'sure'],
+  ['C:\\Users\\Mary Ann\\tx', 'sure'],
+  ['C:\\Users\\Jane Van Doe: hi', 'sure'],
+  ["C:\\Users\\O'Brien\\x", 'sure'],
+  ['C:\\Users\\Smith, John\\x', 'sure'],
+  ['C:\\Users\\Jane (Work)\\x', 'sure'],
+  ['/home/a=bob/x', 'sure'],
+  ['/home/carol,dave', 'sure'],
+  // Device, share and WSL forms.
+  ['\\\\?\\C:\\Users\\alice', 'sure'],
+  ['\\\\.\\C:\\Users\\alice\\x', 'sure'],
+  ['\\\\server\\c$\\Users\\alice\\x', 'sure'],
+  ['//server/c$/Users/alice', 'sure'],
+  ['\\\\wsl$\\Ubuntu\\home\\alice', 'sure'],
+  ['\\\\wsl.localhost\\Ubuntu\\home\\alice\\x', 'sure'],
+  ['/cygdrive/c/Users/alice', 'sure'],
+  // JSON escapes and relative climbs.
+  ['{"a":"x\\n/home/alice/y"}', 'unknown'],
+  ['"a\\t/home/alice"', 'unknown'],
+  ['"\\/home\\/alice\\/x"', 'unknown'],
+  ['../../home/alice/x', 'unknown'],
+  ['cd ../../../Users/alice', 'sure'],
+  // A short name is a name too.
+  ['C:\\Users\\Al\\x', 'sure'],
+  ['/home/jo/x', 'unknown'],
 ];
+const USERS_FOLDER_NAMES = /alice|bob|carol|dave|jane|mary|ann\b|brien|smith|john|doe|work|\bal\b|\bjo\b/i;
 
 test('makeRedactor and hideHome: no user name is left in a users-folder path, whatever HOME is (#1237)', () => {
   for (const home of USERS_FOLDER_HOMES) {
     const redact = makeRedactor({}, { HOME: home });
-    for (const text of USERS_FOLDER_TEXTS) {
+    for (const [text] of USERS_FOLDER_ROWS) {
       for (const shown of [redact(text), hideHome(text, { HOME: home }, { systemHome: '' })]) {
-        assert.doesNotMatch(shown, /alice|bob|jane/i, `HOME ${home}: ${text} -> ${shown}`);
+        assert.doesNotMatch(shown, USERS_FOLDER_NAMES, `HOME ${home}: ${text} -> ${shown}`);
       }
     }
   }
@@ -2832,29 +2862,47 @@ test('makeRedactor and hideHome: no user name is left in a users-folder path, wh
   assert.equal(wsl('C:\\Users\\alice\\proj\\a.ts'), 'C:\\Users\\<user>\\proj\\a.ts');
   assert.equal(wsl('/mnt/c/Users/alice/proj'), '/mnt/c/Users/<user>/proj');
   assert.equal(makeRedactor({}, { HOME: 'C:\\Users\\alice' })('C:\\Users\\alice\\proj\\a.ts'), '~\\proj\\a.ts');
-  assert.equal(makeRedactor({}, {})('C:\\Users\\Jane Doe\\proj and /home/bob.'), 'C:\\Users\\<user>\\proj and /home/<user>.');
+  const none = makeRedactor({}, {});
+  assert.equal(none('C:\\Users\\Jane Doe\\proj and /home/bob.'), 'C:\\Users\\<user>\\proj and /home/<user>.');
+  // A Windows name ends only where Windows ends one: a separator, a quote, a line end or a
+  // character no name holds. With none, the rest of the line goes: more, never less.
+  assert.equal(none('C:\\Users\\Jane Van Doe: hi'), 'C:\\Users\\<user>: hi');
+  assert.equal(none('at C:\\Users\\Jane Doe\nnext'), 'at C:\\Users\\<user>\nnext');
+  assert.equal(none('C:\\Users\\Jane (Work)\\x'), 'C:\\Users\\<user>\\x');
+  assert.equal(none('(see C:\\Users\\alice).'), '(see C:\\Users\\<user>).');
+  // A POSIX account name holds no space, so prose after it stays.
+  assert.equal(none('see /home/alice for details.'), 'see /home/<user> for details.');
+  assert.equal(none('/home/alice,bob and /home/a=b/x'), '/home/<user> and /home/<user>/x');
+  assert.equal(none('\\\\?\\C:\\Users\\alice'), '\\\\?\\C:\\Users\\<user>');
+  assert.equal(none('"\\/home\\/alice\\/x"'), '"\\/home\\/<user>\\/x"');
 });
 
-test('hideHome: a shared account, a placeholder and a path that only looks like one stay (#1237)', () => {
-  const kept = ['/home/runner/work/x', 'C:\\Users\\Public\\x', 'C:\\Users\\Default\\x', '/home/<name>/x', 'C:\\Users\\~\\x', '/Users/.../x', 'src/home/bob/x', 'C:\\Users\\%USERNAME%\\x', '/homework/bob', 'https://example.com/home/bob'];
-  for (const text of kept) assert.equal(hideHome(text, {}, { systemHome: '' }), text, text);
+// Routes, imports and URLs a post shows, and the folders that name nobody.
+const USERS_FOLDER_KEPT = [
+  '/home/runner/work/x', 'C:\\Users\\Public\\x', 'C:\\Users\\Default\\x', 'C:\\Users\\Guest', '/Users/Shared/x', '/home/<name>/x', 'C:\\Users\\~\\x', '/Users/.../x',
+  'src/home/bob/x', 'src\\/home\\/bob', 'C:\\Users\\%USERNAME%\\x', '/home/$USER/x', '/homework/bob', 'https://example.com/home/bob', 'https://x/home/alice',
+  'GET /users/123', 'GET /home/settings', 'route /home/index.html', 'import x from "/home/utils"', '/a/users/me', '/b/Users/me', '/HOME/alice',
+];
+
+test('hideHome: a shared account, a placeholder, a route and a path that only looks like one stay (#1237)', () => {
+  for (const text of USERS_FOLDER_KEPT) assert.equal(hideHome(text, {}, { systemHome: '' }), text, text);
 });
 
-test('scanText: a users-folder path in text that leaves the machine is a sure hit; the repo scan leaves it to the marks (#1237)', () => {
+test('scanText: a users-folder path in text that leaves the machine is a hit; the repo scan leaves it to the marks (#1237)', () => {
   for (const home of USERS_FOLDER_HOMES) {
-    for (const text of USERS_FOLDER_TEXTS) {
+    for (const [text, grade] of USERS_FOLDER_ROWS) {
       const hits = scanText(text, { file: 'post', env: { HOME: home } }).filter((hit) => hit.id === 'user-folder');
-      assert.equal(hits.length, 1, `HOME ${home}: ${text}`);
-      assert.equal(isFailingFinding(hits[0]), true);
-      assert.doesNotMatch(formatFinding(hits[0]), /alice|bob|jane/i, 'the name is never printed');
+      assert.deepEqual(hits.map((hit) => hit.grade), [grade], `HOME ${home}: ${text}`);
+      assert.equal(isFailingFinding(hits[0]), grade === 'sure');
+      assert.doesNotMatch(formatFinding(hits[0]), USERS_FOLDER_NAMES, 'the name is never printed');
       assert.equal(scanText(text, { file: 'a.ts', env: { HOME: home }, allowsLocalNetwork: true }).filter((hit) => hit.id === 'user-folder').length, 0, 'source scan');
     }
   }
-  // Positive control's twins: a placeholder, a shared account, a short name and ~ pass.
-  for (const text of ['/home/<name>/x', '/home/someone/x', '/home/runner/x', 'C:\\Users\\Public', '/home/me/x', 'C:\\Users\\~\\x']) {
+  // Positive control's twins: a placeholder, a shared account, ~ and a route pass.
+  for (const text of [...USERS_FOLDER_KEPT, '/home/someone/x']) {
     assert.deepEqual(scanText(text, { file: 'post' }).filter((hit) => hit.id === 'user-folder'), [], text);
   }
   // A reason in .yokotenignore keeps it listed and lets it pass.
-  const ignored = scanText('/home/alice/x', { file: 'post', ignores: [{ rule: 'user-folder', reason: 'a made-up home in an example' }] }).find((hit) => hit.id === 'user-folder');
+  const ignored = scanText('C:\\Users\\alice\\x', { file: 'post', ignores: [{ rule: 'user-folder', reason: 'a made-up home in an example' }] }).find((hit) => hit.id === 'user-folder');
   assert.equal(ignored !== undefined && !isFailingFinding(ignored), true);
 });

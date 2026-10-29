@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
-import { climbsPastDrive, fromGitBash, replaceUsersFolderNames, type PathPlace } from '../platform/paths.ts';
+import { climbsPastDrive, fromGitBash, replaceUsersFolderNames, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
 import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
@@ -1056,8 +1056,9 @@ export function scanText(
     }
     // A home folder path names its account, whatever $HOME is (#1237). Text that leaves the
     // machine only: the repo's tests and docs hold made-up homes, and the marks name the real ones.
-    if (!allowsLocalNetwork && hasUsersFolderName(line)) {
-      problems.push(finding('user-folder', 'a home folder path with a user name', 'write the home as ~, or the name as <user>', { ...where, grade: 'sure', ...ignoreFields('user-folder', [], true) }));
+    const folderGrade = allowsLocalNetwork ? null : usersFolderGrade(line);
+    if (folderGrade !== null) {
+      problems.push(finding('user-folder', 'a home folder path with a user name', 'write the home as ~, or the name as <user>', { ...where, grade: folderGrade, ...ignoreFields('user-folder', [], true) }));
     }
     const marked = stopped.length && unglue ? unglue(line) : line;
     const folded = stopped.length ? foldLine(marked) : null;
@@ -1131,33 +1132,44 @@ function cutForms(home: string): string[] {
  * (`/home/jonat`) becomes `~` too, when it keeps 4 or more characters of the last part (#404).
  */
 export function hideHome(text: string, env: Env, options: { platform?: string; systemHome?: string } = {}): string {
-  return hideUsersFolders(hideOwnHomes(text, env, options), options.platform);
+  return hideUsersFolders(hideOwnHomes(text, env, options));
 }
+
+// Words a web route or an import puts under `/home` (`GET /home/settings`, `"/home/utils"`):
+// pages and code folders, not accounts. A name with a web file's ending, or only digits (an id), is one too.
+const HOME_ROUTE_WORDS = new Set(['settings', 'utils', 'index', 'components', 'lib', 'src', 'api', 'assets', 'static', 'page', 'pages', 'views', 'view', 'dashboard', 'profile', 'login', 'logout', 'about', 'help', 'config', 'home', 'main', 'feed', 'search']);
+const isHomeRoute = (name: string): boolean => HOME_ROUTE_WORDS.has(name.toLowerCase()) || /\.(?:html?|js|mjs|ts|jsx|tsx|css|json|php|md|svg|png)$/i.test(name) || /^\d+$/.test(name);
+
+/** Whether a name under a users folder may name a person: not a shared account, and under `/home` no route word. */
+const isPersonUnder = (name: string, form: UsersFolderForm): boolean => isPersonFolder(name) && !((form === 'home' || form === 'users') && isHomeRoute(name));
 
 /**
  * The user name in every users-folder path left in `text` (`/home/<n>`, `/Users/<n>`,
- * `C:\Users\<n>`, `C:/Users/<n>`, `/c/Users/<n>`, `/mnt/c/Users/<n>`) as `<user>`, whatever
- * the home folder is (#1237): a WSL user's Windows home is not their $HOME, and another
- * account's home names a person too. A shared account (`runner`, `Public`) names nobody and stays.
- * As for the home, case counts only off Windows, and not when the platform is not given.
+ * `C:\Users\<n>`, `C:/Users/<n>`, `/c/Users/<n>`, `/mnt/c/Users/<n>`, `/cygdrive/c/Users/<n>`,
+ * `\\?\C:\Users\<n>`, `\\server\c$\Users\<n>`, `\\wsl$\<distro>\home\<n>`) as `<user>`,
+ * whatever the home folder is (#1237): a WSL user's Windows home is not their $HOME, and
+ * another account's home names a person too. A shared account (`runner`, `Public`, `Shared`)
+ * and a route word under `/home` (`settings`) stay. A drive form folds case, as Windows does;
+ * `/home` and `/Users` match as written.
  */
-export function hideUsersFolders(text: string, platform?: string): string {
-  const ignoresCase = platform === undefined || platform === 'win32';
-  return replaceUsersFolderNames(text, (name) => (isPersonFolder(name) ? PLACEHOLDERS.user : null), { ignoresCase });
+export function hideUsersFolders(text: string): string {
+  return replaceUsersFolderNames(text, (name, form) => (isPersonUnder(name, form) ? PLACEHOLDERS.user : null));
 }
 
-/** Whether `line` holds a users-folder path with a person's name in it (#1237): any name but a shared account or a placeholder. */
-function hasUsersFolderName(line: string): boolean {
-  let found = false;
-  replaceUsersFolderNames(
-    line,
-    (name) => {
-      if (isPersonFolder(name) && !USERS_FOLDER_PLACEHOLDERS.has(name.toLowerCase()) && !(name.length < 3 && /^[\x20-\x7e]*$/.test(name))) found = true;
-      return null;
-    },
-    { ignoresCase: true },
-  );
-  return found;
+/**
+ * How sure the scan is that `line` names a person by a users-folder path (#1237), or null.
+ * Sure for a drive form, a WSL share or `/Users/<n>`; a lower-case `/home/<word>` with no
+ * drive may be a route a post shows, so it is a note there, never a refusal.
+ */
+function usersFolderGrade(line: string): 'sure' | 'unknown' | null {
+  let grade: 'sure' | 'unknown' | null = null;
+  replaceUsersFolderNames(line, (name, form) => {
+    if (!isPersonUnder(name, form) || USERS_FOLDER_PLACEHOLDERS.has(name.toLowerCase())) return null;
+    if (form === 'home' && /^[a-z0-9._-]+$/.test(name)) grade ??= 'unknown';
+    else grade = 'sure';
+    return null;
+  });
+  return grade;
 }
 
 // Names docs and examples put in a users-folder path, which name nobody.

@@ -1747,56 +1747,80 @@ test('platform: no new process.platform read outside the list, and the list only
 // Each guard that read a path word by its own regex read it its own way, and each review
 // found a form one of them missed (`/c/x`, `C:/x`, `RUNNER~1`, `...`). A path is read by
 // readPath in src/platform/paths.ts, which takes the platform and has one case table. In
-// src/rules/ and src/run/, a line of code with a path-shaped regex piece (a drive class
-// such as `[A-Za-z]:`, `\/home`, `\/Users`, `\/mnt`, or a class that holds both `/` and `\`)
-// counts. The files below keep theirs, each for its reason; the list only gets shorter.
-const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string][] = [
-  ['rules/config.ts', 1, 'refuses a block entry that holds any separator: a name check, not a path read'],
-  ['rules/guards/bash/read/words.ts', 1, 'isGit: the program name after the last separator, not a path read'],
-  ['rules/guards/commands/lose-work.ts', 5, 'splits a word or glob into parts to find .git: a part check, not a path read; follow-up in #1237'],
-  ['rules/guards/commands/no-wipe.ts', 10, 'reads drive roots, ~ and $HOME forms of rm targets; it has its own per-platform table (#969); move to readPath is a follow-up in #1237'],
-  ['rules/guards/commands/token.ts', 1, 'the credential file name at the end of any path: a name check'],
-  ['rules/guards/hooks/settings.ts', 1, 'a leading ~ in a hooks setting path; move to readPath is a follow-up in #1237'],
-  ['rules/guards/worker/box.ts', 2, 'PLAIN_PATH is the characters a worker cd may use, not a path read (the place comes from readPath); the other is the ~N directory stack word'],
-  ['rules/guards/worker/config-command.ts', 11, 'finds the config folder in any spelling of a command word, globs and $PWD included: a word scan that errs to refuse'],
-  ['rules/guards/worker/config.ts', 9, 'the config folder by its parts, and ~+, ~ and $HOME leads: a word scan that errs to refuse'],
-  ['rules/guards/worker/mark.ts', 4, 'NAMES_GIT_DIR and PATH_BREAKS split command text to find .git and the mark: a word scan, not one path; the $PWD lead of a git folder setting'],
-  ['rules/pr.ts', 1, 'the program name after the last separator'],
-  ['rules/privacy/home.ts', 2, 'the glued forms of a Windows home (#1017): text forms of one home, not a path read'],
-  ['rules/privacy/secrets.ts', 1, 'PATH_VALUE: a value that starts like a path is no secret; a text filter, not a path read'],
-  ['rules/privacy.ts', 10, 'home forms in text and an origin path shape: text matching for the redactor, not a path read'],
-  ['run/notes/translations.ts', 1, 'a link that is a URL or a full path stays as written: a text filter'],
-  ['run/protocol.ts', 1, 'a Windows folder with no drive (`\\x`) is refused as unsure'],
+// src/ outside src/platform/, each path-shaped regex piece on a line of code counts: a drive
+// class (`[A-Za-z]:`, `[A-Z]:`, `\w:`), `\/home`, `\/Users`, `\/mnt`, a Git Bash drive
+// (`\/[a-z]`), `cygdrive`, a UNC start (`^\\\\`, `startsWith('\\\\')`), or a class that holds
+// both `/` and `\`. The files below keep theirs. A `follow-up:` waiver names the area that
+// moves onto the reader and expires; a `kept:` one reads no path (a name or text check).
+const PATH_REGEX_EXPIRY = '2026-11-30';
+const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string, expires: string | null][] = [
+  ['agents/copilot.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['agents/desk/fence/srt.ts', 4, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['commands/hook.ts', 1, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
+  ['commands/tidy/put-away.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['host/hosts.ts', 2, 'kept: splits a git remote address (user@host:path), not a file path', null],
+  ['rules/config.ts', 1, 'kept: refuses a block entry that holds any separator, a name check', null],
+  ['rules/guards/bash/read/words.ts', 1, 'kept: isGit reads the program name after the last separator', null],
+  ['rules/guards/commands/lose-work.ts', 5, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/no-wipe.ts', 14, 'follow-up: no-wipe rm targets onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/token.ts', 2, 'kept: the credential file name at the end of any path, a name check', null],
+  ['rules/guards/hooks/settings.ts', 1, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/box.ts', 2, 'kept: PLAIN_PATH is the characters a worker cd may use (readPath places it), and the ~N directory-stack word', null],
+  ['rules/guards/worker/config-command.ts', 17, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/config.ts', 10, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/mark.ts', 5, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
+  ['rules/pr.ts', 1, 'kept: the program name after the last separator', null],
+  ['rules/privacy/home.ts', 3, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['rules/privacy/secrets.ts', 3, 'kept: PATH_VALUE, a value that starts like a path is no secret; a text filter', null],
+  ['rules/privacy.ts', 13, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['run/notes/translations.ts', 1, 'kept: a link that is a URL or a full path stays as written; a text filter', null],
+  ['run/protocol.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['setup/advice/adopt.ts', 3, 'kept: a prompt with any home or drive path in it is refused; a text filter that reads no path', null],
+  ['setup/doctor/machine.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['setup/doctor/self-test.ts', 1, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['setup/install.ts', 3, 'kept: finds a yokoten launcher in a hook command by its file name', null],
 ];
 
 // Path-shaped pieces of a regex, as they are written in TypeScript source.
-const PATH_REGEX_SIGN = /\[A-Za-z\]:|\[a-zA-Z\]:|\[a-z\]:|\\\/home|\\\/Users|\\\/mnt|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/;
+const PATH_REGEX_SIGN = /\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]:|\\w:|\\\/\(?(?:home|Users|mnt)|\\\/\(?\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]|cygdrive|\^\\\\\\\\|startsWith\('\\\\\\\\|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/g;
 
-/** How many lines of code in `text`, not comments, hold a path-shaped regex piece. */
-const pathRegexLines = (text: string): number => text.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line) && PATH_REGEX_SIGN.test(line)).length;
+/** How many path-shaped regex pieces the lines of code in `text` hold, not counting comments. */
+const pathRegexCount = (text: string): number => text.split('\n').reduce((count, line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? count : count + (line.match(PATH_REGEX_SIGN)?.length ?? 0)), 0);
 
 const PATH_REGEX_FIX = 'Read the path with readPath (src/platform/paths.ts) and add its form to the case table in test/rules/guards/commands/no-wipe.test.ts.';
 
-test('paths: the scan counts a drive, a users folder and a two-separator class, and not a comment (#1237)', () => {
+test('paths: the scan counts each path piece, two on a line too, and not a comment (#1237)', () => {
   const text = [
     '// /^[A-Za-z]:/ in a comment',
     ' * [\\\\/] in a doc comment',
     'const drive = /^[A-Za-z]:[\\\\/]/;',
     'const home = /^\\/home\\/x/;',
     "const parts = path.split(/[/\\\\]+/);",
-    'const plain = /^[a-z]+$/;',
+    'const upper = /^[A-Z]:/, word = /^\\w:/;',
+    'const bash = /^\\/[a-z]\\//, cyg = /^\\/cygdrive\\//;',
+    "const unc = /^\\\\\\\\[^\\\\]+/, starts = path.startsWith('\\\\\\\\');",
+    'const either = /^\\/(home|Users)\\//;',
+    "const plain = /^[a-z]+$/, escaped = text.replace(/\\\\/g, '\\\\\\\\');",
   ].join('\n');
-  assert.equal(pathRegexLines(text), 3);
+  // drive: 2 pieces; home 1; split 1; upper and word 2; bash and cygdrive 2; unc and startsWith 2; either 1.
+  assert.equal(pathRegexCount(text), 11);
 });
 
-test('paths: no new path regex in src/rules/ or src/run/ outside the waivers, and each waiver has a reason (#1237)', () => {
+test('paths: no new path regex in src/ outside src/platform/ and the waivers; each waiver has a reason and a live expiry (#1237)', () => {
   const found = new Map<string, number>();
-  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && (file.startsWith('rules/') || file.startsWith('run/')))) {
-    const count = pathRegexLines(readFileSync(join(SRC, path), 'utf8'));
+  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && !file.startsWith('platform/'))) {
+    const count = pathRegexCount(readFileSync(join(SRC, path), 'utf8'));
     if (count) found.set(path, count);
   }
   assert.ok(found.size > 0, 'the scan found no path regex; it is broken');
-  for (const [path, , reason] of PATH_REGEX_WAIVERS) assert.ok(reason.length > 20, `${path}: a waiver names its reason`);
+  for (const [path, , reason, expires] of PATH_REGEX_WAIVERS) {
+    if (reason.startsWith('kept: ')) assert.equal(expires, null, `${path}: a kept waiver reads no path, so it has no expiry`);
+    else {
+      assert.match(reason, /^follow-up: \S.{10,}/, `${path}: a waiver says "kept:" or names its "follow-up:" area`);
+      assert.match(expires ?? '', /^\d{4}-\d{2}-\d{2}$/, `${path}: a follow-up waiver has an expiry`);
+      assert.ok(Date.now() <= Date.parse(`${expires}T23:59:59Z`), `${path}: its waiver expired on ${expires}; move it onto readPath, or renew it with a reason`);
+    }
+  }
   const allowed = PATH_REGEX_WAIVERS.map(([path, count]): [string, number] => [path, count]);
   assert.deepEqual(ratchetProblems(found, allowed, 'src/', 'PATH_REGEX_WAIVERS', PATH_REGEX_FIX), [], 'Rule: a path word is read by the one path reader (issue #1237).');
 });

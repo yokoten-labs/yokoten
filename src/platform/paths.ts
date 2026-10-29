@@ -184,7 +184,8 @@ export function readPath(word: string, place: PathReading): string | null {
   if (form === null || form === 'device' || (word.startsWith('~') && form !== 'home')) return null;
   if (platform !== 'win32') {
     // POSIX reads `\` as a letter and a drive as a folder name: only `/` and `~/` start a full path.
-    if (form === 'home') return place.home ? posix.join(place.home, word.slice(2)) : null;
+    // Bash reads `~\x` as a name with a backslash, not as home: only `~` and `~/` are.
+    if (form === 'home') return place.home && (word === '~' || word.startsWith('~/')) ? posix.join(place.home, word.slice(2)) : null;
     if (word.startsWith('/')) return posix.normalize(word);
     return place.folder ? posix.resolve(place.folder, word) : null;
   }
@@ -238,26 +239,66 @@ export function usersFolderUser(home: string | undefined): string | null {
   return split > 0 && USERS_FOLDER.test(path.slice(0, split).replace(/[\\/]+$/, '')) ? path.slice(split + 1) : null;
 }
 
-// A character of a user name in text: not a separator, a space, a quote or shell punctuation.
-const NAME_CHAR = String.raw`[^\s\\/"'\x60<>|:*?;,(){}\[\]=&$]`;
-// A users folder in text, at the start of a path, then the name: a Windows name may hold a
-// space, when a separator follows it (`C:\Users\Jane Doe\x`). Separators may be doubled, as
-// JSON writes `\`. A drive path is Windows, where case never counts.
-const USERS_FOLDER_SOURCE = String.raw`(?<![\p{L}\p{N}_.~\\-])((?:\/mnt\/[a-z]|\/[a-z])?\/Users|\/home|[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss])([\\/]+)(${NAME_CHAR}+(?:(?: ${NAME_CHAR}+)+(?=[\\/]))?)`;
-const USERS_FOLDER_IN_TEXT = { exact: new RegExp(USERS_FOLDER_SOURCE, 'gu'), folded: new RegExp(USERS_FOLDER_SOURCE, 'giu') };
+
+// ---- Users folders in text (#1237) ----
+//
+// Text writes a users-folder path in many ways: with `\` or `/`, doubled or escaped as JSON
+// writes them (`C:\\Users`, `\/home\/x`), after a device or share prefix (`\\?\C:`,
+// `\\server\c$`, `\\wsl$\Ubuntu`), after `../`, or right after a JSON escape (`\n/home/x`).
+// The name ends where the system says a name can't go on. When that can't be told, more is
+// hidden, never less.
+
+// One separator, as text may write it: `/`, `\`, `\\`, or JSON's `\/`.
+const SEP = String.raw`(?:\\*\/|\\+)`;
+// A drive that holds homes. A: and B: are floppy drives, so `/a/users/me` is no Windows home.
+const DRIVE_LETTER = '[C-Zc-z]';
+// A Windows root before `Users`: a drive (also after `\\?\` or `\\.\`), an admin share
+// (`\\server\c$`), WSL's `/mnt/c`, Cygwin's `/cygdrive/c` and Git Bash's `/c`.
+const WINDOWS_ROOT = String.raw`(?:${DRIVE_LETTER}:|(?:\\\\[?.]\\UNC\\|[\\/]{2,})[^\\/\s"]+${SEP}${DRIVE_LETTER}\$|${SEP}mnt${SEP}${DRIVE_LETTER}|${SEP}cygdrive${SEP}${DRIVE_LETTER}|${SEP}${DRIVE_LETTER})`;
+// Not inside a word, or right after a JSON escape (`\n`, `\t`, `\r`), whose letter is no word.
+const AFTER_ESCAPE = String.raw`(?<=(?<!\\)\\[ntr])`;
+// A Windows name holds spaces and most punctuation; it ends at a separator, a quote, a line
+// end, or a character Windows does not allow in a name (`< > : | ? *`).
+const WINDOWS_NAME = String.raw`[^\\/"\n\r\t<>:|?*\x00]+`;
+// A POSIX account name holds no space: the name ends there, or at a separator or quote.
+const POSIX_NAME = String.raw`[^\\/"\s<>|\x00]+`;
+// Windows folds case, so the drive forms do; `/home` and `/Users` match as written.
+const WINDOWS_USERS_IN_TEXT = new RegExp(String.raw`(?:(?<![\p{L}\p{N}_~\-])|${AFTER_ESCAPE})(${WINDOWS_ROOT}${SEP}[Uu][Ss][Ee][Rr][Ss])(${SEP}+)(${WINDOWS_NAME})`, 'gu');
+// A `\` right after a word joins it (`src\/home`), so the word blocks the folder there too.
+const POSIX_USERS_IN_TEXT = new RegExp(String.raw`(?:(?<![\p{L}\p{N}_~\-]\\*)|${AFTER_ESCAPE})((?:[\\/]{2,}[Ww][Ss][Ll](?:\$|\.localhost)${SEP}[^\\/\s"]+)?${SEP}(?:home|Users))(${SEP}+)(${POSIX_NAME})`, 'gu');
+
+/** How a users-folder path in text was written: a Windows root, a WSL share, or a POSIX `/home` or `/Users`. */
+export type UsersFolderForm = 'windows' | 'wsl' | 'home' | 'users';
+
+// What may close a name in prose and is no part of it: a full stop, a comma, a closing quote or bracket.
+const NAME_TRAIL = /[\s.,;:!'\x60\]}…]+$/u;
+
+/** `written` without the prose that may follow a name: trailing punctuation, and a `)` it never opened. */
+function trimName(written: string): string {
+  let name = written;
+  for (;;) {
+    const next = name.replace(NAME_TRAIL, '');
+    const closed = next.endsWith(')') && !next.includes('(') ? next.slice(0, -1) : next;
+    if (closed === name) return name;
+    name = closed;
+  }
+}
 
 /**
- * `text` with each user name in a users-folder path given to `replace`, which returns what
- * to write in its place, or null to keep it. A name's trailing dots (a full stop) stay out
- * of it, and a name of only dots (`...`) or one already hidden (`~`, `%USERNAME%`) is kept.
- * `ignoresCase` reads `/HOME/x` and `/c/users/x` too, as Windows does.
+ * `text` with each user name in a users-folder path given to `replace`, with the form it was
+ * written in; `replace` returns what to write in its place, or null to keep it. Trailing
+ * prose punctuation stays out of a name, and a name of only dots (`...`) or one already
+ * hidden or a variable (`~`, `%USERNAME%`, `$USER`) is kept.
  */
-export function replaceUsersFolderNames(text: string, replace: (name: string) => string | null, { ignoresCase = true }: { ignoresCase?: boolean } = {}): string {
+export function replaceUsersFolderNames(text: string, replace: (name: string, form: UsersFolderForm) => string | null): string {
   if (!/home|users/i.test(text)) return text;
-  return text.replace(ignoresCase ? USERS_FOLDER_IN_TEXT.folded : USERS_FOLDER_IN_TEXT.exact, (hit, folder: string, slash: string, written: string) => {
-    const name = written.replace(/[.…]+$/, '');
-    if (name === '' || name.startsWith('~') || name.startsWith('%')) return hit;
-    const shown = replace(name);
+  const each = (formOf: (folder: string) => UsersFolderForm) => (hit: string, folder: string, slash: string, written: string) => {
+    const name = trimName(written);
+    if (/^[.~%$]|^\.+$/.test(name) || name === '') return hit;
+    const shown = replace(name, formOf(folder));
     return shown === null ? hit : `${folder}${slash}${shown}${written.slice(name.length)}`;
-  });
+  };
+  return text
+    .replace(WINDOWS_USERS_IN_TEXT, each(() => 'windows'))
+    .replace(POSIX_USERS_IN_TEXT, each((folder) => (/wsl/i.test(folder) ? 'wsl' : folder.endsWith('home') ? 'home' : 'users')));
 }
