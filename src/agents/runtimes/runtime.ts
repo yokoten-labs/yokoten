@@ -34,6 +34,12 @@ export interface Capabilities {
   passesRole: boolean;
 }
 
+/** The command a question's call runs as after the yes, and the call it came in. */
+export interface AskRewrite {
+  input: unknown;
+  command: string;
+}
+
 /** The contract one runtime fills: its shape, its refusal, its hooks and its capabilities. */
 export interface AgentAdapter {
   /** The name `--agent` takes. */
@@ -55,8 +61,13 @@ export interface AgentAdapter {
   formatDenial?: (reason: string, env?: Env) => { stdout: string; exitCode: number };
   /** Text added to the agent's context by an allowed tool call, when the runtime takes it. */
   formatContext?: (text: string) => string;
-  /** A question shown before a call runs, when the runtime has such a decision. */
-  formatAsk?: (reason: string) => string;
+  /**
+   * A question shown before a call runs, when the runtime has such a decision. With
+   * `rewrite`, the call runs as that command after the yes: a command that prints the
+   * owner's account keeps its `yokoten redact` wrap behind a question (#390, #1212). A
+   * runtime with `formatAsk` and `formatRewrite` must carry it.
+   */
+  formatAsk?: (reason: string, rewrite?: AskRewrite) => string;
   /**
    * Whether this runtime's markers say the session runs with no one at the prompt, such as
    * a cloud session (#1215). There, no runtime's ask can be answered, so the guard refuses.
@@ -107,7 +118,7 @@ export function contextOf(name: string, text: string): string | null {
 }
 
 /** The question for a runtime that shows one before a call runs, or null when it has no ask decision. */
-export function askOf(name: string): ((reason: string) => string) | null {
+export function askOf(name: string): ((reason: string, rewrite?: AskRewrite) => string) | null {
   return adapterFor(name)?.formatAsk ?? null;
 }
 

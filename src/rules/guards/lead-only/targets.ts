@@ -133,7 +133,10 @@ export function restoresFromOtherRef(sub: string | undefined, args: string[]): b
     if (arg === '--') break;
     if (arg === '-s' || arg === '--source') return isOther(args[index + 1]);
     if (arg.startsWith('--source=')) return isOther(arg.slice('--source='.length));
-    if (/^-s./.test(arg)) return isOther(arg.slice(2));
+    // A short bundle: the flags before `s` take no value, and `s` takes the rest of the word,
+    // or the next word (`-Ws main`, `-smain`, `-Wsmain`), as git reads it.
+    const bundle = /^-([A-Za-z0-9]*?)s(.*)$/.exec(arg);
+    if (bundle && !arg.startsWith('--')) return isOther(bundle[2] === '' ? args[index + 1] : bundle[2]);
   }
   return false;
 }

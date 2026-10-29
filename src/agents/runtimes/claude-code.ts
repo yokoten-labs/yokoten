@@ -8,7 +8,7 @@ import type { Env } from '../../rules/config.ts';
 import { envFolder, folderIn, folderOf, homeIn } from '../../rules/privacy.ts';
 import { guardCommand, missingProjectRuntime, runsByPath } from '../../run/cli.ts';
 import { type Action, isWorkerType, readStopFields, type StopEvent } from '../../run/hook.ts';
-import type { AgentAdapter } from './runtime.ts';
+import type { AgentAdapter, AskRewrite } from './runtime.ts';
 import { type Added, addHook, checkHooksFile, hasHook, isObject, type Problem, readTable, removeHook, type Settings, UnreadableHooksFile, writeSettings } from '../hooks-file.ts';
 import type { RuntimeEnv } from '../desk/agent-env.ts';
 import type { RuntimeDesk } from '../desk/desk.ts';
@@ -69,7 +69,14 @@ export const isUnattended = (env: Env): boolean => Boolean(env.CLAUDE_CODE_REMOT
  * decision, on exit 0. Claude Code shows the reason and runs the call only after a yes.
  * A runtime that has no such question gets a refusal from commands/hook.ts (#1212).
  */
-export const formatAsk = (reason: string): string => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason } });
+export const formatAsk = (reason: string, rewrite?: AskRewrite): string =>
+  JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason, ...(rewrite ? { updatedInput: { ...toolInputOf(rewrite.input), command: rewrite.command } } : {}) } });
+
+/** The call's `tool_input`, or an empty object when it has none. */
+const toolInputOf = (input: unknown): object => {
+  const call = (input ?? {}) as { tool_input?: unknown };
+  return call.tool_input && typeof call.tool_input === 'object' ? call.tool_input : {};
+};
 
 /**
  * Text added to the agent's context by an allowed PreToolUse call (#674): `additionalContext`
@@ -86,9 +93,7 @@ export const formatContext = (text: string): string => JSON.stringify({ hookSpec
  * that changes or sends anything.
  */
 export function formatRewrite(input: unknown, command: string, reason: string): string {
-  const call = (input ?? {}) as { tool_input?: unknown };
-  const tool = call.tool_input && typeof call.tool_input === 'object' ? call.tool_input : {};
-  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: reason, updatedInput: { ...tool, command } } });
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'allow', permissionDecisionReason: reason, updatedInput: { ...toolInputOf(input), command } } });
 }
 
 /**

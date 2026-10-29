@@ -1519,6 +1519,17 @@ test('hook: a guard setting or a call outside the sandbox asks for the lead, and
   result = await bash({ command: 'ls', dangerouslyDisableSandbox: true });
   assert.equal(decision(result.stdout).permissionDecision, 'ask');
   assert.match(decision(result.stdout).permissionDecisionReason, /outside the agent's sandbox/);
+  assert.equal(JSON.parse(result.stdout).hookSpecificOutput.updatedInput, undefined, 'a plain question carries no rewrite');
+  // A question on a command that prints the owner's account keeps the redact wrap after the yes.
+  // (A pipe is not rewritten, with or without a question: see the #390 tests.)
+  for (const command of ['git log -1', 'git config user.email']) {
+    result = await bash({ command, dangerouslyDisableSandbox: true, description: 'Show' });
+    const asked = JSON.parse(result.stdout).hookSpecificOutput;
+    assert.equal(asked.permissionDecision, 'ask', command);
+    assert.ok(asked.updatedInput, result.stdout);
+    assert.match(asked.updatedInput.command, /^set -o pipefail # yokoten-redact\n[\s\S]* redact \|\| /, command);
+    assert.deepEqual([asked.updatedInput.dangerouslyDisableSandbox, asked.updatedInput.description], [true, 'Show'], 'the rest of the call stays');
+  }
   assert.equal((await bash({ command: 'ls', dangerouslyDisableSandbox: false })).stdout, '', 'only true leaves the sandbox');
   assert.equal((await bash({ command: 'ls' })).stdout, '');
 
