@@ -35,14 +35,16 @@ test('doctor: --all --json keeps the shape that other tools read (#1167, #1202, 
   assert.equal(typeof json.version, 'string');
   assert.equal(typeof json.stage, 'number');
   const { steps, findings, next } = json as { steps: Record<string, unknown>[]; findings: Record<string, unknown>[]; next: Record<string, unknown> | null };
-  assert.ok(next === null || typeof next.id === 'string', 'next is null or a finding');
+  assert.ok(next !== null, 'a fresh repo has a next step');
+  for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof next[key], 'string', `next.${key}`);
   assert.ok(Array.isArray(steps) && steps.length > 0);
   for (const step of steps) {
     for (const key of ['id', 'how', 'why']) assert.equal(typeof step[key], 'string', `${String(step.id)}.${key}`);
     assert.equal(typeof step.stage, 'number');
     assert.ok(MARKS.includes(step.mark as string), `${String(step.id)}: mark ${String(step.mark)}`);
   }
-  assert.ok(steps.some((step) => step.mark === 'done'), 'a done step carries how and why too (#1203)');
+  for (const mark of ['done', 'next', 'to do']) assert.ok(steps.some((step) => step.mark === mark), `a fresh repo has a step marked ${mark}`);
+  assert.equal(steps.filter((step) => step.mark === 'next').length, 1, 'one next step');
   assert.ok(Array.isArray(findings) && findings.length > 0);
   for (const found of findings) {
     for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof found[key], 'string', `${String(found.id)}.${key}`);
