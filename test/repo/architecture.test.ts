@@ -1742,6 +1742,101 @@ test('platform: no new process.platform read outside the list, and the list only
   assert.deepEqual(ratchetProblems(found, PLATFORM_READS, 'src/', 'PLATFORM_READS', PLATFORM_FIX), [], PLATFORM_RULE);
 });
 
+// ---- One path reader (issue #1237) ----
+//
+// Each guard that read a path word by its own regex read it its own way, and each review
+// found a form one of them missed (`/c/x`, `C:/x`, `RUNNER~1`, `...`). A path is read by
+// readPath in src/platform/paths.ts, which takes the platform and has one case table. In
+// src/ outside src/platform/, each path-shaped regex piece on a line of code counts: a drive
+// class (`[A-Za-z]:`, `[A-Z]:`, `\w:`), `\/home`, `\/Users`, `\/mnt`, a Git Bash drive
+// (`\/[a-z]`), `cygdrive`, a UNC start (`^\\\\`, `startsWith('\\\\')`), or a class that holds
+// both `/` and `\`. The files below keep theirs. A `follow-up:` waiver names the area that
+// moves onto the reader and expires; a `kept:` one reads no path (a name or text check).
+const PATH_REGEX_EXPIRY = '2026-11-30';
+const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string, expires: string | null][] = [
+  ['agents/copilot.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform (#1242), for withoutTrailing', PATH_REGEX_EXPIRY],
+  ['agents/copilot.ts', 2, 'kept: two startsWith(\'//\') tests that skip comment lines, not a path', null],
+  ['agents/runtimes/codex.ts', 1, 'kept: startsWith(\'//\') skips the comment lines before a JSON file, not a path', null],
+  ['rules/text/message.ts', 2, 'kept: the user-folder rule text names C:\\Users\\<name>; words, not a path read', null],
+  ['run/check.ts', 1, 'kept: startsWith(\'//\') reads a comment line of source, not a path', null],
+  ['run/hook.ts', 1, 'kept: C:\\Windows is the fallback for SystemRoot, a value, not a path read', null],
+  ['agents/desk/fence/srt.ts', 4, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['commands/hook.ts', 1, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
+  ['commands/tidy/put-away.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['host/hosts.ts', 2, 'kept: splits a git remote address (user@host:path), not a file path', null],
+  ['rules/config.ts', 1, 'kept: refuses a block entry that holds any separator, a name check', null],
+  ['rules/guards/bash/read/words.ts', 1, 'kept: isGit reads the program name after the last separator', null],
+  ['rules/guards/commands/lose-work.ts', 5, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/no-wipe.ts', 14, 'follow-up: no-wipe rm targets onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/token.ts', 2, 'kept: the credential file name at the end of any path, a name check', null],
+  ['rules/guards/hooks/settings.ts', 1, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/box.ts', 2, 'kept: PLAIN_PATH is the characters a worker cd may use (readPath places it), and the ~N directory-stack word', null],
+  ['rules/guards/worker/config-command.ts', 17, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/config.ts', 10, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/mark.ts', 5, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/pr.ts', 1, 'kept: the program name after the last separator', null],
+  ['rules/privacy/home.ts', 3, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/privacy/secrets.ts', 3, 'kept: PATH_VALUE, a value that starts like a path is no secret; a text filter', null],
+  ['rules/privacy.ts', 13, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
+  ['run/notes/translations.ts', 1, 'kept: a link that is a URL or a full path stays as written; a text filter', null],
+  ['run/protocol.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['setup/advice/adopt.ts', 3, 'kept: a prompt with any home or drive path in it is refused; a text filter that reads no path', null],
+  ['setup/doctor/machine.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['setup/doctor/self-test.ts', 1, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
+  ['setup/install.ts', 3, 'kept: finds a yokoten launcher in a hook command by its file name', null],
+];
+
+// Path-shaped pieces of a regex, as they are written in TypeScript source.
+const PATH_REGEX_SIGN = /\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]:|\\w:|\\\/\(?(?:home|Users|mnt|tmp)|\\\/\(?\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]|\b[A-Za-z]:\\\\|startsWith\('\/\/'|\\:|cygdrive|\^\\\\\\\\|startsWith\('\\\\\\\\|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/g;
+
+/** How many path-shaped regex pieces the lines of code in `text` hold, not counting comments. */
+const pathRegexCount = (text: string): number => text.split('\n').reduce((count, line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? count : count + (line.match(PATH_REGEX_SIGN)?.length ?? 0)), 0);
+
+const PATH_REGEX_FIX = 'Read the path with readPath (src/platform/paths.ts) and add its form to the case table in test/rules/guards/commands/no-wipe.test.ts.';
+
+test('paths: the scan counts each path piece, two on a line too, and not a comment (#1237)', () => {
+  const text = [
+    '// /^[A-Za-z]:/ in a comment',
+    ' * [\\\\/] in a doc comment',
+    'const drive = /^[A-Za-z]:[\\\\/]/;',
+    'const home = /^\\/home\\/x/;',
+    "const parts = path.split(/[/\\\\]+/);",
+    'const upper = /^[A-Z]:/, word = /^\\w:/;',
+    'const bash = /^\\/[a-z]\\//, cyg = /^\\/cygdrive\\//;',
+    "const unc = /^\\\\\\\\[^\\\\]+/, starts = path.startsWith('\\\\\\\\');",
+    'const either = /^\\/(home|Users)\\//;',
+    "const plain = /^[a-z]+$/, escaped = text.replace(/\\\\/g, '\\\\\\\\');",
+    "const literal = /^C:\\\\/, slashes = path.startsWith('//');",
+    'const temp = /^\\/tmp\\//, colon = /^x\\:/;',
+  ].join('\n');
+  // drive: 2 pieces; home 1; split 1; upper and word 2; bash and cygdrive 2; unc and startsWith 2; either 1;
+  // a literal drive and `//` 2; /tmp and an escaped colon 2.
+  assert.equal(pathRegexCount(text), 15);
+});
+
+test('paths: no new path regex in src/ outside src/platform/ and the waivers; each waiver has a reason and a live expiry (#1237)', () => {
+  const found = new Map<string, number>();
+  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && !file.startsWith('platform/'))) {
+    const count = pathRegexCount(readFileSync(join(SRC, path), 'utf8'));
+    if (count) found.set(path, count);
+  }
+  assert.ok(found.size > 0, 'the scan found no path regex; it is broken');
+  for (const [path, , reason, expires] of PATH_REGEX_WAIVERS) {
+    if (reason.startsWith('kept: ')) assert.equal(expires, null, `${path}: a kept waiver reads no path, so it has no expiry`);
+    else {
+      assert.match(reason, /^follow-up: \S.{10,}/, `${path}: a waiver says "kept:" or names its "follow-up:" area`);
+      assert.match(reason, /#\d+/, `${path}: a follow-up waiver names its open issue (#N)`);
+      assert.match(expires ?? '', /^\d{4}-\d{2}-\d{2}$/, `${path}: a follow-up waiver has an expiry`);
+      assert.ok(Date.now() <= Date.parse(`${expires}T23:59:59Z`), `${path}: its waiver expired on ${expires}; move it onto readPath, or renew it with a reason`);
+    }
+  }
+  // A file may have a kept: entry and a follow-up: entry; its allowed count is their sum.
+  const sums = new Map<string, number>();
+  for (const [path, count] of PATH_REGEX_WAIVERS) sums.set(path, (sums.get(path) ?? 0) + count);
+  const allowed = [...sums];
+  assert.deepEqual(ratchetProblems(found, allowed, 'src/', 'PATH_REGEX_WAIVERS', PATH_REGEX_FIX), [], 'Rule: a path word is read by the one path reader (issue #1237).');
+});
+
 // ---- Kanban reaches outside code through one port (issue #1091) ----
 //
 // The kanban area (src/commands/kanban/) uses no old code directly. Its files import only

@@ -135,3 +135,20 @@ export function gluedHomes(home: string | undefined): { glued: string; path: str
     { glued: joined, path },
   ];
 }
+
+// ---- Account names that name nobody ----
+
+/**
+ * Account names that every machine of a kind has (a CI runner, a container, a cloud VM).
+ * They name nobody, and hiding them would hide common words such as "root" and "test".
+ */
+export const SHARED_ACCOUNTS: ReadonlySet<string> = new Set([
+  ...['root', 'runner', 'user', 'users', 'admin', 'administrator', 'guest', 'nobody', 'temp', 'dev', 'test', 'app', 'build'],
+  ...['ubuntu', 'debian', 'node', 'vscode', 'codespace', 'codespaces', 'gitpod', 'vagrant', 'ec2-user', 'jenkins'],
+]);
+// The folders in a Windows Users folder that are not a person's: shared, system and service accounts.
+const WINDOWS_SHARED_FOLDERS = new Set(['public', 'default', 'default user', 'all users', 'wdagutilityaccount', 'temp', 'postgres', 'mysql', 'sshd', 'updatususer', 'wsiaccount', 'defaultapppool', 'shared']);
+const WINDOWS_SHARED_PATTERN = /^(?:defaultuser\d+|.*\.migrated|\.net v.*|classic \.net apppool|mssql.*|\$.*)$/;
+
+/** Whether a folder in a users folder (`/home`, `C:\Users`) is a person's, not a shared, system or service account. */
+export const isPersonFolder = (name: string): boolean => !WINDOWS_SHARED_FOLDERS.has(name.toLowerCase()) && !WINDOWS_SHARED_PATTERN.test(name.toLowerCase()) && !SHARED_ACCOUNTS.has(name.toLowerCase());

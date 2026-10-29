@@ -185,6 +185,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   add(repeatStopFinding());
   found.push(...scanText(`${POSITIVE_CONTROL}\n${SECRET_CONTROL}\nhome town`, { file: 'a.md', marks: ['home town'] }));
   add(scanText(`// ${['yokoten', 'ignore'].join('-')} secret`, { file: 'a.md' })[0]);
+  add(scanText('see /home/alice/x', { file: 'post' })[0]);
   add(addedIgnores('a.ts', `// ${['yokoten', 'ignore'].join('-')} secret: a fixture`, new Set([1]), {})[0]);
   found.push(...checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS));
   found.push(...checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS));

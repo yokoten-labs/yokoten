@@ -1,12 +1,12 @@
-import { isAbsolute, resolve } from 'node:path';
-import { isPathInside } from '../../../platform/paths.ts';
+import { resolve } from 'node:path';
+import { hostPathPlace, isPathInside, isShortName, readPath } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { loadConfig, type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';
 import { gitLinkAbove, FIND_WRITES } from './mark.ts';
 import { onlyReads, symlinkTargetReach, configReach } from './config-command.ts';
-import { isGit, isAssignment, withoutShellRedirects, realPath, placedPath, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
+import { isGit, isAssignment, withoutShellRedirects, realPath, commandPlace, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';
 
 // ---- The worker's box (#591) ----
@@ -64,6 +64,12 @@ const VARIABLE_SETTERS = new Set(['read', 'mapfile', 'readarray', 'getopts', 'ev
 // A plain path: letters, digits, `.`, `_`, `/`, `-`, and at the start only `~` as home or a
 // drive with a slash (`C:/x`, as a Windows worker types a full path, #1225).
 const PLAIN_PATH = /^(~(?=\/|$)|[A-Za-z]:(?=\/))?[A-Za-z0-9._/-]*$/;
+/**
+ * Whether a cd target is a plain path. A Windows short name (`RUNNER~1`, #1237) is a plain part
+ * too: bash reads a `~` inside a word as a letter, and the reader spells it out before the box
+ * judges where it leads, so a worker's real worktree path passes whichever name it holds.
+ */
+export const isPlainPath = (target: string): boolean => PLAIN_PATH.test(target.split('/').map((part) => (isShortName(part) && /^[A-Za-z0-9._-]+$/.test(part.replace('~', '')) ? 'x' : part)).join('/'));
 // git options a worker may give before the subcommand: none of them moves a folder.
 export const GIT_PLAIN_OPTIONS = new Set(['--no-pager', '-P', '--version', '--help']);
 const GIT_CONFIG_READS = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l']);
@@ -206,13 +212,13 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         if (args.some((arg) => /^-[LP]*P[LP]*$/.test(arg))) return boxFinding("a worker's cd may not use -P, which follows a link before a later ..; run cd without it");
         const paths = args.filter((arg) => !/^-L+$/.test(arg));
         const target = paths[0];
-        if (paths.length !== 1 || target === '-' || target.startsWith('-') || !PLAIN_PATH.test(target) || target === '') {
+        if (paths.length !== 1 || target === '-' || target.startsWith('-') || !isPlainPath(target) || target === '') {
           return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / -, and a leading ~ or drive such as C:/), not ${paths.join(' ') || 'no path'}`);
         }
-        const read = target.startsWith('~') ? (home === null ? null : home + target.slice(1)) : target;
-        // Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015); a folder it can't place is outside.
-        const expanded = read === null ? null : placedPath(read, folder);
-        const full = expanded === null ? null : isAbsolute(expanded) ? expanded : folder === null ? null : resolve(folder, expanded);
+        // The one path reader (#1237): Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015), a
+        // short name is spelled out, and a folder it can't place, or a part Windows reads two
+        // ways (`...`), is outside.
+        const full = readPath(target, { ...(commandPlace.current ?? hostPathPlace()), home, folder });
         const real = full === null ? null : realPath(full);
         if (real === null || box === null || !isPathInside(real, box)) {
           return boxFinding(`a worker's ${name} stays inside its worktree; ${target} is outside it, or yokoten can't tell where it goes`);

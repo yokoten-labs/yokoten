@@ -15,11 +15,11 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
-import { climbsPastDrive, fromGitBash, type PathPlace } from '../platform/paths.ts';
+import { climbsPastDrive, fromGitBash, lastPathPart, replaceUsersFolderNames, usersFolderUser, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
 import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
-import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
+import { configHomeIn, configHomeOf, configHomeShown, envFolder, folderIn, folderOf, gluedHomes, homeIn, homeOf, isPersonFolder, NO_HOME, systemHome, useRealHome, withHome } from './privacy/home.ts';
 import { loadMarks, loadWrittenMarks, marksFile, marksFiles, marksTexts, writtenMarksOnly } from './privacy/marks.ts';
 import { GLOBAL_VALUES, postKind, unreadPost } from './privacy/posts.ts';
 
@@ -962,7 +962,7 @@ export function addedIgnores(file: string, text: string, added: ReadonlySet<numb
 }
 
 /** The rules an ignore may name. */
-const IGNORABLE_RULES = ['secret', 'email', 'ip', 'private-mark'];
+const IGNORABLE_RULES = ['secret', 'email', 'ip', 'user-folder', 'private-mark'];
 const IGNORABLE = new Set(IGNORABLE_RULES);
 
 /** The reasons in `.yokotenignore`, and a failure for each line with no rule, no reason or an unknown rule. */
@@ -1054,6 +1054,12 @@ export function scanText(
       if (octets.some((n) => n > 255) || isHarmlessAddress(hit, { allowsLocalNetwork }) || allow.includes(hit) || isSectionNumber(line, index, hit)) continue;
       problems.push(finding('ip', 'an IP address', 'use a placeholder from 192.0.2.0/24', { ...where, grade: 'sure', ...ignoreFields('ip', [hit], true) }));
     }
+    // A home folder path names its account, whatever $HOME is (#1237). Text that leaves the
+    // machine only: the repo's tests and docs hold made-up homes, and the marks name the real ones.
+    const folderGrade = allowsLocalNetwork ? null : usersFolderGrade(line, env);
+    if (folderGrade !== null) {
+      problems.push(finding('user-folder', 'a home folder path with a user name', 'write the home as ~, or the name as <user>', { ...where, grade: folderGrade, ...ignoreFields('user-folder', [], true) }));
+    }
     const marked = stopped.length && unglue ? unglue(line) : line;
     const folded = stopped.length ? foldLine(marked) : null;
     for (const mark of stopped) {
@@ -1125,7 +1131,58 @@ function cutForms(home: string): string[] {
  * other, and case does not count (nor does it when the platform is not given). A home path cut short at the end of a line or the text
  * (`/home/jonat`) becomes `~` too, when it keeps 4 or more characters of the last part (#404).
  */
-export function hideHome(text: string, env: Env, { platform, systemHome: system = systemHome() }: { platform?: string; systemHome?: string } = {}): string {
+export function hideHome(text: string, env: Env, options: { platform?: string; systemHome?: string } = {}): string {
+  return hideUsersFolders(hideOwnHomes(text, env, options));
+}
+
+// Words a web route or an import puts under `/home` (`GET /home/settings`, `"/home/utils"`):
+// pages and code folders, not accounts. A name with a web file's ending, or only digits (an id), is one too.
+const HOME_ROUTE_WORDS = new Set(['settings', 'utils', 'index', 'components', 'lib', 'src', 'api', 'assets', 'static', 'page', 'pages', 'views', 'view', 'dashboard', 'login', 'logout', 'about', 'home']);
+const isHomeRoute = (name: string): boolean => HOME_ROUTE_WORDS.has(name.toLowerCase()) || /\.(?:html?|js|mjs|ts|jsx|tsx|css|json|php|md|svg|png)$/i.test(name) || /^\d+$/.test(name);
+
+/** Whether a name under a users folder may name a person: not a shared account, and under `/home` no route word. */
+const isPersonUnder = (name: string, form: UsersFolderForm): boolean => isPersonFolder(name) && !(form === 'home' && isHomeRoute(name));
+
+/**
+ * The user name in every users-folder path left in `text` (`/home/<n>`, `/Users/<n>`,
+ * `C:\Users\<n>`, `C:/Users/<n>`, `/c/Users/<n>`, `/mnt/c/Users/<n>`, `/cygdrive/c/Users/<n>`,
+ * `\\?\C:\Users\<n>`, `\\server\c$\Users\<n>`, `\\wsl$\<distro>\home\<n>`) as `<user>`,
+ * whatever the home folder is (#1237): a WSL user's Windows home is not their $HOME, and
+ * another account's home names a person too. A shared account (`runner`, `Public`, `Shared`)
+ * and a route word under `/home` (`settings`) stay. A drive form folds case, as Windows does;
+ * `/home` and `/Users` match as written.
+ */
+export function hideUsersFolders(text: string): string {
+  return replaceUsersFolderNames(text, (name, form) => (isPersonUnder(name, form) ? PLACEHOLDERS.user : null));
+}
+
+/**
+ * How sure the scan is that `line` names a person by a users-folder path (#1237), or null.
+ * Sure for a drive form, a WSL share, `/Users/<n>`, the user of this HOME or USERPROFILE, and
+ * a path into a dot-folder (`/home/<n>/.ssh`). Any other lower-case `/home/<word>` may be a
+ * route a post shows, so it is a note there, not a refusal.
+ */
+function usersFolderGrade(line: string, env: Env): 'sure' | 'unknown' | null {
+  // The own user: the name under a users folder, or the last part of a home kept elsewhere (`/data/zed`).
+  const ownName = (home: string | undefined) => usersFolderUser(home) ?? lastPathPart(home);
+  const own = new Set([ownName(env.HOME), ownName(env.USERPROFILE)].filter((name): name is string => !!name).map((name) => name.toLowerCase()));
+  let grade: 'sure' | 'unknown' | null = null;
+  replaceUsersFolderNames(line, (name, form, after) => {
+    if (!isPersonUnder(name, form) || USERS_FOLDER_PLACEHOLDERS.has(name.toLowerCase())) return null;
+    const isOwn = own.has(name.toLowerCase());
+    const intoDotFolder = /^(?:\\*\/|\\+)\./.test(after);
+    if (form === 'home' && /^[a-z0-9._-]+$/.test(name) && !isOwn && !intoDotFolder) grade ??= 'unknown';
+    else grade = 'sure';
+    return null;
+  });
+  return grade;
+}
+
+
+// Names docs and examples put in a users-folder path, which name nobody.
+const USERS_FOLDER_PLACEHOLDERS = new Set(['someone', 'name', 'username', 'yourname', 'your-name', 'you', 'example', 'sample', 'fake', 'other']);
+
+function hideOwnHomes(text: string, env: Env, { platform, systemHome: system = systemHome() }: { platform?: string; systemHome?: string }): string {
   const homes = [...new Set([...homeForms(env.HOME), ...homeForms(system)])].sort((a, b) => b.length - a.length);
   if (!homes.length) return text;
   // With no platform given, case does not count: hiding too much is the safe side (issue #1000).
@@ -1221,7 +1278,7 @@ export const POSITIVE_CONTROL = [`contact: someone${'@'}personal-mail.com`, `ser
 // details through `yokoten redact`, which puts a placeholder in place of each value.
 
 /** The placeholders `redact` writes. A placeholder never names what it hides. */
-export const PLACEHOLDERS = { owner: '<owner>', project: '<project>', email: '<email>', host: '<host>', mark: '<mark>', secret: SECRET } as const;
+export const PLACEHOLDERS = { owner: '<owner>', project: '<project>', email: '<email>', host: '<host>', mark: '<mark>', user: '<user>', secret: SECRET } as const;
 
 export const isEmailShaped = (value: string): boolean => /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(value);
 /** A domain or host name: words joined by dots, ending in a top-level name. */
@@ -1294,7 +1351,8 @@ export function makeRedactor(hidden: Hidden, env: Env): (text: string) => string
     let out = hideSecrets(text);
     for (const value of secretValues) out = out.replaceAll(value, SECRET);
     out = out.replace(EMAIL, (hit) => (!isPersonalEmail(hit) ? hit : /^git@/i.test(hit) ? `git@${PLACEHOLDERS.host}` : PLACEHOLDERS.email));
-    return hideMarks(hideHome(out, env));
+    // The names before the users folders, so a known owner in `C:\Users\<name>` reads `<owner>`, and any other name `<user>`.
+    return hideUsersFolders(hideMarks(hideOwnHomes(out, env, {})));
   };
 }
 

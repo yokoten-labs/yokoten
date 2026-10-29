@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
 import { checkDamage } from '../../../../src/rules/guards/commands/no-wipe.ts';
-import { climbsPastDrive, fromGitBash, gitBashDrive, isHostPaths, pathsFor } from '../../../../src/platform/paths.ts';
+import { climbsPastDrive, fromGitBash, gitBashDrive, isHostPaths, isShortName, pathForm, pathsFor, readPath, usersFolderUser, type PathReading } from '../../../../src/platform/paths.ts';
 import { formatRefusal } from '../../../../src/rules/text/message.ts';
 import { TEST_HOME } from '../../../repo/home.ts';
 import { allowed, blocked, refusedAs } from '../../../../test/repo/helpers.ts';
@@ -250,4 +250,96 @@ test('platform: the same words are read per platform (issue #1000)', () => {
     const env = platform === 'win32' ? { USERPROFILE: 'C:\\Users\\agent' } : { HOME: '/home/agent' };
     assert.equal(checkDamage(['rm', '-rf', target], '/work', env, platform)?.id, 'wipe-home-or-system', `${platform}: ${target}`);
   }
+});
+
+// ---- The one path reader: one case table, every system, on every system (#1237) ----
+//
+// Each row is a path word and what Linux, macOS and Windows read it as. The platform is an
+// argument, so every row runs on every machine. Windows gets a stand-in disk that spells
+// `RUNNER~1` as `runneradmin` and knows no other short name, as the GitHub runner does.
+const READ_PLACES: Record<'linux' | 'darwin' | 'win32', PathReading> = {
+  linux: { platform: 'linux', tmp: '/tmp', home: '/home/alice', folder: '/home/alice/wt' },
+  darwin: { platform: 'darwin', tmp: '/tmp', home: '/Users/alice', folder: '/Users/alice/wt' },
+  win32: { platform: 'win32', tmp: 'C:\\T', home: 'C:\\Users\\alice', folder: 'C:\\wt', realPath: (path) => path.replace(/^C:\\Users\\RUNNER~1(?=\\|$)/i, 'C:\\Users\\runneradmin') },
+};
+const READ_CASES: [word: string, linux: string | null, darwin: string | null, win32: string | null][] = [
+  // POSIX and home.
+  ['/usr/lib', '/usr/lib', '/usr/lib', null],
+  // One letter after `/` is a drive to Git Bash.
+  ['/a/b/../c', '/a/c', '/a/c', 'A:\\c'],
+  ['~', '/home/alice', '/Users/alice', 'C:\\Users\\alice'],
+  ['~/x', '/home/alice/x', '/Users/alice/x', 'C:\\Users\\alice\\x'],
+  ['~bob/x', null, null, null],
+  // Bash reads `~\x` as a name, not home; Windows reads `\` as a separator.
+  ['~\\x', null, null, 'C:\\Users\\alice\\x'],
+  ['~+/x', null, null, null],
+  // A drive, with either slash: Windows only; POSIX reads it as a folder named `C:`.
+  ['C:/wt/a', '/home/alice/wt/C:/wt/a', '/Users/alice/wt/C:/wt/a', 'C:\\wt\\a'],
+  ['C:\\wt\\a', '/home/alice/wt/C:\\wt\\a', '/Users/alice/wt/C:\\wt\\a', 'C:\\wt\\a'],
+  ['C:wt', '/home/alice/wt/C:wt', '/Users/alice/wt/C:wt', null],
+  // Git Bash, WSL and the temp folder.
+  ['/c/wt/a', '/c/wt/a', '/c/wt/a', 'C:\\wt\\a'],
+  ['/c/../d/x', '/d/x', '/d/x', 'D:\\x'],
+  ['/mnt/c/Users/alice', '/mnt/c/Users/alice', '/mnt/c/Users/alice', null],
+  ['/tmp/x', '/tmp/x', '/tmp/x', 'C:\\T\\x'],
+  ['/dev/null', '/dev/null', '/dev/null', null],
+  // UNC and device paths.
+  ['\\\\host\\share\\x', '/home/alice/wt/\\\\host\\share\\x', '/Users/alice/wt/\\\\host\\share\\x', '\\\\host\\share\\x'],
+  ['//host/share/x', '/host/share/x', '/host/share/x', '\\\\host\\share\\x'],
+  ['\\\\?\\C:\\x', null, null, null],
+  ['//./pipe/x', null, null, null],
+  // Relative, and past the drive root.
+  ['a/b', '/home/alice/wt/a/b', '/Users/alice/wt/a/b', 'C:\\wt\\a\\b'],
+  ['../../..', '/', '/', null],
+  ['\\x', '/home/alice/wt/\\x', '/Users/alice/wt/\\x', null],
+  // Parts made only of dots, or ending in a dot or a space: a name on POSIX, two readings on Windows.
+  ['C:/wt/.../..', '/home/alice/wt/C:/wt', '/Users/alice/wt/C:/wt', null],
+  ['a/...', '/home/alice/wt/a/...', '/Users/alice/wt/a/...', null],
+  ['a./b', '/home/alice/wt/a./b', '/Users/alice/wt/a./b', null],
+  ['a:b', '/home/alice/wt/a:b', '/Users/alice/wt/a:b', null],
+  // Short names: spelled out on Windows, or refused when the disk can't spell them; a name elsewhere.
+  ['C:/Users/RUNNER~1/wt', '/home/alice/wt/C:/Users/RUNNER~1/wt', '/Users/alice/wt/C:/Users/RUNNER~1/wt', 'C:\\Users\\runneradmin\\wt'],
+  ['C:\\PROGRA~9\\x', '/home/alice/wt/C:\\PROGRA~9\\x', '/Users/alice/wt/C:\\PROGRA~9\\x', null],
+  ['RUNNER~1/wt', '/home/alice/wt/RUNNER~1/wt', '/Users/alice/wt/RUNNER~1/wt', null],
+  // Another user's folder is placed as written: where it may lead is the caller's call.
+  ['/home/bob/x', '/home/bob/x', '/home/bob/x', null],
+  ['/Users/bob/x', '/Users/bob/x', '/Users/bob/x', null],
+  ['C:/Users/bob', '/home/alice/wt/C:/Users/bob', '/Users/alice/wt/C:/Users/bob', 'C:\\Users\\bob'],
+  ['/c/Users/bob', '/c/Users/bob', '/c/Users/bob', 'C:\\Users\\bob'],
+  ['', null, null, null],
+];
+
+test('readPath: each form on each system, from one case table (#1237)', () => {
+  for (const [word, ...shown] of READ_CASES) {
+    (['linux', 'darwin', 'win32'] as const).forEach((platform, index) => {
+      assert.equal(readPath(word, READ_PLACES[platform]), shown[index], `${platform}: ${word}`);
+    });
+  }
+});
+
+test('readPath: with no home, no folder, or a disk that keeps the short name, the word is refused (#1237)', () => {
+  for (const platform of ['linux', 'darwin', 'win32'] as const) {
+    const bare = { platform, tmp: READ_PLACES[platform].tmp };
+    assert.equal(readPath('~/x', bare), null, platform);
+    assert.equal(readPath('a/b', bare), null, platform);
+  }
+  assert.equal(readPath('C:/Users/RUNNER~1', { platform: 'win32', tmp: 'C:\\T', realPath: (path) => path }), null);
+});
+
+test('pathForm and isShortName: how a word is written, whatever system reads it (#1237)', () => {
+  const rows: [string, ReturnType<typeof pathForm>][] = [
+    ['~', 'home'], ['~/x', 'home'], ['~\\x', 'home'], ['~bob', 'relative'], ['C:/x', 'drive'], ['c:\\x', 'drive'], ['/c/x', 'git-bash'], ['/c', 'git-bash'],
+    ['/mnt/c/x', 'wsl'], ['/usr/x', 'posix'], ['\\\\h\\s', 'unc'], ['//h/s', 'unc'], ['\\\\?\\C:\\x', 'device'], ['//./x', 'device'], ['a/b', 'relative'], ['', null],
+  ];
+  for (const [word, form] of rows) assert.equal(pathForm(word), form, word);
+  for (const part of ['RUNNER~1', 'GITHUB~1', 'PROGRA~2', 'LONGNA~1.TXT']) assert.equal(isShortName(part), true, part);
+  for (const part of ['~1', 'runner', 'a~b', 'TOOLONGNAME~1', '~']) assert.equal(isShortName(part), false, part);
+});
+
+test('usersFolderUser: the name under each users folder, and none for any other path (#1237)', () => {
+  const rows: [string, string | null][] = [
+    ['/home/alice', 'alice'], ['/Users/alice/', 'alice'], ['C:\\Users\\alice', 'alice'], ['C:/Users/alice', 'alice'], ['C:\\\\Users\\\\alice', 'alice'],
+    ['/c/Users/alice', 'alice'], ['/mnt/c/Users/alice', 'alice'], ['/home/alice/x', null], ['/tmp/x', null], ['/data/users/alice', null], ['', null],
+  ];
+  for (const [path, name] of rows) assert.equal(usersFolderUser(path), name, path);
 });
