@@ -3,9 +3,10 @@
 // command outside the sandbox. The guard asks the owner; it does not refuse. A worker is
 // refused the same actions: the settings by lead-only, the sandbox by `workerLeavesSandbox`.
 //
-// The settings are the agent-config part of the default "leadOnly" (GUARD_SETTINGS), from
-// the repo root, and the user settings under home (HOME_GUARD_SETTINGS). A path in a worker
-// worktree reads from that worktree, as lead-only does (#571).
+// The settings are the agents' settings files only (GUARD_SETTINGS, all of them lead-only),
+// from the repo root, and the user settings under home (HOME_GUARD_SETTINGS). A path in a
+// worker worktree reads from that worktree, as lead-only does (#571). No runtime is named
+// here: whether a session can ask is the runtime adapter's answer (src/agents/runtimes/).
 
 import nodePath from 'node:path';
 import { GUARD_SETTINGS, HOME_GUARD_SETTINGS, type Env } from '../../config.ts';
@@ -21,9 +22,16 @@ const SANDBOX_FIX = 'say yes only if this command must run outside the sandbox a
 
 /** Whether `path` (from the repo root, forward slashes) is a guard setting, or a folder that holds one. */
 export function isGuardSetting(path: string, platform: NodeJS.Platform): boolean {
-  const inWorktree = stripWorktreeRoot(path);
-  const folds = foldsCase(platform);
-  return isLeadOnly(inWorktree, [...GUARD_SETTINGS], folds) || isLeadOnly(`${inWorktree}/-`, [...GUARD_SETTINGS], folds);
+  return matchesSettings(stripWorktreeRoot(path), GUARD_SETTINGS, foldsCase(platform));
+}
+
+/** Whether `path` is one of `settings`, or a folder that holds one (`rm -r .claude`). */
+function matchesSettings(path: string, settings: readonly string[], folds: boolean): boolean {
+  if (isLeadOnly(path, [...settings], folds)) return true;
+  const plain = (folds ? path.toLowerCase() : path).replace(/\/+$/, '');
+  if (plain === '' || plain === '.') return false;
+  const folder = `${plain}/`;
+  return settings.some((entry) => (folds ? entry.toLowerCase() : entry).startsWith(folder));
 }
 
 /** The path from home, when `full` (absolute) is a user settings file under home; null otherwise. */
@@ -34,9 +42,7 @@ export function homeGuardSetting(full: string, env: Env, platform: NodeJS.Platfo
   const rel = paths.relative(home, full);
   if (rel === '' || rel.startsWith('..') || paths.isAbsolute(rel)) return null;
   const fromHome = rel.split(paths.sep).join('/');
-  const folds = foldsCase(platform);
-  const matches = isLeadOnly(fromHome, [...HOME_GUARD_SETTINGS], folds) || isLeadOnly(`${fromHome}/-`, [...HOME_GUARD_SETTINGS], folds);
-  return matches ? `~/${fromHome}` : null;
+  return matchesSettings(fromHome, HOME_GUARD_SETTINGS, foldsCase(platform)) ? `~/${fromHome}` : null;
 }
 
 /** The question before the lead edits a guard setting (#1212). `shown` is the path as the message names it. */
@@ -71,25 +77,25 @@ export function guardSettingsWrite(words: string[], { rules, folder, env, platfo
 
 /** The question before the lead runs a command outside the sandbox (#1212, #1163). */
 export const leaveSandboxAsk = (): Finding => ({
-  ...finding('leave-sandbox', 'this command asks to run outside the sandbox (dangerouslyDisableSandbox)', SANDBOX_FIX),
+  ...finding('leave-sandbox', "this command asks to run outside the agent's sandbox", SANDBOX_FIX),
   ask: true,
 });
 
 /** A worker's command outside the sandbox: refused, since no one is there to say yes. */
 export const workerLeavesSandbox = (): Finding =>
-  finding('leave-sandbox', "a worker's command asks to run outside the sandbox (dangerouslyDisableSandbox)", 'run it inside the sandbox; if the task needs more, stop and ask the lead');
+  finding('leave-sandbox', "a worker's command asks to run outside the agent's sandbox", 'run it inside the sandbox; if the task needs more, stop and ask the lead');
 
 /** The actions only the owner's yes lets through: a refusal of one says that, with no other way round. */
 const OWNER_ASKS = new Set(['guard-settings', 'leave-sandbox']);
 
 /**
- * An ask where no one can answer it becomes a refusal (#1212, #1215): a cloud session
- * (`CLAUDE_CODE_REMOTE` set) runs with no one at the prompt, and an agent whose hook has no
- * ask decision can only allow or refuse. The refusal keeps the ask's rule and what it saw,
+ * An ask where no one can answer it becomes a refusal (#1212, #1215). The runtime adapter
+ * decides both: `isUnattended`, a session with no one at the prompt (a cloud session), and
+ * `canAsk`, a hook with an ask decision. The refusal keeps the ask's rule and what it saw,
  * and says the owner's yes is needed. Any other ask comes back as it is.
  */
-export function settleAsk(ask: Finding, { env, canAsk, agent }: { env: Env; canAsk: boolean; agent: string }): { ask: Finding } | { refuse: Finding } {
-  const where = env.CLAUDE_CODE_REMOTE ? 'a cloud session (CLAUDE_CODE_REMOTE) has no one to ask' : canAsk ? null : `${agent}'s hook can't ask the owner`;
+export function settleAsk(ask: Finding, { isUnattended, canAsk, agent }: { isUnattended: boolean; canAsk: boolean; agent: string }): { ask: Finding } | { refuse: Finding } {
+  const where = isUnattended ? 'a cloud session has no one to ask' : canAsk ? null : `${agent}'s hook can't ask the owner`;
   if (where === null) return { ask };
   const tell = `stop and tell the owner what you need and why: this needs the owner's yes, and ${where}`;
   const fix = OWNER_ASKS.has(ask.id) ? tell : `${tell}; or ${ask.fix}`;

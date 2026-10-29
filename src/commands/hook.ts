@@ -6,7 +6,7 @@ import { isPathInside, isSamePath } from '../platform/paths.ts';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
-import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
+import { ADAPTERS, adapterFor, askOf, canAskOf, contextOf, isUnattended, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, settleAsk, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { DESK_OWN_SANDBOX_NOTE, type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
@@ -553,7 +553,7 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   // A question for the owner (#1212), then a heavy job on a nearly full host drive (#401).
   // The protocol has an ask answer; a cloud session still refuses it (#1215).
   const question = judged?.ask ? judged : !judged && action.command !== undefined ? askForHeavyJob(action.command, env) : null;
-  const settled = question ? settleAsk(question, { env, canAsk: true, agent: vendor }) : null;
+  const settled = question ? settleAsk(question, { isUnattended: isUnattended(env), canAsk: true, agent: vendor }) : null;
   const ask = settled && 'ask' in settled ? settled.ask : null;
   let found = judged?.ask ? null : judged;
   if (settled && 'refuse' in settled) found = settled.refuse;
@@ -652,7 +652,7 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
     // a question becomes a refusal: a cloud session, or a runtime with no ask (#1212, #1215).
     if (!found && !ask && action.command !== undefined) ask = askForHeavyJob(action.command, env);
     if (!found && ask) {
-      const settled = settleAsk(ask, { env, canAsk: askOf(agent) !== null, agent: adapterFor(agent)?.label ?? agent });
+      const settled = settleAsk(ask, { isUnattended: isUnattended(env), canAsk: canAskOf(agent, env), agent: adapterFor(agent)?.label ?? agent });
       if ('refuse' in settled) {
         found = settled.refuse;
         ask = null;

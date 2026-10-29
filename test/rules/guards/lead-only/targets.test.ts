@@ -59,6 +59,10 @@ test('lead-only files: each shell writer form stops a worker, not the lead (#402
     assert.ok(lead === null || lead.ask === true, `should let the lead: ${JSON.stringify(command)}`);
     assert.equal(lead?.id === 'guard-settings', /yokoten\.json|\.claude/.test(command), `asks only for a guard setting: ${JSON.stringify(command)}`);
   }
+  // Asks stay rare (record 0056): a settings file asks the lead, a skill does not; a worker is refused both.
+  for (const command of ['echo x > yokoten.json', 'echo x > .claude/settings.json']) assert.equal(run(command, {})?.id, 'guard-settings', command);
+  assert.equal(run('echo x > .claude/skills/x/SKILL.md', {}), null);
+  assert.equal(run('echo x > .claude/skills/x/SKILL.md', worker)?.id, 'lead-only');
   // The sudo row shows the reader seeing through a launcher's option. No root for agents
   // (#969) refuses the sudo for the lead too; the worker still hears lead-only first.
   assert.equal(run('sudo -u x sed -i s/a/b/ AGENTS.md', worker)?.id, 'lead-only');

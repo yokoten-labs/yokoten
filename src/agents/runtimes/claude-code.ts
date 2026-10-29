@@ -58,9 +58,16 @@ export const formatDenial = (reason: string, env: Env = {}): { stdout: string; e
 export const fallbackDenial = (reason: string): { stdout: string; exitCode: number } => ({ stdout: JSON.stringify({ permissionDecision: 'deny', permissionDecisionReason: reason }), exitCode: 2 });
 
 /**
+ * A Claude Code cloud session or routine (#1215): a VM per task, with `CLAUDE_CODE_REMOTE`
+ * set and no one at the prompt, so an ask there has no one to answer it. Any non-empty
+ * value counts.
+ */
+export const isUnattended = (env: Env): boolean => Boolean(env.CLAUDE_CODE_REMOTE);
+
+/**
  * How a question reaches the person before the call runs (#401): PreToolUse's `ask`
  * decision, on exit 0. Claude Code shows the reason and runs the call only after a yes.
- * A runtime that has no such question gets the ask from commands/hook.ts as a note.
+ * A runtime that has no such question gets a refusal from commands/hook.ts (#1212).
  */
 export const formatAsk = (reason: string): string => JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: reason } });
 
@@ -496,6 +503,7 @@ export const ADAPTER: AgentAdapter = {
   readStop,
   formatDenial,
   formatAsk,
+  isUnattended,
   formatContext,
   formatRewrite,
   agentEnv: AGENT_ENV,

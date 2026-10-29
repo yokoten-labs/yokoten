@@ -61,17 +61,30 @@ export const DEFAULTS: Config = {
   worker: { timeLimitMinutes: 180, settings: [] },
 };
 
-// The default "leadOnly" entries that are not the guard's own settings: the rules in words,
-// who approves, and CI. The rest of that list is the guard, hook, sandbox and fence settings.
-const NOT_GUARD_SETTINGS = new Set(['AGENTS.md', 'CLAUDE.md', 'CODEOWNERS', 'docs/CODEOWNERS', '.github/**']);
-
 /**
- * The guard, hook, sandbox and fence settings of every agent, from the repo root (#1212):
- * the agent-config part of the default "leadOnly", so the two lists never drift. A worker's
- * change to one is refused by lead-only; the lead's asks the owner first (record 0054). A
- * project's own "leadOnly" does not change this list.
+ * The files that hold an agent's hooks, permissions, sandbox or fence settings, from the
+ * repo root (#1212). The lead's change to one asks the owner first (record 0054), so the
+ * list names settings files only: skills, agents and commands are not here, and asks stay
+ * rare (record 0056). Every entry is also in the default "leadOnly", so a worker is refused
+ * it; test/rules/guards/lead-only/owner.test.ts holds that, and that each adapter's own
+ * hook and sandbox files are here. A project's own "leadOnly" does not change this list.
  */
-export const GUARD_SETTINGS: readonly string[] = DEFAULTS.leadOnly.filter((path) => !NOT_GUARD_SETTINGS.has(path));
+export const GUARD_SETTINGS: readonly string[] = [
+  'yokoten.json',
+  '.githooks/**',
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.codex/config.toml',
+  '.codex/hooks.json',
+  '.gemini/settings.json',
+  '.grok/hooks/**',
+  '.grok/sandbox.toml',
+  '.grok/config.toml',
+  '.muse/hooks.json',
+  '.agents/hooks.json',
+  '.dsh/hooks.json',
+  '.dsh/yokoten.patch.yml',
+];
 
 /**
  * The same settings in the home folder, from home (#1212): the user hooks `yokoten install`
@@ -84,9 +97,10 @@ export const HOME_GUARD_SETTINGS: readonly string[] = [
   '.codex/config.toml',
   '.codex/hooks.json',
   '.gemini/settings.json',
-  '.grok/**',
+  '.grok/hooks/**',
+  '.grok/sandbox.toml',
+  '.grok/config.toml',
   '.config/muse/settings.json',
-  '.config/opencode/plugins/**',
 ];
 
 /**

@@ -1518,7 +1518,7 @@ test('hook: a guard setting or a call outside the sandbox asks for the lead, and
   assert.equal(decision(result.stdout).permissionDecision, 'ask', 'a shell write too');
   result = await bash({ command: 'ls', dangerouslyDisableSandbox: true });
   assert.equal(decision(result.stdout).permissionDecision, 'ask');
-  assert.match(decision(result.stdout).permissionDecisionReason, /outside the sandbox/);
+  assert.match(decision(result.stdout).permissionDecisionReason, /outside the agent's sandbox/);
   assert.equal((await bash({ command: 'ls', dangerouslyDisableSandbox: false })).stdout, '', 'only true leaves the sandbox');
   assert.equal((await bash({ command: 'ls' })).stdout, '');
 

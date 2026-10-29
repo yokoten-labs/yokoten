@@ -205,7 +205,7 @@ export interface Action {
   cwd?: string;
   /** The action comes from a worker, whatever the session's own role. */
   worker: boolean;
-  /** The shell call asks to run outside the agent's sandbox (Claude Code's `dangerouslyDisableSandbox`, #1212). */
+  /** The shell call asks to run outside the agent's own sandbox, as the runtime adapter reads it (#1212). */
   leavesSandbox?: boolean;
 }
 
