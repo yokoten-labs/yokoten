@@ -24,5 +24,5 @@ export { checkWorkerMarkEdit, checkTeamEdit, useHostCommands } from './worker/co
 export type { HostCommands } from './worker/config-command.ts';
 export { configFolder, STOPS_FILE, STOPS_OFF_FILE, stopsFile, stopsOffFile } from './worker/config.ts';
 export { workersFile, loadWorkerPaths, listedWorker, addWorkerPath, removeWorkerPath } from './worker/list.ts';
-export { WORKER_MARK, DONE_WHEN_FILE, gitLinkAbove, workerMarkAt, hasWorkerMark, workerRole, withWorkerMark, markNote } from './worker/mark.ts';
+export { WORKER_MARK, DONE_WHEN_FILE, gitLinkAbove, workerMarkAt, hasWorkerMark, workerRole, withWorkerMark, markNote, checkUnmarkedFolder, checkUnmarkedWork } from './worker/mark.ts';
 export type { GitLink } from './worker/mark.ts';

@@ -112,8 +112,10 @@ function editRepos(invocation: Invocation, action: Action, base: string, session
   const repos = new Map<string, Repo | null>();
   // In the full hook, the session's root already has its rules.
   if (session) repos.set(session.root, commandsOnly ? session : null);
-  for (const path of action.paths) {
-    let folder = dirname(resolve(base, path));
+  // The file's folder as written and where it really is: a link in a folder outside any repo
+  // that points at a lead-only file is ruled by the repo it points into (#1225).
+  const folders = action.paths.flatMap((path) => [dirname(resolve(base, path)), dirname(realPath(resolve(base, path)))]);
+  for (let folder of new Set(folders)) {
     while (!existsSync(folder) && dirname(folder) !== folder) folder = dirname(folder);
     if (!rootByFolder.has(folder)) rootByFolder.set(folder, rootOf(folder, invocation.env));
     const root = rootByFolder.get(folder);

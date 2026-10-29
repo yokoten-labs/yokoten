@@ -11,7 +11,7 @@ import module from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '../rules/config.ts';
-import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, homeGuardSetting, isGuardSetting, leaveSandboxAsk, realPath as real, settingsEditAsk, stopsFile, stopsOffFile, workerLeavesSandbox, workerSettingsRefusal } from '../rules/guards/index.ts';
+import { checkCommand, checkEdit, checkTeamEdit, checkUnmarkedFolder, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, homeGuardSetting, isGuardSetting, leaveSandboxAsk, realPath as real, settingsEditAsk, stopsFile, stopsOffFile, workerLeavesSandbox, workerSettingsRefusal } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
 import { noteLine } from '../rules/text/screen.ts';
@@ -1816,6 +1816,8 @@ export function judge(
   { root, config, env, cwd, commandsOnly = false, repos = [] }: { root: string | null; config: Config; env: Env; cwd: string; commandsOnly?: boolean; repos?: Repo[] },
 ): Finding | null {
   // Set before the command check: the lead-only check on shell writes reads it (#402).
+  // A worker by agent type alone: the commit check sees it only in a marked worktree (#1225).
+  const workerByType = action.worker && env.YOKOTEN_ROLE !== 'worker';
   if (action.worker) env = { ...env, YOKOTEN_ROLE: 'worker' };
   // The repos whose file rules apply: to an edit's files, and to a worker's shell writes (#402).
   const ruled = commandsOnly || !root ? repos : [{ root, config }, ...repos];
@@ -1832,7 +1834,7 @@ export function judge(
     const titles = !commandsOnly && root !== null && existsSync(join(root, 'yokoten.json'));
     const ruledRepos = ruled.map((repo) => ({ root: repo.root, leadOnly: repo.config.leadOnly }));
     for (const command of commands) {
-      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, place: hostPathPlace() });
+      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, place: hostPathPlace(), workerByType });
       if (reason?.ask) asked ??= reason;
       else if (reason) return reason;
     }
@@ -1845,11 +1847,18 @@ export function judge(
   // A worker's edit inside a git folder may change the worker mark (#555), in any repo;
   // one inside a team folder may speak for another agent (#674);
   // one inside yokoten's config folder may change the worker list (#591).
+  // A worker by agent type edits only in a checkout the commit check sees as a worker's (#1225).
+  // It answers last, so a rule that names a more exact case (a lead-only file) is heard first.
+  // A file in no checkout stays allowed: nothing commits it without a command, and such a
+  // worker's commands run only in a marked checkout (checkUnmarkedWork).
+  let unmarked: Finding | null = null;
   if (env.YOKOTEN_ROLE === 'worker') {
     const folder = resolve(action.cwd ?? root ?? cwd);
     for (const p of action.paths) {
       const reason = checkWorkerMarkEdit(resolve(folder, p), folder, env) ?? checkTeamEdit(resolve(folder, p));
       if (reason) return reason;
+      // By real path: a link in no checkout that points into one is judged where it points.
+      if (workerByType) unmarked ??= checkUnmarkedFolder(dirname(real(resolve(folder, p))), env, folder);
     }
   }
   // An edit of a user settings file under home asks the owner, in any folder; a worker's is refused (#1212).
@@ -1866,7 +1875,8 @@ export function judge(
       }
     }
   }
-  if (!ruled.length) return asked;
+  // A refusal wins over a question (#1212).
+  if (!ruled.length) return unmarked ?? asked;
   const reals = ruled.map((repo) => ({ config: repo.config, root: repo.root, real: real(repo.root) }));
   // One map and one branch read for each repo a call touches, and one clock for its leases.
   const branches = new Map<string, string>();
@@ -1886,7 +1896,7 @@ export function judge(
     if (reason) return reason;
     if (isLead && asked === null && isGuardSetting(rel, platform)) asked = settingsEditAsk(rel);
   }
-  return asked;
+  return unmarked ?? asked;
 }
 
 /** How long the guard may read one tool call. YOKOTEN_GUARD_DEADLINE_MS changes it. */

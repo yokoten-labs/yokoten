@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { checkCommand, checkWorkerMarkEdit, gitLinkAbove, markNote, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
+import { checkCommand, checkUnmarkedFolder, checkUnmarkedWork, checkWorkerMarkEdit, gitLinkAbove, markNote, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
 import { makeGitFolder, makeTempDir, runChild } from '../../../../test/repo/helpers.ts';
 
 test('worker mark: found from .git, fails closed on a link it cannot read (#555)', () => {
@@ -320,3 +320,43 @@ test('git link: a desk that lost HEAD or objects is broken, not its parent check
     }
   }
 });
+
+test('unmarked work: any command or edit in a checkout with no mark is caught; a marked one, a plain cd and no checkout pass (#1225)', () => {
+  const base = makeTempDir('yokoten-unmarked-');
+  const store = join(base, 'store');
+  mkdirSync(store);
+  const tree = join(base, 'wt');
+  mkdirSync(join(tree, 'src'), { recursive: true });
+  writeFileSync(join(tree, '.git'), `gitdir: ${store}\n`);
+  // Positive control: the folder decides, whatever the command; git -C moves it.
+  assert.equal(checkUnmarkedFolder(join(tree, 'src'))?.id, 'unmarked-worktree');
+  // The message shows the worktree from the call's folder, or as <worktree>: never a machine path.
+  assert.equal(checkUnmarkedFolder(tree, {}, base)?.fix, 'stop and ask the lead to run `yokoten worker mark <worktree>` for the worktree at wt (from this folder), then run this again');
+  const bare = checkUnmarkedFolder(tree);
+  assert.ok(bare?.fix.includes('the worktree at <worktree>') && !bare.fix.includes(base) && !bare.what.includes(base), 'no folder to show it from: <worktree>');
+  assert.equal(checkUnmarkedFolder(join(tree, 'src', 'new.ts'))?.id, 'unmarked-worktree', 'a file not made yet');
+  for (const words of [['git', 'commit', '-m', 'x'], ['git', 'status'], ['python3', 's.py'], ['make', 'commit'], ['ls']]) {
+    assert.equal(checkUnmarkedWork(words, tree)?.id, 'unmarked-worktree', words.join(' '));
+  }
+  assert.equal(checkUnmarkedWork(['git', '-C', tree, 'merge', 'x'], base)?.id, 'unmarked-worktree', 'git -C');
+  // Negative control: a plain cd runs nothing.
+  assert.equal(checkUnmarkedWork(['cd', tree], tree), null);
+  // Fail closed: an unknown folder, a folder in no checkout, and git told to work elsewhere.
+  assert.equal(checkUnmarkedWork(['ls'], null)?.id, 'unmarked-worktree', 'an unknown folder');
+  assert.match(checkUnmarkedWork(['ls'], null)?.fix ?? '', /^cd into your marked worktree first/);
+  assert.equal(checkUnmarkedWork(['ls', '/tmp'], base)?.id, 'unmarked-worktree', 'no checkout');
+  assert.equal(checkUnmarkedWork(['git', '--work-tree', tree, 'commit', '-m', 'x'], base)?.id, 'unmarked-worktree', 'git --work-tree');
+  assert.equal(checkUnmarkedFolder(join(base, 'notes.md')), null, 'an edit in no checkout: only a command can commit it');
+  // A main checkout is the lead's: caught, and the fix asks for a worktree, not a mark on it.
+  const main = join(base, 'main');
+  makeGitFolder(main);
+  const inMain = checkUnmarkedWork(['git', 'status'], main);
+  assert.equal(inMain?.id, 'unmarked-worktree');
+  assert.ok(!(inMain?.fix ?? '').includes(`yokoten worker mark ${main}`), inMain?.fix);
+  assert.match(inMain?.fix ?? '', /own worktree \(`git worktree add <folder>`, then `yokoten worker mark <folder>`\)/);
+  // The mark lets it through.
+  writeFileSync(join(store, 'yokoten-worker'), 'x');
+  assert.equal(checkUnmarkedWork(['python3', 's.py'], tree), null);
+  assert.equal(checkUnmarkedFolder(join(tree, 'src')), null);
+});
+

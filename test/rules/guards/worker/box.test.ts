@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { checkCommand } from '../../../../src/rules/guards/index.ts';
+import { checkCommand, realPath } from '../../../../src/rules/guards/index.ts';
 import { makeTempDir, allowed } from '../../../../test/repo/helpers.ts';
 
 test('guard: a worker stays in its box: plain cd inside the worktree, short settings list (#591)', () => {
@@ -401,6 +401,28 @@ test('guard: a worker command with a part the guard cannot read, or a shell mode
 // #1135: a project declares the test settings its workers may make, in the yokoten.json of
 // the repo the shell is in. Each pass has its control: the same command in a repo that does
 // not declare the name is refused.
+// #1225: on Windows a worker types a full path with its drive and forward slashes, `C:/x`.
+// The drive is plain; where the path leads is still judged by the box. On Windows the path is
+// the box's own, with forward slashes. Elsewhere the drive is a folder named `C:` inside the
+// box (Windows can't make one), so Linux and macOS read the same characters.
+test('guard: a worker cd may name a path that starts with a drive, and stays in its box (#1225)', () => {
+  const base = makeTempDir('yokoten-box-drive-');
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const box = join(base, 'box');
+  // Windows has real drives; elsewhere a folder named `C:` reads the same (the platform is an argument, #1078).
+  const drive = (platform: NodeJS.Platform) => (platform === 'win32' ? { work: join(box, 'wt'), shown: (work: string) => realPath(work).replaceAll('\\', '/') } : { work: join(box, 'C:', 'wt'), shown: () => 'C:/wt' });
+  const { work, shown } = drive(process.platform);
+  mkdirSync(work, { recursive: true });
+  writeFileSync(join(box, '.git'), 'gitdir: ' + join(base, 'store') + '\n');
+  mkdirSync(join(base, 'store'));
+  const drivePath = shown(work);
+  assert.match(drivePath, /^[A-Za-z]:\//);
+  const check = (command: string) => checkCommand(command, { cwd: box, env: worker });
+  assert.equal(check(`cd ${drivePath} && ls`), null, 'a drive and forward slashes');
+  assert.equal(check(`cd ${drivePath}/../../.. && ls`)?.id, 'worker-mark', 'out of the box');
+  for (const command of ['cd C: && ls', 'cd C:wt && ls', 'cd CD:/wt && ls', 'cd /wt/C:/x && ls']) assert.equal(check(command)?.id, 'worker-mark', command);
+});
+
 test('guard: a worker may set a name its own repo declares in worker.settings, and no other (#1135)', () => {
   const base = makeTempDir('yokoten-box-settings-');
   const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };

@@ -176,7 +176,8 @@ async function runGuardCases(sandbox: ReturnType<typeof makeSandbox>, cases: Gua
   for (const hook of hooks) {
     for (const { tool, path, worker, refused } of cases) {
       const call = { cwd, hook_event_name: 'PreToolUse', tool_name: tool, tool_input: inputOf(tool, path), ...(worker ? { agent_type: 'yokoten:worker' } : {}) };
-      const result = await sandbox.call(hook.args, { input: JSON.stringify(call), cwd });
+      // A worker by agent type alone may not work in this unmarked checkout at all (#1225); these cases are about lead-only files.
+      const result = await sandbox.call(hook.args, { input: JSON.stringify(call), cwd, ...(worker ? { extra: { YOKOTEN_ROLE: 'worker' } } : {}) });
       const label = `${hook.name} hook${cwd === sandbox.repo ? '' : ' outside the repo'}, ${worker ? 'worker' : 'lead'} ${tool} ${path}`;
       assert.ok(new RegExp(`^(?:${hook.matcher})$`).test(tool), `${label}: the hook runs on it`);
       const isRefused = result.status === 2 || /"permissionDecision":"deny"/.test(result.stdout);

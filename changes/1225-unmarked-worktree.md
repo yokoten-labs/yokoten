@@ -1,0 +1,3 @@
+Security
+
+A worker subagent now runs shell commands only inside a checkout that carries the worker mark. The commit check knows a worker only by `YOKOTEN_ROLE` or the mark, so its commits elsewhere, made by any route, used to pass as the lead's. The tool guard now stops such a worker's commands outside a marked checkout, and its edits in an unmarked one. In a worktree it tells the lead to run `yokoten worker mark <worktree>`; in the lead's own checkout it asks for a worktree of its own; outside any checkout it says to cd into the marked worktree first. A worker also can no longer clear `YOKOTEN_ROLE` within a command (`unset`, `export -n`, `exec -c` and the like) (#1225).

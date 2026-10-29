@@ -2,7 +2,7 @@
 
 import '../repo/home.ts';
 import assert from 'node:assert/strict';
-import { chmodSync, constants, existsSync, lstatSync, lutimesSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, constants, existsSync, lstatSync, lutimesSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
@@ -280,6 +280,89 @@ test('hook: a worker edit under .worktrees/<issue>/ reads from that worktree (#5
   assert.equal(judge({ paths: ['.worktrees/571-x/src/a.ts'], worker: false }, options), null, 'other files pass');
   assert.equal(judge({ paths: ['.worktrees/571-x/AGENTS.md'], worker: false }, { ...options, env: {} }), null, 'the lead passes');
   assert.equal(judge({ command: 'git push --force origin main', commands: [], paths: [], worker: false }, options)?.id !== undefined, true, 'an empty commands list never hides a command');
+});
+
+// #1225: a subagent worker starts in the lead's folder and cds to its worktree. With no mark
+// there, the commit check would read its commits as the lead's, made by any route, so the
+// guard stops all its work in that checkout, by folder.
+test('hook: a worker by agent type may not work in a checkout with no worker mark; a marked one, a lead and YOKOTEN_ROLE pass (#1225)', () => {
+  const sandbox = makeSandbox();
+  // The lead's folder is no repo; the worktree is below it, as on the day of the incident.
+  const lead = makeTempDir('yokoten-lead-');
+  const tree = join(lead, 'wt-1225');
+  assert.equal(sandbox.git('worktree', 'add', '-q', '-b', 'task-1225', tree).status, 0);
+  // In a shell command a path has forward slashes, as a worker types it: bash eats a Windows backslash.
+  // The long real path: a Windows runner's temp folder has 8.3 short names (RUNNER~1), and `~` is no plain path (#1237).
+  const shellTree = realpathSync.native(tree).replaceAll('\\', '/');
+  const options = { root: null, config: DEFAULTS, env: { HOME: sandbox.home }, cwd: lead };
+  const call = (action: { command?: string; paths?: string[] }, more: { worker?: boolean; cwd?: string; env?: Record<string, string> } = {}) =>
+    judge({ paths: [], ...action, worker: more.worker ?? true, cwd: more.cwd ?? lead }, { ...options, env: { ...options.env, ...more.env } });
+  const run = (command: string, more: { worker?: boolean; cwd?: string; env?: Record<string, string> } = {}) => call({ command }, more);
+  // Positive control: any route to a commit, and any command at all, after a cd to the unmarked worktree.
+  const routes = [
+    'git commit -m x',
+    'git status',
+    'python3 -c "import subprocess; subprocess.run([\'git\', \'commit\', \'-m\', \'x\'])"',
+    'node -e "require(\'child_process\').execSync(\'git commit -m x\')"',
+    'make commit',
+    'python3 s.py',
+    'git merge task',
+    'git cherry-pick task',
+    'git commit-tree HEAD^{tree} -m x',
+  ];
+  for (const command of routes) assert.equal(run(`cd ${shellTree} && ${command}`)?.id, 'unmarked-worktree', command);
+  const found = run(`cd ${shellTree} && git commit -m x`);
+  assert.ok(found?.fix.includes('for the worktree at wt-1225 (from this folder)'), found?.fix);
+  assert.ok(![found?.what, found?.fix].join(' ').includes(lead), 'no machine path in the message');
+  // The same with no cd, from the worktree itself; with git -C; and an edit there.
+  assert.equal(run('git commit -m x', { cwd: tree })?.id, 'unmarked-worktree', 'no cd, in its own cwd');
+  assert.equal(run(`git -C ${shellTree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
+  assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] })?.id, 'unmarked-worktree', 'an edit');
+  // The lead's main checkout: refused too, but the fix asks for a worktree, never a mark on it.
+  const main = run('git status', { cwd: sandbox.repo });
+  assert.equal(main?.id, 'unmarked-worktree', 'work in the main checkout');
+  assert.ok(!main?.fix.includes(`yokoten worker mark ${sandbox.repo}`), main?.fix);
+  assert.ok(main?.fix.includes('git worktree add'), main?.fix);
+  // Negative controls: a lead or another agent type, a worker with YOKOTEN_ROLE=worker, work in no checkout, a plain cd.
+  assert.equal(run(`cd ${shellTree} && git commit -m x`, { worker: false }), null, 'a lead or another agent type passes');
+  assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] }, { worker: false }), null, 'a lead edit passes');
+  assert.equal(run(`cd ${shellTree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
+  assert.equal(run(`cd ${shellTree}`), null, 'a plain cd runs nothing');
+  assert.equal(call({ paths: [join(lead, 'notes.md')] }), null, 'an edit in no checkout: only a command can commit it');
+  // A link in no checkout that points into the unmarked worktree is judged, and named, where it points.
+  writeFileSync(join(tree, 'notes.txt'), 'x');
+  symlinkSync(join(tree, 'notes.txt'), join(lead, 'readme-link'));
+  symlinkSync(tree, join(lead, 'tree-link'));
+  const linked = call({ paths: [join(lead, 'readme-link')] });
+  assert.equal(linked?.id, 'unmarked-worktree', 'a file link into the worktree');
+  assert.ok(linked?.fix.includes('the worktree at wt-1225 ') && !linked.fix.includes('readme-link'), linked?.fix);
+  const viaFolder = call({ paths: [join(lead, 'tree-link', 'src', 'a.ts')] });
+  assert.equal(viaFolder?.id, 'unmarked-worktree', 'a folder link into the worktree');
+  assert.ok(viaFolder?.fix.includes('the worktree at wt-1225 ') && !viaFolder.fix.includes('tree-link'), viaFolder?.fix);
+  // From the lead's folder, in no checkout: a script could chdir into the worktree and commit,
+  // so every command there is refused, and the fix names no folder of this machine.
+  const outside = [
+    'python3 -c "import os, subprocess; os.chdir(\'wt-1225\'); subprocess.run([\'git\', \'commit\', \'-m\', \'x\'])"',
+    'node s.js',
+    'ls',
+    'ls /tmp',
+  ];
+  for (const command of outside) {
+    const refused = run(command);
+    assert.equal(refused?.id, 'unmarked-worktree', `outside: ${command}`);
+    assert.ok(!(refused?.fix ?? '').includes(lead) && !(refused?.what ?? '').includes(lead), refused?.fix);
+  }
+  assert.match(run('ls')?.fix ?? '', /^cd into your marked worktree first/);
+  // git told to work elsewhere: the lead-only rule, which can't tell the folder, answers first.
+  assert.notEqual(run(`git --work-tree=${shellTree} commit -m x`), null, 'git --work-tree');
+  // Marked: the commit check sees the worker, so this rule lets it through.
+  writeFileSync(join(sandbox.repo, '.git', 'worktrees', basename(tree), 'yokoten-worker'), '');
+  assert.equal(run(`cd ${shellTree} && ls`), null, 'cd into the marked worktree, then work');
+  assert.equal(run('ls')?.id, 'unmarked-worktree', 'the lead folder stays refused once a worktree is marked');
+  for (const command of routes) assert.notEqual(run(`cd ${shellTree} && ${command}`)?.id, 'unmarked-worktree', `marked: ${command}`);
+  assert.equal(run(`cd ${shellTree} && git commit -m x`), null, 'a marked worktree passes');
+  assert.equal(run('git commit -m x', { cwd: tree }), null, 'a marked cwd passes');
+  assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] }), null, 'an edit in a marked worktree passes');
 });
 
 // #674: a worker outside a desk can't write a team folder: nothing else fences it there.

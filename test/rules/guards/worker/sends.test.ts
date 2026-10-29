@@ -109,6 +109,60 @@ test('guard: a worker does not push, post or change a git folder; the lead may (
   ]) allowed(command, worker);
 });
 
+// #1225: without YOKOTEN_ROLE, the git hook a later program starts sees the lead.
+test('guard: a worker does not clear or hide YOKOTEN_ROLE; a read of it and the lead pass (#1225)', () => {
+  const worker = { YOKOTEN_ROLE: 'worker' };
+  const check = (command: string, env: Record<string, string>) => checkCommand(command, { cwd: process.cwd(), env });
+  for (const command of [
+    'unset YOKOTEN_ROLE; git commit -m x',
+    'unset -v YOKOTEN_ROLE',
+    'export -n YOKOTEN_ROLE',
+    'declare +x YOKOTEN_ROLE',
+    'typeset -n YOKOTEN_ROLE=OTHER',
+    'local YOKOTEN_ROLE',
+    'readonly YOKOTEN_ROLE=lead',
+    '(unset YOKOTEN_ROLE && git commit -m x)',
+  ]) {
+    const found = check(command, worker);
+    assert.equal(found?.id, 'worker-mark', command);
+    assert.equal(found?.what, 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  // Allowed characters, not grammar: a name the guard can't read as written is refused.
+  for (const command of [
+    'unset YOKOTEN_ROL{E,}',
+    'unset $(echo YOKOTEN_ROLE)',
+    'unset "$(echo YOKOTEN_ROLE)"',
+    'unset `echo YOKOTEN_ROLE`',
+    'unset YOKOTEN_$(echo ROLE)',
+    'unset ${!YOKOTEN*}',
+    'unset YOKOTEN_ROLE$()',
+    'unset YOKOTEN_RO?E',
+  ]) {
+    const found = check(command, worker);
+    assert.equal(found?.what, 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  // `exec -c` empties the environment.
+  for (const command of ['exec -c git status', 'exec -lc git status']) {
+    assert.match(check(command, worker)?.what ?? '', /^`exec -c` starts a program with an empty environment/, command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  // Setting or dropping the role another way is refused by the older worker-settings rule; kept
+  // here so each route to a lead-looking commit is in one place.
+  for (const command of [
+    'export YOKOTEN_ROLE=lead; git commit -m x',
+    'export YOKOTEN_ROLE=; git commit -m x',
+    'declare -x YOKOTEN_ROLE=lead; git commit -m x',
+    'YOKOTEN_ROLE=lead git commit -m x',
+    'env -u YOKOTEN_ROLE git commit -m x',
+    'env --unset=YOKOTEN_ROLE git commit -m x',
+    'env -uYOKOTEN_ROLE git commit -m x',
+    'env -i git commit -m x',
+  ]) assert.equal(check(command, worker)?.id, 'worker-mark', command);
+  for (const command of ['echo $YOKOTEN_ROLE', 'unset FOO', 'unset FOO BAR', 'exec git status']) allowed(command, worker);
+});
+
 // The ways to drop the mark that name a real worktree's git folder, by absolute path or
 // through git's own worktree commands. Moved from the hook test (#1109), which keeps one
 // refusal through the hook for each way the role is found.

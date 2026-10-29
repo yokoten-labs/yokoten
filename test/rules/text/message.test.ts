@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path';
 import { test } from 'node:test';
 import {
+  makeGitFolder,
   makeTranslatedRepo,
   NAMED,
   makeTempDir,
@@ -24,6 +25,7 @@ import {
 import {
   checkCommand,
   checkEdit,
+  checkUnmarkedWork,
   privateOutput,
   settingsEditAsk,
   settleAsk,
@@ -345,6 +347,18 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   // The collision stops (#910, #911) need a conflict map of open changes; their own tests build one.
   found.push(finding('structural-change', 'PR #12 moves src/a.ts too', 'wait for PR #12 to go in, then move src/a.ts', { file: 'src/a.ts' }));
   found.push(finding('file-lease', 'PR #12 is moving src/a.ts. An edit here now will conflict when it merges', 'work on something else until PR #12 merges, or ask the lead to put this task after it'));
+  // A worker by agent type committing in a worktree with no mark (#1225): a .git link, no git run.
+  const unmarked = join(makeTempDir(), 'wt');
+  mkdirSync(join(unmarked, 'store'), { recursive: true });
+  writeFileSync(join(unmarked, '.git'), `gitdir: ${join(unmarked, 'store')}\n`);
+  add(checkUnmarkedWork(['git', 'commit', '-m', 'x'], unmarked));
+  // And in a main checkout, the lead's, whose fix asks for a worktree.
+  const mainCheckout = join(makeTempDir(), 'main');
+  makeGitFolder(mainCheckout);
+  add(checkUnmarkedWork(['git', 'commit', '-m', 'x'], mainCheckout));
+  // And outside any checkout, and from a folder the guard can't tell.
+  add(checkUnmarkedWork(['ls'], makeTempDir()));
+  add(checkUnmarkedWork(['ls'], null));
 
   const known = new Set(ids());
   for (const f of found) {

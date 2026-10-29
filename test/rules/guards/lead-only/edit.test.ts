@@ -153,8 +153,9 @@ test('lead-only files: shell writes follow the edit guard\'s scope (#402, #816)'
   // apply, as for an edit (#1095).
   assert.equal(checkCommand('sed -i s/a/b/ AGENTS.md', { env: worker, cwd: sandbox.repo })?.id, 'lead-only');
   assert.equal(checkEdit('AGENTS.md', { config: DEFAULTS, env: worker }) === null, false, 'the edit guard has the same list');
-  const hook = (flags: string[], command: string) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { command } }) });
-  const edit = (flags: string[]) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { file_path: join(sandbox.repo, 'AGENTS.md') } }) });
+  // The worker carries YOKOTEN_ROLE=worker too: by agent type alone it may not work in this unmarked checkout at all (#1225).
+  const hook = (flags: string[], command: string) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { command } }), extra: worker });
+  const edit = (flags: string[]) => sandbox.call(['hook', ...flags], { input: JSON.stringify({ cwd: sandbox.repo, agent_type: 'yokoten:worker', tool_input: { file_path: join(sandbox.repo, 'AGENTS.md') } }), extra: worker });
   // In a repo without yokoten.json the safeguard's defaults still apply (#816), so a worker
   // is stopped in the user-level hook and the repo's own hook alike.
   assert.equal((await edit(['--commands-only'])).status, 2);
