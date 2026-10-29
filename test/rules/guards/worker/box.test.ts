@@ -409,12 +409,13 @@ test('guard: a worker cd may name a path that starts with a drive, and stays in 
   const base = makeTempDir('yokoten-box-drive-');
   const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
   const box = join(base, 'box');
-  const isWindows = process.platform === 'win32';
-  const work = isWindows ? join(box, 'wt') : join(box, 'C:', 'wt');
+  // Windows has real drives; elsewhere a folder named `C:` reads the same (the platform is an argument, #1078).
+  const drive = (platform: NodeJS.Platform) => (platform === 'win32' ? { work: join(box, 'wt'), shown: (work: string) => realPath(work).replaceAll('\\', '/') } : { work: join(box, 'C:', 'wt'), shown: () => 'C:/wt' });
+  const { work, shown } = drive(process.platform);
   mkdirSync(work, { recursive: true });
   writeFileSync(join(box, '.git'), 'gitdir: ' + join(base, 'store') + '\n');
   mkdirSync(join(base, 'store'));
-  const drivePath = isWindows ? realPath(work).replaceAll('\\', '/') : 'C:/wt';
+  const drivePath = shown(work);
   assert.match(drivePath, /^[A-Za-z]:\//);
   const check = (command: string) => checkCommand(command, { cwd: box, env: worker });
   assert.equal(check(`cd ${drivePath} && ls`), null, 'a drive and forward slashes');
