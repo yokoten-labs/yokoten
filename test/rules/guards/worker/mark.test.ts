@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chmodSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { test } from 'node:test';
-import { checkCommand, checkWorkerMarkEdit, gitLinkAbove, markNote, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
+import { checkCommand, checkUnmarkedCommit, checkWorkerMarkEdit, gitLinkAbove, markNote, withWorkerMark, workerMarkAt, workerRole } from '../../../../src/rules/guards/index.ts';
 import { makeGitFolder, makeTempDir, runChild } from '../../../../test/repo/helpers.ts';
 
 test('worker mark: found from .git, fails closed on a link it cannot read (#555)', () => {
@@ -319,4 +319,26 @@ test('git link: a desk that lost HEAD or objects is broken, not its parent check
       assert.equal(checkCommand('cd ..', { cwd: src, env: worker }), null, `${label}: the desk itself is the box`);
     }
   }
+});
+
+test('unmarked commit: a commit in a checkout with no mark is caught; a marked one, a read and no checkout pass (#1225)', () => {
+  const base = makeTempDir('yokoten-unmarked-');
+  const store = join(base, 'store');
+  mkdirSync(store);
+  const tree = join(base, 'wt');
+  mkdirSync(join(tree, 'src'), { recursive: true });
+  writeFileSync(join(tree, '.git'), `gitdir: ${store}\n`);
+  const commit = ['git', 'commit', '-m', 'x'];
+  // Positive control: an unmarked worktree, from a folder inside it, or through git -C.
+  assert.equal(checkUnmarkedCommit(commit, join(tree, 'src'))?.id, 'unmarked-worktree');
+  assert.match(checkUnmarkedCommit(commit, tree)?.fix ?? '', new RegExp(`yokoten worker mark ${tree.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}`));
+  assert.equal(checkUnmarkedCommit(['git', '-C', tree, 'commit', '-m', 'x'], base)?.id, 'unmarked-worktree');
+  assert.equal(checkUnmarkedCommit(['env', 'TZ=UTC', 'git', 'commit', '-m', 'x'], tree)?.id, 'unmarked-worktree', 'a launcher in front');
+  // Negative controls: not a commit, an unknown folder, a folder in no checkout.
+  assert.equal(checkUnmarkedCommit(['git', 'status'], tree), null);
+  assert.equal(checkUnmarkedCommit(commit, null), null, 'an unknown folder is left to the rules that refuse it');
+  assert.equal(checkUnmarkedCommit(commit, base), null, 'no checkout, nothing to commit to');
+  // The mark lets it through.
+  writeFileSync(join(store, 'yokoten-worker'), 'x');
+  assert.equal(checkUnmarkedCommit(commit, tree), null);
 });

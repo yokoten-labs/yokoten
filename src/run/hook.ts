@@ -1810,6 +1810,8 @@ export function judge(
   { root, config, env, cwd, commandsOnly = false, repos = [] }: { root: string | null; config: Config; env: Env; cwd: string; commandsOnly?: boolean; repos?: Repo[] },
 ): Finding | null {
   // Set before the command check: the lead-only check on shell writes reads it (#402).
+  // A worker by agent type alone: the commit check sees it only in a marked worktree (#1225).
+  const workerByType = action.worker && env.YOKOTEN_ROLE !== 'worker';
   if (action.worker) env = { ...env, YOKOTEN_ROLE: 'worker' };
   // The repos whose file rules apply: to an edit's files, and to a worker's shell writes (#402).
   const ruled = commandsOnly || !root ? repos : [{ root, config }, ...repos];
@@ -1822,7 +1824,7 @@ export function judge(
     const titles = !commandsOnly && root !== null && existsSync(join(root, 'yokoten.json'));
     const ruledRepos = ruled.map((repo) => ({ root: repo.root, leadOnly: repo.config.leadOnly }));
     for (const command of commands) {
-      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, place: hostPathPlace() });
+      const reason = checkCommand(command, { env, config, cwd: action.cwd ?? root ?? cwd, titles, repos: ruledRepos, place: hostPathPlace(), workerByType });
       if (reason) return reason;
     }
   }

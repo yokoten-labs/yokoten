@@ -225,6 +225,12 @@ export const RULES = {
     check: 'for a worker, the tool-call guard stops a command that writes, moves, removes, links or changes the mode of a file in a git folder (a glob that can match .git or the mark counts) or redirects into one, git with GIT_DIR or --git-dir, `git worktree` other than `list`, `yokoten worker unmark`, and an edit inside a git folder, by real path. The same holds for the yokoten config folder (~/.config/yokoten), which keeps the worker list and the bot keys: for a worker, any program that does more than read is refused when it names a path that is, is in or holds that folder, by real path (a symlink, `~+` and globs such as `~/.c*/yokoten` count). A read that names .git passes. A .git link it cannot read makes the session a worker. These are the plain ways; the server and keeping credentials away from the worker are the lock',
     docs: guide('managing-agents-like-a-team'),
   },
+  'unmarked-worktree': {
+    rule: 'a worker subagent commits only in a worktree that carries the worker mark (#1225)',
+    why: 'the commit check knows a worker only by YOKOTEN_ROLE or the worktree\'s mark, so in an unmarked worktree a worker\'s commit passes as the lead\'s',
+    check: 'for a subagent the runtime names a worker (no YOKOTEN_ROLE=worker in its environment), the tool-call guard stops a `git commit`, after any cd or `git -C`, in a git checkout that has no worker mark and is not on the worker list. A marked worktree, a lead, and a worker with YOKOTEN_ROLE=worker pass. A floor rule: no setting turns it off',
+    docs: guide('managing-agents-like-a-team'),
+  },
   'file-lease': {
     rule: 'the guard stops an edit to a file that an open change is moving or deleting (#911)',
     why: 'two changes to a file that is being moved cannot both go in cleanly',

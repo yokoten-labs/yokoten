@@ -7,8 +7,8 @@ import { type Env } from '../../config.ts';
 import { configFolder, configFinding, namesConfigFolder, withHomeRead, configForms, configTargetRefusal, type ConfigContext } from './config.ts';
 import { listedWorker } from './list.ts';
 import { findSparesGitTree } from '../commands/lose-work.ts';
-import { isFolder, globMatches, isGit, GIT_VALUE_OPTIONS, withoutShellRedirects, realPath, FIND_ACTIONS, programName, findPrograms, placedPath } from '../bash/read/words.ts';
-import { gitRootAbove, writeTargets, plainArgs, COPY_VALUES, WRITERS } from '../lead-only/targets.ts';
+import { isFolder, globMatches, isGit, GIT_VALUE_OPTIONS, withoutShellRedirects, realPath, FIND_ACTIONS, programName, findPrograms, findProgramPlaces, placedPath } from '../bash/read/words.ts';
+import { gitRootAbove, gitParts, writeTargets, plainArgs, COPY_VALUES, WRITERS } from '../lead-only/targets.ts';
 
 // ---- The worker mark (#555) ----
 //
@@ -218,6 +218,30 @@ export function protectedGitDirs(folder: string): string[] {
 
 const MARK_FIX = 'leave the git folder and the worker mark as they are; if your task needs them, stop and tell the lead';
 export const markFinding = (what: string) => finding('worker-mark', what, MARK_FIX);
+
+/**
+ * For a worker the runtime named by its agent type, with no YOKOTEN_ROLE=worker (#1225): a
+ * `git commit` in a checkout with no worker mark, or null. Such a subagent starts in the
+ * lead's folder and reaches its worktree with a cd; the commit check there sees no
+ * YOKOTEN_ROLE and no mark, so the commit would pass as the lead's. `folder` is where the
+ * command runs, after any cd; `git -C` moves it on. An unknown folder is left to the rules
+ * that refuse it, and a folder outside any checkout has nothing to commit to.
+ */
+export function checkUnmarkedCommit(words: string[], folder: string | null, env: Env = {}): Finding | null {
+  for (const place of findProgramPlaces(words)) {
+    if (!isGit(place.word)) continue;
+    const { sub, dir } = gitParts(withoutShellRedirects(words, place.index + 1), folder);
+    if (sub !== 'commit' || dir === null) continue;
+    const link = gitLinkAbove(dir);
+    if (link === null || workerMarkAt(dir, env) !== null) continue;
+    return finding(
+      'unmarked-worktree',
+      `this commits in ${link.top}, which has no worker mark, so the commit check can't tell that a worker made this commit`,
+      `stop and ask the lead to run \`yokoten worker mark ${link.top}\`, then commit again`,
+    );
+  }
+  return null;
+}
 
 
 // Text that names a git folder: the mark, a `.git` part, git's options and variables for one.

@@ -276,6 +276,35 @@ test('hook: a worker edit under .worktrees/<issue>/ reads from that worktree (#5
   assert.equal(judge({ command: 'git push --force origin main', commands: [], paths: [], worker: false }, options)?.id !== undefined, true, 'an empty commands list never hides a command');
 });
 
+// #1225: a subagent worker starts in the lead's folder and cds to its worktree. With no mark
+// there, the commit check would read its commit as the lead's, so the guard stops it first.
+test('hook: a worker by agent type may not commit in a worktree with no worker mark; a marked one, a lead and YOKOTEN_ROLE pass (#1225)', () => {
+  const sandbox = makeSandbox();
+  // In the lead's checkout, as the dispatch skill makes it, so the worker's cd stays in its box.
+  const tree = join(sandbox.repo, '.worktrees', '1225');
+  assert.equal(sandbox.git('worktree', 'add', '-q', '-b', 'task-1225', tree).status, 0);
+  const options = { root: sandbox.repo, config: DEFAULTS, env: { HOME: sandbox.home }, cwd: sandbox.repo };
+  const commit = (command: string, more: { worker?: boolean; cwd?: string; env?: Record<string, string> } = {}) =>
+    judge({ command, paths: [], worker: more.worker ?? true, cwd: more.cwd ?? sandbox.repo }, { ...options, env: { ...options.env, ...more.env } });
+  // Positive control: cd, then commit, in the unmarked worktree. The fix names that folder.
+  const found = commit(`cd ${tree} && git commit -m x`);
+  assert.equal(found?.id, 'unmarked-worktree');
+  assert.ok(found?.fix.includes(`yokoten worker mark ${tree}`), found?.fix);
+  assert.ok(found?.what.includes(tree), found?.what);
+  // The same with no cd, from the worktree itself; and with git -C, or a launcher in front.
+  assert.equal(commit('git commit -m x', { cwd: tree })?.id, 'unmarked-worktree', 'no cd, in its own cwd');
+  assert.equal(commit(`git -C ${tree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
+  assert.equal(commit(`cd ${tree} && TZ=UTC git commit -m x`)?.id, 'unmarked-worktree', 'a setting in front');
+  // Negative controls: a lead, a worker with YOKOTEN_ROLE=worker, and a command that is not a commit.
+  assert.equal(commit(`cd ${tree} && git commit -m x`, { worker: false }), null, 'a lead passes');
+  assert.equal(commit(`cd ${tree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
+  assert.equal(commit(`cd ${tree} && git status`), null, 'a read passes');
+  // Marked: the commit check sees the worker, so this rule lets it through.
+  writeFileSync(join(sandbox.repo, '.git', 'worktrees', basename(tree), 'yokoten-worker'), '');
+  assert.equal(commit(`cd ${tree} && git commit -m x`), null, 'a marked worktree passes');
+  assert.equal(commit('git commit -m x', { cwd: tree }), null, 'a marked cwd passes');
+});
+
 // #674: a worker outside a desk can't write a team folder: nothing else fences it there.
 test('hook: a worker edit inside <repo>.team/ is refused; the lead and other folders pass (#674)', () => {
   const sandbox = makeSandbox();
