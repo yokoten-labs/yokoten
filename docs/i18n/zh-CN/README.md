@@ -86,11 +86,11 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 | 命令 | 它做什么 |
 |---|---|
-| `npx yokoten` | 补上缺的东西，再给出一屏：你在哪里，下一步做什么 |
-| `yokoten check` | 提交之前找出密钥和被破坏的规则；提交检查也会运行它 |
-| `yokoten desk` | 把一个任务交给一个 AI，在它自己的围栏工位里做 |
+| `npx yokoten` | 补上缺的东西，再给出下一步 |
+| `yokoten check` | 提交之前找出密钥和被破坏的规则 |
+| `yokoten desk` | 把一个任务交给一个 AI，在它自己的工位里做 |
 | `yokoten kanban` | 一眼看到整个团队，实时，只读（预览版） |
-| `yokoten tidy` | 列出旧分支、worktree 和工位；加 `--local` 先存一份，再挪进 yokoten 自己的回收文件夹 |
+| `yokoten tidy` | 列出旧分支、worktree 和工位 |
 
 `yokoten help --all` 按用途分组列出其余的命令：开始、工作、守卫、合并与 CI、维护。
 
@@ -99,16 +99,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 任何 AI 模型都可以。守卫检查的是 agent 要跑的命令，不是模型。
 
 - **Agent**：守卫和下面每一个 agent 一起工作。每一行的证据（日期、运行方式、先要知道什么）见[指南里的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **先信任**：写 `yes` 的，要先在文件夹里跑一次 `npx yokoten trust`，agent 才会运行守卫。
 
-| Agent | 已做端到端验证 | 要先跑 `npx yokoten trust` | 测试过的模型 |
+| Agent | 已做端到端验证 | 先信任 | 测试过的模型 |
 |---|---|---|---|
 | Claude Code | ✅ yes | no | `deepseek-flash` |
 | GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Antigravity CLI | ✅ yes | no | `gemini-3.8-flash-high` |
 | Codex CLI | ✅ yes | yes | `deepseek-flash` |
 | Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | ✅ yes | yes | the default model |
+| DeepSeek Harness | ✅ yes | no | the default DeepSeek model |
+| Grok CLI | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 

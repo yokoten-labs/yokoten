@@ -86,11 +86,11 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 | コマンド | 何をするか |
 |---|---|
-| `npx yokoten` | 足りないものを整え、いまの位置と次の一歩を一画面で見せる |
-| `yokoten check` | コミットの前に、秘密情報や破られたルールを探す。コミット時のチェックも実行する |
-| `yokoten desk` | 一つのタスクを一つの AI に渡し、その AI 専用の囲いのデスクで進める |
+| `npx yokoten` | 足りないものを整え、次の一歩を見せる |
+| `yokoten check` | コミットの前に、秘密情報や破られたルールを探す |
+| `yokoten desk` | 一つのタスクを一つの AI に渡し、その AI 専用のデスクで進める |
 | `yokoten kanban` | チームを一目で見せる。リアルタイムで読み取り専用（プレビュー） |
-| `yokoten tidy` | 古いブランチ、worktree、デスクを一覧にする。`--local` は保存してから yokoten のごみ箱フォルダへ移す |
+| `yokoten tidy` | 古いブランチ、worktree、デスクを一覧にする |
 
 `yokoten help --all` で残りのコマンドが、仕事ごとのグループ（はじめる・進める・守る・マージと CI・保守）で分かります。
 
@@ -99,16 +99,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 どの AI モデルでも動きます。番人が検査するのは agent が実行するコマンドで、モデルではありません。
 
 - **エージェント**：番人は下のどのエージェントとも動きます。各行の証拠（日付、実行の方法、先に知るべきこと）は、ガイドの[エージェント表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英語）にあります。
+- **先に信頼**：`yes` のものは、フォルダで一度 `npx yokoten trust` を実行すると、エージェントが番人を動かします。
 
-| Agent | 端から端まで検証済み | 先に `npx yokoten trust` が必要 | 試したモデル |
+| Agent | 端から端まで検証済み | 先に信頼 | 試したモデル |
 |---|---|---|---|
 | Claude Code | ✅ yes | no | `deepseek-flash` |
 | GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Antigravity CLI | ✅ yes | no | `gemini-3.8-flash-high` |
 | Codex CLI | ✅ yes | yes | `deepseek-flash` |
 | Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | ✅ yes | yes | the default model |
+| DeepSeek Harness | ✅ yes | no | the default DeepSeek model |
+| Grok CLI | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
