@@ -1,6 +1,6 @@
 # 0057 The command list, a dev track, and a budget of product slots
 
-Status: accepted
+Status: accepted (point 4, the `cli.off` switches, replaced by 0058)
 Date: 2026-10-29 (UTC)
 
 ## Context
