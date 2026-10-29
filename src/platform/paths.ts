@@ -264,8 +264,8 @@ const WINDOWS_ROOT = String.raw`(?:${DRIVE_LETTER}:|(?:\\\\[?.]\\UNC\\|[\\/]{2,}
 const AFTER_ESCAPE = String.raw`(?<=(?<!\\)\\[ntr])`;
 // A Windows name holds spaces and most punctuation; it ends at a separator, a quote, a line
 // end, or a character Windows does not allow in a name (`< > : | ? *`).
-// A line or paragraph separator (U+2028, U+2029) ends it too.
-const WINDOWS_NAME = String.raw`[^\\/"\n\r\t\u2028\u2029<>:|?*\x00]+`;
+// A line end (`\n`, `\r`, `\v`, `\f`, U+0085, U+2028, U+2029) ends it too.
+const WINDOWS_NAME = String.raw`[^\\/"\n\r\t\v\f\u0085\u2028\u2029<>:|?*\x00]+`;
 // A POSIX account name holds no space: the name ends there, or at a separator or quote.
 const POSIX_NAME = String.raw`[^\\/"\s<>|\x00]+`;
 // Windows folds case, so the drive forms do; `/home` and `/Users` match as written.
@@ -292,13 +292,13 @@ function trimName(written: string): string {
 
 // A name with spaces may end anywhere, and no rule can tell where (`C:\Users\Kim Do`,
 // `Mary Jane Watson Parker`). So a name runs on to a sure end only: a separator, a quote, a
-// line end, a tab, a shell joiner (` && `, ` || `, ` | `), `; ` and a space, or the next
+// line end, a tab, a shell joiner (` && `, ` || `, ` | `), or the next
 // drive or users-folder path. The rest of the line may be hidden with it: more, never less.
-const SURE_END = /\s(?:&&|\|\||\|)(?=\s|$)|;\s/u;
+const SURE_END = /\s(?:&&|\|\||\|)(?=\s|$)/u;
 // The start of the next path in the run: a drive (`C:\`, `C:/`) after a space or a comma.
 const NEXT_DRIVE = /(?:^|[\s,;(])[A-Za-z]:(?=[\\/]|$)/u;
 // The run of a `/Users/` name with spaces: up to a separator, a quote or a line end.
-const USERS_RUN = /^[^\\/"\n\r\t\u2028\u2029\x00]*/u;
+const USERS_RUN = /^[^\\/"\n\r\t\v\f\u0085\u2028\u2029\x00]*/u;
 
 /** `run` cut at its first sure end, and before a drive the next path begins with. */
 function cutAtSureEnd(run: string): string {

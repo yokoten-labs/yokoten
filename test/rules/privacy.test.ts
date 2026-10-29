@@ -2880,7 +2880,14 @@ test('makeRedactor and hideHome: no user name is left in a users-folder path, wh
     ['cd /d C:\\Users\\alice && dir', 'cd /d C:\\Users\\<user> && dir'],
     ['C:\\Users\\alice, C:\\Users\\bob', 'C:\\Users\\<user>, C:\\Users\\<user>'],
     ['C:\\Users\\Public, C:\\Users\\bob', 'C:\\Users\\Public, C:\\Users\\<user>'],
-    ['C:\\Users\\alice; next', 'C:\\Users\\<user>; next'],
+    // Windows allows `;` in a name (`Smith; John`), so it is no end: the rest of the line goes.
+    ['C:\\Users\\Jane Doe; next', 'C:\\Users\\<user>'],
+    ['C:\\Users\\Smith; John\\x', 'C:\\Users\\<user>\\x'],
+    // Every line end: \v, \f and U+0085 too, under C:\Users and /Users.
+    ...['\v', '\f', '\u0085'].flatMap((end): [string, string][] => [
+      [`C:\\Users\\Jane Doe${end}next`, `C:\\Users\\<user>${end}next`],
+      [`/Users/Jane Doe${end}next`, `/Users/<user>${end}next`],
+    ]),
     ['C:\\Users\\alice || echo', 'C:\\Users\\<user> || echo'],
     ['C:\\Users\\alice | more', 'C:\\Users\\<user> | more'],
     ['say "C:\\Users\\Jane Doe" twice', 'say "C:\\Users\\<user>" twice'],
