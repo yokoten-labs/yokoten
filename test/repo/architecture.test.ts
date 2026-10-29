@@ -1742,6 +1742,65 @@ test('platform: no new process.platform read outside the list, and the list only
   assert.deepEqual(ratchetProblems(found, PLATFORM_READS, 'src/', 'PLATFORM_READS', PLATFORM_FIX), [], PLATFORM_RULE);
 });
 
+// ---- One path reader (issue #1237) ----
+//
+// Each guard that read a path word by its own regex read it its own way, and each review
+// found a form one of them missed (`/c/x`, `C:/x`, `RUNNER~1`, `...`). A path is read by
+// readPath in src/platform/paths.ts, which takes the platform and has one case table. In
+// src/rules/ and src/run/, a line of code with a path-shaped regex piece (a drive class
+// such as `[A-Za-z]:`, `\/home`, `\/Users`, `\/mnt`, or a class that holds both `/` and `\`)
+// counts. The files below keep theirs, each for its reason; the list only gets shorter.
+const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string][] = [
+  ['rules/config.ts', 1, 'refuses a block entry that holds any separator: a name check, not a path read'],
+  ['rules/guards/bash/read/words.ts', 1, 'isGit: the program name after the last separator, not a path read'],
+  ['rules/guards/commands/lose-work.ts', 5, 'splits a word or glob into parts to find .git: a part check, not a path read; follow-up in #1237'],
+  ['rules/guards/commands/no-wipe.ts', 10, 'reads drive roots, ~ and $HOME forms of rm targets; it has its own per-platform table (#969); move to readPath is a follow-up in #1237'],
+  ['rules/guards/commands/token.ts', 1, 'the credential file name at the end of any path: a name check'],
+  ['rules/guards/hooks/settings.ts', 1, 'a leading ~ in a hooks setting path; move to readPath is a follow-up in #1237'],
+  ['rules/guards/worker/box.ts', 2, 'PLAIN_PATH is the characters a worker cd may use, not a path read (the place comes from readPath); the other is the ~N directory stack word'],
+  ['rules/guards/worker/config-command.ts', 11, 'finds the config folder in any spelling of a command word, globs and $PWD included: a word scan that errs to refuse'],
+  ['rules/guards/worker/config.ts', 9, 'the config folder by its parts, and ~+, ~ and $HOME leads: a word scan that errs to refuse'],
+  ['rules/guards/worker/mark.ts', 4, 'NAMES_GIT_DIR and PATH_BREAKS split command text to find .git and the mark: a word scan, not one path; the $PWD lead of a git folder setting'],
+  ['rules/pr.ts', 1, 'the program name after the last separator'],
+  ['rules/privacy/home.ts', 2, 'the glued forms of a Windows home (#1017): text forms of one home, not a path read'],
+  ['rules/privacy/secrets.ts', 1, 'PATH_VALUE: a value that starts like a path is no secret; a text filter, not a path read'],
+  ['rules/privacy.ts', 10, 'home forms in text and an origin path shape: text matching for the redactor, not a path read'],
+  ['run/notes/translations.ts', 1, 'a link that is a URL or a full path stays as written: a text filter'],
+  ['run/protocol.ts', 1, 'a Windows folder with no drive (`\\x`) is refused as unsure'],
+];
+
+// Path-shaped pieces of a regex, as they are written in TypeScript source.
+const PATH_REGEX_SIGN = /\[A-Za-z\]:|\[a-zA-Z\]:|\[a-z\]:|\\\/home|\\\/Users|\\\/mnt|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/;
+
+/** How many lines of code in `text`, not comments, hold a path-shaped regex piece. */
+const pathRegexLines = (text: string): number => text.split('\n').filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line) && PATH_REGEX_SIGN.test(line)).length;
+
+const PATH_REGEX_FIX = 'Read the path with readPath (src/platform/paths.ts) and add its form to the case table in test/rules/guards/commands/no-wipe.test.ts.';
+
+test('paths: the scan counts a drive, a users folder and a two-separator class, and not a comment (#1237)', () => {
+  const text = [
+    '// /^[A-Za-z]:/ in a comment',
+    ' * [\\\\/] in a doc comment',
+    'const drive = /^[A-Za-z]:[\\\\/]/;',
+    'const home = /^\\/home\\/x/;',
+    "const parts = path.split(/[/\\\\]+/);",
+    'const plain = /^[a-z]+$/;',
+  ].join('\n');
+  assert.equal(pathRegexLines(text), 3);
+});
+
+test('paths: no new path regex in src/rules/ or src/run/ outside the waivers, and each waiver has a reason (#1237)', () => {
+  const found = new Map<string, number>();
+  for (const path of filesUnder(SRC).filter((file) => file.endsWith('.ts') && (file.startsWith('rules/') || file.startsWith('run/')))) {
+    const count = pathRegexLines(readFileSync(join(SRC, path), 'utf8'));
+    if (count) found.set(path, count);
+  }
+  assert.ok(found.size > 0, 'the scan found no path regex; it is broken');
+  for (const [path, , reason] of PATH_REGEX_WAIVERS) assert.ok(reason.length > 20, `${path}: a waiver names its reason`);
+  const allowed = PATH_REGEX_WAIVERS.map(([path, count]): [string, number] => [path, count]);
+  assert.deepEqual(ratchetProblems(found, allowed, 'src/', 'PATH_REGEX_WAIVERS', PATH_REGEX_FIX), [], 'Rule: a path word is read by the one path reader (issue #1237).');
+});
+
 // ---- Kanban reaches outside code through one port (issue #1091) ----
 //
 // The kanban area (src/commands/kanban/) uses no old code directly. Its files import only

@@ -681,9 +681,9 @@ test('upstream: a note hides the project, home and owner, and refuses a secret o
 
 // #1237: a WSL user's Windows home is not their HOME; the note hides its name all the same.
 test('upstream: a note hides the user name in any users-folder path, whatever HOME is (#1237)', () => {
-  for (const HOME of ['/home/alice', 'C:\\Users\\alice', undefined]) {
-    const note = redactNote('the hook broke in C:\\Users\\alice\\proj and /mnt/c/Users/alice/proj', placeIn(null), { HOME });
-    assert.deepEqual(note, { text: 'the hook broke in C:\\Users\\<user>\\proj and /mnt/c/Users/<user>/proj' }, String(HOME));
+  for (const home of ['/home/alice', 'C:\\Users\\alice', undefined]) {
+    const note = redactNote('the hook broke in C:\\Users\\alice\\proj and /mnt/c/Users/alice/proj', placeIn(null), { HOME: home });
+    assert.deepEqual(note, { text: 'the hook broke in C:\\Users\\<user>\\proj and /mnt/c/Users/<user>/proj' }, String(home));
   }
 });
 

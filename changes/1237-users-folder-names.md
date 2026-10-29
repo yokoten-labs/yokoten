@@ -1,0 +1,3 @@
+Security
+
+yokoten no longer prints a user name from a home folder path that is not your own $HOME (#1237). A WSL user's Windows home (`C:\Users\<name>`, `/mnt/c/Users/<name>`) and another account's home now show the name as `<user>` in every output, the stop log, `redact`, upstream notes and the board. A post, a desk message, a note or a lesson pack that still holds such a name is refused (rule `user-folder`). A shared account (`runner`, `Public`) stays. The worker guard now reads a `cd` path through one path reader: a Windows short name such as `RUNNER~1` in a worker's own worktree path is accepted, and a path part that Windows reads two ways (`...`, `a.`) is refused.

@@ -2819,11 +2819,11 @@ const USERS_FOLDER_TEXTS = [
 ];
 
 test('makeRedactor and hideHome: no user name is left in a users-folder path, whatever HOME is (#1237)', () => {
-  for (const HOME of USERS_FOLDER_HOMES) {
-    const redact = makeRedactor({}, { HOME });
+  for (const home of USERS_FOLDER_HOMES) {
+    const redact = makeRedactor({}, { HOME: home });
     for (const text of USERS_FOLDER_TEXTS) {
-      for (const shown of [redact(text), hideHome(text, { HOME }, { systemHome: '' })]) {
-        assert.doesNotMatch(shown, /alice|bob|jane/i, `HOME ${HOME}: ${text} -> ${shown}`);
+      for (const shown of [redact(text), hideHome(text, { HOME: home }, { systemHome: '' })]) {
+        assert.doesNotMatch(shown, /alice|bob|jane/i, `HOME ${home}: ${text} -> ${shown}`);
       }
     }
   }
@@ -2841,13 +2841,13 @@ test('hideHome: a shared account, a placeholder and a path that only looks like 
 });
 
 test('scanText: a users-folder path in text that leaves the machine is a sure hit; the repo scan leaves it to the marks (#1237)', () => {
-  for (const HOME of USERS_FOLDER_HOMES) {
+  for (const home of USERS_FOLDER_HOMES) {
     for (const text of USERS_FOLDER_TEXTS) {
-      const hits = scanText(text, { file: 'post', env: { HOME } }).filter((hit) => hit.id === 'user-folder');
-      assert.equal(hits.length, 1, `HOME ${HOME}: ${text}`);
+      const hits = scanText(text, { file: 'post', env: { HOME: home } }).filter((hit) => hit.id === 'user-folder');
+      assert.equal(hits.length, 1, `HOME ${home}: ${text}`);
       assert.equal(isFailingFinding(hits[0]), true);
       assert.doesNotMatch(formatFinding(hits[0]), /alice|bob|jane/i, 'the name is never printed');
-      assert.equal(scanText(text, { file: 'a.ts', env: { HOME }, allowsLocalNetwork: true }).filter((hit) => hit.id === 'user-folder').length, 0, 'source scan');
+      assert.equal(scanText(text, { file: 'a.ts', env: { HOME: home }, allowsLocalNetwork: true }).filter((hit) => hit.id === 'user-folder').length, 0, 'source scan');
     }
   }
   // Positive control's twins: a placeholder, a shared account, a short name and ~ pass.
