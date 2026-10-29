@@ -109,6 +109,28 @@ test('guard: a worker does not push, post or change a git folder; the lead may (
   ]) allowed(command, worker);
 });
 
+// #1225: without YOKOTEN_ROLE, the git hook a later program starts sees the lead.
+test('guard: a worker does not clear or hide YOKOTEN_ROLE; a read of it and the lead pass (#1225)', () => {
+  const worker = { YOKOTEN_ROLE: 'worker' };
+  const check = (command: string, env: Record<string, string>) => checkCommand(command, { cwd: process.cwd(), env });
+  for (const command of [
+    'unset YOKOTEN_ROLE; git commit -m x',
+    'unset -v YOKOTEN_ROLE',
+    'export -n YOKOTEN_ROLE',
+    'declare +x YOKOTEN_ROLE',
+    'typeset -n YOKOTEN_ROLE=OTHER',
+    'local YOKOTEN_ROLE',
+    'readonly YOKOTEN_ROLE=lead',
+    '(unset YOKOTEN_ROLE && git commit -m x)',
+  ]) {
+    const found = check(command, worker);
+    assert.equal(found?.id, 'worker-mark', command);
+    assert.equal(found?.what, 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  for (const command of ['echo $YOKOTEN_ROLE', 'unset FOO']) allowed(command, worker);
+});
+
 // The ways to drop the mark that name a real worktree's git folder, by absolute path or
 // through git's own worktree commands. Moved from the hook test (#1109), which keeps one
 // refusal through the hook for each way the role is found.

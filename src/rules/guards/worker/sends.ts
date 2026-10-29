@@ -67,6 +67,29 @@ export function checkWorkerUnmark(words: string[]): Finding | null {
   return null;
 }
 
+// The shell builtins that can clear or hide a variable for the rest of the line (#1225).
+const ROLE_CLEARERS = new Set(['unset', 'export', 'declare', 'typeset', 'local', 'readonly']);
+
+/**
+ * For a worker: a builtin that clears or hides YOKOTEN_ROLE (#1225), or null: `unset`
+ * (`-v` too), `export -n`, `declare` or `typeset` with `+x` or `-n`, `local`, `readonly`.
+ * Without the role, a program later on the line, the git hook among them, sees the lead.
+ * It matches words only: an argument that is YOKOTEN_ROLE or starts with `YOKOTEN_ROLE=`.
+ */
+export function checkWorkerRoleClear(words: string[]): Finding | null {
+  for (const place of findProgramPlaces(words)) {
+    const name = programName(place.word);
+    if (!ROLE_CLEARERS.has(name)) continue;
+    const args = withoutShellRedirects(words, place.index + 1);
+    if (name === 'export' && !args.some((arg) => /^-[a-zA-Z]*n/.test(arg))) continue;
+    if ((name === 'declare' || name === 'typeset') && !args.some((arg) => /^\+[a-zA-Z]*x/.test(arg) || /^-[a-zA-Z]*n/.test(arg))) continue;
+    if (args.some((arg) => arg === 'YOKOTEN_ROLE' || arg.startsWith('YOKOTEN_ROLE='))) {
+      return finding('worker-mark', 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', 'leave YOKOTEN_ROLE as it is; if your task needs another role, stop and tell the lead');
+    }
+  }
+  return null;
+}
+
 /** gh's `api`: a write method, or fields (gh then sends a POST), except a GraphQL query that reads. */
 function checkGhApi(args: string[]): Finding | null {
   let method: string | undefined;
