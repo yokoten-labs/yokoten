@@ -36,9 +36,23 @@ updates:
       prefix: chore(site)
     labels: [ci]
     ignore:
-      # @astrojs/check 0.9 takes TypeScript 5 or 6, not 7; a major waits until its checker supports it.
+      # @astrojs/check 0.9 takes TypeScript 5 or 6; drop this once it takes 7 (issue #1195).
       - dependency-name: typescript
-        update-types: ['version-update:semver-major']
+        versions: ['>=7']
+  # The promo video tool (web/site/tools/promo): Remotion and React. Local only, but
+  # its advisories still get a monthly pull request.
+  - package-ecosystem: npm
+    directory: /web/site/tools/promo
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    groups:
+      promo:
+        patterns: ['*']
+    commit-message:
+      prefix: chore(site)
+    labels: [ci]
   - package-ecosystem: github-actions
     # The repo's own workflows, and the kit's, which every project gets from `init`.
     directories: [/, /kit/project]
