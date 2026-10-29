@@ -10,7 +10,7 @@ import { section } from '../../../rules/text/screen.ts';
 /** Why `yokoten trust` writes only for a person at a terminal (#661), and the command they type. */
 export const TRUST_NEEDS_A_PERSON = {
   what: 'a person runs this at a terminal, since it changes the trust in your own agent settings; nothing was written',
-  next: 'yokoten trust',
+  next: 'open a terminal yourself and type `yokoten trust` there',
 };
 
 export function runTrust(invocation: Invocation): number {

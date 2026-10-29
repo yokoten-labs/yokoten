@@ -195,7 +195,7 @@ test('layout: MARKS is every row mark and change state, and the columns are name
   assert.equal(row('ok', 'text', 'label')[0]?.indexOf('text'), ROW_TEXT_COLUMN, 'a labelled row starts its text at ROW_TEXT_COLUMN');
   assert.equal(row('ok', 'text')[0]?.indexOf('text'), ROW_INDENT + MARK_COLUMN);
   assert.equal(field('trash', 'text')[0]?.indexOf('text'), ROW_INDENT + LABEL_COLUMN);
-  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_TEXT_COLUMN)}text`], 'a long label stands on its own line');
+  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_INDENT + MARK_COLUMN)}text`], 'a long label stands on its own line, its text in the mark column (#1239)');
   assert.deepEqual(underRow('why'), [`${' '.repeat(ROW_TEXT_COLUMN)}why`]);
   assert.deepEqual(underRow('why', false), [`${' '.repeat(ROW_INDENT + MARK_COLUMN)}why`]);
 });
@@ -548,7 +548,7 @@ function screensOf(repo: string): ScreenRun[] {
         { key: 'doctor, all done', words: ['doctor'], lines: shortLines(done) },
         { key: 'doctor --all, a report', words: ['doctor', '--all'], lines: fullLines(all) },
         { key: 'explain, an unknown id', words: ['explain', 'not-a-rule'] },
-        { key: 'adopt --all, the whole draft', words: ['adopt', '--all'], lines: adoptAllScreen({ rows, by: 'rules', note: 'no model key; set MODEL_API_KEY' }) },
+        { key: 'adopt --all, the whole draft', words: ['adopt', '--all'], lines: adoptAllScreen({ rows, by: 'rules', note: 'no model key was found; set MODEL_API_KEY' }) },
       ];
     })(),
     // C7: desk, msg and tidy, from data.

@@ -362,7 +362,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1      an email address\n(?:[^\n]+\n){5,9}\nNext: fix it, then `yokoten check`\nMore: \S+#privacy\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1\n {14}an email address\n(?:[^\n]+\n){4,9}\nNext: fix it, then `yokoten check`\nMore: \S+#privacy\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -1494,8 +1494,9 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   const lines = found.stderr.split('\n');
   assert.equal(lines[0], 'yokoten check · 1 problem');
   assert.equal(lines[1], '');
-  assert.match(lines[2] ?? '', /^ {2}MISSING {5}a\.md:1 {6}an email address$/);
-  assert.match(lines[3] ?? '', /^ {26}An email address points at a person, and git keeps it$/);
+  assert.match(lines[2] ?? "", /^ {2}MISSING {5}a\.md:1$/);
+  assert.match(lines[3] ?? "", /^ {14}an email address$/);
+  assert.match(lines[4] ?? "", /^ {14}An email address points at a person/);
   assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`');
   assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);

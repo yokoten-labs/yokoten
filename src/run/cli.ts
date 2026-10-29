@@ -640,14 +640,6 @@ export const COMMANDS: Command[] = [
       ],
       sections: [
         {
-          heading: 'Share a lesson',
-          rows: [
-            ['--ship', 'in yokoten: moves a reviewed lesson into kit/lessons/, where doctor runs it in every project'],
-            ['--export', 'a reviewed lesson as one small JSON file, with its incident and its positive control, and no private detail'],
-            ['--import', 'shows such a file from another project; --write adds it to lessons/ for review. It runs nowhere before --ship'],
-          ],
-        },
-        {
           heading: 'Notes for yokoten itself',
           rows: [
             ['--upstream', 'keeps a note about a gap in yokoten, found in any project, in ~/.config/yokoten/upstream/, outside every repo'],
@@ -660,10 +652,10 @@ export const COMMANDS: Command[] = [
     options: [
       { name: '--write', text: 'put the draft in lessons/ (adds only, never overwrites)' },
       { name: '--all', text: 'show every field the issue left open, and the files the draft writes' },
-      { name: '--ship', text: 'move a reviewed lesson into kit/lessons/; refused while a TODO is left' },
-      { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file (prints it, or writes it with --out)' },
+      { name: '--ship', text: 'move a reviewed lesson into kit/lessons/, where doctor runs it in every project; refused while a TODO is left' },
+      { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file, with its incident and no private detail (prints it, or writes it with --out)' },
       { name: '--out', value: 'file', text: 'with --export: write the lesson file here instead of printing it' },
-      { name: '--import', value: 'file', text: 'a lesson file from another project: show it, or add it with --write' },
+      { name: '--import', value: 'file', text: 'a lesson file from another project: show it, or add it with --write. It runs nowhere before --ship' },
       { name: '--upstream', text: 'a note for the yokoten repo, in a few words: what happened' },
       { name: '--area', value: 'name', text: 'with --upstream: the part of yokoten it is about, such as hook or doctor' },
       { name: '--fix', value: 'idea', text: 'with --upstream: how it could be fixed' },
@@ -808,7 +800,6 @@ export const COMMANDS: Command[] = [
       { name: '--name', value: 'name', text: "the agent's name on the team (default: the desk folder's name)" },
       { name: '--read', value: 'paths', text: 'more paths to show read-only, joined by commas' },
       { name: '--host', value: 'hosts', text: "more API hosts the agent may reach, joined by commas" },
-      { name: '--marks', text: 'show your private-marks file, read-only (not available yet)' },
       { name: '--json', text: 'with no task: the desks as JSON on stdout' },
     ],
     arguments: ['agent', 'folder'],

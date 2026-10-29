@@ -395,7 +395,7 @@ test('kanban --text: pull requests and Actions from gh', async () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten kanban · repo: 0 sessions, 1 pull request, read only\n/);
   assert.match(result.stdout, /\nPull requests:\n {2}to do\s+PR #7\s+team page: checks failing\n/);
-  assert.match(result.stdout, /\n {2}MISSING\s+main\s+failing since 2026-10-26T10:00:00Z\n/);
+  assert.match(result.stdout, /\n {2}MISSING\s+main\s+failing since 2026-10-26 10:00 UTC\n/);
 });
 
 // #1045: the access key goes only to the browser; the screen shows the link without it.

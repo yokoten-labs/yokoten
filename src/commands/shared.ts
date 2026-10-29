@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
+import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -403,11 +403,6 @@ export {
   screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, utcText, wrap,
 } from '../rules/text/screen.ts';
 
-/** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
-function textColumn(where: string | undefined): number {
-  return where === undefined ? ROW_INDENT + MARK_COLUMN : ROW_TEXT_COLUMN;
-}
-
 /** A part of a finding as a sentence: a capital first, a full stop last. */
 const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
@@ -427,12 +422,14 @@ export function problemRows(problems: Finding[]): string[] {
   return spaced(
     problems.map((problem, at) => {
       const where = locationOf(problem);
-      const indent = ' '.repeat(textColumn(where));
+      const indent = ' '.repeat(ROW_INDENT + MARK_COLUMN);
+      // A place stands on the mark's line; the text starts on the next line, in the column of every other row.
+      const head = where === undefined ? row('MISSING', problem.what) : [...row('MISSING', where), ...wrap(indent, problem.what)];
       const command = commands[at];
-      if (!command) return [...row('MISSING', problem.what, where), ...wrap(indent, `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
+      if (!command) return [...head, ...wrap(indent, `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
       const isLast = commands.findLastIndex((other) => other?.command === command.command) === at;
       return [
-        ...row('MISSING', problem.what, where),
+        ...head,
         ...wrap(indent, command.then ? `${asSentence(problem.why)} ${asSentence(command.then)}` : asSentence(problem.why)),
         ...(isLast ? [`${indent}Fix: \`${command.command}\``] : []),
       ];

@@ -349,7 +349,7 @@ export function adoptScreen(drafted: Draft): string[] {
     title('adopt', 'a draft for this project'),
     spaced(rows),
     // Why the rules drafted it, when they did: a note, never folded (R5).
-    drafted.by === 'rules' ? row('note', `drafted by rules${drafted.note ? `: ${drafted.note}` : ''}`, 'why') : [],
+    drafted.by === 'rules' ? row('note', `rules${drafted.note ? `: ${drafted.note}` : ''}`, 'drafted by') : [],
     moreLine('`yokoten adopt --json` shows every row with its reason'),
   );
 }

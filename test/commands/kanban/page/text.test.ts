@@ -50,7 +50,7 @@ test('kanban text: sessions in every group, pull requests and Actions, from the 
   assert.match(text, /ok\s+Claude\s+PR #9 shipped \(opus\)/);
   assert.match(text, /next\s+PR #4\s+t: waits on you/);
   assert.match(text, /to do\s+PR #5\s+draft work: still a draft/);
-  assert.match(text, /MISSING\s+main\s+failing since 2026-10-26T11:00:00.000Z/);
+  assert.match(text, /MISSING\s+main\s+failing since 2026-10-26 11:00 UTC/);
   assert.match(text, /to do\s+CI\s+waits for a runner, 20 min/);
   assert.match(text, /note\s+Lint\s+flaky: PFPF/);
   assert.equal(lines.at(-1), 'More: `yokoten kanban` opens the live page');
