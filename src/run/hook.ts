@@ -1833,6 +1833,8 @@ export function judge(
   // one inside yokoten's config folder may change the worker list (#591).
   // A worker by agent type edits only in a checkout the commit check sees as a worker's (#1225).
   // It answers last, so a rule that names a more exact case (a lead-only file) is heard first.
+  // A file in no checkout stays allowed: nothing commits it without a command, and such a
+  // worker's commands run only in a marked checkout (checkUnmarkedWork).
   let unmarked: Finding | null = null;
   if (env.YOKOTEN_ROLE === 'worker') {
     const folder = resolve(action.cwd ?? root ?? cwd);

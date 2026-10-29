@@ -250,11 +250,17 @@ export function checkUnmarkedFolder(folder: string, env: Env = {}): Finding | nu
   );
 }
 
+const OUTSIDE_FIX = 'cd into your marked worktree first (`cd <worktree> && <command>`); if you have none, stop and ask the lead';
+
 /**
- * For a worker by agent type: why one command may not run, or null. `folder` is where it runs,
- * after any cd; a `git -C` folder counts too. A plain cd runs nothing, so it is not judged: the
- * worker's box rule keeps it in bounds, and the next command is judged where it lands. An
- * unknown folder is left to the rules that refuse it.
+ * For a worker by agent type: why one command may not run, or null. It runs only where the
+ * commit check sees a worker: every folder it works in (where it runs, after any cd, and each
+ * `git -C` folder) must be in a checkout that carries the mark or is on the worker list. The
+ * guard does not read what the command does: from a folder in no checkout, a script could
+ * still chdir into a worktree and commit there (`os.chdir`, `git --work-tree`). So a folder
+ * in no checkout, and one the guard can't tell, are refused too. A plain cd runs nothing,
+ * so it is not judged: the worker's box rule keeps it in bounds, and the next command is
+ * judged where it lands.
  */
 export function checkUnmarkedWork(words: string[], folder: string | null, env: Env = {}): Finding | null {
   const places = findProgramPlaces(words);
@@ -264,11 +270,15 @@ export function checkUnmarkedWork(words: string[], folder: string | null, env: E
     if (isGit(place.word)) folders.push(gitParts(withoutShellRedirects(words, place.index + 1), folder).dir);
   }
   for (const each of new Set(folders)) {
-    const found = each === null ? null : checkUnmarkedFolder(each, env);
+    if (each === null) return finding('unmarked-worktree', "yokoten can't tell which folder this runs in, so it can't tell whether the commit check would see a worker there", OUTSIDE_FIX);
+    if (workerMarkAt(each, env) !== null) continue;
+    if (gitLinkAbove(each) === null) return finding('unmarked-worktree', "this runs outside any git checkout, where a worker's work can reach a checkout the commit check does not see as a worker's", OUTSIDE_FIX);
+    const found = checkUnmarkedFolder(each, env);
     if (found) return found;
   }
   return null;
 }
+
 
 // Text that names a git folder: the mark, a `.git` part, git's options and variables for one.
 const NAMES_GIT_DIR = new RegExp(`${WORKER_MARK}|(^|[\\s'"=:/\\\\(\`;&|<>])\\.git(?=$|[\\s'"/\\\;&|)\`<>])|--(absolute-)?git-(dir|common-dir|path)\\b|\\bGIT_(DIR|COMMON_DIR)\\b|gitdir`, 'i');

@@ -349,6 +349,9 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   const mainCheckout = join(makeTempDir(), 'main');
   makeGitFolder(mainCheckout);
   add(checkUnmarkedWork(['git', 'commit', '-m', 'x'], mainCheckout));
+  // And outside any checkout, and from a folder the guard can't tell.
+  add(checkUnmarkedWork(['ls'], makeTempDir()));
+  add(checkUnmarkedWork(['ls'], null));
 
   const known = new Set(ids());
   for (const f of found) {

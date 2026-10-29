@@ -336,10 +336,14 @@ test('unmarked work: any command or edit in a checkout with no mark is caught; a
     assert.equal(checkUnmarkedWork(words, tree)?.id, 'unmarked-worktree', words.join(' '));
   }
   assert.equal(checkUnmarkedWork(['git', '-C', tree, 'merge', 'x'], base)?.id, 'unmarked-worktree', 'git -C');
-  // Negative controls: a plain cd runs nothing, an unknown folder, a folder in no checkout.
+  // Negative control: a plain cd runs nothing.
   assert.equal(checkUnmarkedWork(['cd', tree], tree), null);
-  assert.equal(checkUnmarkedWork(['ls'], null), null, 'an unknown folder is left to the rules that refuse it');
-  assert.equal(checkUnmarkedWork(['ls', '/tmp'], base), null, 'no checkout');
+  // Fail closed: an unknown folder, a folder in no checkout, and git told to work elsewhere.
+  assert.equal(checkUnmarkedWork(['ls'], null)?.id, 'unmarked-worktree', 'an unknown folder');
+  assert.match(checkUnmarkedWork(['ls'], null)?.fix ?? '', /^cd into your marked worktree first/);
+  assert.equal(checkUnmarkedWork(['ls', '/tmp'], base)?.id, 'unmarked-worktree', 'no checkout');
+  assert.equal(checkUnmarkedWork(['git', '--work-tree', tree, 'commit', '-m', 'x'], base)?.id, 'unmarked-worktree', 'git --work-tree');
+  assert.equal(checkUnmarkedFolder(join(base, 'notes.md')), null, 'an edit in no checkout: only a command can commit it');
   // A main checkout is the lead's: caught, and the fix asks for a worktree, not a mark on it.
   const main = join(base, 'main');
   makeGitFolder(main);

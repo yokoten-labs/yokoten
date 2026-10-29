@@ -318,10 +318,28 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   assert.equal(run(`cd ${tree} && git commit -m x`, { worker: false }), null, 'a lead or another agent type passes');
   assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] }, { worker: false }), null, 'a lead edit passes');
   assert.equal(run(`cd ${tree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
-  assert.equal(run('ls /tmp'), null, 'a folder in no checkout');
   assert.equal(run(`cd ${tree}`), null, 'a plain cd runs nothing');
+  assert.equal(call({ paths: [join(lead, 'notes.md')] }), null, 'an edit in no checkout: only a command can commit it');
+  // From the lead's folder, in no checkout: a script could chdir into the worktree and commit,
+  // so every command there is refused, and the fix names no folder of this machine.
+  const outside = [
+    'python3 -c "import os, subprocess; os.chdir(\'wt-1225\'); subprocess.run([\'git\', \'commit\', \'-m\', \'x\'])"',
+    'node s.js',
+    'ls',
+    'ls /tmp',
+  ];
+  for (const command of outside) {
+    const refused = run(command);
+    assert.equal(refused?.id, 'unmarked-worktree', `outside: ${command}`);
+    assert.ok(!(refused?.fix ?? '').includes(lead) && !(refused?.what ?? '').includes(lead), refused?.fix);
+  }
+  assert.match(run('ls')?.fix ?? '', /^cd into your marked worktree first/);
+  // git told to work elsewhere: the lead-only rule, which can't tell the folder, answers first.
+  assert.notEqual(run(`git --work-tree=${tree} commit -m x`), null, 'git --work-tree');
   // Marked: the commit check sees the worker, so this rule lets it through.
   writeFileSync(join(sandbox.repo, '.git', 'worktrees', basename(tree), 'yokoten-worker'), '');
+  assert.equal(run(`cd ${tree} && ls`), null, 'cd into the marked worktree, then work');
+  assert.equal(run('ls')?.id, 'unmarked-worktree', 'the lead folder stays refused once a worktree is marked');
   for (const command of routes) assert.notEqual(run(`cd ${tree} && ${command}`)?.id, 'unmarked-worktree', `marked: ${command}`);
   assert.equal(run(`cd ${tree} && git commit -m x`), null, 'a marked worktree passes');
   assert.equal(run('git commit -m x', { cwd: tree }), null, 'a marked cwd passes');
