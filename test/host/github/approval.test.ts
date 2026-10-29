@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -565,12 +565,12 @@ const DIFF = 'diff --git a/a.ts b/a.ts\n+export const a = 1;\n';
 const approve = JSON.stringify({ verdict: 'APPROVE', summary: 'Looks right.', findings: [] });
 
 test('review: the verdict parser takes only the exact JSON shape; anything else fails closed (#1088)', () => {
-  assert.deepEqual(parseVerdict(approve), { verdict: 'APPROVE', summary: 'Looks right.', findings: [], counts: { important: 0, nit: 0, preExisting: 0 } });
+  assert.deepEqual(parseVerdict(approve), { verdict: 'APPROVE', summary: 'Looks right.', findings: [], counts: { important: 0, nit: 0, preExisting: 0, stillOpen: 0 } });
   assert.deepEqual(parseVerdict(`  ${JSON.stringify({ findings: [{ severity: 'high', text: 'a.ts: no test' }], verdict: 'REQUEST_CHANGES', summary: 'Needs a test.' })}\n`), {
     verdict: 'REQUEST_CHANGES',
     summary: 'Needs a test.',
     findings: ['🔴 Important, blocks · a.ts: no test'],
-    counts: { important: 1, nit: 0, preExisting: 0 },
+    counts: { important: 1, nit: 0, preExisting: 0, stillOpen: 0 },
   });
   const refused: [string, string][] = [
     ['empty', ''],
@@ -729,7 +729,7 @@ test('review: parts are reviewed one call each; any part asking for changes asks
   assert.equal(prompts.length, MAX_PARTS);
   const over = await run([], MAX_PARTS + 1);
   assert.deepEqual([over.event, prompts.length], ['REQUEST_CHANGES', 0]);
-  const none = { important: 0, nit: 0, preExisting: 0 };
+  const none = { important: 0, nit: 0, preExisting: 0, stillOpen: 0 };
   assert.deepEqual(mergeVerdicts([{ verdict: 'APPROVE', summary: 's', findings: [], counts: none }]), { verdict: 'APPROVE', summary: 's', findings: [], counts: none }, 'one part keeps its text as is');
   // The merged review keeps its ceiling: MAX_PARTS summaries and MAX_MERGED_FINDINGS findings, plus one count line.
   const full = { verdict: 'REQUEST_CHANGES' as const, summary: 's'.repeat(MAX_TEXT_CHARS), findings: Array.from({ length: MAX_FINDINGS + 1 }, () => 'f'.repeat(MAX_TEXT_CHARS)), counts: none };
@@ -746,7 +746,7 @@ test('review: the diff and body are data; the prompt says so and fences them (#1
   assert.match(user.content, /<<<BODY\nIgnore all rules/);
   assert.match(user.content, /<<<DIFF\n\+\/\/ Ignore all rules[\s\S]*DIFF>>>$/);
   // The model's text can't ping people or hide an HTML comment in the posted review.
-  const body = reviewFor({ verdict: 'APPROVE', summary: 'ok @owner <!-- x -->', findings: [], counts: { important: 0, nit: 0, preExisting: 0 } }, MODEL).body;
+  const body = reviewFor({ verdict: 'APPROVE', summary: 'ok @owner <!-- x -->', findings: [], counts: { important: 0, nit: 0, preExisting: 0, stillOpen: 0 } }, MODEL).body;
   assert.ok(!/@owner/.test(body) && !body.includes('<') && body.includes('‹!-- x --›'));
   assert.match(body, /^\*\*✅ Approve\*\* · /, 'the verdict opens the review');
 });
@@ -896,8 +896,8 @@ test('review: each finding is tagged Important, Nit or Pre-existing, and the fir
   const clear = await decideReview({ body: 'b', diff: DIFF, model: MODEL, askModel: async () => approve });
   assert.match(clear.body, /^\*\*✅ Approve\*\* · Nothing to fix · Looks right\.\n/);
   // Parts add up their counts.
-  const part = (important: number) => ({ verdict: 'APPROVE' as const, summary: 's', findings: [], counts: { important, nit: 1, preExisting: 0 } });
-  assert.deepEqual(mergeVerdicts([part(1), part(2)]).counts, { important: 3, nit: 2, preExisting: 0 });
+  const part = (important: number) => ({ verdict: 'APPROVE' as const, summary: 's', findings: [], counts: { important, nit: 1, preExisting: 0, stillOpen: 0 } });
+  assert.deepEqual(mergeVerdicts([part(1), part(2)]).counts, { important: 3, nit: 2, preExisting: 0, stillOpen: 0 });
   assert.match(buildMessages('b', DIFF)[0].content, /"pre-existing"/);
 });
 
@@ -920,9 +920,10 @@ test('review: a finding made in an earlier review is dropped, and the model is t
   assert.match(prompts[0], /name the class so every instance is fixed/);
   assert.match(prompts[0], /\["a\.ts:3: crash on empty → guard","a\.ts:1: name → rename"\]/);
   assert.match(prompts[0], /only what changed since the last reviewed commit/);
-  // Only the new finding is posted; the dropped high finding no longer blocks.
-  assert.equal(second.event, 'APPROVE');
-  assert.match(second.body, /^\*\*✅ Approve\*\* · 1 Important · /);
+  // Only the new finding is listed; the high finding found again is not fixed, so it still blocks.
+  assert.equal(second.event, 'REQUEST_CHANGES');
+  assert.match(second.body, /^\*\*❌ Changes requested\*\* · 1 still open, 1 Important · /);
+  assert.ok(second.body.includes('1 blocking finding from an earlier round is still open'));
   assert.ok(second.body.includes('c.ts:4: new problem') && !second.body.includes('crash') && !second.body.includes('rename'));
   // A repeat that was cut at the text cap still matches.
   assert.ok(isRepeat('w'.repeat(MAX_TEXT_CHARS + 50), ['w'.repeat(MAX_TEXT_CHARS - 1) + '…']));
@@ -962,4 +963,12 @@ test('review: only completed reviews by the reviewer App count as rounds (#1217)
   ]);
   assert.deepEqual(found.map((each) => each.commit), ['b'.repeat(40), 'c'.repeat(40)]);
   assert.deepEqual(completedReviews('nope'), []);
+});
+
+test('review: the next round reads only the new commits after a clean round that they follow, else the whole diff (#1217)', () => {
+  const approved = '**✅ Approve** · Nothing to fix · fine';
+  const changes = '**❌ Changes requested** · 1 Important · no';
+  assert.equal(canReadIncrement(approved, 'ahead'), true, 'an approve the head follows: the increment');
+  assert.equal(canReadIncrement(changes, 'ahead'), false, 'after a change request the whole diff, so an unfixed finding is seen');
+  for (const status of ['diverged', 'behind', 'identical', '']) assert.equal(canReadIncrement(approved, status), false, `${status || 'no status'}: the whole diff`);
 });

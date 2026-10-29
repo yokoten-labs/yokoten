@@ -45,7 +45,7 @@ const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
 const GITHUB_API = 'https://api.github.com';
 
 /** How many findings of each tag a review holds, counted before any cut. */
-export interface Counts { important: number; nit: number; preExisting: number }
+export interface Counts { important: number; nit: number; preExisting: number; stillOpen: number }
 
 /** What the model must answer: exactly these keys, nothing around them. `counts` is worked out here, not answered. */
 export interface Verdict {
@@ -78,9 +78,9 @@ export const REVIEWER_APP_LOGIN = 'yokoten-reviewer[bot]';
 /** The longest list of earlier findings sent to the model, in characters. */
 const MAX_EARLIER_CHARS = 10_000;
 
-const noCounts = (): Counts => ({ important: 0, nit: 0, preExisting: 0 });
+const noCounts = (): Counts => ({ important: 0, nit: 0, preExisting: 0, stillOpen: 0 });
 const addCounts = (all: Counts[]): Counts =>
-  all.reduce((sum, each) => ({ important: sum.important + each.important, nit: sum.nit + each.nit, preExisting: sum.preExisting + each.preExisting }), noCounts());
+  all.reduce((sum, each) => ({ important: sum.important + each.important, nit: sum.nit + each.nit, preExisting: sum.preExisting + each.preExisting, stillOpen: sum.stillOpen + each.stillOpen }), noCounts());
 
 /** The words a text is compared by: letters and digits only, lowercase. */
 const keyOf = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -118,8 +118,8 @@ export function isRepeat(text: string, earlier: string[]): boolean {
  * with one is unclear, so null); with only medium or low findings the answer is an APPROVE, since they
  * never block. Length is not a reason to fail: a long summary or finding is cut,
  * and findings past MAX_FINDINGS are counted in one line, the low ones first to go.
- * A finding that repeats one in `earlier` is dropped; if that was every high finding, the
- * verdict is an APPROVE.
+ * A finding that repeats one in `earlier` is not listed again. A high one found again is not
+ * fixed: it is counted as still open, and the verdict stays REQUEST_CHANGES (issue #1217).
  */
 export function parseVerdict(answer: string, earlier: string[] = []): Verdict | null {
   let value: unknown;
@@ -139,11 +139,13 @@ export function parseVerdict(answer: string, earlier: string[] = []): Verdict | 
   if (verdict === 'REQUEST_CHANGES' && findings.length === 0) return null;
   if (verdict === 'APPROVE' && findings.some((item) => item.severity === 'high')) return null;
   const fresh = findings.filter((item) => !isRepeat(item.text, earlier));
-  const blocking = fresh.some((item) => item.severity === 'high');
+  const stillOpen = findings.filter((item) => item.severity === 'high' && isRepeat(item.text, earlier)).length;
+  const blocking = stillOpen > 0 || fresh.some((item) => item.severity === 'high');
   const counts: Counts = {
     important: fresh.filter((item) => item.severity === 'high' || item.severity === 'medium').length,
     nit: fresh.filter((item) => item.severity === 'low').length,
     preExisting: fresh.filter((item) => item.severity === 'pre-existing').length,
+    stillOpen,
   };
   const sorted = [...fresh].sort((a, b) => SEVERITIES.indexOf(a.severity) - SEVERITIES.indexOf(b.severity));
   return {
@@ -319,9 +321,21 @@ const quiet = (text: string): string => text.replace(/@(?=[A-Za-z0-9])/g, '@​'
 /** The count the first line of a review states: "2 Important, 1 Nit", or "Nothing to fix". */
 export function countLine(counts: Counts): string {
   const named = [[counts.important, 'Important'], [counts.nit, 'Nit'], [counts.preExisting, 'Pre-existing']] as const;
-  if (counts.important + counts.nit === 0) return counts.preExisting ? `Nothing to fix, ${counts.preExisting} Pre-existing` : 'Nothing to fix';
-  return named.filter(([count]) => count > 0).map(([count, name]) => `${count} ${name}`).join(', ');
+  const open = counts.stillOpen ? [`${counts.stillOpen} still open`] : [];
+  if (counts.important + counts.nit + counts.stillOpen === 0) return counts.preExisting ? `Nothing to fix, ${counts.preExisting} Pre-existing` : 'Nothing to fix';
+  return [...open, ...named.filter(([count]) => count > 0).map(([count, name]) => `${count} ${name}`)].join(', ');
 }
+
+/**
+ * Whether the next round may read only the commits since the last reviewed one: the last
+ * completed review approved, and GitHub says the head is ahead of it (no force push, nothing
+ * dropped). Anything else reads the whole diff again.
+ */
+export const canReadIncrement = (lastBody: string, status: string): boolean => lastBody.startsWith('**✅ Approve**') && status === 'ahead';
+
+/** The line for blocking findings an earlier round posted that this round found again: not fixed yet. */
+export const stillOpenLine = (count: number): string =>
+  `${count} blocking ${count === 1 ? 'finding' : 'findings'} from an earlier round ${count === 1 ? 'is' : 'are'} still open; see the earlier review.`;
 
 /** The line a review from round RECONSIDER_ROUND on carries in place of new findings. */
 export const reconsiderLine = (round: number): string =>
@@ -337,6 +351,7 @@ export function reviewFor(verdict: Verdict, model: string, round = 1): Review {
   const lines = [`${head} · ${countLine(verdict.counts)} · ${quiet(verdict.summary)}`];
   const late = round >= RECONSIDER_ROUND;
   const shown = late ? verdict.findings.filter((item) => item.includes(SEVERITY_LABEL.high)) : verdict.findings;
+  if (verdict.counts.stillOpen) lines.push('', stillOpenLine(verdict.counts.stillOpen));
   if (late) lines.push('', reconsiderLine(round));
   if (shown.length) lines.push('', ...shown.map((item) => `- ${quiet(item)}`));
   if (verdict.verdict === 'APPROVE') return { event: 'APPROVE', body: [...lines, '', approvalLine(model)].join('\n') };
@@ -566,7 +581,17 @@ async function main(): Promise<void> {
   const last = earlier.at(-1)?.commit ?? '';
   let diff: string | null = null;
   let incremental = false;
-  if (/^[0-9a-f]{40}$/.test(last) && last !== head) {
+  // Only after a clean round, and only when the new commits follow the reviewed one: after a
+  // change request the whole diff is read again, so a finding left unfixed is seen (issue #1217).
+  const compareStatus = async (from: string): Promise<string> => {
+    try {
+      const answer = (await (await callGitHub(token, `/repos/${repo}/compare/${from}...${head}`)).json()) as { status?: unknown };
+      return typeof answer.status === 'string' ? answer.status : '';
+    } catch {
+      return '';
+    }
+  };
+  if (/^[0-9a-f]{40}$/.test(last) && last !== head && canReadIncrement(earlier.at(-1)?.body ?? '', await compareStatus(last))) {
     diff = await compare(last);
     incremental = diff !== null && diff.trim() !== '';
   }

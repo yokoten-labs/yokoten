@@ -50,9 +50,10 @@ Not checked: what you did not check
 
 - Tag each finding **Important** (high or medium), **Nit** (low) or **Pre-existing**.
   Line 1 also states the count ("2 Important, 1 Nit"), or "Nothing to fix".
-- A review ends in three rounds. From the second, read only the diff since the last
-  reviewed commit. Never repeat a finding an earlier review made; when a bug class
-  returns, name the class so every instance is fixed.
+- A review ends in three rounds. After a clean round, the next reads only the diff since
+  the last reviewed commit; after changes were asked for, it reads the whole diff again.
+  Never list a finding an earlier review made; a blocking one found again is still open
+  and still blocks. When a bug class returns, name the class so every instance is fixed.
 - The fourth review lists no new findings. It asks the author to reconsider the approach.
   A high finding still blocks.
 
