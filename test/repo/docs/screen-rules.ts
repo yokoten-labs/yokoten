@@ -2,7 +2,14 @@
 // development tool, as TEST_LIMITS is: nothing here ships in the package. The layout that
 // builds a screen is src/rules/text/screen.ts; this file checks what it prints.
 import '../home.ts';
-import { SCREEN_WIDTH } from '../../../src/rules/text/screen.ts';
+import { MARK_COLUMN, ROW_INDENT, SCREEN_WIDTH } from '../../../src/rules/text/screen.ts';
+
+/**
+ * A pattern with `{COL}` where a line under a row's text is indented: the column of a `Fix:` line
+ * and a wrapped line of a row with no label. The number is the layout's (ROW_INDENT + MARK_COLUMN),
+ * never typed in a test (#1128).
+ */
+export const underMark = (pattern: RegExp): RegExp => new RegExp(pattern.source.replaceAll('{COL}', `{${ROW_INDENT + MARK_COLUMN}}`), pattern.flags);
 
 // ---- The rules (record 0049, issue #1115) ----
 //
@@ -44,8 +51,10 @@ export const limitOf = (id: ScreenRuleId): number => SCREEN_RULES.find((rule) =>
 
 // A heading stands alone and ends in a colon: `Options:`, `In the fence:`.
 const HEADING = /^[A-Z][^:]*:$/;
-// The next step: a Next line, the Instead row of a refusal, a Fix line, or a command in backticks.
-const NEXT_STEP = /^Next: |^ {2}Instead |^\s*Fix: |`[^`]+`/;
+// The next step: a Next line, the Instead row of a refusal, a Fix line, or a command in backticks (see commandsIn).
+const NEXT_STEP = /^Next: |^ {2}Instead /;
+// A heading, then a list: a `- ` item at the left edge ends a run of prose, as a row does.
+const LIST_ITEM = /^[-*] /;
 // A More line or row: a pointer, so the next step may come just before it.
 const MORE = /^(?:More: | {2}More {6}| {2}docs: )/;
 const ESCAPE = /\u001b\[/;
@@ -59,12 +68,26 @@ const MARK_LABEL = /^ {2}(?:ok|done|next|to do|MISSING|note|can't check|skipped)
 const PROBLEM_ROW = /^ {2}(?:MISSING|can't check) /;
 const PROBLEM_HEADINGS = new Set(['Not read:', 'Problems:']);
 // The fix of a problem: its own line, `Fix: ` and the command.
-const FIX_LINE = /^\s*Fix: `[^`]+`/;
-// An absolute path on this machine: a root folder of Linux, macOS or Windows, not a link or ~.
-// Windows paths count with either slash, and in Git Bash's form, /c/Users/... (#1115).
-const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|\/[a-zA-Z]\/(?:Users|Windows|ProgramData|Program Files)\/[^\s`'")]*|[A-Za-z]:[\\/][^\s`'")]*)/g;
+const FIX_LINE = /^\s*Fix: /;
+// An absolute path on this machine, any root (#1128): `/` and two or more parts (`/bin/sh`, `/dev/null`,
+// `/Library/x`), or one part of a known root folder (`/tmp`); a Windows drive with either slash
+// (`C:\`, `C:/`) or in Git Bash's form (`/c/Users/...`); a UNC path (`\\server\share`). Not a link, not ~,
+// and not the path of an API call (`GET /api/state`).
+const MACHINE_PATH = /(?<![\w:~.\/-])(?<!\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) )(?:\/[^\s`'"\/)]+(?:\/[^\s`'")]*)+|\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w\/-])|[A-Za-z]:[\\/][^\s`'")]*|\\{2,}[^\s\\`'")]+\\+[^\s`'")]*)/g;
+// A command in backticks is not a file name (`AGENTS.md`, `src/a.ts`) or a flag (`--write`).
+const BACKTICKED = /`([^`]+)`/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
 const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
+
+/** The commands a line names in backticks: not a file name (no space, and a slash or an extension) and not a flag. */
+export const commandsIn = (line: string): string[] =>
+  [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => text !== '' && !text.startsWith('-') && !(!/\s/.test(text) && (/[\\/]/.test(text) || /\.[A-Za-z0-9]{1,6}$/.test(text))));
+
+/** Whether a line is a Fix line with a command: `Fix: \`<command>\``. */
+const isFixLine = (line: string): boolean => FIX_LINE.test(line) && commandsIn(line).length > 0;
+
+/** Whether a line has a command to run in backticks, or names one with `run`. */
+const showsCommand = (line: string): boolean => commandsIn(line).length > 0 || RUN_WORD.test(line);
 
 /** The absolute paths on this machine that a text shows (the no-internal-path rule): not ~, not a link. */
 export const machinePathsIn = (text: string): string[] => text.match(MACHINE_PATH) ?? [];
@@ -111,7 +134,7 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
   let run = 0;
   let longest = 0;
   for (const line of lines) {
-    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) ? 0 : run + 1;
+    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) || LIST_ITEM.test(line) ? 0 : run + 1;
     longest = Math.max(longest, run);
   }
   if (longest > limitOf('prose')) problems.push(`${longest} lines of prose in a row; the most is ${limitOf('prose')}, then a heading or rows [prose]`);
@@ -126,7 +149,7 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     // An item is a line and the lines wrapped under it, so a wrapped row is still one row.
     const items = blocks.flatMap(itemsOf);
     const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
-    if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next [next-step]');
+    if (!tail.flat().some((line) => NEXT_STEP.test(line) || commandsIn(line).length > 0)) problems.push('it failed, but its last line does not say what to do next [next-step]');
   }
   // Where a row's text starts: past the label of a row with a mark and a label, else past its first label (#1115).
   const columns = new Set(lines.map((line) => (MARK_LABEL.exec(line) ?? TWO_COLUMNS.exec(line))?.[0].length).filter((column) => column !== undefined));
@@ -144,10 +167,10 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     if (body.length > 1 && body.some((item) => item.length > 1)) spaced += body.length - 1;
     for (const item of body) {
       const isProblem = PROBLEM_ROW.test(item[0]) || (PROBLEM_HEADINGS.has(heading) && /^(?:- | {2}\S)/.test(item[0]));
-      if (isProblem && item.some((line) => (/`[^`]+`/.test(line) || RUN_WORD.test(line)) && !FIX_LINE.test(line))) fixes += 1;
-      if (isProblem && item.length > 1 && item.slice(0, -1).some((line) => FIX_LINE.test(line))) fixes += 1;
+      if (isProblem && item.some((line) => showsCommand(line) && !isFixLine(line))) fixes += 1;
+      if (isProblem && item.length > 1 && item.slice(0, -1).some(isFixLine)) fixes += 1;
     }
-    for (const line of block.filter((each) => FIX_LINE.test(each))) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);
+    for (const line of block.filter(isFixLine)) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);
   }
   if (wrappedExamples > limitOf('wrapped-example')) problems.push(`${wrappedExamples} examples have their text on the next line; shorten them [wrapped-example]`);
   if (spaced > limitOf('spaced-items')) problems.push(`${spaced} items touch a wrapped item; put a blank line between them [spaced-items]`);

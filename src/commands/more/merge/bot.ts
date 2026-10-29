@@ -9,7 +9,7 @@ import { type Config, DEFAULTS, type Env, loadConfig } from '../../../rules/conf
 import { finding, type Finding } from '../../../rules/text/message.ts';
 import { checkPost, readsStdinBody, readSentBody } from '../../../rules/privacy.ts';
 import { type CommandIssueLabels, type CommandLabels, type CommandMilestone, checkCommandTitle, checkMergeApproval, checkIssueLabels, checkOwnedTier, checkPullRequestBody, COMMIT_FORMAT, issueLabelChoices, madeWithFindings, noMilestoneFinding, nonUtcCommits, prTier, type PushedCommit, readCommandBody, readCommandIssueLabels, readCommandLabels, readCommandMilestone, readLabelTier, readPushPlan, utcFix } from '../../../rules/pr.ts';
-import { section } from '../../../rules/text/screen.ts';
+import { nextSentence, section } from '../../../rules/text/screen.ts';
 import { runGit } from '../../../run/check.ts';
 import { count, failure, type Invocation, noteLine, type Output, parse, print, problemRows, readInput, requireRoot, rootOf, row, screen, show, spaced, summaryLine, terminalOf, title, usage, wrap } from '../../shared.ts';
 
@@ -36,7 +36,7 @@ export interface BotRefusal {
 }
 
 /** The screen of a refusal: the title says what is wrong, then its rows, then one Next line. */
-export const refusalScreen = ({ what, fix, blocks = [] }: BotRefusal): string[] => screen(failure('bot', what), ...blocks, wrap('Next: ', fix));
+export const refusalScreen = ({ what, fix, blocks = [] }: BotRefusal): string[] => screen(failure('bot', what), ...blocks, nextSentence(fix));
 
 /** Says a refusal on stderr and gives the exit code. */
 function refuse(invocation: Invocation, refusal: BotRefusal): 1 {

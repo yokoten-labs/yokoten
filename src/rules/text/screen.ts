@@ -99,6 +99,9 @@ export function field(label: string, text: string): string[] {
 /** The last line: the one command to type next. */
 export const nextLine = (command: string): string[] => wrap('Next: ', `\`${command}\``);
 
+/** The last line when the next step is a sentence, not one bare command: `Next: <sentence>.`, a full stop at the end. */
+export const nextSentence = (text: string): string[] => wrap('Next: ', /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
+
 /** Where the rest is: the flag that shows it all. */
 export const moreLine = (text: string): string[] => wrap('More: ', text);
 
@@ -120,7 +123,7 @@ export const askLine = (question: string): string => (/\[Y\/n\]$/.test(question.
 export function failure(command: string | undefined, what: string, next?: string): string[] {
   const head = wrap(command === undefined || command === '' ? 'yokoten · ' : `yokoten ${command} · `, what.trim().replace(/\.$/, ''));
   if (next === undefined || next.trim() === '') return head;
-  return screen(head, next.includes('`') ? wrap('Next: ', next.trim()) : nextLine(next.trim()));
+  return screen(head, next.includes('`') ? nextSentence(next) : nextLine(next.trim()));
 }
 
 /** A label and its text, as a table row. */
