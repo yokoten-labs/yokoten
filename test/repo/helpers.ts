@@ -209,7 +209,7 @@ export function runChild(command: string, args: string[], options: Pick<SpawnSyn
 // No gh telemetry (#436): see test/repo/home.ts.
 // NODE_OPTIONS carries the real-home preload that home.ts builds. A sandbox child gets a fresh env,
 // so without this it would read the real private-marks file when its own file is missing (#739).
-const sandboxEnv = (home: string) => ({ PATH: process.env.PATH, HOME: home, NODE_COMPILE_CACHE: COMPILE_CACHE, ...(process.env.NODE_OPTIONS ? { NODE_OPTIONS: process.env.NODE_OPTIONS } : {}), TZ: 'UTC', YOKOTEN_TEMP_DIRS: '', GH_TELEMETRY: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(home, '.gitconfig'), GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false', GIT_CONFIG_KEY_1: 'gc.auto', GIT_CONFIG_VALUE_1: '0', NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' });
+const sandboxEnv = (home: string) => ({ PATH: process.env.PATH, HOME: home, NODE_COMPILE_CACHE: COMPILE_CACHE, ...(process.env.NODE_OPTIONS ? { NODE_OPTIONS: process.env.NODE_OPTIONS } : {}), TZ: 'UTC', YOKOTEN_TEMP_DIRS: '', YOKOTEN_MIN_FREE_GB: '0', GH_TELEMETRY: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(home, '.gitconfig'), GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false', GIT_CONFIG_KEY_1: 'gc.auto', GIT_CONFIG_VALUE_1: '0', NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' });
 
 // A host sets markers in the environment it runs its hooks in. A test that starts
 // `yokoten hook` must not inherit them from whoever runs the tests (#800): the hook answers
@@ -472,7 +472,7 @@ function translatedRepoIn(root: string) {
   // No automatic gc or maintenance (#516). Newer git (CI has 2.55) runs maintenance in the background
   // after a commit, and this env leaves out the test home's settings that turn it off; it then wrote
   // into the template while a test copied it (ENOENT in cpSync, twice, both from this template).
-  const env = { PATH: process.env.PATH, HOME: root, TZ: 'UTC', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(root, 'none'), GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false', GIT_CONFIG_KEY_1: 'gc.auto', GIT_CONFIG_VALUE_1: '0' };
+  const env = { PATH: process.env.PATH, HOME: root, TZ: 'UTC', YOKOTEN_MIN_FREE_GB: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: join(root, 'none'), GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'maintenance.auto', GIT_CONFIG_VALUE_0: 'false', GIT_CONFIG_KEY_1: 'gc.auto', GIT_CONFIG_VALUE_1: '0' };
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   const commit = (path: string, text: string) => {
     writeFileSync(join(root, path), text);

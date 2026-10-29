@@ -22,23 +22,52 @@ test('doctor: a marks file it can not read is named as unreadable, not missing (
   assert.doesNotMatch(out, /quietharbor/i);
 });
 
-// The hackathon page runs `yokoten doctor --all --json` and reads this shape (#1167). Keys may be added; these stay.
-test('doctor: --all --json keeps the shape that other tools read (#1167)', async () => {
+// The contract for outside readers (#1202): doctor.yokoten.app runs `doctor --all --json` and
+// `check --json` on a public repo and shows the result as-is. Keys may be added; these keys,
+// their types and the mark strings stay, or the page breaks.
+const MARKS = ['done', 'to do', 'next', "can't check", 'not now'];
+
+test('doctor: --all --json keeps the shape that other tools read (#1167, #1202, #1203)', async () => {
   const sandbox = makeSandbox();
   const result = await sandbox.call(['doctor', '--all', '--json']);
+  assert.ok(result.status === 0 || result.status === 1, `exit ${result.status}`);
   const json = JSON.parse(result.stdout) as Record<string, unknown>;
   assert.equal(typeof json.version, 'string');
-  const { steps, findings } = json as { steps: Record<string, unknown>[]; findings: Record<string, unknown>[] };
+  assert.equal(typeof json.stage, 'number');
+  const { steps, findings, next } = json as { steps: Record<string, unknown>[]; findings: Record<string, unknown>[]; next: Record<string, unknown> | null };
+  assert.ok(next !== null, 'a fresh repo has a next step');
+  for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof next[key], 'string', `next.${key}`);
   assert.ok(Array.isArray(steps) && steps.length > 0);
   for (const step of steps) {
-    assert.equal(typeof step.id, 'string');
+    for (const key of ['id', 'how', 'why']) assert.equal(typeof step[key], 'string', `${String(step.id)}.${key}`);
     assert.equal(typeof step.stage, 'number');
-    assert.equal(typeof step.mark, 'string');
+    assert.ok(MARKS.includes(step.mark as string), `${String(step.id)}: mark ${String(step.mark)}`);
   }
+  for (const mark of ['done', 'next', 'to do']) assert.ok(steps.some((step) => step.mark === mark), `a fresh repo has a step marked ${mark}`);
+  assert.equal(steps.filter((step) => step.mark === 'next').length, 1, 'one next step');
   assert.ok(Array.isArray(findings) && findings.length > 0);
   for (const found of findings) {
     for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof found[key], 'string', `${String(found.id)}.${key}`);
+    assert.ok(found.docs === undefined || typeof found.docs === 'string');
   }
+});
+
+test('check: --json keeps its shape and never prints the value it found (#1202)', async () => {
+  const sandbox = makeSandbox();
+  // Built from parts so this file holds no address of its own; example.org would be allowed.
+  const secret = ['quiet.harbor.7731', 'harbormail.net'].join('@');
+  sandbox.write('notes.md', `write to ${secret}\n`);
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'notes');
+  const result = await sandbox.call(['check', '--json']);
+  assert.ok(result.status === 0 || result.status === 1, `exit ${result.status}`);
+  const json = JSON.parse(result.stdout) as { ok: unknown; findings: Record<string, unknown>[] };
+  assert.equal(typeof json.ok, 'boolean');
+  const found = json.findings.find((item) => item.file === 'notes.md');
+  assert.ok(found, 'the planted address is found');
+  for (const key of ['id', 'what', 'file', 'grade', 'why', 'fix']) assert.equal(typeof found[key], 'string', key);
+  assert.equal(typeof found.line, 'number');
+  assert.ok(!result.stdout.includes(secret) && !result.stdout.includes('quiet.harbor'), 'the value never reaches the JSON');
 });
 
 // A folder with a GitHub origin, but no gh on the PATH, no login and no network: doctor skips the server steps at once.

@@ -229,38 +229,40 @@ test('anchor: lists commits, and going back keeps every commit (#711)', async ()
 
 test('hook: a heavy job asks when the kept host drive is low, and a light one never asks (#401)', async () => {
   const sandbox = makeSandbox();
+  // The sandbox turns the disk note off (#1175); this test plants its own reading, so it takes the default limit.
+  const defaultLimit = { YOKOTEN_MIN_FREE_GB: '' };
   const state = join(sandbox.home, '.config', 'yokoten', 'machine.json');
   mkdirSync(dirname(state), { recursive: true });
   const gb = 1024 ** 3;
   const kept = (free: number) => JSON.stringify({ hostDisk: { free, size: 250 * gb, readAt: new Date().toISOString(), distro: 'Ubuntu', version: 2 } });
   const tool = (command: string) => JSON.stringify({ cwd: sandbox.repo, tool_input: { command } });
   // No reading: the hook does not change.
-  let result = await sandbox.call(['hook'], { input: tool('npm test') });
+  let result = await sandbox.call(['hook'], { extra: defaultLimit, input: tool('npm test') });
   assert.equal(result.status, 0);
   assert.equal(result.stdout, '');
   // A low reading: a heavy job gets the question, and the command is not refused.
   writeFileSync(state, kept(0));
-  result = await sandbox.call(['hook'], { input: tool('npm test') });
+  result = await sandbox.call(['hook'], { extra: defaultLimit, input: tool('npm test') });
   assert.equal(result.status, 0);
   const question = JSON.parse(result.stdout);
   assert.equal(question.hookSpecificOutput.permissionDecision, 'ask');
   assert.match(question.hookSpecificOutput.permissionDecisionReason, /`npm test` is a heavy job/);
   assert.match(question.hookSpecificOutput.permissionDecisionReason, /free some space on that drive in Windows/);
   // A light command asks nothing.
-  assert.equal((await sandbox.call(['hook'], { input: tool('git status') })).stdout, '');
+  assert.equal((await sandbox.call(['hook'], { extra: defaultLimit, input: tool('git status') })).stdout, '');
   // An old reading, or a WSL 1 one, is not repeated.
   writeFileSync(state, JSON.stringify({ hostDisk: { free: 0, size: 250 * gb, readAt: '2020-01-01T00:00:00Z', distro: 'Ubuntu', version: 2 } }));
-  assert.equal((await sandbox.call(['hook'], { input: tool('npm test') })).stdout, '');
+  assert.equal((await sandbox.call(['hook'], { extra: defaultLimit, input: tool('npm test') })).stdout, '');
   writeFileSync(state, JSON.stringify({ hostDisk: { free: 0, size: 250 * gb, readAt: new Date().toISOString(), distro: 'Ubuntu', version: 1 } }));
-  assert.equal((await sandbox.call(['hook'], { input: tool('npm test') })).stdout, '');
+  assert.equal((await sandbox.call(['hook'], { extra: defaultLimit, input: tool('npm test') })).stdout, '');
   // Room enough: nothing changes.
   writeFileSync(state, kept(200 * gb));
-  assert.equal((await sandbox.call(['hook'], { input: tool('npm install') })).stdout, '');
+  assert.equal((await sandbox.call(['hook'], { extra: defaultLimit, input: tool('npm install') })).stdout, '');
   // YOKOTEN_MIN_FREE_GB=0 turns the question off.
   writeFileSync(state, kept(0));
   assert.equal((await sandbox.call(['hook'], { input: tool('docker build .'), extra: { YOKOTEN_MIN_FREE_GB: '0' } })).stdout, '');
   // JSON, as the board and other runtimes read it.
-  result = await sandbox.call(['hook', '--json'], { input: tool('npm run build') });
+  result = await sandbox.call(['hook', '--json'], { extra: defaultLimit, input: tool('npm run build') });
   assert.equal(result.status, 0);
   assert.equal(JSON.parse(result.stdout).ask.ask, true);
 });
