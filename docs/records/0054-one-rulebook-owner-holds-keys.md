@@ -11,7 +11,7 @@ source on that day, has three layers:
 
 | Layer | Whose | Where it lives |
 |---|---|---|
-| Desk fence | yokoten | `yokoten desk` starts it around a worker: sandbox-runtime (`srt` 0.0.81, bubblewrap on Linux and WSL2, Seatbelt on macOS). Only the desk folder is writable; the network goes through an allowlist proxy. Native Windows has none. |
+| Desk fence | yokoten | `yokoten desk` starts it around a worker: sandbox-runtime (`srt` 0.0.81, bubblewrap on Linux and WSL2, Seatbelt on macOS). Only the desk folder is writable; the network goes through an allowlist proxy. Native Windows has none, so a desk there does not start. |
 | Guard | yokoten | A hook in each agent's own config: `.claude/settings.json`, `.codex/`, `.gemini/settings.json`, `.grok/`, `.muse/hooks.json`, `.agents/` (Antigravity), and plugins for OpenCode and DeepSeek Harness. |
 | Agent's own sandbox | each vendor | `sandbox.enabled` in `.claude/settings.json`; `sandbox_mode = "workspace-write"` in `.codex/config.toml`; `security.disableYoloMode` in `.gemini/settings.json`; a profile in `.grok/sandbox.toml`. |
 
@@ -27,7 +27,7 @@ The ways out, on that day:
 | One Bash call asks to run outside Claude Code's sandbox | no rule (issue #1163) |
 | A launch that skips approvals | Antigravity skips the hooks; the others not checked (issue #1163) |
 | DeepSeek Harness with its hooks file missing | runs with no guard, without a word |
-| Native Windows | no fence; the guard alone |
+| Native Windows | no desk (it refuses to start); a session there has the guard alone |
 
 The owner's objection: if the lead can escape, the desk fence means nothing. It is half
 right. Most incidents are careless, not hostile, and the fence keeps a careless worker in
@@ -48,15 +48,16 @@ treats worker reports as untrusted.
    yokoten holds the rules for all agents. The roles differ: the lead talks to the owner,
    plans and reads reports; a worker does one task and reports to the lead. A role is set
    by the environment at start (`YOKOTEN_ROLE`), not by the vendor.
-2. **The owner holds the keys.** A change to the guard, hook, sandbox or fence settings
+2. **The owner holds the keys.** A change to the guard (its hooks), the agent's sandbox or the fence settings
    becomes a proposed change that the owner approves before it is written. Leaving the
    sandbox needs the owner's yes, for the lead too. A lead started without its sandbox is
    said in one line at session start and shown by `doctor`. Worker reports are read as
    data, not instructions. (issue #1163)
    How the owner writes: the lead drafts the change, yokoten shows it in one plain line
    with a before/after, and the owner approves in a terminal outside the fence, which
-   writes the file. Inside the lead's fence those files are read-only, so the key is out of
-   the agent's reach, not just forbidden.
+   writes the file. In the goal below, those files are read-only inside the lead's fence,
+   so the key is out of the agent's reach, not just forbidden. The lead has no fence
+   yet, so today the owner's yes is the only stop.
 3. **Who decides what, in three layers.** "The owner" is whoever owns the machine and the
    project: every user holds their own keys.
 
@@ -78,7 +79,8 @@ treats worker reports as untrusted.
    The MIT licence lets anyone fork the code; the name yokoten stays with the releases that
    keep its floor.
 4. **The fence can be swapped, never removed.** `auto` (srt), `srt`, `sbx` or `leash`;
-   only the owner switches it; a fence that can't start means the desk does not start.
+   only the owner switches it; a fence that can't start means the desk does not start,
+   as on native Windows today.
    The core stays zero-dependency: yokoten runs the fence as a program. (issue #1164)
 5. **What yokoten is.** Like Kubernetes, which does not make containers but decides who
    may deploy what; like a factory's management system, which buys its machines and owns
@@ -103,9 +105,10 @@ flowchart TB
     msg["yokoten msg: scanned both ways, wrapped as data, approval claims flagged"]
     settings["Guard, hook, sandbox and fence settings: written only on the owner's yes"]
   end
-  lead -- "ask: leave the sandbox, change a setting" --> owner
+  lead -- "ask to leave the sandbox or change a setting" --> owner
+  owner -- "yes" --> settings
   worker --> msg --> lead
-  worker -. "diff, commits, test output, final report: not through msg (still to watch)" .-> lead
+  worker -. "diff, commits, test output, report, not through msg yet" .-> lead
 ```
 
 `yokoten msg` (issue #674) already guards its own channel. Its wrapper is a note to the
