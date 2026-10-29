@@ -54,11 +54,10 @@ own promise false.
 
 ## 4. How a finding is written
 
-One line, at most 25 words: grade, file and line, what breaks and how to show it
-fails, and whether that was run or only read. A finding with no way to show it fails is
-a question and ends in `?`. The review opens with the verdict and the SHA, folds the
-commands and their output in one `<details>` block, and ends with what was not
-checked. No praise and no summary of the diff: the owner reads it in 30 seconds.
+The `reviewer` agent's Output section is the one layout: the verdict and the SHA
+first, one line of at most 25 words per finding (grade, file and line, how to show it
+fails, run or only read), the commands and their output folded, and what was not
+checked last. The owner reads it in 30 seconds.
 
 ## 5. Hand over
 

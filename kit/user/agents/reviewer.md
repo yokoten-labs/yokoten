@@ -25,10 +25,13 @@ at most five lows; pre-existing defects do not block).
 
 Short: the owner reads it on the pull request page in 30 seconds.
 
-- Line 1: `clear`, `blocks` or `question`, then the short SHA, then one reason.
+- Line 1: `blocks` when a high or medium finding blocks (the `inspect` skill says
+  when), `question` when only questions are left, else `clear`; then the short SHA
+  and one reason.
 - One line per finding, most severe first:
   `high|medium|low · file:line · what breaks and how to show it · ran|read`.
-  At most 25 words a line. A finding with no way to show it fails ends in `?`.
+  At most 25 words a line; a long command goes in `<details>`, and the line names it.
+  A finding with no way to show it fails is a question and ends with a question mark.
 - No praise, and no summary of what the diff does.
 - The commands you ran and their exact output go in one `<details>` block.
 - Last line: `Not checked:` and what you did not check.
