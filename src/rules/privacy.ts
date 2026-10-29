@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
-import { climbsPastDrive, fromGitBash, replaceUsersFolderNames, usersFolderUser, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
+import { climbsPastDrive, fromGitBash, lastPathPart, replaceUsersFolderNames, usersFolderUser, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
 import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
@@ -1163,7 +1163,9 @@ export function hideUsersFolders(text: string): string {
  * route a post shows, so it is a note there, not a refusal.
  */
 function usersFolderGrade(line: string, env: Env): 'sure' | 'unknown' | null {
-  const own = new Set([usersFolderUser(env.HOME), usersFolderUser(env.USERPROFILE)].filter((name): name is string => !!name).map((name) => name.toLowerCase()));
+  // The own user: the name under a users folder, or the last part of a home kept elsewhere (`/data/zed`).
+  const ownName = (home: string | undefined) => usersFolderUser(home) ?? lastPathPart(home);
+  const own = new Set([ownName(env.HOME), ownName(env.USERPROFILE)].filter((name): name is string => !!name).map((name) => name.toLowerCase()));
   let grade: 'sure' | 'unknown' | null = null;
   replaceUsersFolderNames(line, (name, form, after) => {
     if (!isPersonUnder(name, form) || USERS_FOLDER_PLACEHOLDERS.has(name.toLowerCase())) return null;

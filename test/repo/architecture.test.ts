@@ -1754,7 +1754,8 @@ test('platform: no new process.platform read outside the list, and the list only
 // moves onto the reader and expires; a `kept:` one reads no path (a name or text check).
 const PATH_REGEX_EXPIRY = '2026-11-30';
 const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string, expires: string | null][] = [
-  ['agents/copilot.ts', 3, 'follow-up: Windows long paths and trailing separators in src/platform (#1242); two are a // comment test', PATH_REGEX_EXPIRY],
+  ['agents/copilot.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform (#1242), for withoutTrailing', PATH_REGEX_EXPIRY],
+  ['agents/copilot.ts', 2, 'kept: two startsWith(\'//\') tests that skip comment lines, not a path', null],
   ['agents/runtimes/codex.ts', 1, 'kept: startsWith(\'//\') skips the comment lines before a JSON file, not a path', null],
   ['rules/text/message.ts', 2, 'kept: the user-folder rule text names C:\\Users\\<name>; words, not a path read', null],
   ['run/check.ts', 1, 'kept: startsWith(\'//\') reads a comment line of source, not a path', null],
@@ -1829,7 +1830,10 @@ test('paths: no new path regex in src/ outside src/platform/ and the waivers; ea
       assert.ok(Date.now() <= Date.parse(`${expires}T23:59:59Z`), `${path}: its waiver expired on ${expires}; move it onto readPath, or renew it with a reason`);
     }
   }
-  const allowed = PATH_REGEX_WAIVERS.map(([path, count]): [string, number] => [path, count]);
+  // A file may have a kept: entry and a follow-up: entry; its allowed count is their sum.
+  const sums = new Map<string, number>();
+  for (const [path, count] of PATH_REGEX_WAIVERS) sums.set(path, (sums.get(path) ?? 0) + count);
+  const allowed = [...sums];
   assert.deepEqual(ratchetProblems(found, allowed, 'src/', 'PATH_REGEX_WAIVERS', PATH_REGEX_FIX), [], 'Rule: a path word is read by the one path reader (issue #1237).');
 });
 

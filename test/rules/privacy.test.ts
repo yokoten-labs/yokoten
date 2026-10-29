@@ -2872,25 +2872,35 @@ test('makeRedactor and hideHome: no user name is left in a users-folder path, wh
   assert.equal(none('(see C:\\Users\\alice).'), '(see C:\\Users\\<user>).');
   // A POSIX account name holds no space, so prose after it stays.
   assert.equal(none('see /home/alice for details.'), 'see /home/<user> for details.');
-  // With no separator after it, a Windows name ends at prose: `, ; ' (` and a space, a shell
-  // joiner, the next path's drive, a prose word, three words, a tab or a line separator (round 3).
+  // With no separator after it, no rule can tell where a spaced name ends (`Kim Do`), so a
+  // Windows or /Users name runs on to a sure end: a line end, a tab, a shell joiner, `; `,
+  // a quote, or the next path. The rest of the line may go with it: more, never less (round 4).
   const prose: [string, string][] = [
-    ['see C:\\Users\\alice for details', 'see C:\\Users\\<user> for details'],
+    ['see C:\\Users\\alice for details', 'see C:\\Users\\<user>'],
     ['cd /d C:\\Users\\alice && dir', 'cd /d C:\\Users\\<user> && dir'],
     ['C:\\Users\\alice, C:\\Users\\bob', 'C:\\Users\\<user>, C:\\Users\\<user>'],
     ['C:\\Users\\Public, C:\\Users\\bob', 'C:\\Users\\Public, C:\\Users\\<user>'],
     ['C:\\Users\\alice; next', 'C:\\Users\\<user>; next'],
-    ["C:\\Users\\alice' and", "C:\\Users\\<user>' and"],
-    ['C:\\Users\\alice ( old )', 'C:\\Users\\<user> ( old )'],
     ['C:\\Users\\alice || echo', 'C:\\Users\\<user> || echo'],
     ['C:\\Users\\alice | more', 'C:\\Users\\<user> | more'],
-    ['C:\\Users\\Jane Van Doe Smith', 'C:\\Users\\<user> Smith'],
+    ['say "C:\\Users\\Jane Doe" twice', 'say "C:\\Users\\<user>" twice'],
     ['C:\\Users\\Jane Doe\u2028next', 'C:\\Users\\<user>\u2028next'],
     ['C:\\Users\\Jane Doe\u2029next', 'C:\\Users\\<user>\u2029next'],
     ['C:\\Users\\alice\tnext', 'C:\\Users\\<user>\tnext'],
     ['C:\\Users\\alice /tmp/x', 'C:\\Users\\<user> /tmp/x'],
-    // Under /Users only, a folder name made by hand may hold a space, when a separator ends it.
-    ['/Users/Jane Doe/x', '/Users/<user>/x'],
+    // The names the round-3 review found, each hidden whole.
+    ...['Kim Do', 'Anh To', 'Mary A Smith', 'Mary Jane Watson Parker', 'Jean Luc Picard Jr', 'Ana Maria de la Cruz'].flatMap((name): [string, string][] => [
+      [`C:\\Users\\${name}`, 'C:\\Users\\<user>'],
+      [`at C:\\Users\\${name}\nnext`, 'at C:\\Users\\<user>\nnext'],
+      [`C:\\Users\\${name}\\x`, 'C:\\Users\\<user>\\x'],
+      [`/Users/${name}/x`, '/Users/<user>/x'],
+      [`/Users/${name}`, '/Users/<user>'],
+    ]),
+    ['/Users/Jane Doe', '/Users/<user>'],
+    ['/Users/May Lee', '/Users/<user>'],
+    ['/Users/Jane Doe and more', '/Users/<user>'],
+    ['/Users/Jane Doe && ls', '/Users/<user> && ls'],
+    // A /home name holds no space: an account name never does.
     ['/home/jane doe/x', '/home/<user> doe/x'],
   ];
   for (const [text, shown] of prose) assert.equal(none(text), shown, JSON.stringify(text));
@@ -2934,6 +2944,9 @@ test('scanText: a users-folder path in text that leaves the machine is a hit; th
   assert.equal(gradeOf('/home/zed/x'), 'unknown');
   assert.equal(gradeOf('/home/zed/x', { HOME: '/home/zed' }), 'sure');
   assert.equal(gradeOf('see /home/zed', { USERPROFILE: 'C:\\Users\\Zed' }), 'sure');
+  // A home kept outside a users folder still names its user by its last part (round 4).
+  assert.equal(gradeOf('/home/zed/x', { HOME: '/data/zed' }), 'sure');
+  assert.equal(gradeOf('/home/zed/x', { HOME: '/data/other' }), 'unknown');
   for (const text of ['/home/zed/.ssh/id_x', '/home/zed/.config/yokoten', '/home/zed/.cache', '"\\/home\\/zed\\/.ssh"']) assert.equal(gradeOf(text), 'sure', text);
   // Route words count under /home only; under /Users a name is a name.
   assert.equal(gradeOf('/Users/settings/x'), 'sure');
