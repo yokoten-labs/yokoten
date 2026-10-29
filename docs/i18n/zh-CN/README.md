@@ -25,9 +25,9 @@ npx yokoten
 
 第一次运行只有一屏：装好了什么、你走到哪一步、下一条要输入的命令。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.2; regenerate it when the screen changes. -->
+<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.2 · set up; stage 1 of 5, safety net
+yokoten 0.1.3 · set up; stage 1 of 5, safety net
 
   ok          guard on for Claude Code on this computer
   ok          37 files written in this project, none of yours changed
@@ -89,7 +89,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 | `npx yokoten` | 补上缺的东西，再给出下一步 |
 | `yokoten check` | 提交之前找出密钥和被破坏的规则 |
 | `yokoten desk` | 把一个任务交给一个 AI，在它自己的工位里做 |
-| `yokoten kanban` | 一眼看到整个团队，实时，只读（预览版） |
+| `yokoten kanban` | 一眼看到整个团队（预览版） |
 | `yokoten tidy` | 列出旧分支、worktree 和工位 |
 
 `yokoten help --all` 按用途分组列出其余的命令：开始、工作、守卫、合并与 CI、维护。

@@ -194,13 +194,12 @@ const GREEN_MARKS: ReadonlySet<string> = new Set(MARKS.filter(isDoneMark));
 // `kept (your edit) …` and `kept … (yours, not yokoten's)`, and init's `kept your <sandbox> in …`,
 // `kept your <hooks file>: …` and `kept <file>: it has your changes …` (#964).
 const KEPT_YOURS = /^(?:\(your edit\)|your\b)|\(yours, not yokoten's\)$|: it has your changes\b/;
-// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note,
-// ? can't check. A terminal gets it; a pipe, a file or an agent keeps the word alone,
-// so an old console never shows a broken glyph. `not now` and `skipped` are not among
-// the five states, so they keep their word only.
+// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note. A terminal gets it; a pipe, a file or an agent keeps the word alone,
+// so an old console never shows a broken glyph. `can't check` has no glyph (owner 2026-10-29): its word fills the column.
+// `not now` and `skipped` have none either.
 const MARK_GLYPH: Record<string, string> = {
   ...Object.fromEntries(MARKS.filter(isDoneMark).map((mark: Mark) => [mark, '✔'])),
-  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
+  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠',
 };
 // log-symbols' fallbacks (issue #1027, R11): the classic Windows console draws these from its code page.
 const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼', '?': '?' };
@@ -257,19 +256,9 @@ export function styleLine(line: string, isColour: boolean, isUnicode = true): st
     const colour = GREEN_MARKS.has(word) && !yours ? GREEN : word === 'MISSING' ? RED : YELLOW;
     const drawn = yours ? MARK_GLYPH.note : MARK_GLYPH[word];
     const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
-    let said = glyph === undefined ? word : `${glyph} ${word}`;
-    let padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
-    // A long mark (`can't check`) has no padding to give the glyph: a label's gap gives the
-    // rest, so the row's text keeps the column of the rows above and below it (#1115).
-    let rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
-    // With no label there is no gap to give: the row keeps its word and its colour, without the
-    // glyph, so its text still starts in the column of every other row (#1160).
-    const isInColumn = word.length + (mark[3] ?? '').length === MARK_COLUMN;
-    if (isInColumn && glyph !== undefined && (mark[3] ?? '').length - padding.length < said.length - word.length && rest === (mark[4] ?? '')) {
-      said = word;
-      padding = mark[3] ?? '';
-      rest = mark[4] ?? '';
-    }
+    const said = glyph === undefined ? word : `${glyph} ${word}`;
+    const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
+    const rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
     styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${rest}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;

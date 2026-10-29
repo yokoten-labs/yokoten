@@ -294,8 +294,13 @@ test('output colour: doctor colours a terminal report and never a pipe or NO_COL
   const sandbox = makeSandbox();
   const colour = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo, isTTY: true });
   assert.match(colour.stdout, /\u001b\[1m/, 'a heading is bold');
-  assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:✔ ok|✔ done|✘ MISSING|⚠ note|● next|● to do|\? can't check)\u001b\[0m/, 'a mark has its glyph, its word and its colour');
-  assert.ok(!/^[ ]*(?:✔|✘|●|⚠|\?)/m.test(colour.stdout), 'the glyph sits inside the colour, so a plain line never shows one');
+  // Each mark but `can't check` has its glyph (the old console draws √ × * ‼), its word and its colour (#1160).
+  assert.match(colour.stdout, /\u001b\[(?:32|31|33)m(?:[✔√] (?:ok|done)|[✘×] MISSING|[⚠‼] note|[●*] (?:next|to do))\u001b\[0m/, 'a mark has its glyph, its word and its colour');
+  assert.doesNotMatch(colour.stdout, /\? can't check/, "`can't check` has no glyph: its word fills the column");
+  if (colour.stdout.includes("can't check")) assert.match(colour.stdout, /\u001b\[33mcan't check\u001b\[0m/, "`can't check` has its word and its colour");
+  assert.ok(!/^[ ]*(?:✔|√|✘|×|●|⚠|‼)/m.test(colour.stdout), 'the glyph sits inside the colour, so a plain line never shows one');
+  for (const isUnicode of [true, false]) assert.match(styleLine("  can't check labels: gh could not reach GitHub", true, isUnicode), /^ {2}\u001b\[33mcan't check\u001b\[0m labels/, `a bare can't check row on any console (unicode ${isUnicode})`);
+  assert.match(styleLine("  can't check other AIs   2 not installed", true), /^ {2}\u001b\[33mcan't check\u001b\[0m other AIs {3}2/, 'a labelled row too');
   const plain = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: '1' }, cwd: sandbox.repo, isTTY: true });
   const piped = await invoke(['doctor', '--all'], { env: { ...sandbox.env, NO_COLOR: undefined }, cwd: sandbox.repo });
   for (const [name, result] of [['NO_COLOR', plain], ['a pipe', piped]] as const) {

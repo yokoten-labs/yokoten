@@ -800,6 +800,7 @@ export const COMMANDS: Command[] = [
       { name: '--name', value: 'name', text: "the agent's name on the team (default: the desk folder's name)" },
       { name: '--read', value: 'paths', text: 'more paths to show read-only, joined by commas' },
       { name: '--host', value: 'hosts', text: "more API hosts the agent may reach, joined by commas" },
+      { name: '--marks', text: 'show your private-marks file in the desk, read-only' },
       { name: '--json', text: 'with no task: the desks as JSON on stdout' },
     ],
     arguments: ['agent', 'folder'],

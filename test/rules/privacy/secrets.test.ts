@@ -150,6 +150,10 @@ test('secrets: a sure hit fails, a likely hit warns, and an unknown hit warns (#
 test('secrets: a value that says "must not leave" is a test value; a hit names its match in plain words (#1239)', () => {
   const name = 'sec' + 'ret';
   assert.deepEqual(scanText(`const ${name} = 'PRIVATE-MESSAGE-TEXT-MUST-NOT-LEAVE';`, { file: 'a' }), []);
+  // Controls: a real-looking value that holds the words elsewhere, or does not end with them, still hits.
+  for (const value of ['Xk2-must-not-leave-Qz9Lm4Tp8Vw3Rb7Nd5', 'must_not_leave_Qz9Lm4Tp8Vw3Rb7Nd5Xk2', 'Qz9Lm4Tp8Vw3Rb7Nd5Xk2must-not', 'Qz9Lm4Tp8Vw3Rb7Nd5Xk2mustnotleave']) {
+    assert.equal(scanText(`const ${name} = '${value}';`, { file: 'a' }).length, 1, `${value} still hits`);
+  }
   const unclear = 'abcdefghijklmnopqrstuvwxyz' + 'abcdef';
   const [hit] = scanText(`const ${name} = '${unclear}';`, { file: 'a' });
   assert.equal(hit.what, 'a secret (long value under a name that says secret)');

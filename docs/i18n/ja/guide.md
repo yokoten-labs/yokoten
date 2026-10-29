@@ -809,10 +809,13 @@ issue にその節がないフィールドは `TODO(reviewer)` になり、決�
 
 ```
 Project:
-  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+  note        lesson incident-138: test/api.test.ts: a test calls a server on
+              this machine and does not set NO_PROXY; set NO_PROXY and no_proxy
+              to 127.0.0.1,localhost while the test runs, then put the old
+              values back
 ```
 
-プロジェクトの完全な `doctor` が新しい教訓を初めて走らせたときは、一度だけそう言います。何も見つけない教訓は `note    a new check ran: ok (incident-138); doctor now runs it in this project` と言います。問題を見つけたものは `note    new lesson: incident-138 (<what>); doctor now runs it in this project` と言い、そのあと問題を出します。見た教訓は `.git/yokoten/state.json` に保つので、そのファイルがコミットされることは決してありません。
+プロジェクトの完全な `doctor` が新しい教訓を初めて走らせたときは、一度だけそう言います。何も見つけない教訓は `note        a new check ran: ok (incident-138); doctor now runs it in this project` と言います。問題を見つけたものは `note        new lesson: incident-138 (<what>); doctor now runs it in this project` と言い、そのあと問題を出します。見た教訓は `.git/yokoten/state.json` に保つので、そのファイルがコミットされることは決してありません。
 
 セッションの開始も、ここで問題を見つけたときは、新しい教訓を一度だけ聞きます。一行で、どこを見るかのコマンドを名指しします。``yokoten: a new lesson learned in another project found a problem here: <what>. Run `yokoten doctor` to see where.`` あとのセッション、または圧縮のあとの同じセッションは、もうそれを聞きません。セッションは各新しい教訓を一つの開始でだけ走らせ、どれを走らせたかを同じファイルに保つので、あとの開始はそれに時間を使いません。あとで出てくる問題は、完全な `doctor` が報告します。
 

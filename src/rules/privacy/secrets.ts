@@ -189,7 +189,7 @@ const CODE_REFERENCE = /^[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)+
 const PROCESS_LOOKUP = /^(?:process\.env|os\.environ|os\.getenv|env\.|Deno\.env|import\.meta\.env)/;
 const PATH_VALUE = /^(?:[.~]?[/\\]|[A-Za-z]:[/\\])/;
 // A value that says it is not real. `must-not-leave` is a test value that names what it checks (#1239).
-const FAKE_VALUE = /never|not[-_]?real|fake|dummy|redacted|placeholder|must[-_]not/i;
+const FAKE_VALUE = /never|not[-_]?real|fake|dummy|redacted|placeholder|(?:^|[-_])must[-_]not[-_]leave$/i;
 
 /** Whether a variable name says it holds a secret, as `SERVICE_TOKEN` or `apiKey` does. */
 export function isSecretName(name: string): boolean {

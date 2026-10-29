@@ -122,7 +122,7 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
   const indent = ' '.repeat(ROW_INDENT);
   const marked = `${indent}${mark.padEnd(MARK_COLUMN - 1)} `;
   // A label wider than its column (a long path) takes its own line, so every text starts in one column.
-  if (label !== undefined && label.length > LABEL_COLUMN - 1) return [`${marked}${label}`, ...underRow(text, false)];
+  if (label !== undefined && label.length > LABEL_COLUMN - 1) return [`${marked}${label}`, ...underRow(text)];
   return wrap(`${marked}${label === undefined ? '' : `${label.padEnd(LABEL_COLUMN - 1)} `}`, text);
 }
 

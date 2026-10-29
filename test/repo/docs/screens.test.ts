@@ -195,7 +195,10 @@ test('layout: MARKS is every row mark and change state, and the columns are name
   assert.equal(row('ok', 'text', 'label')[0]?.indexOf('text'), ROW_TEXT_COLUMN, 'a labelled row starts its text at ROW_TEXT_COLUMN');
   assert.equal(row('ok', 'text')[0]?.indexOf('text'), ROW_INDENT + MARK_COLUMN);
   assert.equal(field('trash', 'text')[0]?.indexOf('text'), ROW_INDENT + LABEL_COLUMN);
-  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_INDENT + MARK_COLUMN)}text`], 'a long label stands on its own line, its text in the mark column (#1239)');
+  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_TEXT_COLUMN)}text`], "a long label stands on its own line, its text in the label column like every labelled row (#1239)");
+  // A short and a long label on one screen: both texts start in the label column (#1239).
+  const mixed = [...row('next', 'working', 'w1'), ...row('next', 'working', 'worker-number-two')];
+  assert.deepEqual(mixed.map((line) => line.search(/working/)).filter((at) => at >= 0), [ROW_TEXT_COLUMN, ROW_TEXT_COLUMN]);
   assert.deepEqual(underRow('why'), [`${' '.repeat(ROW_TEXT_COLUMN)}why`]);
   assert.deepEqual(underRow('why', false), [`${' '.repeat(ROW_INDENT + MARK_COLUMN)}why`]);
 });

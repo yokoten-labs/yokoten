@@ -213,7 +213,7 @@ export function machineChecks(env: Env): Practice[] {
       ? practice('session-doctor', 'session-doctor', false, `can't read ${userSettingsFile(env)}`, 'make it valid JSON, then run `yokoten install`')
       : problem?.kind === 'shape'
         ? practice('session-doctor', 'session-doctor', false, `${userSettingsFile(env)} has an unexpected shape`, `${problem.hint}; fix it, then run \`yokoten install\``)
-        : practice('session-doctor', 'session-doctor', plugin || hasSessionDoctor(env), 'sessions do not start with doctor (the Claude Code plugin starts them too)', 'run `yokoten install`');
+        : practice('session-doctor', 'session-doctor', plugin || hasSessionDoctor(env), 'sessions do not start with doctor; the Claude Code plugin also runs it at session start', 'run `yokoten install`');
   // The guard of every session on this machine (#904). While the plugin is on it brings the
   // guard, and install writes none; when the plugin goes away, nothing is left to stop a
   // risky command, so this is a failure with one fix, never a note. A settings file doctor

@@ -25,9 +25,9 @@ npx yokoten
 
 初回は一画面だけ表示されます。設定した内容、いまの段階、次のコマンドです。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.2; regenerate it when the screen changes. -->
+<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.2 · set up; stage 1 of 5, safety net
+yokoten 0.1.3 · set up; stage 1 of 5, safety net
 
   ok          guard on for Claude Code on this computer
   ok          37 files written in this project, none of yours changed
@@ -89,7 +89,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 | `npx yokoten` | 足りないものを整え、次の一歩を見せる |
 | `yokoten check` | コミットの前に、秘密情報や破られたルールを探す |
 | `yokoten desk` | 一つのタスクを一つの AI に渡し、その AI 専用のデスクで進める |
-| `yokoten kanban` | チームを一目で見せる。リアルタイムで読み取り専用（プレビュー） |
+| `yokoten kanban` | チームを一目で見せる（プレビュー） |
 | `yokoten tidy` | 古いブランチ、worktree、デスクを一覧にする |
 
 `yokoten help --all` で残りのコマンドが、仕事ごとのグループ（はじめる・進める・守る・マージと CI・保守）で分かります。

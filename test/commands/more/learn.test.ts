@@ -46,7 +46,7 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   sandbox.write('changes/3-c.md', 'Added\n');
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {5}changes\/3-c\.md:1\n {14}no entry after the section\n {14}write the entry/);
+  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {5}changes\/3-c\.md:1\n {26}no entry after the section\n {26}write the entry/);
   rmSync(join(sandbox.repo, 'changes/3-c.md'));
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 0, result.stderr);

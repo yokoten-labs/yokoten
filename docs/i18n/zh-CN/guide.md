@@ -1245,11 +1245,14 @@ issue 里没写的那一节，对应的字段就留一个 `TODO(reviewer)`，绝
 
 ```
 Project:
-  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+  note        lesson incident-138: test/api.test.ts: a test calls a server on
+              this machine and does not set NO_PROXY; set NO_PROXY and no_proxy
+              to 127.0.0.1,localhost while the test runs, then put the old
+              values back
 ```
 
 项目里第一次跑完整的 `doctor` 碰到一课新的，会单独说一次，哪怕没查出问题：
-`note    new lesson: incident-138 (<what>); doctor now runs it in this project`。
+`note        new lesson: incident-138 (<what>); doctor now runs it in this project`。
 见过哪些课记在 `.git/yokoten/state.json` 里，这个文件不会被提交。
 
 会话开头也会听到新的一课，只说一次，前提是它在这里查出了问题。就一行，还写明用哪条命令看在哪里：

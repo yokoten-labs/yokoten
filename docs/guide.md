@@ -1646,12 +1646,15 @@ the `doctor` report:
 
 ```
 Project:
-  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+  note        lesson incident-138: test/api.test.ts: a test calls a server on
+              this machine and does not set NO_PROXY; set NO_PROXY and no_proxy
+              to 127.0.0.1,localhost while the test runs, then put the old
+              values back
 ```
 
 The first time a project's full `doctor` runs a new lesson, it says so once. A lesson
-that finds nothing says `note    a new check ran: ok (incident-138); doctor now runs it
-in this project`. One that finds a problem says `note    new lesson: incident-138
+that finds nothing says `note        a new check ran: ok (incident-138); doctor now runs it
+in this project`. One that finds a problem says `note        new lesson: incident-138
 (<what>); doctor now runs it in this project`, then the problem. It keeps the lessons
 it has seen in `.git/yokoten/state.json`, so the file is never committed.
 
