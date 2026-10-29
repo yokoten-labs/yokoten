@@ -202,7 +202,7 @@ const MARK_GLYPH: Record<string, string> = {
   MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠',
 };
 // log-symbols' fallbacks (issue #1027, R11): the classic Windows console draws these from its code page.
-const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼', '?': '?' };
+const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼' };
 
 /**
  * Whether the terminal draws Unicode marks (is-unicode-supported's rules): every system but

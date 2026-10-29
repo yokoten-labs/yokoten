@@ -532,8 +532,8 @@ export function mcpScreen({ reports, problems, warnings, toolCount }: McpResult)
   if (!problems.length) {
     return screen(
       title('mcp --check', `${count(toolCount, 'tool')} ready`),
-      reports.flatMap((report) => (report.skipped ? row('skipped', report.skipped, report.name) : row('ok', `${count(report.tools, 'tool')}, ${report.metrics.bytes} B`, report.name))),
-      warnings.length ? row('note', `${count(warnings.length, 'warning')}; run yokoten mcp --json`) : [],
+      spaced(reports.map((report) => (report.skipped ? row('skipped', report.skipped, report.name) : row('ok', `${count(report.tools, 'tool')}, ${report.metrics.bytes} B`, report.name)))),
+      warnings.length ? row('note', `${count(warnings.length, 'warning')}; run yokoten mcp --json`, '') : [],
     );
   }
   const failing = new Set(reports.filter((report) => report.findings.some(isFailingFinding)).map((report) => report.name));

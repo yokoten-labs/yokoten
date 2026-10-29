@@ -195,7 +195,7 @@ export const changelogProblemsScreen = (problems: readonly Finding[]): string[] 
     title('changelog', `${plural(problems.length, 'problem')}; nothing was written`),
     spaced(problems.map((problem) => {
       const where = problem.file === undefined ? undefined : `${problem.file}${problem.line === undefined ? '' : `:${problem.line}`}`;
-      return [...row('MISSING', problem.what, where), ...underRow(problem.fix, where !== undefined)];
+      return [...row('MISSING', problem.what, where ?? ''), ...underRow(problem.fix)];
     })),
     nextLine('yokoten changelog'),
   );
