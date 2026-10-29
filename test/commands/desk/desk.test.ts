@@ -139,7 +139,7 @@ test('desk <issue>: no AI installed is one line, and nothing is written (#1054)'
   const { call, home, calls, world } = makeWorld(() => {}, { installed: false });
   const result = await call(['14']);
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'yokoten desk · no AI to start: neither Claude Code nor Codex is installed\n\nNext: install Claude Code with `npm install -g @anthropic-ai/claude-code`, then\n      run this again\n');
+  assert.equal(result.stderr, 'yokoten desk · no AI to start: neither Claude Code nor Codex is installed\n\nNext: install Claude Code with `npm install -g @anthropic-ai/claude-code`, then\n      run this again.\n');
   assert.ok(!existsSync(home));
   assert.ok(!calls.some((line) => line.startsWith('git clone')));
   // The positive control: installed, the same call makes the desk.
@@ -235,7 +235,7 @@ test('desk <issue>: a desk whose .git points at a planted config is refused; no 
   });
   const result = await call(['14']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr.replace(/\s+/g, ' '), /yokoten desk · git does not run in this desk outside the fence: .*commondir is there: it would point git at a config the desk wrote Next: look at the desk by hand: it is kept in `[^`]+` ?$/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /yokoten desk · git does not run in this desk outside the fence: .*commondir is there: it would point git at a config the desk wrote Next: look at the desk by hand: it is kept in `[^`]+`\.? ?$/);
   assert.ok(!existsSync(marker), 'finish ran the planted filter outside the fence');
   assert.ok(existsSync(join(home, '14', '.git')), 'the desk is kept');
   assert.equal(readRecord(home, '14')?.state, 'kept');
@@ -258,7 +258,7 @@ test('desk: a running desk is not started twice (#1056)', async () => {
   writeFileSync(join(home, '14.json'), JSON.stringify({ ...record, state: 'working' }));
   const again = await call(['14']);
   assert.equal(again.status, 1);
-  assert.equal(again.stderr, 'yokoten desk · desk 14 is running in another terminal (working)\n\nNext: stop it there, then run `yokoten desk 14` again\n');
+  assert.equal(again.stderr, 'yokoten desk · desk 14 is running in another terminal (working)\n\nNext: stop it there, then run `yokoten desk 14` again.\n');
 });
 
 test('desk: on native Windows, one line to use WSL, and nothing starts (#1054)', async () => {
@@ -299,5 +299,5 @@ test('stoppedDesksScreen: one row each, then the first one to go on with; Window
     'Next: `yokoten desk 7`',
   ]);
   assert.match(stoppedDesksScreen([desk('9', [])], now)[0] ?? '', /· 1 other desk stopped mid-task$/);
-  assert.deepEqual(DESK_USE_WSL, ['yokoten desk · on Windows, a desk runs in WSL, where it has a sandbox; nothing', '               was started', '', 'Next: open WSL and run `yokoten desk` there']);
+  assert.deepEqual(DESK_USE_WSL, ['yokoten desk · on Windows, a desk runs in WSL, where it has a sandbox; nothing', '               was started', '', 'Next: open WSL and run `yokoten desk` there.']);
 });

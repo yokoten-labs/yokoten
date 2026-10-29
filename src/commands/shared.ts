@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
+import { asSentence, failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -391,7 +391,7 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // so these are its names, not a second copy. Rows carry the mark words `styleLine` already draws:
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
 export {
-  askLine, type ChangeMark, failure, field, LABEL_COLUMN, type Mark, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_TEXT_COLUMN, type RowMark,
+  asSentence, askLine, type ChangeMark, failure, field, LABEL_COLUMN, type Mark, MARK_COLUMN, MARKS, moreLine, nextLine, nextSentence, noteLine, row, ROW_TEXT_COLUMN, type RowMark,
   screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, wrap,
 } from '../rules/text/screen.ts';
 
@@ -400,8 +400,6 @@ function textColumn(where: string | undefined): number {
   return where === undefined ? ROW_INDENT + MARK_COLUMN : ROW_TEXT_COLUMN;
 }
 
-/** A part of a finding as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /** The place a problem names, as editors and agents read it: `path:line`, with no colon after. */
 function locationOf(problem: Finding): string | undefined {

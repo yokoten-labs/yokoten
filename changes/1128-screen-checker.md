@@ -1,0 +1,3 @@
+Internal
+
+The screen checker reads any absolute path of the machine (`/bin/sh`, `/Library/...`, a UNC path, `C:\` and `C:/`) unless it is glued to a word, a link, `~`, a `word/*` glob, a placeholder, `GET /api/...`, `>/dev/null`, a `#!/bin/` or `#!/usr/bin/` shebang, or a CODEOWNERS finding's pattern. Backticked text on a `Fix:` line is a command; in a sentence it counts only when it starts with a known command word and another word, a `NAME=value`, or `./`. A `- ` list item ends a run of prose, and a waiver's reason must name every rule the screen breaks. A `Next:` line that is a sentence ends with a full stop (its callers write it with a small letter), and the reporter's GitHub Actions branch has a test (#1128).

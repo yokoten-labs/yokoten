@@ -35,7 +35,7 @@ import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, 
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { count, fail, failure, field, type Invocation, isTerminal, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, type RowMark, say, screen, show, showOnPullRequest, spaced, summaryLine, title, underRow, usage, wrap } from '../shared.ts';
-import { MARK_COLUMN, ROW_INDENT, section, table, type TableRow } from '../../rules/text/screen.ts';
+import { asSentence, MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow } from '../../rules/text/screen.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -113,8 +113,6 @@ export function checkJson(result: CheckResult): CheckJson {
 /** The words after `yokoten` that ran this check: `check`, or `check --pr`. */
 const checkCommand = (mode: CheckMode): string => `check${mode === 'tree' ? '' : ` --${mode}`}`;
 
-/** A part of a finding as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /**
  * The notes of a check (#1027, #1115). By default they fold into one row with the command
@@ -154,7 +152,7 @@ export function checkScreen(result: CheckResult, { isAll = false }: { isAll?: bo
     title(command, count(result.problems.length, 'problem')),
     problemRows(result.problems),
     spaced([...result.hints.map((hint) => row('note', hint)), ...(notes.length ? [notes] : [])]),
-    [...wrap('Next: ', `fix ${result.problems.length === 1 ? 'it' : 'them'}, then \`yokoten check\``), ...(links.length === 1 ? moreLine(links[0] ?? '') : [])],
+    [...nextSentence(`fix ${result.problems.length === 1 ? 'it' : 'them'}, then \`yokoten check\``), ...(links.length === 1 ? moreLine(links[0] ?? '') : [])],
   );
 }
 
@@ -586,7 +584,7 @@ export function testPlanScreen(plan: TestPlan): string[] {
 /** The row after the runner's own words: passed, or failed with the one thing to do. */
 export function testEndScreen(status: number): string[] {
   if (status === 0) return row('done', 'tests passed');
-  return screen(row('MISSING', `tests failed (exit ${status})`), wrap('Next: ', 'fix the failures above, then run `yokoten test` again'));
+  return screen(row('MISSING', `tests failed (exit ${status})`), nextSentence('fix the failures above, then run `yokoten test` again'));
 }
 
 /**
@@ -1518,7 +1516,7 @@ export function ciHealthScreen(result: CiHealthResult): string[] {
     shown.length && health.workflows.length > shown.length ? summaryLine(`${count(health.workflows.length - shown.length, 'more workflow')} ran in this window`) : [],
     section('Slowest runs', rowTable(health.slowest.map((run) => [minutesText(timeBetween(run.startedAt, run.updatedAt)), `${run.workflow}${run.branch ? ` on ${run.branch}` : ''}`]))),
     section('Passed and failed on one branch', rowTable(health.unstable.map((group) => [group.workflow, `${group.branch}: ${group.passes} passed, ${group.failures} failed`]))),
-    result.isDryRun ? [] : wrap('Next: ', '`yokoten ci-health --write` puts it in the pinned issue "CI health"'),
+    result.isDryRun ? [] : nextSentence('`yokoten ci-health --write` puts it in the pinned issue "CI health"'),
   );
 }
 
@@ -1718,7 +1716,7 @@ export function borrowedScreen(result: BorrowedResult): string[] {
   return screen(
     title('borrowed', `${count(result.sources, 'source')}, ${moved ? `${count(moved, 'source')} moved` : 'none moved'}`),
     spaced(rows),
-    isFailed ? wrap('Next: ', 'sign gh in (`gh auth status`), then run `yokoten borrowed` again') : [],
+    isFailed ? nextSentence('sign gh in (`gh auth status`), then run `yokoten borrowed` again') : [],
   );
 }
 
@@ -1818,7 +1816,7 @@ export function prSyncScreen(result: PrSyncResult): string[] {
       section(`PR #${pull.number}, conflict hunks`, (pull.hunksText ?? []).flatMap(verbatim)),
       section(`PR #${pull.number}, dispatch brief`, verbatim(pull.brief ?? '').filter((line, at, all) => line !== '' || at < all.length - 1)),
     ]),
-    needing.length ? wrap('Next: ', 'hand each dispatch brief to an agent, then run `yokoten pr sync` again') : [],
+    needing.length ? nextSentence('hand each dispatch brief to an agent, then run `yokoten pr sync` again') : [],
   );
 }
 

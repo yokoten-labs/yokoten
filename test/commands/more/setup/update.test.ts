@@ -9,7 +9,7 @@ import { TRUST_NEEDS_A_PERSON, trustScreen, updateAllScreen, updateScreen } from
 import { failure } from '../../../../src/rules/text/screen.ts';
 import { VERSION } from '../../../../src/setup/files.ts';
 import type { TrustResult, UpdateResult } from '../../../../src/setup/init.ts';
-import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { screenProblems, underMark } from '../../../repo/docs/screen-rules.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
 /** A screen's lines as one text, checked against the screen rules: none may break (#1115). */
@@ -68,6 +68,14 @@ test('update: a refusal is a failure whose last line is the command to run (R5)'
   assert.equal(text, 'yokoten update · there is no AGENTS.md here, so nothing changed\n\nNext: `yokoten init`\n');
 });
 
+test('update: a refusal keeps the whole reason, even a sentence after a command in backticks (#1128)', () => {
+  const what = 'AGENTS.md is a link to docs/rules.md, so nothing changed. Run `yokoten update --all` to read the lines, then copy them into the file it points to by hand';
+  const refused: UpdateResult = { ...PREVIEW, ok: false, state: 'link', problem: { id: 'update', what, why: '', fix: 'yokoten update --all' } };
+  const text = checked(updateScreen(refused), true);
+  assert.ok(text.replace(/\s+/g, ' ').includes(`yokoten update · ${what}`), `the reason is whole: ${text}`);
+  assert.match(text, /\n\nNext: `yokoten update --all`\n$/);
+});
+
 test('update --all: every line that differs, wrapped under its mark, then the command that writes it', () => {
   const text = checked(updateAllScreen(PREVIEW));
   assert.match(text, /^Lines:\n {2}\+ \| 9 \| Nothing reaches main/m);
@@ -103,7 +111,7 @@ test('trust screen: a store yokoten won\'t rewrite names the exact setting on a 
   };
   const text = checked(trustScreen(result, false), true);
   assert.match(text, /^yokoten trust · the guard is not on yet$/m, 'never "now runs" when nothing was written');
-  assert.match(text, /^ {14}Fix: `trustedFolders = \["~\/work\/demo"\]`$/m);
+  assert.match(text, underMark(/^ {COL}Fix: `trustedFolders = \["~\/work\/demo"\]`$/m));
   assert.doesNotMatch(text, /Undo:/);
 });
 

@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { claudeCommand, upgradeScreen } from '../../../../src/commands/more/setup/upgrade.ts';
-import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { screenProblems, underMark } from '../../../repo/docs/screen-rules.ts';
 import { makeSandbox, writeNodeProgram } from '../../../repo/helpers.ts';
 
 // ---- upgrade (#950): a fake `claude` first on PATH writes its arguments and the git
@@ -76,7 +76,7 @@ test('upgrade: the two updates carry the HTTPS override, and nothing is removed 
     for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
     assert.match(result.stdout, /^yokoten upgrade · the yokoten plugin is up to date \(beta channel\)$/m);
     assert.match(result.stdout, /^ {2}ok {10}the plugin yokoten-beta@yokoten: updated$/m);
-    assert.match(result.stdout, /^Next: restart Claude Code; a session already running keeps the old copy$/m);
+    assert.match(result.stdout, /^Next: restart Claude Code; a session already running keeps the old copy\.$/m);
   }
 });
 
@@ -100,8 +100,8 @@ test('upgrade: a failing step stops the rest and gives the command to run by han
   // One screen on stderr (#1115): a MISSING row, what Claude Code said, and the command on its Fix line.
   assert.match(result.stderr, /^yokoten upgrade · the yokoten plugin was not updated, it is as it was$/m);
   assert.match(result.stderr, /^ {2}MISSING {5}the marketplace yokoten: not updated$/m);
-  assert.match(result.stderr, /^ {14}Claude Code said: ran: plugin marketplace update yokoten$/m);
-  assert.match(result.stderr, /^ {14}Fix: `claude plugin marketplace update yokoten`$/m);
+  assert.match(result.stderr, underMark(/^ {COL}Claude Code said: ran: plugin marketplace update yokoten$/m));
+  assert.match(result.stderr, underMark(/^ {COL}Fix: `claude plugin marketplace update yokoten`$/m));
   assert.doesNotMatch(result.stderr, /yokoten upgrade: /, 'no old sentence form');
 });
 
@@ -125,7 +125,7 @@ test('upgrade: a GIT_CONFIG_COUNT that is set but not a small number runs nothin
     const result = await sandbox.call(['upgrade'], { extra: { ...fake.extra, GIT_CONFIG_COUNT: count } });
     assert.equal(result.status, 1, count);
     assert.deepEqual(fake.calls(), [], `${count}: no call`);
-    assert.match(result.stderr, /^yokoten upgrade · GIT_CONFIG_COUNT is not a small number, so nothing ran\n\nNext: unset it or make it a small number, then run `yokoten upgrade`\n$/, count);
+    assert.match(result.stderr, /^yokoten upgrade · GIT_CONFIG_COUNT is not a small number, so nothing ran\n\nNext: unset it or make it a small number, then run `yokoten upgrade`\.\n$/, count);
   }
 });
 

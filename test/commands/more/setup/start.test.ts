@@ -9,7 +9,7 @@ import { previewLines, SET_UP_QUESTION, startScreen, type StartParts } from '../
 import { type DoctorReport } from '../../../../src/setup/doctor/index.ts';
 import { type Change, type SetupResult } from '../../../../src/setup/files.ts';
 import { finding } from '../../../../src/rules/text/message.ts';
-import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { screenProblems, underMark } from '../../../repo/docs/screen-rules.ts';
 import { VERSION } from '../../../../src/setup/files.ts';
 import { commitCommand } from '../../../../src/commands/more/setup/init.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
@@ -65,7 +65,7 @@ test('start: with no full home path it says so plainly and writes nothing (#548)
   assert.equal(result.status, 1);
   // One failure (#1115): the title says what is wrong, the Next line what to do.
   assert.match(result.stderr, /^yokoten · no home folder found \(HOME is empty or not a full path\), so nothing\n/);
-  assert.match(result.stderr, /\n\nNext: set HOME to your home folder's full path, then run `yokoten` again\n$/);
+  assert.match(result.stderr, /\n\nNext: set HOME to your home folder's full path, then run `yokoten` again\.\n$/);
   assert.doesNotMatch(result.stderr, /undefined/, 'no command has no name, never "undefined"');
   assert.deepEqual([existsSync(join(sandbox.repo, 'AGENTS.md')), existsSync(join(sandbox.repo, 'yokoten.json'))], [false, false], 'nothing was written');
 });
@@ -145,7 +145,7 @@ test('start: an install that failed keeps its problem with the Fix line, and the
   assert.match(lines[0] ?? '', / · partly set up; stage 1 of 5/);
   assert.match(text, /^ {2}ok {10}guard on for Claude Code on this computer$/m, 'the guard it did turn on');
   assert.match(text, /^ {2}MISSING {5}~\/\.codex\/hooks\.json is not valid JSON$/m);
-  assert.match(text, /^ {14}Fix: `yokoten install`$/m);
+  assert.match(text, underMark(/^ {COL}Fix: `yokoten install`$/m));
   assert.deepEqual(screenProblems({ text, isFailure: true }), []);
   // Only install ran: no commit to make, so doctor's own Next stays.
   const alone = startScreen({ install: INSTALLED, report: REPORT, place: placeFor('linux') });

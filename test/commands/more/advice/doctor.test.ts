@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
 import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
+import { underMark } from '../../../repo/docs/screen-rules.ts';
 import { problemRows, runDoctor, sessionNoteBlocks, sessionScreen } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
 import { machineChecks } from '../../../../src/setup/doctor/checks.ts';
@@ -161,7 +162,7 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   const before = marksNow();
   const short = await sandbox.call(['doctor']);
   assert.equal(marksNow(), before, 'bare doctor wrote nothing to the marks file');
-  assert.match(short.stdout, /private-marks is missing or has no marks\n(?: {14}.*\n)*? {14}Fix: `yokoten marks add`\n/, short.stdout);
+  assert.match(short.stdout, underMark(/private-marks is missing or has no marks\n(?: {COL}.*\n)*? {COL}Fix: `yokoten marks add`\n/), short.stdout);
   const lines = short.stdout.trimEnd().split('\n');
   assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
   assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines:\n${short.stdout}`);
