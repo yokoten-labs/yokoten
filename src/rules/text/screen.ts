@@ -227,6 +227,9 @@ function titleApart(block: readonly string[]): (readonly string[])[] {
   return [block.slice(0, length), block.slice(length)];
 }
 
+/** The lines of one screen: a default screen that fits them needs no scrolling (#1027). */
+export const SCREEN_ROWS = 24;
+
 /**
  * A whole screen from its blocks, one blank line between them; an empty block is left out. A
  * title is a block of its own, even when it came in one block with its rows (issue #1115).

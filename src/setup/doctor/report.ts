@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, findingRow, fixCommand, fixText, formatFindingMarks, formatNote, leadingCommand, place, sentence } from '../../rules/text/message.ts';
-import { moreLine, nextLine, row, type RowMark, screen, section, spaced, title, underRow, wrap } from '../../rules/text/screen.ts';
+import { moreLine, nextLine, row, type RowMark, screen, SCREEN_ROWS, section, spaced, title, underRow, wrap } from '../../rules/text/screen.ts';
 import { hideHome, homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
@@ -633,27 +633,37 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
   const problems = problemsOf(report);
   const heading = parts.title ?? title('doctor', report.stage === null && !problems.length ? `${doctorSummary(report)}, nothing to do` : doctorSummary(report));
   if (report.stage === null && !problems.length && !parts.lead?.length && parts.next === undefined) return screen(...lead, heading);
-  const road: string[][] = [];
   const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
-  if (steps.length) road.push(row('done', `${done} of ${count(steps.length, 'step')}`));
-  // The next step and four more; the rest fold into one row, so a new project still fits a screen (R3).
-  for (const s of left.slice(0, 5)) road.push(row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
   const all = commandOf(report, 'doctor --all');
-  if (left.length > 5) road.push(row('to do', `${count(left.length - 5, 'more step')}, listed by \`${all}\``));
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
-  if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')}: ${unchecked === 1 ? 'it reads' : 'they read'} the code host; doctor checks ${unchecked === 1 ? 'it' : 'them'} after a push`));
   const notes = (report.notes ?? []).length;
   const next = parts.next ?? (report.next ? nextCommand(report.next) : null);
-  // A problem fails doctor, so it is never folded; it comes first, each block spaced when an item wraps (#1115).
-  return screen(
-    ...lead,
-    heading,
-    ...(parts.lead ?? []),
-    spaced(problemRows(problems)),
-    spaced(road),
-    spaced(keptNoteRows(report.notes ?? [], all)),
-    [...(next ? nextLine(next) : []), ...moreLine(`\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
-  );
+  /** The screen with `shown` road steps; the rest fold into one row. */
+  const withSteps = (shown: number): string[] => {
+    const road: string[][] = [];
+    if (steps.length) road.push(row('done', `${done} of ${count(steps.length, 'step')}`));
+    for (const s of left.slice(0, shown)) road.push(row(s.mark === 'next' ? 'next' : 'to do', STEP_TITLES[s.id] ?? s.id));
+    if (left.length > shown) road.push(row('to do', `${count(left.length - shown, 'more step')}, listed by \`${all}\``));
+    if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')}: ${unchecked === 1 ? 'it reads' : 'they read'} the code host; doctor checks ${unchecked === 1 ? 'it' : 'them'} after a push`));
+    // A problem fails doctor, so it is never folded; it comes first, each block spaced when an item wraps (#1115).
+    return screen(
+      ...lead,
+      heading,
+      ...(parts.lead ?? []),
+      spaced(problemRows(problems)),
+      spaced(road),
+      spaced(keptNoteRows(report.notes ?? [], all)),
+      [...(next ? nextLine(next) : []), ...moreLine(`\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+    );
+  };
+  // The next step and up to four more, fewer when problems and notes take the room, so the
+  // screen fits on every machine (R3; a runner without the desk tools had 25 lines). The next
+  // step always shows.
+  for (let shown = 5; shown > 1; shown--) {
+    const lines = withSteps(shown);
+    if (lines.length <= SCREEN_ROWS) return lines;
+  }
+  return withSteps(1);
 }
 
 // ---- The server read (#1039) ----
