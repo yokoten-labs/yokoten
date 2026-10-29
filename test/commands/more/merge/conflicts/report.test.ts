@@ -146,7 +146,7 @@ test('every screen of conflicts keeps the screen rules: the summary, the rebuild
   assert.ok(shown.includes(`   git push --force-with-lease=topic:abcdef0123 origin topic`), 'a git command is never wrapped');
   assert.deepEqual(screenProblems({ text: shown.join('\n') }), []);
   const refusal = refusalScreen({ what: 'the conflict map has no open change pr:9', next: 'run `yokoten conflicts` to see the 4 changes it holds' });
-  assert.deepEqual(refusal, ['yokoten conflicts · the conflict map has no open change pr:9', '', 'Next: Run `yokoten conflicts` to see the 4 changes it holds.']);
+  assert.deepEqual(refusal, ['yokoten conflicts · the conflict map has no open change pr:9', '', 'Next: run `yokoten conflicts` to see the 4 changes it holds.']);
   assert.deepEqual(failed(refusal), []);
 });
 
@@ -154,7 +154,7 @@ test("a rebuild that can't be written says what, why and the fix as one screen (
   const refusal = rebuildRefusal('What: the branch name "a;b" cannot be pushed\nWhy: the prompt puts it into shell commands\nFix: rename the branch, or rebuild this change by hand');
   assert.deepEqual(refusal, { what: 'the branch name "a;b" cannot be pushed', why: 'the prompt puts it into shell commands', next: 'rename the branch, or rebuild this change by hand' });
   const lines = refusalScreen(refusal);
-  assert.deepEqual(lines, ['yokoten conflicts · the branch name "a;b" cannot be pushed', '', 'The prompt puts it into shell commands.', '', 'Next: Rename the branch, or rebuild this change by hand.']);
+  assert.deepEqual(lines, ['yokoten conflicts · the branch name "a;b" cannot be pushed', '', 'The prompt puts it into shell commands.', '', 'Next: rename the branch, or rebuild this change by hand.']);
   assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), []);
   assert.equal(rebuildRefusal('something broke\nat line 2').what, 'something broke', 'any other error is its first line');
 });

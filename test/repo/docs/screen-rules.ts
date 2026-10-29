@@ -2,7 +2,14 @@
 // development tool, as TEST_LIMITS is: nothing here ships in the package. The layout that
 // builds a screen is src/rules/text/screen.ts; this file checks what it prints.
 import '../home.ts';
-import { SCREEN_WIDTH } from '../../../src/rules/text/screen.ts';
+import { MARK_COLUMN, ROW_INDENT, SCREEN_WIDTH } from '../../../src/rules/text/screen.ts';
+
+/**
+ * A pattern with `{COL}` where a line under a row's text is indented: the column of a `Fix:` line
+ * and a wrapped line of a row with no label. The number is the layout's (ROW_INDENT + MARK_COLUMN),
+ * never typed in a test (#1128).
+ */
+export const underMark = (pattern: RegExp): RegExp => new RegExp(pattern.source.replaceAll('{COL}', `{${ROW_INDENT + MARK_COLUMN}}`), pattern.flags);
 
 // ---- The rules (record 0049, issue #1115) ----
 //
@@ -44,8 +51,10 @@ export const limitOf = (id: ScreenRuleId): number => SCREEN_RULES.find((rule) =>
 
 // A heading stands alone and ends in a colon: `Options:`, `In the fence:`.
 const HEADING = /^[A-Z][^:]*:$/;
-// The next step: a Next line, the Instead row of a refusal, a Fix line, or a command in backticks.
-const NEXT_STEP = /^Next: |^ {2}Instead |^\s*Fix: |`[^`]+`/;
+// The next step: a Next line, the Instead row of a refusal, a Fix line, or a command in backticks (see commandsIn).
+const NEXT_STEP = /^Next: |^ {2}Instead /;
+// A heading, then a list: a `- ` item at the left edge ends a run of prose, as a row does.
+const LIST_ITEM = /^[-*] /;
 // A More line or row: a pointer, so the next step may come just before it.
 const MORE = /^(?:More: | {2}More {6}| {2}docs: )/;
 const ESCAPE = /\u001b\[/;
@@ -59,15 +68,77 @@ const MARK_LABEL = /^ {2}(?:ok|done|next|to do|MISSING|note|can't check|skipped)
 const PROBLEM_ROW = /^ {2}(?:MISSING|can't check) /;
 const PROBLEM_HEADINGS = new Set(['Not read:', 'Problems:']);
 // The fix of a problem: its own line, `Fix: ` and the command.
-const FIX_LINE = /^\s*Fix: `[^`]+`/;
-// An absolute path on this machine: a root folder of Linux, macOS or Windows, not a link or ~.
-// Windows paths count with either slash, and in Git Bash's form, /c/Users/... (#1115).
-const MACHINE_PATH = /(?<![\w:~.\/-])(?:\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc)\/[^\s`'")]*|\/[a-zA-Z]\/(?:Users|Windows|ProgramData|Program Files)\/[^\s`'")]*|[A-Za-z]:[\\/][^\s`'")]*)/g;
+const FIX_LINE = /^\s*Fix: /;
+// An absolute path on this machine, any root (#1128): `/` and two or more parts (`/bin/sh`, `/dev/null`,
+// `/Library/x`), or one part of a known root folder (`/tmp`); a Windows drive with either slash
+// (`C:\`, `C:/`) or in Git Bash's form (`/c/Users/...`); a UNC path (`\\server\share`). Not a link, not ~,
+// and not the path of an API call after its verb (`GET /api/state`). What may come before a path that is
+// NOT a machine path is listed, not what may come before one that is: a path glued to a word, `~`, `.`,
+// `/` or `-` is part of a link, a home path or a relative path; a path after a `<name>` placeholder
+// (`<project>/src/a.ts`) is relative; `2>/dev/null` and `>/dev/null` are redirects, and only that one path;
+// `#!/bin/...` and `#!/usr/bin/...` name an interpreter; a path after `word/*` is a glob (`crates/*/x`).
+// Anything else before it (`[`, `<`, `,`, `;`, `{`, `|`, `:`, `>`, `*`, a space) is a path of this machine.
+const PART = /[^\s`'")\]}<>,;|]/.source;
+const MACHINE_PATH = new RegExp(
+  [
+    `${/(?<![\w~./-])\/(?!\/)/.source}${PART}+(?:\\/${PART}*)+`,
+    /(?<![\w~./-])\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w/-])/.source,
+    `${/(?<![\w~./-])[A-Za-z]:[\\/]/.source}${PART}*`,
+    `${/(?<![\w~./\\-])\\\\+[^\s\\`'")]+\\+/.source}${PART}*`,
+  ].join('|'),
+  'g',
+);
+const API_CALL = /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) $/;
+const PLACEHOLDER = /<[\w-]+>$/;
+const REDIRECT = /\d*>$/;
+const SHEBANG = /#!$/;
+const INTERPRETER = /^\/(?:usr\/)?bin\//;
+const GLOB = /\w\/\*$/;
+// A CODEOWNERS pattern is a path inside the repo, and the finding names it as it is written (`/docs/x` and `docs/x`
+// differ there): `CODEOWNERS:<n> <pattern> matches no file`, with the pattern maybe on the next line.
+const CODEOWNERS_BEFORE = /CODEOWNERS(?::\d+)?\s+$/;
+const CODEOWNERS_AFTER = /^ matches no file/;
+// A command in backticks is not a file name (`AGENTS.md`, `src/a.ts`) or a flag (`--write`).
+const BACKTICKED = /`([^`]+)`/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
-const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
+const COMMAND_WORDS = 'yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget|claude|codex|muse|gemini|grok|opencode|wsl|bash|sh|rm|mv|cp|mkdir|chmod|ln|echo|cat|curl|make|cargo|go|pytest|forge|dotnet|unset|source|nice|env|pwsh';
+const RUN_WORD = new RegExp(`\\b[Rr]un (?:(?:${COMMAND_WORDS})\\b|${/`/.source})`);
+// In a sentence: a known command word and another word, a leading NAME=value, or ./script.
+const COMMAND_START = new RegExp(`^(?:(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+|(?:${COMMAND_WORDS})\\s+)\\S|\\./|pytest$)`);
+
+/**
+ * The commands a line names in backticks. On a `Fix: ` line every backticked text is one: the line
+ * is a command by construction (`TZ=UTC git commit`, `trustedFolders = [...]`). In a sentence, text
+ * counts when it starts with a known command word and another word (`git commit`), a `NAME=value`,
+ * or `./` (`./install.sh`). A file name (`CODEOWNERS`, `Makefile`, `AGENTS.md`), a word (`main`,
+ * `git`) and a flag (`--write`) are not.
+ */
+export const commandsIn = (line: string): string[] => {
+  const texts = [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => text !== '');
+  return FIX_LINE.test(line) ? texts : texts.filter((text) => COMMAND_START.test(text));
+};
+
+/** Whether a line is a Fix line with a command: `Fix: \`<command>\``. */
+const isFixLine = (line: string): boolean => FIX_LINE.test(line) && commandsIn(line).length > 0;
+
+/** Whether a line has a command to run in backticks, or names one with `run`. */
+const showsCommand = (line: string): boolean => commandsIn(line).length > 0 || RUN_WORD.test(line);
 
 /** The absolute paths on this machine that a text shows (the no-internal-path rule): not ~, not a link. */
-export const machinePathsIn = (text: string): string[] => text.match(MACHINE_PATH) ?? [];
+export function machinePathsIn(text: string): string[] {
+  return [...text.matchAll(MACHINE_PATH)]
+    .filter((found) => {
+      const before = text.slice(0, found.index);
+      const path = found[0];
+      if (API_CALL.test(before)) return !path.startsWith('/api/');
+      if (PLACEHOLDER.test(before) || GLOB.test(before)) return false;
+      if (SHEBANG.test(before) && INTERPRETER.test(path)) return false;
+      if (CODEOWNERS_BEFORE.test(before) && CODEOWNERS_AFTER.test(text.slice((found.index ?? 0) + path.length))) return false;
+      if (REDIRECT.test(before)) return !/^\/dev\/null(?![\w/-])/.test(path);
+      return true;
+    })
+    .map((found) => found[0]);
+}
 
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {
@@ -111,7 +182,7 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
   let run = 0;
   let longest = 0;
   for (const line of lines) {
-    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) ? 0 : run + 1;
+    run = line.trim() === '' || /^\s/.test(line) || HEADING.test(line) || LIST_ITEM.test(line) ? 0 : run + 1;
     longest = Math.max(longest, run);
   }
   if (longest > limitOf('prose')) problems.push(`${longest} lines of prose in a row; the most is ${limitOf('prose')}, then a heading or rows [prose]`);
@@ -126,7 +197,7 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     // An item is a line and the lines wrapped under it, so a wrapped row is still one row.
     const items = blocks.flatMap(itemsOf);
     const tail = items.length > 1 && MORE.test(items.at(-1)?.[0] ?? '') ? items.slice(-2) : items.slice(-1);
-    if (!tail.flat().some((line) => NEXT_STEP.test(line))) problems.push('it failed, but its last line does not say what to do next [next-step]');
+    if (!tail.flat().some((line) => NEXT_STEP.test(line) || commandsIn(line).length > 0)) problems.push('it failed, but its last line does not say what to do next [next-step]');
   }
   // Where a row's text starts: past the label of a row with a mark and a label, else past its first label (#1115).
   const columns = new Set(lines.map((line) => (MARK_LABEL.exec(line) ?? TWO_COLUMNS.exec(line))?.[0].length).filter((column) => column !== undefined));
@@ -144,10 +215,10 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     if (body.length > 1 && body.some((item) => item.length > 1)) spaced += body.length - 1;
     for (const item of body) {
       const isProblem = PROBLEM_ROW.test(item[0]) || (PROBLEM_HEADINGS.has(heading) && /^(?:- | {2}\S)/.test(item[0]));
-      if (isProblem && item.some((line) => (/`[^`]+`/.test(line) || RUN_WORD.test(line)) && !FIX_LINE.test(line))) fixes += 1;
-      if (isProblem && item.length > 1 && item.slice(0, -1).some((line) => FIX_LINE.test(line))) fixes += 1;
+      if (isProblem && item.some((line) => showsCommand(line) && !isFixLine(line))) fixes += 1;
+      if (isProblem && item.length > 1 && item.slice(0, -1).some(isFixLine)) fixes += 1;
     }
-    for (const line of block.filter((each) => FIX_LINE.test(each))) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);
+    for (const line of block.filter(isFixLine)) fixLines.set(line.trim(), (fixLines.get(line.trim()) ?? 0) + 1);
   }
   if (wrappedExamples > limitOf('wrapped-example')) problems.push(`${wrappedExamples} examples have their text on the next line; shorten them [wrapped-example]`);
   if (spaced > limitOf('spaced-items')) problems.push(`${spaced} items touch a wrapped item; put a blank line between them [spaced-items]`);

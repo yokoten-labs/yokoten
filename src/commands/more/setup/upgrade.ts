@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { type Env } from '../../../rules/config.ts';
 import { enabledPlugin } from '../../../setup/advice/marketplace.ts';
-import { failure, type Invocation, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
+import { failure, type Invocation, nextLine, nextSentence, parse, print, row, screen, spaced, title, underRow, usage } from '../../shared.ts';
 
 /**
  * A marketplace name as Claude Code writes it. The name comes from the user's own files and,
@@ -128,7 +128,7 @@ export function upgradeScreen(result: UpgradeResult): string[] {
     return [...row('MISSING', `${step.label}: not updated`), ...(step.said ? underRow(`Claude Code said: ${step.said}`, false) : []), ...underRow(`Fix: \`${result.next}\``, false)];
   });
   if (!result.ok) return screen(title('upgrade', 'the yokoten plugin was not updated, it is as it was'), spaced(rows));
-  return screen(title('upgrade', `the yokoten plugin is up to date (${result.plugin.channel} channel)`), spaced(rows), wrap('Next: ', result.next));
+  return screen(title('upgrade', `the yokoten plugin is up to date (${result.plugin.channel} channel)`), spaced(rows), nextSentence(result.next));
 }
 
 export function runUpgrade(invocation: Invocation): number {

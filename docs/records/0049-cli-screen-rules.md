@@ -37,7 +37,7 @@ a release.
    reads is a rule, and the guard's refusals in `src/rules/` use it. `src/platform/` keeps
    only the system and its paths (owner, 2026-10-26). `shared.ts` re-exports its names;
    there is no second copy.
-3. **A help page is data.** `HelpSpec` holds the usage, a summary of at most two lines,
+3. **A help page is data.** `HelpSpec` holds the usage, a short summary,
    examples, options, and sections of rows. `commandHelp` builds every page from the
    `COMMANDS` table: every entry has a `help` field, and there is no other way to write a
    help page.
@@ -47,11 +47,11 @@ a release.
    only the tests use it. Issue #1115 grew the table from 7 rules to 12, after the owner's
    review of 72 screens, checked against clig.dev and Google's error-message course:
 
-   | Rule | Limit |
+   | Rule | What it holds |
    |---|---|
-   | `width`, `widest` | at most 1 line over 80 columns; none over 100 |
-   | `prose` | at most 4 lines of prose in a row at the left edge |
-   | `help-summary` | at most 2 lines |
+   | `width`, `widest` | a line fits the screen; one may run over, for a link, and none runs far over |
+   | `prose` | a run of prose at the left edge stays short; a heading, a row or a list item ends it |
+   | `help-summary` | a help page's summary stays short |
    | `next-step` | a failed screen ends with what to do next |
    | `colour` | no colour codes when not on a terminal |
    | `label-columns` | one text column for the two-column rows of a screen |
@@ -59,10 +59,10 @@ a release.
    | `spaced-items` | a blank line between items when one wraps |
    | `fix-line` | a problem's command is on its own last line, `Fix: <command>` |
    | `same-fix-once` | one Fix line shows once per screen |
-   | `no-internal-path` | no absolute path outside `~`, and no machine path |
+   | `no-internal-path` | no absolute path of this machine, whatever its root; links, `~`, relative paths, globs (`crates/*/x`), `GET /api/...`, `>/dev/null`, a shebang (`#!/bin/`, `#!/usr/bin/`) and a CODEOWNERS finding's pattern (`CODEOWNERS:3 /docs/ matches no file`) are fine |
 
-   The table is the source: a rule changes in its row, and this record does not repeat the
-   numbers.
+   The table is the source: a rule changes in its row, and this record repeats no number of
+   it. (A command in the rules is backticked text that starts with a known command word and another word, or with `./`, or any backticked text on a `Fix:` line: not a file name or a word.)
 
 5. **The limits are calibrated on the owner's verdicts.** The captured screens are in
    `test/repo/docs/captured-screens.ts`. The test fails when a limit passes a screen he judged

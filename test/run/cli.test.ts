@@ -317,8 +317,8 @@ test('help: a typo in a command or an option names the closest one; a far one li
   const sandbox = makeSandbox();
   const run = (words: string[]) => invoke(words, { env: sandbox.env, cwd: sandbox.repo });
   const cases: [string[], string][] = [
-    [['docter'], 'yokoten · unknown command docter\n\nNext: `yokoten doctor`, if you meant it; `yokoten help` lists every command\n'],
-    [['help', 'chek'], 'yokoten · unknown command chek\n\nNext: `yokoten check`, if you meant it; `yokoten help` lists every command\n'],
+    [['docter'], 'yokoten · unknown command docter\n\nNext: `yokoten doctor`, if you meant it; `yokoten help` lists every command.\n'],
+    [['help', 'chek'], 'yokoten · unknown command chek\n\nNext: `yokoten check`, if you meant it; `yokoten help` lists every command.\n'],
     [['check', '--stagd'], 'yokoten check · unknown option --stagd. Did you mean --staged?\n\n  check       layout, privacy and lead-only files, and a PR or issue\n\nNext: `yokoten check --help`\n'],
     [['doctor', '--hepl'], 'yokoten doctor · unknown option --hepl. Did you mean --help?\n\n  doctor      the road: where this project is and its next step\n\nNext: `yokoten doctor --help`\n'],
   ];
@@ -328,7 +328,7 @@ test('help: a typo in a command or an option names the closest one; a far one li
   }
   const far = await run(['zzzzzz']);
   assert.deepEqual([far.code, far.stdout], [1, '']);
-  assert.equal(far.stderr, 'yokoten · unknown command zzzzzz\n\nNext: `yokoten help` lists every command\n', 'a far word does not list every command');
+  assert.equal(far.stderr, 'yokoten · unknown command zzzzzz\n\nNext: `yokoten help` lists every command.\n', 'a far word does not list every command');
   const odd = await run(['bad\u001b[2Jword\nnext\u202e']);
   assert.equal(odd.stderr.split('\n')[0], 'yokoten · unknown command "bad\\u001b[2Jword\\nnext\\u202e"', 'quoted, control and bidi characters escaped');
   assert.doesNotMatch(odd.stderr, /[\u001b\u202e]/);
@@ -798,8 +798,8 @@ test('main: an error nothing caught is a failure with one next step; doctor\'s o
 
 test('main: the version and unknown-command screens are pure, and keep the screen rules (#1115)', () => {
   assert.deepEqual(versionLines('9.9.9'), ['9.9.9']);
-  assert.deepEqual(unknownCommandLines('docter', 'doctor'), ['yokoten · unknown command docter', '', 'Next: `yokoten doctor`, if you meant it; `yokoten help` lists every command']);
-  assert.deepEqual(unknownCommandLines('zzz', undefined), ['yokoten · unknown command zzz', '', 'Next: `yokoten help` lists every command']);
+  assert.deepEqual(unknownCommandLines('docter', 'doctor'), ['yokoten · unknown command docter', '', 'Next: `yokoten doctor`, if you meant it; `yokoten help` lists every command.']);
+  assert.deepEqual(unknownCommandLines('zzz', undefined), ['yokoten · unknown command zzz', '', 'Next: `yokoten help` lists every command.']);
   for (const lines of [unknownCommandLines('docter', 'doctor'), unknownCommandLines('zzz', undefined)]) assert.deepEqual(screenProblems({ text: lines.join('\n'), isFailure: true }), []);
   for (const all of [false, true]) assert.deepEqual(screenProblems({ text: helpLines(all).join('\n'), isHelp: true }), [], `help${all ? ' --all' : ''}`);
 });

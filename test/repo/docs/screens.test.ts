@@ -11,11 +11,11 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
 import { test } from 'node:test';
 import {
-  askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
+  askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, nextSentence, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
   spaced, summaryLine, table, title, underRow, wrap, wrapUsage,
 } from '../../../src/rules/text/screen.ts';
 import { blankHitsIn, isScreenCode, limitOf, machinePathsIn, NOT_SCREEN, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
-import { healedWaivers, invoke, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
+import { healedWaivers, invoke, readText, type RenderWaiver, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
@@ -167,7 +167,8 @@ test('layout: screen() never glues a title to its rows, even when they come in o
 
 test('layout: failure() is the title, then one Next line, a blank line between (#1115)', () => {
   assert.deepEqual(failure('desk', 'no desk named demo.', 'yokoten desk'), ['yokoten desk · no desk named demo', '', 'Next: `yokoten desk`']);
-  assert.deepEqual(failure(undefined, 'git is not installed', 'install git, then run `yokoten` again'), ['yokoten · git is not installed', '', 'Next: install git, then run `yokoten` again'], 'the bare command; a sentence with its command in backticks stays a sentence');
+  assert.deepEqual(failure(undefined, 'git is not installed', 'install git, then run `yokoten` again'), ['yokoten · git is not installed', '', 'Next: install git, then run `yokoten` again.'], 'the bare command; a sentence with its command in backticks stays a sentence, and ends with a full stop (#1128)');
+  assert.deepEqual(nextSentence('fix it, then run `yokoten check`.'), ['Next: fix it, then run `yokoten check`.'], 'a full stop is not added twice');
   assert.deepEqual(failure('check', 'nothing to check'), ['yokoten check · nothing to check'], 'with no next, the title stands alone');
   const lines = failure('check', 'the commit message has no issue number, so the change is not linked to its task', 'yokoten check --help');
   assert.ok(lines.every((line) => line.length <= SCREEN_WIDTH));
@@ -251,6 +252,38 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
   assert.equal(caught('  MISSING     a run of tests failed\n              Fix: `npm test`'), '', '"a run of" is English, not a command');
   assert.equal(caught('  MISSING     nothing to see\n              Fix: `npm test`\n\n  MISSING     run a check by hand'), '', '"run a" is English, not a command');
   assert.match(caught('  MISSING     gh is not signed in; run yokoten doctor'), /1 problems keep their fix inside the text/, 'run and a known command word');
+  // Issue #1128: what the review of the rules found they missed.
+  for (const path of ['/bin/sh', '/Library/Application Support/x', '/dev/null', '/proc/1/status', '/usr/local/bin/node', '/work/demo']) {
+    assert.match(caught(`yokoten x · ${path} is gone`), /1 paths on this machine show/, `${path} is a path of this machine`);
+  }
+  assert.match(caught('yokoten x · \\\\server\\share\\work is gone'), /1 paths on this machine show/, 'a UNC path');
+  assert.match(caught('yokoten x · C:\\work is gone'), /1 paths on this machine show/, 'a Windows drive, backslash');
+  assert.match(caught('yokoten x · C:/work is gone'), /1 paths on this machine show/, 'a Windows drive, slash');
+  assert.match(caught('yokoten x · wrote --dir=/opt/x/y'), /1 paths on this machine show/, 'a path after =');
+  assert.equal(caught('yokoten x · see https://example.com/a/b, ~/x/y, ./x/y, src/a/b.ts, and/or the GET /api/state call'), '', 'a link, a home path, a relative path and a word with a slash are not machine paths');
+  assert.match(caught('yokoten x: it broke. Fix the file `AGENTS.md`.', { isFailure: true }), /does not say what to do next/, 'a backticked file name is not a next step');
+  assert.match(caught('yokoten x: it broke. See `src/a.ts` and `--write`.', { isFailure: true }), /does not say what to do next/, 'a path and a flag are not next steps');
+  assert.equal(caught('yokoten x: it broke. Type `yokoten x --help`.', { isFailure: true }), '', 'a backticked command with a space is');
+  for (const word of ['CODEOWNERS', 'Makefile', 'main', 'git']) assert.match(caught(`yokoten x: it broke. See \`${word}\`.`, { isFailure: true }), /does not say what to do next/, `\`${word}\` is a name, not a command`);
+  assert.equal(caught('yokoten x: it broke. Run `./install.sh`.', { isFailure: true }), '', 'a script path with ./ is a command');
+  for (const command of ['TZ=UTC git commit --amend --no-edit --date=now', 'trustedFolders = ["~/work"]', 'make test', 'cargo test', 'go test ./...', 'pytest', 'forge test', 'unset X', 'source ~/.bashrc', 'nice npm test', '$env:TZ = "UTC"']) {
+    assert.equal(caught(`yokoten x · it broke\n\nFix: \`${command}\``, { isFailure: true }), '', `a Fix line is a command by construction: ${command}`);
+  }
+  for (const command of ['TZ=UTC git commit', 'make test', 'cargo test', 'go test ./...', 'pytest', 'forge test', 'unset X', 'source ~/.bashrc', 'nice npm test']) {
+    assert.match(caught(`  MISSING     it broke, type \`${command}\` first`), /keep their fix inside the text/, `in a sentence, a known command counts: ${command}`);
+  }
+  assert.match(caught('  MISSING     it broke\n              Fix: `TZ=UTC git commit`\n\n  MISSING     it broke too\n              Fix: `TZ=UTC git commit`'), /same-fix-once|2 times/, 'two identical Fix lines');
+  for (const text of ['[/home/alice/notes]', '<C:\\Users\\alice>', 'make 2>/home/alice/err.log', 'at,/home/alice/x', 'a;/home/alice', '{/home/alice}', 'a|/home/alice/x', 'x>C:\\Users\\a', 'cwd:C:\\Users\\alice\\work', 'HOME:/home/alice/x', 'GET /home/alice/x', 'the endpoint /api/state', '#!/home/USER/.nvm/v/bin/node', '**/home/USER/x', '*/home/USER/x*']) {
+    assert.match(caught(`yokoten x · ${text} is gone`), /1 paths on this machine show/, `${text} shows a path of this machine`);
+  }
+  for (const text of ['make 2>/dev/null', 'make >/dev/null', '#!/bin/sh', 'layout.exempt "crates/*/tests/data"', '<project>/src/a.ts', 'GET /api/state', 'POST /api/x/y', 'see file:///x and https://example.com/a/b', 'CODEOWNERS:3 /src/host/github.ts matches no file', 'src/a/b.ts']) {
+    assert.equal(caught(`yokoten x · ${text} is gone`), '', `${text} shows no path of this machine`);
+  }
+  assert.equal(caught('  MISSING     the file is odd\n              Fix: `AGENTS.md`'), '', 'a file name is not a command, so it is not a fix that hides in the text');
+  assert.equal(caught('  MISSING     AGENTS.md is odd, see `AGENTS.md`'), '', 'a backticked file name in a problem is not a command to run');
+  assert.match(caught('  MISSING     AGENTS.md is odd, so run `yokoten update`'), /keep their fix inside the text/, 'a backticked command in a problem is');
+  assert.equal(caught(['Notes:', 'one', 'two', 'three', 'four', '- item', 'five', 'six', 'seven', 'eight', '- item', 'nine'].join('\n')), '', 'a list item resets the count of prose lines');
+  assert.match(caught(['Notes:', 'one', 'two', 'three', 'four', 'item', 'five'].join('\n')), /6 lines of prose in a row/, 'without the list item the same lines are a wall of prose');
   assert.deepEqual(SCREEN_RULES.map((rule) => rule.id).filter((id) => !seen.has(id)), [], 'every rule has a control that breaks it');
 });
 
@@ -431,9 +464,9 @@ const C7_TIDY: TidyScan = {
   root: '/work/demo', base: 'origin/main',
   items: [
     c7Item('branch', 'fix-greeting', '/work/demo', 'old', 'merged into the main branch, and no change for a day'),
-    c7Item('desk', 'desk-7', '/work/demo-desks/desk-7', 'old', 'merged into the main branch, and no change for a day', { size: 4_300_000 }),
+    c7Item('desk', 'desk-7', '~/work/demo-desks/desk-7', 'old', 'merged into the main branch, and no change for a day', { size: 4_300_000 }),
     c7Item('branch', 'wip-parser', '/work/demo', 'keep-first', 'its branch on the remote is gone, but 2 commits on no remote', { commits: 2 }),
-    c7Item('desk', 'desk-8', '/work/demo-desks/desk-8', 'in-use', 'it changed 3 min ago', { size: 900_000 }),
+    c7Item('desk', 'desk-8', '~/work/demo-desks/desk-8', 'in-use', 'it changed 3 min ago', { size: 900_000 }),
   ],
   remote: [{ name: 'origin/fix-greeting', why: 'merged into origin/main' }],
 };
@@ -563,7 +596,7 @@ function screensOf(repo: string): ScreenRun[] {
     { key: 'msg inbox, two messages', words: ['msg', 'inbox'], lines: inboxScreen(C7_INBOX) },
     { key: 'msg who', words: ['msg', 'who'], lines: whoScreen({ name: 'lead', lead: 'lead (the lead session, not the owner)', members: [{ name: 'g1', line: 'g1 (xAI, grok-4.7, grok)' }] }) },
     { key: 'msg log, one message', words: ['msg', 'log'], lines: logScreen({ entries: [{ time: '2026-10-26T11:42:00Z', lines: ['--- message g1-1 from g1 (xAI, grok-4.7, grok), 2026-10-26 11:42 UTC to lead ---', '  | rebased; tests pass', '--- end ---'] }], problems: [] }) },
-    { key: 'tidy, branches and desks to put away', words: ['tidy'], lines: tidyListScreen(C7_TIDY, [{ path: '/state/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true }]) },
+    { key: 'tidy, branches and desks to put away', words: ['tidy'], lines: tidyListScreen(C7_TIDY, [{ path: '~/.local/state/yokoten/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true }]) },
     // C7 end
     // C9: learn, changelog and mcp, built from data.
     { key: 'learn, a check draft', words: ['learn', '7'], lines: learnScreen({ number: 7 }, draftLesson({ number: 7, title: 'repo: a test fails behind a proxy', body: '## What happened\n\nA test failed.\n\n## Fix\n\nThe test sets NO_PROXY.\n', url: 'https://example.com/issues/7', labels: ['incident'] }), '7') },
@@ -602,16 +635,16 @@ function screensOf(repo: string): ScreenRun[] {
 function f1Screens(): ScreenRun[] {
   const [old, , , busy] = C7_TIDY.items as [TidyItem, TidyItem, TidyItem, TidyItem];
   const desk = C7_TIDY.items[1] as TidyItem;
-  const trash = '/state/trash';
+  const trash = '~/.local/state/yokoten/trash';
   const folders = [
-    { path: '/state/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true },
-    { path: '/state/trash/2026-10-25T000000Z', created: Date.parse('2026-10-25T00:00:00Z'), size: 4_300_000, isOld: false },
+    { path: '~/.local/state/yokoten/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2100, isOld: true },
+    { path: '~/.local/state/yokoten/trash/2026-10-25T000000Z', created: Date.parse('2026-10-25T00:00:00Z'), size: 4_300_000, isOld: false },
   ];
   const stopped = deskListOf([c7Desk('15', 'stopped', 2), c7Desk('16', 'stopped', 3)], () => false, (one) => (one.name === '15' ? ['f00ba12 fix: say hello'] : [])).desks;
   const said = [['yokoten: stage 2 of 5, issues and pull requests']];
   return [
-    { key: 'tidy --local, two put away', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '/state/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'moved' }, { item: desk, outcome: 'moved' }] }) },
-    { key: 'tidy --local, one changed and one failed', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '/state/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'failed', problem: 'the folder is in use' }, { item: desk, outcome: 'after-failure' }, { item: busy, outcome: 'changed' }] }) },
+    { key: 'tidy --local, two put away', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '~/.local/state/yokoten/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'moved' }, { item: desk, outcome: 'moved' }] }) },
+    { key: 'tidy --local, one changed and one failed', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: '~/.local/state/yokoten/trash/2026-10-26T120000Z', moves: [{ item: old, outcome: 'failed', problem: 'the folder is in use' }, { item: desk, outcome: 'after-failure' }, { item: busy, outcome: 'changed' }] }) },
     { key: 'tidy --local, nothing to put away', words: ['tidy', '--local'], lines: tidyScreen({ kind: 'local', folder: null, moves: [] }) },
     { key: 'tidy --empty, the question', words: ['tidy', '--empty'], lines: tidyScreen({ kind: 'empty', trash, folders }) },
     { key: 'tidy --empty --yes, deleted', words: ['tidy', '--empty', '--yes'], lines: tidyScreen({ kind: 'empty', trash, folders, deleted: [folders[0]!.path] }) },
@@ -707,7 +740,7 @@ interface Captured { key: string; command: string; platform: NodeJS.Platform; ex
  */
 /** How many screens WAIVED may hold. Lower it in the same change that takes a screen off. */
 const WAIVED_MOST = 0;
-const WAIVED: Record<string, string> = {
+const WAIVED: Record<string, RenderWaiver> = {
 };
 
 /** Renders every screen of the list, in order, on sandboxes of its own. */
@@ -763,7 +796,7 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const captured: Captured[] = checked.map(({ run, status, text, problems }) => ({ key: run.key, command: ['yokoten', ...run.words].join(' '), platform: run.platform ?? process.platform, exit: status, text, problems, colour: styleText(text, run.words[0] !== 'hook') }));
   const dump = `${JSON.stringify(captured, null, 2)}\n`;
   try {
-    assert.deepEqual(machinePathsIn(dump), [], 'the capture shows no path on this machine: the owner shares it (no-internal-path, #1115)');
+    assert.deepEqual(captured.flatMap((each) => machinePathsIn(`${each.command}\n${each.text}\n${each.colour}`)), [], 'the capture shows no path on this machine: the owner shares it (no-internal-path, #1115)');
     const broken: string[] = [];
     const healed: string[] = [];
     for (const { run, text, problems } of checked) {
@@ -784,7 +817,8 @@ test('screens: every screen the command list reaches keeps the limits of record 
     const missing = families.flatMap((family) => PLATFORMS.filter((platform) => !runs.some((run) => run.lines && run.platform === platform && familyOf(run) === family)).map((platform) => `${family}: no screen for ${platform}`));
     assert.deepEqual(missing, [], 'each pure screen is rendered for linux, win32 and darwin (#1115)');
     assert.deepEqual([...broken, ...healed, ...stale], [], 'build the screen with src/rules/text/screen.ts (record 0049)');
-    assert.ok(Object.values(WAIVED).every((reason) => reason.includes('#1115')), 'each waiver names issue #1115');
+    assert.ok(Object.values(WAIVED).every((waiver) => waiver.reason.includes('#1115')), 'each waiver names issue #1115');
+    assert.ok(Object.values(WAIVED).every((waiver) => waiver.rules.length > 0 && waiver.rules.every((rule) => waiver.reason.includes(rule))), 'each waiver lists rules and its reason names every one (#1128)');
     assert.ok(Object.keys(WAIVED).length <= WAIVED_MOST, `WAIVED holds ${Object.keys(WAIVED).length}; the most is ${WAIVED_MOST}, and it only goes down`);
   } finally {
     if (CAPTURE_FILE) writeFileSync(CAPTURE_FILE, dump);
@@ -860,6 +894,7 @@ test('every render: RENDER_WAIVED holds old screens only, each naming #1115, and
   const keys = Object.keys(RENDER_WAIVED);
   assert.ok(keys.length <= RENDER_WAIVED_MOST, `RENDER_WAIVED holds ${keys.length}; the most is ${RENDER_WAIVED_MOST}, and it only goes down`);
   assert.deepEqual(keys.filter((key) => !RENDER_WAIVED[key]?.reason.includes('#1115')), [], 'each waiver names issue #1115');
+  assert.deepEqual(keys.filter((key) => (RENDER_WAIVED[key]?.rules ?? []).some((rule) => !RENDER_WAIVED[key]?.reason.includes(rule))), [], 'each reason names every rule its screen breaks (#1128)');
   assert.deepEqual(keys.filter((key) => /\bgroup [A-Z]\d|\bmoved? (it|check|doctor|hook|learn|msg|tidy)\b/.test(RENDER_WAIVED[key]?.reason ?? '') || !/test|text|answer/.test(RENDER_WAIVED[key]?.reason ?? '')), [], 'each reason says what still breaks, not which group moves it');
   assert.deepEqual(keys.filter((key) => renderKey(key.split(' ')) !== key), [], 'each key is a render key: the command, then its flags sorted');
   const ids = new Set<string>(SCREEN_RULES.map((rule) => rule.id));

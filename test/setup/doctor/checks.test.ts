@@ -8,6 +8,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { shareGuardMeasure, shareSelfTest } from '../../repo/helpers.ts';
 import { makeSandbox, makeTempDir, ROOT } from '../../repo/helpers.ts';
+import { underMark } from '../../repo/docs/screen-rules.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { cleanOlderInstall, hookRunsYokoten, launcherDir, PROFILE_LINE, setUpLauncher } from '../../../src/setup/install.ts';
 import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
@@ -113,7 +114,7 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': false } }));
   const failed = await sandbox.call(['doctor', '--all']);
   assert.match(failed.stdout, /^ {2}MISSING {5}user-guard: no guard for Claude Code$/m);
-  assert.match(failed.stdout, /^ {14}Fix: `(npx )?yokoten install`$/m, 'its fix, said once under the rows it fixes');
+  assert.match(failed.stdout, underMark(/^ {COL}Fix: `(npx )?yokoten install`$/m), 'its fix, said once under the rows it fixes');
   assert.equal(failed.status, 1, 'a machine with no guard fails doctor');
   const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { ok: boolean; findings: { id: string; what: string }[] };
   assert.ok(!json.ok);

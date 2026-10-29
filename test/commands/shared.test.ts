@@ -44,7 +44,7 @@ test('outside a git repo: every command that needs one says so plainly, exits 1 
   stopCheckoutWalk(sandbox.home);
   const away = join(sandbox.home, 'away');
   mkdirSync(away);
-  const said = (command: string) => new RegExp(`^yokoten ${command} · this folder is not in a git repo\\n\\nNext: go to your project's folder, or start one here with \`git init\`\\n$`);
+  const said = (command: string) => new RegExp(`^yokoten ${command} · this folder is not in a git repo\\n\\nNext: go to your project's folder, or start one here with \`git init\`\\.\\n$`);
   const runs: [string[], string, Record<string, string>?][] = [
     [['doctor'], 'doctor'],
     [['check'], 'check'],
@@ -100,7 +100,7 @@ test('git not installed: a command that needs a repo says git is missing, not "n
     assert.equal(result.status, 1, command);
     assert.match(result.stderr.replace(/^note: .*\n\n/, ''), new RegExp(`^yokoten ${command}( ·|:) git is not installed \\(or not on PATH\\); yokoten needs git[.\\n]`), command);
     // The next step names both causes: git may be installed but not on PATH (#1115 review).
-    if (command === 'doctor') assert.match(result.stderr, /\n\nNext: install git, or add it to PATH, then run `yokoten doctor` again\n$/);
+    assert.match(result.stderr, new RegExp(`\\n\\nNext: install git, or add it to PATH, then run \\\`yokoten ${command}\\\` again\\.\\n$`), command);
   }
 });
 

@@ -362,7 +362,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1\n {14}an email address\n(?:[^\n]+\n){4,9}\nNext: fix it, then `yokoten check`\nMore: \S+#privacy\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1\n {14}an email address\n(?:[^\n]+\n){4,9}\nNext: fix it, then `yokoten check`\.\nMore: \S+#privacy\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -1218,7 +1218,7 @@ test('ci-health with no flag prints the report, writes no issue and names --writ
   const result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^ {2}MISSING {5}yokoten: failure at /m);
-  assert.match(result.stdout, /\nNext: `yokoten ci-health --write` puts it in the pinned issue "CI health"\n$/);
+  assert.match(result.stdout, /\nNext: `yokoten ci-health --write` puts it in the pinned issue "CI health"\.\n$/);
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
 });
 
@@ -1497,7 +1497,7 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   assert.match(lines[2] ?? "", /^ {2}MISSING {5}a\.md:1$/);
   assert.match(lines[3] ?? "", /^ {14}an email address$/);
   assert.match(lines[4] ?? "", /^ {14}An email address points at a person/);
-  assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`');
+  assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`.');
   assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
 });
@@ -1513,7 +1513,7 @@ test('check: the screen places its notes itself, folded by default and in full w
   const folded = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] });
   assert.equal(folded[0], 'yokoten check --pr · 2 problems');
   assert.ok(folded.includes('  note        1 note: `yokoten check --all` shows each'), folded.join('\n'));
-  assert.equal(folded.at(-1), 'Next: fix them, then `yokoten check`');
+  assert.equal(folded.at(-1), 'Next: fix them, then `yokoten check`.');
   assert.deepEqual(broken(folded, true), []);
   const all = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] }, { isAll: true });
   assert.ok(all.includes('  note        README.md:2: a sentence of 30 words'), all.join('\n'));

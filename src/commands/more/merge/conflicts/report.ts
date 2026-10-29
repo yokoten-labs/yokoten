@@ -6,7 +6,7 @@
 // first, which is all a beginner needs before one merge.
 
 import { formatFinding } from '../../../../rules/text/message.ts';
-import { count, failure, type Invocation, nextLine, noteLine, parse, print, printJson, printJsonError, requireRoot, row, screen, show, spaced, summaryLine, title, underRow, usage, wrap } from '../../../shared.ts';
+import { asSentence, count, failure, type Invocation, nextLine, nextSentence, noteLine, parse, print, printJson, printJsonError, requireRoot, row, screen, show, spaced, summaryLine, title, underRow, usage } from '../../../shared.ts';
 import { beforeChange, buildMap, openChanges, writeMap } from './map.ts';
 import { mergeOrder } from './order.ts';
 import { rebuildPrompt } from './rebuild.ts';
@@ -140,10 +140,8 @@ export interface ConflictsRefusal {
 }
 
 /** The screen of a refusal: the title says what is wrong, then why, then one Next line. */
-export const refusalScreen = ({ what, why, next }: ConflictsRefusal): string[] => screen(failure('conflicts', what), why === undefined ? [] : summaryLine(asSentence(why)), wrap('Next: ', asSentence(next)));
+export const refusalScreen = ({ what, why, next }: ConflictsRefusal): string[] => screen(failure('conflicts', what), why === undefined ? [] : summaryLine(asSentence(why)), nextSentence(next));
 
-/** A text as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /**
  * The refusal of a rebuild prompt that can't be written: rebuild.ts says it as `What:`,
