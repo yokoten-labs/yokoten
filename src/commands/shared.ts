@@ -257,11 +257,19 @@ export function styleLine(line: string, isColour: boolean, isUnicode = true): st
     const colour = GREEN_MARKS.has(word) && !yours ? GREEN : word === 'MISSING' ? RED : YELLOW;
     const drawn = yours ? MARK_GLYPH.note : MARK_GLYPH[word];
     const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
-    const said = glyph === undefined ? word : `${glyph} ${word}`;
-    const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
+    let said = glyph === undefined ? word : `${glyph} ${word}`;
+    let padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
     // A long mark (`can't check`) has no padding to give the glyph: a label's gap gives the
     // rest, so the row's text keeps the column of the rows above and below it (#1115).
-    const rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
+    let rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
+    // With no label there is no gap to give: the row keeps its word and its colour, without the
+    // glyph, so its text still starts in the column of every other row (#1160).
+    const isInColumn = word.length + (mark[3] ?? '').length === MARK_COLUMN;
+    if (isInColumn && glyph !== undefined && (mark[3] ?? '').length - padding.length < said.length - word.length && rest === (mark[4] ?? '')) {
+      said = word;
+      padding = mark[3] ?? '';
+      rest = mark[4] ?? '';
+    }
     styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${rest}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
     outer = BOLD;

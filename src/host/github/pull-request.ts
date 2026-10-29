@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Env } from '../../rules/config.ts';
 import { CODEOWNERS_PLACES } from '../../rules/layout.ts';
-import { type Finding, finding, formatFinding, formatFindingMarks, place } from '../../rules/text/message.ts';
+import { type Finding, finding, formatFinding, formatFindingMarks, isWarningFinding, place } from '../../rules/text/message.ts';
 import type { CodeOwners, PullRequest } from '../../rules/pr.ts';
 import { readGit } from '../../run/check.ts';
 import { asText, type Gh, isObject, labelNames, repoOf, unread } from './planning.ts';
@@ -305,9 +305,10 @@ const escapeData = (text: string) => text.replace(/%/g, '%25').replace(/\r/g, '%
 const escapeProperty = (text: string) => escapeData(text).replace(/:/g, '%3A').replace(/,/g, '%2C');
 
 /**
- * One finding as a workflow command: `error` for a problem, `warning` for a note. When
- * `isPlaceAFile` is false (a `check --history` place is a commit or a blob), the place
- * goes into the message instead of `file` and `line`.
+ * One finding as a workflow command. The place (`file:line:`) always starts the message, as
+ * the terminal prints it, because the log view shows the message and not the `file` property.
+ * When `isPlaceAFile` is false (a `check --history` place is a commit or a blob), the place
+ * goes only into the message.
  */
 export function annotation(f: Finding, level: 'error' | 'warning' | 'notice', isPlaceAFile = true): string {
   const properties: string[] = [];
@@ -315,20 +316,21 @@ export function annotation(f: Finding, level: 'error' | 'warning' | 'notice', is
   if (file !== undefined) properties.push(`file=${escapeProperty(file)}`);
   if (file !== undefined && f.line !== undefined) properties.push(`line=${f.line}`);
   properties.push(`title=${escapeProperty(`yokoten ${f.id}`)}`);
-  const message = formatFinding(file === undefined ? f : { id: f.id, what: f.what, why: f.why, fix: f.fix, docs: f.docs, grade: f.grade, ignored: f.ignored });
-  return `::${level} ${properties.join(',')}::${escapeData(message)}`;
+  return `::${level} ${properties.join(',')}::${escapeData(formatFinding(f))}`;
 }
 
 /**
- * The annotations for one check: problems first, then the ignores a pull request adds
- * (#616), as notices the reviewer sees, then the other notes. At most 50.
+ * The annotations for one check, by the finding's level: a problem is an error, a warning
+ * (a likely secret) a warning, and any other note a notice. The ignores a pull request adds
+ * (#616) are notices that come first among the notes, for the reviewer. At most 50.
  */
 export function annotations(problems: Finding[], notes: Finding[], isPlaceAFile = true): string[] {
-  const isNotice = (f: Finding) => f.id === 'ignore-added';
+  const isAdded = (f: Finding) => f.id === 'ignore-added';
   const all = [
     ...problems.map((f) => annotation(f, 'error', isPlaceAFile)),
-    ...notes.filter(isNotice).map((f) => annotation(f, 'notice', isPlaceAFile)),
-    ...notes.filter((f) => !isNotice(f)).map((f) => annotation(f, 'warning', isPlaceAFile)),
+    ...notes.filter(isAdded).map((f) => annotation(f, 'notice', isPlaceAFile)),
+    ...notes.filter(isWarningFinding).map((f) => annotation(f, 'warning', isPlaceAFile)),
+    ...notes.filter((f) => !isAdded(f) && !isWarningFinding(f)).map((f) => annotation(f, 'notice', isPlaceAFile)),
   ];
   return all.slice(0, MAX_ANNOTATIONS);
 }

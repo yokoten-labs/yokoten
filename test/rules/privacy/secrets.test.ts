@@ -145,6 +145,18 @@ test('secrets: a sure hit fails, a likely hit warns, and an unknown hit warns (#
   assert.equal(isFailingFinding(unknown[0]), false);
 });
 
+// #1239: a test value that says what it checks is no secret, and a hit that is reported says
+// in plain words what matched. The positive control: the same line with a real-looking value still hits.
+test('secrets: a value that says "must not leave" is a test value; a hit names its match in plain words (#1239)', () => {
+  const name = 'sec' + 'ret';
+  assert.deepEqual(scanText(`const ${name} = 'PRIVATE-MESSAGE-TEXT-MUST-NOT-LEAVE';`, { file: 'a' }), []);
+  const unclear = 'abcdefghijklmnopqrstuvwxyz' + 'abcdef';
+  const [hit] = scanText(`const ${name} = '${unclear}';`, { file: 'a' });
+  assert.equal(hit.what, 'a secret (long value under a name that says secret)');
+  assert.match(formatFinding(hit), /\[not sure\]/);
+  assert.doesNotMatch(formatFinding(hit), /unknown|secret value/);
+});
+
 test('privacy findings: email, IP and private-mark hits are graded sure (#616)', () => {
   const found = [
     scanText(`mail someone${at}gmail.com`, { file: 'a' })[0],

@@ -206,8 +206,8 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^ {2}note {8}src\/a\.ts:2: /m);
   assert.match(r.stdout, /^ {2}note {8}\.yokotenignore:1: /m);
-  assert.match(r.stdout, /::notice file=src\/a\.ts,line=2,title=yokoten ignore-added::this pull request lets a secret hit through on this line \[ignored: a test fixture\]/);
-  assert.match(r.stdout, /::notice file=\.yokotenignore,line=1,title=yokoten ignore-added::this pull request lets ip hits through in the whole repo \[ignored: documentation examples\]/);
+  assert.match(r.stdout, /::notice file=src\/a\.ts,line=2,title=yokoten ignore-added::src\/a\.ts:2: this pull request lets a secret hit through on this line \[ignored: a test fixture\]/);
+  assert.match(r.stdout, /::notice file=\.yokotenignore,line=1,title=yokoten ignore-added::\.yokotenignore:1: this pull request lets ip hits through in the whole repo \[ignored: documentation examples\]/);
   assert.doesNotMatch(r.stdout, /an old one/, 'an ignore already on the base branch is not new');
 });
 
@@ -328,9 +328,9 @@ test('check in GitHub Actions: annotations and a job summary, place but never co
   assert.equal(result.stderr, before.stderr, 'the text for people is the same');
   const lines = result.stdout.trimEnd().split('\n');
   assert.equal(lines.length, 3);
-  assert.match(lines[0], /^::error file=notes\/b\.md,line=2,title=yokoten email::an email address\. .+\. .+\.%0A  docs: https:\/\/\S+#privacy$/);
-  assert.match(lines[1], /^::error file=notes\/b\.md,line=3,title=yokoten private-mark::matches a word you added to your private marks\. /);
-  assert.match(lines[2], /^::error file=notes\/b\.md,line=4,title=yokoten secret::a secret \(GitHub token\)\. /);
+  assert.match(lines[0], /^::error file=notes\/b\.md,line=2,title=yokoten email::notes\/b\.md:2: an email address\. .+\. .+\.%0A  docs: https:\/\/\S+#privacy$/);
+  assert.match(lines[1], /^::error file=notes\/b\.md,line=3,title=yokoten private-mark::notes\/b\.md:3: matches a word you added to your private marks\. /);
+  assert.match(lines[2], /^::error file=notes\/b\.md,line=4,title=yokoten secret::notes\/b\.md:4: a secret \(GitHub token\)\. /);
   const text = readFileSync(summary, 'utf8');
   assert.match(text, /^### yokoten check: 3 problems\n\n\| Place \| Rule \| What \| Why \| Fix \|\n/);
   assert.match(text, /\| notes\/b\.md:2 \| \[email\]\(https:\/\/\S+#privacy\) \| an email address \| .+ \| .+ \|/);
@@ -414,7 +414,7 @@ test('check --pr in GitHub Actions: notes are warnings, in their own section (#9
   const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(r.status, 1, 'no milestone');
   assert.match(r.stdout, /^::error title=yokoten pr-milestone::/m, 'a finding with no place has no file');
-  assert.match(r.stdout, /^::warning file=README\.md,line=2,title=yokoten long-sentence::a sentence of 30 words\. /m);
+  assert.match(r.stdout, /^::notice file=README\.md,line=2,title=yokoten long-sentence::README\.md:2: a sentence of 30 words\. /m, 'a plain note is a notice (#1239)');
   const text = readFileSync(summary, 'utf8');
   assert.match(text, /^### yokoten check --pr: 1 problem\n/);
   assert.match(text, /\n#### Notes \(1\): these never fail the check\n\n\| Place \| Rule \| What \| Why \| Fix \|\n\|[-|]+\|\n\| README\.md:2 \| long-sentence \| a sentence of 30 words \|/);

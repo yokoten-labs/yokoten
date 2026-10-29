@@ -18,7 +18,8 @@ import {
   stopCheckoutWalk,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { askOnTerminal, canColour, fail, isColourTerminal, MARKS, paint, problemRows, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
+import { askOnTerminal, canColour, fail, isColourTerminal, MARK_COLUMN, MARKS, paint, problemRows, row, type RowMark, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
+import { ROW_INDENT } from '../../src/rules/text/screen.ts';
 import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup/ask.ts';
 import type { Env } from '../../src/rules/config.ts';
 import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
@@ -261,7 +262,8 @@ test('output colour: a mark in green, red or yellow, a heading in bold, a comman
     ['  ok      core-rules', '32', '✔ ok'],
     ['    done        security-files', '32', '✔ done'],
     ['  MISSING runtime: none', '31', '✘ MISSING'],
-    ["  can't check review: unread", '33', "? can't check"],
+    // No glyph: the word fills its column, so a glyph would push this row's text two columns right (#1160).
+    ["  can't check review: unread", '33', "can't check"],
     ['    note    a warning', '33', '⚠ note'],
     ['    next    do this', '33', '● next'],
     ['    to do   do that', '33', '● to do'],
@@ -487,4 +489,18 @@ test('styleLine: every mark of MARKS is drawn, green when it says done (#1115)',
     else assert.doesNotMatch(styled, /\u001b\[32m/, `${mark} is not green`);
   }
   assert.match(styleLine('note: a note line', true), /⚠ note:/, 'the older note line form');
+});
+
+// #1160: on a terminal a mark gets a glyph; the text of every row, `can't check` too, still starts
+// in the column of the plain row. The positive control: a row moved one column makes this fail.
+test("styleLine: every row's text starts in one column, plain, in colour and in the old console (#1160)", () => {
+  const strip = (text: string) => text.replace(/\u001b\[[0-9;]*m/g, '');
+  const rows = [...MARKS].filter((mark) => mark !== 'note').map((mark) => row(mark as RowMark, 'the text')[0] ?? '');
+  const plainColumns = rows.map((line) => line.indexOf('the text'));
+  assert.deepEqual([...new Set(plainColumns)], [ROW_INDENT + MARK_COLUMN], 'plain rows share a column');
+  for (const isUnicode of [true, false]) {
+    rows.forEach((line, at) => assert.equal(strip(styleLine(line, true, isUnicode)).indexOf('the text'), plainColumns[at], `${line.trim()} (unicode ${isUnicode})`));
+  }
+  const labelled = row("can't check", 'gh could not reach GitHub', '#12')[0] ?? '';
+  assert.equal(strip(styleLine(labelled, true)).indexOf('gh could not'), labelled.indexOf('gh could not'), 'a labelled row keeps its column too');
 });
