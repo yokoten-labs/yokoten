@@ -16,7 +16,7 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import type { Env } from '../rules/config.ts';
 import { BIDI, CONTROL, terminalText, unicodeEscape } from '../rules/text/terminal.ts';
 import { type Finding, finding, formatFinding } from '../rules/text/message.ts';
-import { field, moreLine, nextLine, noteLine, row, screen, section, spaced, summaryLine, table, title, wrap } from '../rules/text/screen.ts';
+import { field, moreLine, nextLine, nextSentence, noteLine, row, screen, section, spaced, summaryLine, table, title } from '../rules/text/screen.ts';
 import { homeOf, loadMarks, makeRedactor, NO_HOME, PLACEHOLDERS, scanText } from '../rules/privacy.ts';
 
 /** An incident issue, as the code host gives it. */
@@ -304,7 +304,7 @@ export function draftWrittenScreen(incident: Incident, draft: Draft, { written, 
 
 /** A refusal with a list: how many problems, each as a row, and what to do. `what` ends the title. */
 export function problemsScreen(command: string, problems: readonly string[], what: string, next: string): string[] {
-  return screen(title(command, `${plural(problems.length, 'problem')}; ${what}`), problems.flatMap((problem) => row('MISSING', problem.replaceAll('`', '"'))), wrap('Next: ', next));
+  return screen(title(command, `${plural(problems.length, 'problem')}; ${what}`), problems.flatMap((problem) => row('MISSING', problem.replaceAll('`', '"'))), nextSentence(next));
 }
 
 /** The screen after `learn --ship`: where the lesson went, and how each project gets it (#77). */

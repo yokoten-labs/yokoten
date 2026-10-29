@@ -10,7 +10,7 @@ import { homeOf } from '../../../rules/privacy.ts';
 import { type Finding, fixCommand } from '../../../rules/text/message.ts';
 import { install, isLauncherOnPath, isYes, NOT_INSTALLED, PLUGIN_BRINGS, uninstall, WINDOWS_PATH_STEP } from '../../../setup/install.ts';
 import { type Change, describeChange, type Place, type SetupResult, VERSION, YOUR_EDIT } from '../../../setup/files.ts';
-import { count, failure, field, type Invocation, moreLine, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
+import { asSentence, count, failure, field, type Invocation, moreLine, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
 import { askWhenTerminal } from './ask.ts';
 import { previewLines, SET_UP_QUESTION } from './start.ts';
 
@@ -40,8 +40,6 @@ function problemLabel(problem: Finding): string {
   return 'setup';
 }
 
-/** A part of a finding as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /**
  * One problem as a MISSING row: what is wrong, why, then the command on its own Fix line

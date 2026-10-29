@@ -797,7 +797,7 @@ test('learn screens: ship, export, import and the inbox are pure functions of th
   assert.ok(done.some((line) => /^ {2}done {8}wrote {7}lessons\/incident-12\/lesson\.ts$/.test(line)));
   const failed = problemsScreen('learn --ship', ['a', 'b'], 'nothing was moved', 'fix them');
   assert.equal(failed[0], 'yokoten learn --ship · 2 problems; nothing was moved');
-  assert.equal(failed.at(-1), 'Next: fix them');
+  assert.equal(failed.at(-1), 'Next: fix them.');
   assert.deepEqual(upstreamListScreen([]), ['yokoten learn --upstream · no lessons wait; the inbox is empty']);
   const note = { id: '20261027-120000-abcd', when: '2026-10-27T12:00:00Z', part: 'hook', what: 'it missed a case' };
   assert.match(upstreamListScreen([note]).join('\n'), /1 lesson waits[^]*20261027-120000-abcd {2}2026-10-27 12:00 UTC, hook: it missed a case\n\nNext: `yokoten learn --upstream --done <id>`$/);

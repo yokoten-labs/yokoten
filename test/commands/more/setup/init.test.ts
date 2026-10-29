@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { commitCommand, initListScreen, initScreen, planScreen } from '../../../../src/commands/more/setup/init.ts';
 import { init } from '../../../../src/setup/init.ts';
 import { setUpPlanning } from '../../../../src/setup/plan.ts';
-import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { screenProblems, underMark } from '../../../repo/docs/screen-rules.ts';
 import { fakeGh, makeSandbox } from '../../../repo/helpers.ts';
 
 const LINUX = { platform: 'linux' } as const;
@@ -43,7 +43,7 @@ test('init screen: run again it says nothing changed, and shows its notes, never
   const again = init(sandbox.repo, sandbox.env, () => '');
   const text = checked(initScreen(again, LINUX));
   assert.match(text, /^yokoten init · already set up here, nothing changed$/m);
-  assert.match(text, /^ {2}note {8}yokoten's guard is off in Codex until a person turns it on\n {14}Fix: `yokoten trust`$/m, 'the trust note keeps its command');
+  assert.match(text, underMark(/^ {2}note {8}yokoten's guard is off in Codex until a person turns it on\n {COL}Fix: `yokoten trust`$/m), 'the trust note keeps its command');
   assert.doesNotMatch(text, /^Next: /m, 'nothing to commit');
 });
 
@@ -89,7 +89,7 @@ test('init screen: a step left for the person is a MISSING row with its fix; the
   const left = { ...done, problems: [{ id: 'hooks-path', what: 'husky is not set up in this clone yet, so the commit check is not on yet', why: '', fix: 'npm install' }] };
   const text = checked(initScreen(left, LINUX));
   assert.match(text, /^yokoten init · this project is partly set up$/m);
-  assert.match(text, /^ {2}MISSING {5}husky is not set up in this clone yet, so the commit check is not\n {14}on yet\n {14}Fix: `npm install`$/m);
+  assert.match(text, underMark(/^ {2}MISSING {5}husky is not set up in this clone yet, so the commit check is not\n {COL}on yet\n {COL}Fix: `npm install`$/m));
 });
 
 test('init: a folder that does not exist is a failure with one Next line, and nothing is written (#205)', async () => {

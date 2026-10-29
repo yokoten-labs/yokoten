@@ -5,7 +5,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir, userInfo } from 'node:os';
 import { dirname, join, posix, relative } from 'node:path';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { killedLine, makeSandbox, makeTempDir, runChild } from './helpers.ts';
 import { fileURLToPath } from 'node:url';
 import { COMMANDS } from '../../src/run/cli.ts';
@@ -2504,6 +2504,53 @@ test('file time: the reporter adds up each file\'s top-level tests, and a file o
   const under = judgeFiles('{"file":"test/b.test.ts","ms":1200}\n');
   assert.equal(under.isOver, false);
   assert.equal(under.text, `Every test file took ${limit} s or less.\n\nThe slowest files:\n- 1.2 s: test/b.test.ts\n`);
+});
+
+test('suite time: the reporter prints progress only on GitHub Actions, clears its timer, and keeps its {file, ms} lines (#1128)', async () => {
+  const at = (name: string) => join(process.cwd(), name);
+  const file = (type: string, name: string) => ({ type, data: { nesting: 0, name, file: at(name) } });
+  /** Runs the reporter on two files, one finished and one still running a minute in, and returns what it wrote and yielded. */
+  async function run(actions: string | undefined) {
+    const before = process.env.GITHUB_ACTIONS;
+    if (actions === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = actions;
+    mock.timers.enable({ apis: ['setInterval', 'Date'], now: 0 });
+    const original = process.stdout.write.bind(process.stdout);
+    const written: string[] = [];
+    // Only the strings the reporter writes are caught; the test runner's own output goes on.
+    const catcher = mock.method(process.stdout, 'write', (chunk: unknown, ...rest: unknown[]) => (typeof chunk === 'string' ? (written.push(chunk), true) : (original as (...args: unknown[]) => boolean)(chunk, ...rest)));
+    const lines: string[] = [];
+    try {
+      async function* events() {
+        yield file('test:enqueue', 'test/a.test.ts');
+        yield file('test:enqueue', 'test/b.test.ts');
+        yield file('test:dequeue', 'test/a.test.ts');
+        yield file('test:dequeue', 'test/b.test.ts');
+        yield { type: 'test:pass', data: { nesting: 0, name: 'a case', file: at('test/a.test.ts'), details: { duration_ms: 1500 } } };
+        // A minute passes while test/b.test.ts runs.
+        mock.timers.tick(60_000);
+        yield file('test:complete', 'test/a.test.ts');
+      }
+      for await (const line of fileTimes(events())) lines.push(line);
+      const writtenAtEnd = written.length;
+      // The timer is gone: another minute with test/b.test.ts still unfinished writes nothing.
+      mock.timers.tick(120_000);
+      return { lines, written, laterWrites: written.length - writtenAtEnd };
+    } finally {
+      catcher.mock.restore();
+      mock.timers.reset();
+      if (before === undefined) delete process.env.GITHUB_ACTIONS;
+      else process.env.GITHUB_ACTIONS = before;
+    }
+  }
+  const quiet = await run(undefined);
+  assert.deepEqual(quiet.written, [], 'off GitHub Actions the reporter writes nothing but its lines');
+  assert.deepEqual(quiet.lines, ['{"file":"test/a.test.ts","ms":1500}\n']);
+  const loud = await run('true');
+  assert.deepEqual(loud.lines, quiet.lines, 'the {file, ms} lines are the same on GitHub Actions');
+  assert.deepEqual(loud.written, ['still running test/a.test.ts: 60 s\nstill running test/b.test.ts: 60 s\n', '[1/2] test/a.test.ts 60 s\n      ✔ a case (1500.0 ms)\n'], 'each file running a minute is named once, then a finished file prints its block');
+  assert.equal(loud.laterWrites, 0, 'the timer is cleared when the run ends');
+  assert.deepEqual((await run('false')).written, [], 'only the value true turns it on');
 });
 
 test('suite time: each test job prints a line when a file finishes, and one a minute while a file runs long (#1125)', () => {
