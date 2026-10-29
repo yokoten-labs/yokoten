@@ -652,10 +652,16 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
         ask = null;
       }
     }
-    // No question: the wrapped command runs in place of the one the agent wrote.
-    const rewritten = !found && !ask && printed && wrapped !== null ? rewriteOf(agent, input, wrapped, `yokoten: ${printed}, so its output goes through yokoten redact`) : null;
+    // The wrapped command runs in place of the one the agent wrote. A question carries it,
+    // so the owner's yes runs the wrapped command (#1212); with no question, it is an allow.
+    const asked = askOf(agent);
+    const rewritten = found || !printed || wrapped === null
+      ? null
+      : ask
+        ? asked === null ? null : asked(`yokoten: ${formatFinding(ask)}`, { input, command: wrapped })
+        : rewriteOf(agent, input, wrapped, `yokoten: ${printed}, so its output goes through yokoten redact`);
     if (rewritten !== null) {
-      if (json) printJson(answerInvocation, { blocked: false, toolCall: true, rewritten: wrapped });
+      if (json) printJson(answerInvocation, { blocked: false, toolCall: true, ...(ask ? { ask } : {}), rewritten: wrapped });
       // Written as it is: hiding the home folder would change the command.
       else answerInvocation.stdout.write(rewritten);
       noteToolCall(cwd, agent, action, role !== null || action.worker, null);
@@ -682,15 +688,10 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
       clearRepeats(env, sessionKey);
     }
     noteToolCall(cwd, agent, action, role !== null || action.worker, found);
-    const askRewritten = !found && ask && wrapped !== null ? wrapped : null;
-    if (json) printJson(answerInvocation, found ? { blocked: true, finding: found } : ask ? { blocked: false, toolCall: true, ask, ...(askRewritten !== null ? { rewritten: askRewritten } : {}) } : { blocked: false, toolCall: true });
+    if (json) printJson(answerInvocation, found ? { blocked: true, finding: found } : ask ? { blocked: false, toolCall: true, ask } : { blocked: false, toolCall: true });
     if (!found && ask) {
       const question = `yokoten: ${formatFinding(ask)}`;
-      const asked = askOf(agent);
-      // The question carries the redact wrap, so the yes runs the wrapped command (#1212).
-      // A rewritten question is written as it is, as the rewrite above: hiding the home folder would change the command.
-      if (!json && asked !== null && askRewritten !== null) answerInvocation.stdout.write(asked(question, { input, command: askRewritten }));
-      else if (!json && asked !== null) say(answerInvocation, asked(question), answerInvocation.stdout);
+      if (!json && asked !== null) say(answerInvocation, asked(question), answerInvocation.stdout);
       else if (!json) say(answerInvocation, `${question}\n`, invocation.stderr);
       return finish(0);
     }
