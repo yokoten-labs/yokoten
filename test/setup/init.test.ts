@@ -746,7 +746,7 @@ test('init: a CLAUDE.md link to an AGENTS.md without `## This project` gets the 
     symlinkSync(target, join(sandbox.repo, file));
     const result = initIn(sandbox);
     assert.ok(result.ok, said(result));
-    assert.ok(has(result, 'updated', /^AGENTS\.md: the core rules are on top, and your 3 line\(s\) moved under `## This project`/), file);
+    assert.ok(has(result, 'updated', /^AGENTS\.md: the core rules are on top, and your 3 lines moved under `## This project`/), file);
     assert.doesNotMatch(said(result), /CLAUDE\.md/, `${file}: no import, no note about the link`);
     const text = readFileSync(join(sandbox.repo, 'AGENTS.md'), 'utf8');
     assert.equal(text.match(/^<!-- yokoten kit /gm)?.length, 1, `${file}: the core rules once`);
@@ -1205,13 +1205,13 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const old = kitCore.replace(/^\| 12 \|.*\n/m, '').replace('Plain English, close to', 'Plain words, close to') + own;
   writeFileSync(path, old);
   const doctor = await sandbox.call(['doctor', '--all']);
-  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 line\(s\) added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
+  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 lines added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
   assert.equal(doctor.status, 1);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the core rules in AGENTS\.md are behind/m, 'a session hears it');
 
   // The preview has each line, the hand edit too, and writes nothing.
   const preview = updateCoreRules(sandbox.repo, { write: false }, sandbox.env);
-  assert.deepEqual([preview.state, preview.summary], ['preview', '2 line(s) added, 1 removed; sections changed: Core rules, Writing']);
+  assert.deepEqual([preview.state, preview.summary], ['preview', '2 lines added, 1 removed; sections changed: Core rules, Writing']);
   const lineOf = (kind: string, start: string) => preview.changes.some((change) => change.kind === kind && change.line.startsWith(start));
   assert.ok(lineOf('removed', 'Plain words, close to ASD-STE100'), 'the hand-edited line is shown as replaced');
   assert.ok(lineOf('added', 'Plain English, close to ASD-STE100'));
@@ -1219,7 +1219,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   // update --all shows them, through the real command.
   result = await sandbox.call(['update', '--all']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, new RegExp(String.raw`^yokoten update · the core rules differ from yokoten ${versionPattern}'s: 2 line\(s\)`));
+  assert.match(result.stdout, new RegExp(String.raw`^yokoten update · the core rules differ from yokoten ${versionPattern}'s: 2 lines`));
   assert.match(result.stdout, /^ {2}- Plain words, close to ASD-STE100/m);
   assert.match(result.stdout, /\nNext: `yokoten update --write`\n$/);
   assert.equal(readFileSync(path, 'utf8'), old, 'the preview writes nothing');
@@ -1227,7 +1227,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   // --write replaces the core part only; a second run has nothing to do.
   commitAgents(sandbox); // git can give this file back, so update --write keeps no copy (#989)
   const written = updateCoreRules(sandbox.repo, { write: true }, sandbox.env);
-  assert.deepEqual([written.ok, written.state, written.summary, written.backup], [true, 'written', '2 line(s) added, 1 removed; sections changed: Core rules, Writing', undefined]);
+  assert.deepEqual([written.ok, written.state, written.summary, written.backup], [true, 'written', '2 lines added, 1 removed; sections changed: Core rules, Writing', undefined]);
   assert.equal(readFileSync(path, 'utf8'), kitCore + own);
   assert.match((await sandbox.call(['update'])).stdout, /up to date/);
 
@@ -1782,7 +1782,7 @@ test('init: an AGENTS.md without `## This project` gets the core rules on top, a
   sandbox.write('AGENTS.md', old);
   const result = initIn(sandbox);
   assert.ok(result.ok, said(result));
-  assert.ok(has(result, 'updated', /^AGENTS\.md: the core rules are on top, and your 7 line\(s\) moved under `## This project`; only their heading levels changed \(kept the old file as AGENTS\.md\.before-yokoten;/));
+  assert.ok(has(result, 'updated', /^AGENTS\.md: the core rules are on top, and your 7 lines moved under `## This project`; only their heading levels changed \(kept the old file as AGENTS\.md\.before-yokoten;/));
   assert.ok(noted(result, /^AGENTS\.md: a heading went one level down: `# Our rules` is now `## Our rules`$/), said(result));
   assert.ok(noted(result, /^AGENTS\.md: a heading went one level down: `## Style` is now `### Style`$/));
   assert.ok(noted(result, /^AGENTS\.md: the front matter stays at the very top, as it was$/));

@@ -905,8 +905,12 @@ export function finding(id: RuleId, what: string, fix: string, more: { file?: st
 /** Whether a finding stops the check. An ignored finding, or one not graded `sure`, only warns. */
 export const isFailingFinding = (f: Finding): boolean => f.ignored === undefined && (f.grade === undefined || f.grade === 'sure');
 
-/** Whether a finding warns about a secret, a privacy hit or an ignore, rather than being an ordinary note. */
-export const isWarningFinding = (f: Finding): boolean => f.ignored !== undefined || (f.grade !== undefined && f.grade !== 'sure');
+/**
+ * Whether a finding warns about a secret, a privacy hit or an ignore, rather than being an ordinary note.
+ * The check screen, its count and the CI annotation level all read this. An ignore a pull request adds
+ * (`ignore-added`) is a notice for the reviewer, not a warning (#616).
+ */
+export const isWarningFinding = (f: Finding): boolean => f.id !== 'ignore-added' && (f.ignored !== undefined || (f.grade !== undefined && f.grade !== 'sure'));
 
 /** Outside a git repo (#205): the one finding every command that needs a repo gives. */
 export const notRepoFinding = (folder: string): Finding => finding('not-a-repo', `${folder} is not inside a git repo`, 'run it inside your project, or `git init` first');
@@ -922,7 +926,7 @@ export const place = (f: Finding): string => (f.file === undefined ? '' : `${f.f
  * which says it already, so its grade shows only beside an ignore; JSON always has it.
  */
 export const formatFindingMarks = (f: Finding): string => {
-  const grade = f.grade === 'sure' && f.ignored === undefined ? undefined : f.grade;
+  const grade = f.grade === 'sure' && f.ignored === undefined ? undefined : f.grade === 'unknown' ? 'not sure' : f.grade;
   const marks = [grade, f.ignored === undefined ? '' : `ignored: ${f.ignored}`].filter(Boolean);
   return marks.length ? ` [${marks.join('; ')}]` : '';
 };

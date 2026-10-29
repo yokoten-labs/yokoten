@@ -296,7 +296,7 @@ export type Chat = (config: LlamaConfig, messages: Message[], options: { schema?
 export async function draft(rows: Fact[], { env, send = chat, timeoutMs }: { env: Env; send?: Chat; timeoutMs?: number }): Promise<Draft> {
   const byRules = (note: string): Draft => ({ rows: ruleDraft(rows), by: 'rules', note });
   const config = llamaConfig(env);
-  if (!config) return byRules(`no model key; ${KEY_HINT}`);
+  if (!config) return byRules(`no model key was found; ${KEY_HINT}`);
   const messages = prompt(rows);
   const problems = promptProblems(messages, env);
   if (problems.length) return byRules(`nothing was sent: the facts hold something private (${problems.length} finding(s)); run \`yokoten check\``);

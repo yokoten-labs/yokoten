@@ -8,18 +8,19 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, makeTempDir } from '../../repo/helpers.ts';
 import { GitReadError } from '../../../src/run/check.ts';
+import { noteRows } from '../../../src/commands/more/check.ts';
 import { annotation, annotations, isUnreadable, OPEN_PULL_LIMIT, readBranchFiles, readCodeOwners, readEvent, readIssue, readOpenPulls, readPullRequest, stepSummary } from '../../../src/host/github/pull-request.ts';
 
 // #91: workflow commands, escaped as GitHub's runner decodes them
 // (docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands).
 test('annotations: escape the message and the properties; a history place goes in the message (#91)', () => {
   const f = { id: 'layout', what: '100% full,\nline two\r', why: 'a: b', fix: 'see a, b', file: 'docs/a,b:c.md', line: 7 };
-  assert.equal(annotation(f, 'error'), '::error file=docs/a%2Cb%3Ac.md,line=7,title=yokoten layout::100%25 full,%0Aline two%0D. A: b. See a, b.');
+  assert.equal(annotation(f, 'error'), '::error file=docs/a%2Cb%3Ac.md,line=7,title=yokoten layout::docs/a,b:c.md:7: 100%25 full,%0Aline two%0D. A: b. See a, b.', 'the message names the file and line (#1239)');
   assert.equal(annotation({ id: 'large-diff', what: 'big', why: 'w', fix: 'f' }, 'warning'), '::warning title=yokoten large-diff::big. W. F.');
   assert.equal(annotation({ id: 'secret', what: 'a secret', why: 'w', fix: 'f', grade: 'likely', ignored: 'a test fixture' }, 'warning'), '::warning title=yokoten secret::a secret [likely; ignored: a test fixture]. W. F.');
   assert.equal(annotation({ ...f, what: 'x', file: 'commit abc (message)', line: 1 }, 'error', false), '::error title=yokoten layout::commit abc (message):1: x. A: b. See a, b.');
   const linked = { id: 'email', what: 'an email', why: 'w', fix: 'f', docs: 'https://example.com/guide#privacy', file: 'a.md', line: 1 };
-  assert.equal(annotation(linked, 'error'), '::error file=a.md,line=1,title=yokoten email::an email. W. F.%0A  docs: https://example.com/guide#privacy', 'the link goes in the message (#94)');
+  assert.equal(annotation(linked, 'error'), '::error file=a.md,line=1,title=yokoten email::a.md:1: an email. W. F.%0A  docs: https://example.com/guide#privacy', 'the link goes in the message (#94)');
   const many = Array.from({ length: 60 }, (_, i) => ({ id: 'email', what: `e${i}`, why: 'w', fix: 'f', file: 'a.md', line: i + 1 }));
   const lines = annotations(many, [{ id: 'large-diff', what: 'big', why: 'w', fix: 'f' }]);
   assert.equal(lines.length, 50, 'GitHub shows at most 50 per job');
@@ -172,8 +173,27 @@ test('annotations: an ignore a pull request adds is a notice, after the problems
   const note = { id: 'large-diff', what: 'big', why: 'w', fix: 'f' };
   const lines = annotations([problem], [note, added]);
   assert.match(lines[0], /^::error /);
-  assert.equal(lines[1], '::notice file=a.ts,line=2,title=yokoten ignore-added::this pull request lets a secret hit through on this line [ignored: a fixture]. W. F.');
-  assert.match(lines[2], /^::warning /);
+  assert.equal(lines[1], '::notice file=a.ts,line=2,title=yokoten ignore-added::a.ts:2: this pull request lets a secret hit through on this line [ignored: a fixture]. W. F.');
+  assert.match(lines[2], /^::notice /, 'a plain note is a notice, not a warning (#1239)');
+});
+
+// #1239: the level follows the finding. The count the check screen gives ("6 notes, 1 warning among
+// them") is the count of the annotations, so the log and the summary never disagree.
+test('annotations: a warning, a notice and an error each have their level, and the screen count matches (#1239)', () => {
+  const problem = { id: 'email', what: 'an email address', why: 'w', fix: 'f', file: 'a.md', line: 1, grade: 'sure' as const };
+  const warning = { id: 'secret', what: 'a secret (token)', why: 'w', fix: 'f', file: 'a.ts', line: 3, grade: 'unknown' as const };
+  const ignored = { id: 'secret', what: 'a secret (token)', why: 'w', fix: 'f', file: 'b.ts', line: 4, grade: 'likely' as const, ignored: 'a fixture' };
+  const behind = [1, 2, 3].map((n) => ({ id: 'translation-behind', what: `is behind README.md by ${n} commits`, why: 'w', fix: 'f', file: `docs/i18n/x${n}/README.md`, line: 1 }));
+  const added = { id: 'ignore-added', what: 'this pull request lets a secret hit through on this line', why: 'w', fix: 'f', file: 'c.ts', line: 5, ignored: 'a fixture' };
+  const notes = [...behind, warning, ignored, added];
+  const lines = annotations([problem], notes);
+  const level = (name: string) => lines.filter((line) => line.startsWith(`::${name} `));
+  assert.equal(level('error').length, 1);
+  assert.equal(level('warning').length, 2);
+  assert.equal(level('notice').length, 4, 'three plain notes and the added ignore');
+  for (const note of [...behind, warning]) assert.ok(lines.some((line) => line.includes(`::${note.file}:${note.line}: `)), `${note.file} is named in its message`);
+  const screen = noteRows(notes, false).join('\n');
+  assert.match(screen, new RegExp(`${notes.length} notes, ${level('warning').length} warnings among them`));
 });
 
 // #432: the open pull requests `pr sync` walks, through one gh list. A fork is kept and

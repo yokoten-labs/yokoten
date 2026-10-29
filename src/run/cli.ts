@@ -264,7 +264,7 @@ export const COMMANDS: Command[] = [
           rows: [
             ['read', 'it reads GitHub through gh and says which standard labels and milestone it would add'],
             ['change', 'it changes GitHub only with --github --yes'],
-            ['notNow ci', 'with "notNow" ci in yokoten.json, it writes no workflow and no Dependabot config'],
+            ['CI off', 'when yokoten.json lists ci under "notNow", init writes no workflow and no Dependabot file'],
           ],
         },
       ],
@@ -272,7 +272,7 @@ export const COMMANDS: Command[] = [
     },
     options: [
       { name: '--list', text: 'show every file init wrote or kept' },
-      { name: '--no-ci', text: 'keep CI off: no workflows or Dependabot, and "notNow" ci in yokoten.json' },
+      { name: '--no-ci', text: 'keep CI off: no workflows and no Dependabot file; yokoten.json records it' },
       { name: '--github', text: 'work on GitHub too; goes with --yes' },
       { name: '--yes', text: 'add the standard labels, a first milestone and up to 8 area labels on GitHub' },
       { name: '--remove-default-labels', text: "also delete GitHub's default labels outside the set" },
@@ -478,7 +478,7 @@ export const COMMANDS: Command[] = [
           rows: [
             ['schemas', 'each tool schema, for Claude, Gemini and OpenAI strict mode'],
             ['names', 'the tool and property names'],
-            ['annotations', 'all four annotations'],
+            ['annotations', 'every tool sets readOnlyHint, destructiveHint, idempotentHint and openWorldHint'],
             ['count', 'fewer than 40 tools'],
             ['results', 'an outputSchema result carries both structuredContent and text'],
             ['stdout', 'it reports any line that is not JSON-RPC'],
@@ -640,14 +640,6 @@ export const COMMANDS: Command[] = [
       ],
       sections: [
         {
-          heading: 'Share a lesson',
-          rows: [
-            ['--ship', 'in yokoten: moves a reviewed lesson into kit/lessons/, where doctor runs it in every project'],
-            ['--export', 'a reviewed lesson as one small JSON file, with its incident and its positive control, and no private detail'],
-            ['--import', 'shows such a file from another project; --write adds it to lessons/ for review. It runs nowhere before --ship'],
-          ],
-        },
-        {
           heading: 'Notes for yokoten itself',
           rows: [
             ['--upstream', 'keeps a note about a gap in yokoten, found in any project, in ~/.config/yokoten/upstream/, outside every repo'],
@@ -660,10 +652,10 @@ export const COMMANDS: Command[] = [
     options: [
       { name: '--write', text: 'put the draft in lessons/ (adds only, never overwrites)' },
       { name: '--all', text: 'show every field the issue left open, and the files the draft writes' },
-      { name: '--ship', text: 'move a reviewed lesson into kit/lessons/; refused while a TODO is left' },
-      { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file (prints it, or writes it with --out)' },
+      { name: '--ship', text: 'move a reviewed lesson into kit/lessons/, where doctor runs it in every project; refused while a TODO is left' },
+      { name: '--export', value: 'id', text: 'a reviewed lesson as one small JSON file, with its incident and no private detail (prints it, or writes it with --out)' },
       { name: '--out', value: 'file', text: 'with --export: write the lesson file here instead of printing it' },
-      { name: '--import', value: 'file', text: 'a lesson file from another project: show it, or add it with --write' },
+      { name: '--import', value: 'file', text: 'a lesson file from another project: show it, or add it with --write. It runs nowhere before --ship' },
       { name: '--upstream', text: 'a note for the yokoten repo, in a few words: what happened' },
       { name: '--area', value: 'name', text: 'with --upstream: the part of yokoten it is about, such as hook or doctor' },
       { name: '--fix', value: 'idea', text: 'with --upstream: how it could be fixed' },
@@ -808,7 +800,7 @@ export const COMMANDS: Command[] = [
       { name: '--name', value: 'name', text: "the agent's name on the team (default: the desk folder's name)" },
       { name: '--read', value: 'paths', text: 'more paths to show read-only, joined by commas' },
       { name: '--host', value: 'hosts', text: "more API hosts the agent may reach, joined by commas" },
-      { name: '--marks', text: 'show your private-marks file, read-only (not available yet)' },
+      { name: '--marks', text: 'show your private-marks file in the desk, read-only' },
       { name: '--json', text: 'with no task: the desks as JSON on stdout' },
     ],
     arguments: ['agent', 'folder'],

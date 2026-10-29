@@ -25,9 +25,9 @@ npx yokoten
 
 第一次執行只有一屏：裝好了什麼、你走到哪一步、下一條要輸入的指令。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.2; regenerate it when the screen changes. -->
+<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.2 · set up; stage 1 of 5, safety net
+yokoten 0.1.3 · set up; stage 1 of 5, safety net
 
   ok          guard on for Claude Code on this computer
   ok          37 files written in this project, none of yours changed
@@ -42,7 +42,7 @@ yokoten 0.1.2 · set up; stage 1 of 5, safety net
   to do       Name the owner (CODEOWNERS)
   to do       Set up the bot account
   to do       Add a license and a security policy
-  can't check 9 steps read the code host; doctor checks them after a push
+  can't check 9 steps: they read the code host; doctor checks them after a push
 
   note        16 uncommitted files, the oldest changed 1 minute ago
 
@@ -86,11 +86,11 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 | 指令 | 它做什麼 |
 |---|---|
-| `npx yokoten` | 補上缺的東西，再給出一屏：你在哪裡，下一步做什麼 |
-| `yokoten check` | 提交之前找出密鑰和被破壞的規則；提交檢查也會執行它 |
-| `yokoten desk` | 把一個任務交給一個 AI，在它自己的圍欄工位裡做 |
-| `yokoten kanban` | 一眼看到整個團隊，即時，唯讀（預覽版） |
-| `yokoten tidy` | 列出舊分支、worktree 和工位；加 `--local` 先存一份，再移進 yokoten 的回收資料夾 |
+| `npx yokoten` | 補上缺的東西，再給出下一步 |
+| `yokoten check` | 提交之前找出密鑰和被破壞的規則 |
+| `yokoten desk` | 把一個任務交給一個 AI，在它自己的工位裡做 |
+| `yokoten kanban` | 一眼看到整個團隊（預覽版） |
+| `yokoten tidy` | 列出舊分支、worktree 和工位 |
 
 `yokoten help --all` 按用途分組列出其餘的指令：開始、工作、守衛、合併與 CI、維護。
 
@@ -99,16 +99,17 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 任何 AI 模型都可以。守衛檢查的是 agent 要跑的指令，不是模型。
 
 - **Agent**：守衛和下面每一個 agent 一起工作。每一行的證據（日期、執行方式、先要知道什麼）見[指南裡的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **先信任**：寫 `yes` 的，要先在資料夾裡跑一次 `npx yokoten trust`，agent 才會執行守衛。
 
-| Agent | 已做端到端驗證 | 要先跑 `npx yokoten trust` | 測試過的模型 |
+| Agent | 已做端到端驗證 | 先信任 | 測試過的模型 |
 |---|---|---|---|
 | Claude Code | ✅ yes | no | `deepseek-flash` |
 | GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Antigravity CLI | ✅ yes | no | `gemini-3.8-flash-high` |
 | Codex CLI | ✅ yes | yes | `deepseek-flash` |
 | Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | ✅ yes | yes | the default model |
+| DeepSeek Harness | ✅ yes | no | the default DeepSeek model |
+| Grok CLI | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 

@@ -19,6 +19,7 @@ import { museClaudeRules } from '../../../src/setup/doctor/checks.ts';
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
 import { type Finding } from '../../../src/rules/text/message.ts';
 import { screenProblems } from '../../repo/docs/screen-rules.ts';
+import { SCREEN_ROWS } from '../../../src/rules/text/screen.ts';
 
 shareGuardMeasure();
 shareSelfTest();
@@ -1264,6 +1265,31 @@ test('shortLines: 25 branches only on this machine fold into one row, and the sc
   const start = shortLines(reportWith({ steps }), { title: ['yokoten 0.0.0 · set up; stage 1 of 5, safety net'], lead: [['  ok          guard on for your agents']], next: 'git add -A' });
   assert.deepEqual(start.slice(0, 3), ['yokoten 0.0.0 · set up; stage 1 of 5, safety net', '', '  ok          guard on for your agents']);
   assert.ok(start.includes('Next: `git add -A`'));
+});
+
+test('shortLines: problems and notes that take the room fold more steps, so the screen fits on every machine (#1027, #1239)', () => {
+  // A runner without the desk tools: two problems, the desk-fence note, 14 steps left and 9 it can't check had 25 lines.
+  const left = ['ci', 'tool-hook', 'commit-hook', 'runtime', 'tests', 'security', 'license', 'readme', 'changelog', 'release', 'review', 'owners', 'branch', 'tags'];
+  const steps = [
+    { id: 'gitignore', stage: 1, mark: 'done' as const }, { id: 'secrets', stage: 1, mark: 'done' as const },
+    { id: 'rules', stage: 1, mark: 'next' as const },
+    ...left.map((id) => ({ id, stage: 2, mark: 'to do' as const })),
+    ...Array.from({ length: 9 }, (_, at) => ({ id: `server-${at}`, stage: 3, mark: "can't check" as const })),
+  ];
+  const findings = [
+    note('machine-runtime', 'sessions do not start with doctor; the Claude Code plugin also runs it at session start; no guard for Claude Code; no runtime installed; no hooks for the other agents on this machine, so each one runs unguarded', 'run `yokoten install` from this copy of yokoten'),
+    note('private-marks', '~/.config/yokoten/private-marks is missing or has no marks', 'run `yokoten marks add`'),
+  ];
+  const notes = [note('desk-fence', "the desk fence can't start: bwrap, rg and socat are not installed"), ...Array.from({ length: 7 }, (_, at) => note(`other-${at}`, 'a note'))];
+  const lines = shortLines(reportWith({ ok: false, steps, findings, notes }));
+  assert.ok(lines.length <= SCREEN_ROWS, `${lines.length} lines:\n${lines.join('\n')}`);
+  assert.ok(lines.includes('  next        Write the rules for your agents (AGENTS.md)'), 'the next step always shows');
+  assert.ok(lines.some((line) => /^ {2}to do {7}\d+ more steps, listed by `yokoten doctor --all`$/.test(line)), 'the rest are counted');
+  assert.ok(lines.some((line) => line.includes("desk fence can't start")), 'a kept note is never folded for steps');
+  assert.equal(lines.filter((line) => line.includes('Fix: `yokoten')).length, 2, 'every problem keeps its Fix');
+  // With the room, the screen shows the next step and four more.
+  const roomy = shortLines(reportWith({ steps }));
+  assert.equal(roomy.filter((line) => /^ {2}(?:next|to do) {4,}/.test(line)).length, 6, roomy.join('\n'));
 });
 
 test('fullLines: every row starts its text in one column, a fix is said once, and a failure ends with Next (#1115)', () => {

@@ -76,7 +76,7 @@ test('doctor: the plugin, when on, stands in for install', async () => {
   const check = (name: string) => machineChecks(sandbox.env).find((found) => found.name === name);
   const skills = ROAD.filter((step) => step.key === 'skills');
   assert.equal(check('session-doctor')?.ok, false);
-  assert.equal(`${check('session-doctor')?.finding.what}; ${check('session-doctor')?.finding.fix}`, 'sessions do not start with doctor; run `yokoten install`, or install the Claude Code plugin');
+  assert.equal(`${check('session-doctor')?.finding.what}; ${check('session-doctor')?.finding.fix}`, 'sessions do not start with doctor; the Claude Code plugin also runs it at session start; run `yokoten install`');
   assert.equal(check('runtime')?.ok, false);
   assert.equal(check('runtime')?.finding.what, 'no runtime installed');
   mkdirSync(join(sandbox.home, '.claude'));

@@ -96,7 +96,7 @@ export function summaryLines(map: ConflictMap, notes: string[] = []): string[] {
   // The pairs are one block and the rest another: each is spaced only when a row in it wraps.
   const pairRows = pairs.map(({ files, first, second }) => {
     const why = order.find((pick) => pick.id === first.id)?.why;
-    return [...row('next', `${first.label} ⇄ ${second.label}`), ...underRow(`${pathsText(files)}. Merge ${first.label} first${why ? `: ${why}` : ''}.`)];
+    return [...row('next', `${first.label} ⇄ ${second.label}`), ...underRow(`${pathsText(files)}. Merge ${first.label} first${why ? `: ${why}` : ''}.`, false)];
   });
   const items: string[][] = [];
   for (const change of withMain) items.push(row('note', `${change.label} collides with main: ${pathsText(change.mainConflicts ?? [])}`));

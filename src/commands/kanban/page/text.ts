@@ -3,7 +3,7 @@
 // GET /api/state, so the text and the page say the same things. The screen is built only
 // with the layout helpers of ports.ts.
 
-import { counted, moreLines, rowLines, type RowState, screenLines, terminalSafe, titleLines, wrapLines } from '../ports.ts';
+import { counted, moreLines, rowLines, type RowState, screenLines, terminalSafe, titleLines, utcLine, wrapLines } from '../ports.ts';
 import { notReadLines } from '../state.ts';
 import type { KanbanActions, KanbanPull, KanbanSession, KanbanState } from './browser/types.ts';
 
@@ -59,7 +59,7 @@ function actionRows(actions: KanbanActions): string[] {
   const main = actions.main;
   const rows: Record<KanbanActions['main']['state'], [RowState, string]> = {
     pass: ['ok', 'passing'],
-    fail: ['MISSING', `failing${main.failingSince ? ` since ${main.failingSince}` : ''}`],
+    fail: ['MISSING', `failing${main.failingSince ? ` since ${utcLine(main.failingSince)}` : ''}`],
     running: ['note', 'running'],
     unknown: ['note', 'not read'],
   };

@@ -58,7 +58,7 @@ test('adopt: with no key, the rule-based draft and how to set the key; it change
   assert.deepEqual(draftJson(drafted), shape);
   assert.ok(rows.every((row) => Object.keys(row).join() === 'key,status,evidence,decision,reason'), 'the same fields, in the same order');
   assert.equal(rows.find((row) => row.key === 'tests')?.decision, 'as-is');
-  assert.match(json.stderr, /^note: Drafted by rules, because no model key/, "a note on stderr says who drafted it");
+  assert.match(json.stderr, /^note: Drafted by rules, because no model key was found/, "a note on stderr says who drafted it");
   assert.equal(sandbox.git('status', '--porcelain', '--ignored').stdout, before, 'adopt writes nothing');
 });
 
@@ -192,7 +192,7 @@ test('promptProblems: a marks file that can not be read stops the prompt, never 
 test('adopt: the default screen groups the rows as keep, add and decide (#1027)', () => {
   const drafted = {
     by: 'rules',
-    note: 'no model key; set MODEL_API_KEY',
+    note: 'no model key was found; set MODEL_API_KEY',
     rows: [
       { key: 'rules', status: 'partial' as const, evidence: 'your CI, your PR template', why: '', decision: 'as-is' as const, reason: '' },
       { key: 'tests', status: 'missing' as const, evidence: 'AGENTS.md, the commit check', why: '', decision: 'lighter' as const, reason: '' },

@@ -178,7 +178,7 @@ test('check --staged: borrowed code carries its source, commit, license and noti
   result = await sandbox.call(['check']);
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /src\/borrowed\/thing\.ts borrowed code under GPL-3\.0-only, which yokoten cannot copy/);
-  assert.match(result.stderr, /use the clean-room road in record 0024/i);
+  assert.match(flat(result.stderr), /use the clean-room road in record 0024/i);
   sandbox.git('add', '.');
   result = await sandbox.call(['check', '--staged']);
   assert.equal(result.status, 1);

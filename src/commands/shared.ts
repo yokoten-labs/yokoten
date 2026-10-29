@@ -4,7 +4,7 @@
 import { appendFileSync, existsSync, readFileSync, readSync } from 'node:fs';
 import { isatty } from 'node:tty';
 import { annotations, isGitHubActions, stepSummary } from '../host/github/index.ts';
-import { asSentence, failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, ROW_TEXT_COLUMN, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
+import { asSentence, failure, field, isDoneMark, type Mark, MARKS, nextLine, noteLine, ROW_INDENT, MARK_COLUMN, row, screen, spaced, wrap } from '../rules/text/screen.ts';
 import type { Env } from '../rules/config.ts';
 import { finding, type Finding, fixCommand, formatFinding, notRepoFinding } from '../rules/text/message.ts';
 import { hideHome } from '../rules/privacy.ts';
@@ -194,16 +194,15 @@ const GREEN_MARKS: ReadonlySet<string> = new Set(MARKS.filter(isDoneMark));
 // `kept (your edit) …` and `kept … (yours, not yokoten's)`, and init's `kept your <sandbox> in …`,
 // `kept your <hooks file>: …` and `kept <file>: it has your changes …` (#964).
 const KEPT_YOURS = /^(?:\(your edit\)|your\b)|\(yours, not yokoten's\)$|: it has your changes\b/;
-// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note,
-// ? can't check. A terminal gets it; a pipe, a file or an agent keeps the word alone,
-// so an old console never shows a broken glyph. `not now` and `skipped` are not among
-// the five states, so they keep their word only.
+// The glyph for each state (owner 2026-10-24): ✔ done, ✘ missing, ● next, ⚠ note. A terminal gets it; a pipe, a file or an agent keeps the word alone,
+// so an old console never shows a broken glyph. `can't check` has no glyph (owner 2026-10-29): its word fills the column.
+// `not now` and `skipped` have none either.
 const MARK_GLYPH: Record<string, string> = {
   ...Object.fromEntries(MARKS.filter(isDoneMark).map((mark: Mark) => [mark, '✔'])),
-  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠', "can't check": '?',
+  MISSING: '✘', next: '●', 'to do': '●', note: '⚠', 'note:': '⚠',
 };
 // log-symbols' fallbacks (issue #1027, R11): the classic Windows console draws these from its code page.
-const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼', '?': '?' };
+const ASCII_GLYPH: Record<string, string> = { '✔': '√', '✘': '×', '●': '*', '⚠': '‼' };
 
 /**
  * Whether the terminal draws Unicode marks (is-unicode-supported's rules): every system but
@@ -259,8 +258,6 @@ export function styleLine(line: string, isColour: boolean, isUnicode = true): st
     const glyph = drawn === undefined || isUnicode ? drawn : ASCII_GLYPH[drawn] ?? drawn;
     const said = glyph === undefined ? word : `${glyph} ${word}`;
     const padding = glyph === undefined ? mark[3] ?? '' : trimMarkPadding(mark[3] ?? '');
-    // A long mark (`can't check`) has no padding to give the glyph: a label's gap gives the
-    // rest, so the row's text keeps the column of the rows above and below it (#1115).
     const rest = keepTextColumn(mark[4] ?? '', (mark[3] ?? '').length - padding.length - (said.length - word.length));
     styled = `${mark[1] ?? ''}${paint(said, colour, true)}${padding}${rest}`;
   } else if (HEADING.test(line) || STAGE.test(line)) {
@@ -392,14 +389,8 @@ export function showOnPullRequest(invocation: Invocation, name: string, problems
 // a terminal sees a coloured glyph, an agent or a pipe the word. Persons and agents read the same text.
 export {
   asSentence, askLine, type ChangeMark, failure, field, LABEL_COLUMN, type Mark, MARK_COLUMN, MARKS, moreLine, nextLine, nextSentence, noteLine, row, ROW_TEXT_COLUMN, type RowMark,
-  screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, wrap,
+  screen, SCREEN_WIDTH, spaced, summaryLine, title, underRow, utcText, wrap,
 } from '../rules/text/screen.ts';
-
-/** Where a problem's text starts: `row`'s mark and label columns, so its why and fix sit under it. */
-function textColumn(where: string | undefined): number {
-  return where === undefined ? ROW_INDENT + MARK_COLUMN : ROW_TEXT_COLUMN;
-}
-
 
 /** The place a problem names, as editors and agents read it: `path:line`, with no colon after. */
 function locationOf(problem: Finding): string | undefined {
@@ -417,12 +408,14 @@ export function problemRows(problems: Finding[]): string[] {
   return spaced(
     problems.map((problem, at) => {
       const where = locationOf(problem);
-      const indent = ' '.repeat(textColumn(where));
+      const indent = ' '.repeat(ROW_INDENT + MARK_COLUMN);
+      // A place stands on the mark's line; the text starts on the next line, in the column of every other row.
+      const head = where === undefined ? row('MISSING', problem.what) : [...row('MISSING', where), ...wrap(indent, problem.what)];
       const command = commands[at];
-      if (!command) return [...row('MISSING', problem.what, where), ...wrap(indent, `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
+      if (!command) return [...head, ...wrap(indent, `${asSentence(problem.why)} ${asSentence(problem.fix)}`)];
       const isLast = commands.findLastIndex((other) => other?.command === command.command) === at;
       return [
-        ...row('MISSING', problem.what, where),
+        ...head,
         ...wrap(indent, command.then ? `${asSentence(problem.why)} ${asSentence(command.then)}` : asSentence(problem.why)),
         ...(isLast ? [`${indent}Fix: \`${command.command}\``] : []),
       ];

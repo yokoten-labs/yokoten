@@ -260,6 +260,24 @@ test('mcpScreen: two tools and one problem, from data', () => {
   assert.deepEqual(mcpNoneScreen('.mcp.json')[0], 'yokoten mcp · no MCP server found in .mcp.json');
 });
 
+// #1239: the note row starts its text where the server rows do, and a wrapped server keeps a blank line after it.
+test('mcpScreen: the note and the server rows share one text column, and a wrapped server is spaced (#1239)', () => {
+  const metrics = { count: 2, bytes: 410, longestDescription: 14, withOutputSchema: 0 };
+  const long = { name: 'github-enterprise-server', file: '.mcp.json', tools: 2, metrics, probed: 2, findings: [], notes: [] };
+  const short = { name: 'sample', file: '.mcp.json', tools: 1, metrics, probed: 1, findings: [], notes: [] };
+  const skipped = { ...short, name: 'third', tools: 0, skipped: 'a long reason that is not started here because the server speaks http, which this check cannot start' };
+  const warning = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
+  const ready = mcpScreen({ reports: [long, short, skipped], problems: [], warnings: [warning], toolCount: 3 });
+  const column = (text: string) => (ready.find((line) => line.includes(text)) ?? '').indexOf(text);
+  assert.equal(column('2 tools, 410 B'), 26, ready.join('\n'));
+  assert.equal(column('1 warning'), 26, ready.join('\n'));
+  assert.equal(column('1 tool, 410 B'), 26);
+  const at = ready.findIndex((line) => line.includes('1 tool, 410 B'));
+  assert.equal(ready[at + 1], '', 'a blank line between the items');
+  const wrapped = ready.findIndex((line) => line.includes('a long reason'));
+  assert.ok(ready[wrapped + 1]?.startsWith(' '.repeat(26)) && ready[wrapped + 2] === '', 'a wrapped item keeps a blank line before the next');
+});
+
 /** What printJson writes for a value: the bytes a --json reader gets. */
 const printed = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 

@@ -76,7 +76,7 @@ function installItems(result: SetupResult, place: Place): string[][] {
   const skills = [...new Set(result.changes.filter((change) => change.kind === 'skill' && change.state !== 'removed' && change.yours !== true).map((change) => pathsOf(place.platform).basename(change.path)))];
   if (skills.length) items.push(row('ok', skills.join(', '), 'skills'));
   const absent = result.changes.filter((change) => change.kind === 'hook' && change.state === 'skipped' && change.note === NOT_INSTALLED).length;
-  if (absent) items.push(row("can't check", `${absent} not installed here; run install again later`, 'other AIs'));
+  if (absent) items.push(row('note', `${absent} not installed here; run install again later`, 'other AIs'));
   items.push(pathItem(result, place));
   if (result.changes.some((change) => change.note === YOUR_EDIT)) items.push(row('note', 'your own edits stay; the newest copies are in the kit', 'kept'));
   const mailmap = result.changes.find((change) => change.kind === 'setting' && change.path === 'mailmap.file' && change.state === 'skipped');

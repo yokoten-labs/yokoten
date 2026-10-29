@@ -35,7 +35,7 @@ import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, 
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { count, fail, failure, field, type Invocation, isTerminal, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, type RowMark, say, screen, show, showOnPullRequest, spaced, summaryLine, title, underRow, usage, wrap } from '../shared.ts';
-import { asSentence, MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow } from '../../rules/text/screen.ts';
+import { asSentence, MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow, utcText } from '../../rules/text/screen.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -1380,12 +1380,6 @@ export function summarizeActionsHealth(runs: HealthRun[], pullProblems: PullChec
 function minutesText(milliseconds: number | null): string {
   if (milliseconds === null) return '—';
   return milliseconds < 60000 ? `${Math.round(milliseconds / 1000)} s` : `${(milliseconds / 60000).toFixed(1)} min`;
-}
-
-/** An ISO stamp as `YYYY-MM-DD HH:MM UTC`. A stamp that does not parse comes through as it is. */
-function utcText(stamp: string): string {
-  const time = Date.parse(stamp);
-  return Number.isNaN(time) ? stamp : `${new Date(time).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 /**

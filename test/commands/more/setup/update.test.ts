@@ -24,7 +24,7 @@ const PREVIEW: UpdateResult = {
   ok: true,
   state: 'preview',
   version: VERSION,
-  summary: '3 line(s) added, 2 removed',
+  summary: '3 lines added, 2 removed',
   changes: [
     { kind: 'added', line: '| 9 | Nothing reaches main without a pull request | x |' },
     { kind: 'removed', line: '| 4 | A fix task changes code | x |' },
@@ -120,6 +120,6 @@ test('trust: not at a terminal it writes nothing, and the failure names the comm
   const result = await sandbox.call(['trust']);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /^yokoten trust · a person runs this at a terminal/m);
-  assert.match(result.stderr, /\n\nNext: `yokoten trust`\n$/);
+  assert.match(result.stderr, /\n\nNext: open a terminal yourself and type `yokoten trust` there\.\n$/);
   checked(failure('trust', TRUST_NEEDS_A_PERSON.what, TRUST_NEEDS_A_PERSON.next), true);
 });

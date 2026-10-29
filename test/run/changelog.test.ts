@@ -154,3 +154,17 @@ test('changelogScreen: rows through table(), the problems screen ends with a Nex
   assert.equal(problems.at(-1), 'Next: `yokoten changelog`');
   assert.match(problems.join('\n'), /1 problem; nothing was written/);
 });
+
+// #1239: a problem with a place and one without start their text in one column.
+test('changelogProblemsScreen: a problem with no place and one with a place share one text column (#1239)', () => {
+  const lines = changelogProblemsScreen([
+    finding('change-file', 'no entry after the section', 'write the entry', { file: 'changes/3-c.md', line: 1 }),
+    finding('change-file', 'two sections', 'keep one'),
+  ]);
+  const at = (text: string) => lines.find((line) => line.includes(text))?.search(/\S/g) ?? -1;
+  const column = (text: string) => (lines.find((line) => line.includes(text)) ?? '').indexOf(text);
+  assert.equal(column('two sections'), 26, lines.join('\n'));
+  assert.equal(column('no entry after the section'), 26, lines.join('\n'));
+  assert.equal(column('keep one'), 26);
+  assert.ok(at('write the entry') >= 0);
+});

@@ -56,7 +56,7 @@ export interface RenderWaiver {
 }
 
 /** How many keys RENDER_WAIVED may hold. Only the integrator changes it, and only down. */
-export const RENDER_WAIVED_MOST = 20;
+export const RENDER_WAIVED_MOST = 19;
 
 /**
  * Old screens that break a rule today, keyed by renderKey (`<command> <sorted flags>`). The
@@ -67,10 +67,9 @@ export const RENDER_WAIVED_MOST = 20;
 export const RENDER_WAIVED: Record<string, RenderWaiver> = {
   'check': { rules: ['width', 'widest', 'fix-line'], reason: 'test/commands/more/check.test.ts renders rows over 80 and 100 columns (width, widest) and a Fix inside the problem text (fix-line); test/run/check.test.ts the fix-line too (#1115)' },
   'check --all --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'test/commands/more/check.test.ts renders rows over 80 and 100 columns and a Fix inside the text; the bot tests the fix-line too; breaks width, widest, fix-line (#1115)' },
-  'check --all --staged': { rules: ['label-columns'], reason: 'test/run/check.test.ts renders labels that do not share one column (label-columns) (#1115)' },
   'check --history': { rules: ['widest', 'fix-line'], reason: 'test/run/check.test.ts renders a row over 100 columns (widest) and a Fix inside the text (fix-line) (#1115)' },
   'check --pr': { rules: ['width', 'widest', 'fix-line'], reason: 'test/run/check.test.ts renders rows over 80 and 100 columns and a Fix inside the text; breaks width, widest, fix-line (#1115)' },
-  'check --staged': { rules: ['label-columns', 'fix-line'], reason: 'test/run/check.test.ts and the conflicts moves test render labels that do not share one column; test/run/check.test.ts a Fix inside the text; breaks label-columns, fix-line (#1115)' },
+  'check --staged': { rules: ['fix-line'], reason: 'test/run/check.test.ts renders a Fix inside the text (fix-line) (#1115)' },
   'doctor --agent --session': { rules: ['width', 'widest', 'spaced-items'], reason: 'the Muse runtime test renders rows over 80 columns and the doctor tests over 100 (width, widest); test/commands/hook.test.ts a wrapped item touching the next (spaced-items) (#1115)' },
   'doctor --all': { rules: ['width', 'widest', 'next-step', 'fix-line'], reason: 'the agent runtime, doctor, start and cli tests render rows over 100 columns (widest) and a Fix inside the text (fix-line); width and next-step were not seen in the files run on 2026-10-28, so the full report decides them (#1115)' },
   'doctor --session': { rules: ['width', 'widest', 'spaced-items', 'no-internal-path'], reason: 'test/commands/hook.test.ts renders a wrapped item touching the next (spaced-items); width, widest and no-internal-path were not seen in the files run on 2026-10-28, so the full report decides them (#1115)' },

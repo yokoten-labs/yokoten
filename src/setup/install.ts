@@ -1491,7 +1491,7 @@ export function setUpMailmap(env: Env, found: MachineMark[], { ask }: { ask?: As
     writeFileSync(file, MAILMAP_HEADER, { mode: 0o600 });
   }
   if (missing.length) appendFileSync(file, `${before && !before.endsWith('\n') ? '\n' : ''}${missing.map((email) => `${MAILMAP_OWNER} <${email}>\n`).join('')}`);
-  const fileChange: Change = { state: before === null ? 'wrote' : missing.length ? 'added' : 'kept', kind: 'file', path: file, ...(missing.length && before !== null ? { note: `${missing.length} line(s)` } : {}) };
+  const fileChange: Change = { state: before === null ? 'wrote' : missing.length ? 'added' : 'kept', kind: 'file', path: file, ...(missing.length && before !== null ? { note: `${missing.length} ${missing.length === 1 ? 'line' : 'lines'}` } : {}) };
   const state = mailmapState(env);
   const turnOn = `run \`git config --global mailmap.file ${MAILMAP_SETTING}\``;
   if (state === 'other') {

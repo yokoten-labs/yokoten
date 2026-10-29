@@ -327,11 +327,11 @@ agent 列在这里，但还没有确认它的守卫能端到端拦住。光看�
 |---|---|---|---|---|---|
 | Claude Code | `.claude/settings.json`：PreToolUse 和 Stop | 退出码 2，理由写在 stderr | 是 · 是 · 是 · 拦下 · 是 | 是，2026-10-19：无界面模式，模型用 DeepSeek 的 `deepseek-flash` | 无 |
 | GitHub Copilot CLI | 也是 `.claude/settings.json`：Copilot 会读这个文件 | 退出码 2，理由同时以 JSON 写到 stdout | 否 · 是 · 是 · 放行 · 是 | 是，2026-10-19：Copilot CLI 1.0.98，`copilot -p`，模型 `gpt-6-luna`（Auto 自动选的） | 要先信任这个文件夹，才跑仓库钩子：在那里运行 `yokoten trust`。没信任就一声不吭地跳过。钩子超时的话，这次调用会放行 |
-| Antigravity CLI（`agy`） | `.agents/hooks.json`：名叫 `yokoten` 的那一项，PreToolUse | 在 stdout 输出 `{"decision": "deny"}` | 否 · 否 · 否 · 拦下 · 是 | 是，2026-10-19：agy 1.4.2，`agy -p`，模型 `gemini-3.8-flash-high` | 还没有收尾检查。`.yokoten/` 不在的话，每次调用都会被拒：agy 出错时一律拦下 |
+| Antigravity CLI | `.agents/hooks.json`：名叫 `yokoten` 的那一项，PreToolUse | 在 stdout 输出 `{"decision": "deny"}` | 否 · 否 · 否 · 拦下 · 是 | 是，2026-10-19：agy 1.4.2，`agy -p`，模型 `gemini-3.8-flash-high` | 还没有收尾检查。`.yokoten/` 不在的话，每次调用都会被拒：agy 出错时一律拦下 |
 | Codex CLI | `.codex/hooks.json`：PreToolUse 和 Stop | 退出码 2，理由写在 stderr | 否 · 是 · 是 · 拦下 · 是 | 是，2026-10-19：Codex 0.163.0，`codex exec`，模型用 DeepSeek 的 `deepseek-flash` | 要先信任这个文件夹，再信任这两个钩子，才会跑：在那里运行 `yokoten trust`。没信任的钩子，`codex exec` 一声不吭地跳过 |
 | Muse Code | `.muse/hooks.json`：PreToolUse 和 Stop | 退出码 2，理由写在 stderr | 否 · 是 · 是 · 放行 · 否 | 是，2026-10-19：Muse Code 1.4.10，`muse exec --trust-workspace`，模型 `muse-spark-1.3-contributor` | 要先信任这个文件夹，才跑钩子：运行 `yokoten trust`。Muse 不把 `YOKOTEN_ROLE` 传给钩子，所以在 Muse 里每个会话都当成 lead。也没见过它传 `YOKOTEN_RELEASE_APPROVAL`，所以发版要到 Muse 外面去。钩子出错或超时的话，这次调用会放行 |
-| DeepSeek Harness（`dsh`） | `.dsh/hooks.json`：PreToolUse；再用 `.dsh/yokoten.patch.yml` 让 dsh 加载它 | 退出码 2，理由写在 stderr | 否 · 否 · 否 · 放行 · 是 | 是，2026-10-20：dsh 0.2.1-rc.2，`dsh headless --patch .dsh/yokoten.patch.yml`，DeepSeek 的默认模型 | 钩子要靠一个桥接插件才会跑，每个 profile 都得自己装，见 [DeepSeek Harness](#deepseek-harness)。没装插件或启动时没带 patch，dsh 一个钩子都不跑，也不提醒。Windows 上还管不住（#332）。还没有收尾检查 |
-| Grok CLI（`grok`） | `.grok/hooks/yokoten.json`：PreToolUse 和 Stop | 在 stdout 输出 `permissionDecision: "deny"`，退出码 2 | 是 · 是 · 是 · 拦下 · 是 | 是，2026-10-20：Grok CLI 1.0.52，`grok -p --trust --always-approve`，默认模型 | 要先信任这个文件夹，才跑项目钩子：在那里运行 `yokoten trust`。没信任就一声不吭地跳过。它也会跑 `.claude/settings.json` 里的钩子，所以一次调用可能查两遍，这是有意的 |
+| DeepSeek Harness | `.dsh/hooks.json`：PreToolUse；再用 `.dsh/yokoten.patch.yml` 让 dsh 加载它 | 退出码 2，理由写在 stderr | 否 · 否 · 否 · 放行 · 是 | 是，2026-10-20：dsh 0.2.1-rc.2，`dsh headless --patch .dsh/yokoten.patch.yml`，DeepSeek 的默认模型 | 钩子要靠一个桥接插件才会跑，每个 profile 都得自己装，见 [DeepSeek Harness](#deepseek-harness)。没装插件或启动时没带 patch，dsh 一个钩子都不跑，也不提醒。Windows 上还管不住（#332）。还没有收尾检查 |
+| Grok CLI | `.grok/hooks/yokoten.json`：PreToolUse 和 Stop | 在 stdout 输出 `permissionDecision: "deny"`，退出码 2 | 是 · 是 · 是 · 拦下 · 是 | 是，2026-10-20：Grok CLI 1.0.52，`grok -p --trust --always-approve`，默认模型 | 要先信任这个文件夹，才跑项目钩子：在那里运行 `yokoten trust`。没信任就一声不吭地跳过。它也会跑 `.claude/settings.json` 里的钩子，所以一次调用可能查两遍，这是有意的 |
 | Gemini CLI | `.gemini/settings.json`：BeforeTool 和 AfterAgent | 退出码 2，理由写在 stderr | 否 · 是 · 是 · 拦下 · 否 | 没有完整跑过：个人 Google 账号 2026-06-18 起不能再登录，要付费 API key 或企业授权 | 谷歌给个人用户的 agent 现在是 Antigravity CLI |
 | OpenCode | `.opencode/plugins/yokoten.ts`：OpenCode 2 的 permission `evaluate`，以及 OpenCode 1 的 `tool.execute.before` | OpenCode 2 把 `effect` 设为 deny；OpenCode 1 抛出理由 | 否 · 否 · 否 · 拦下 · 否 | 是，2026-10-23：OpenCode 2.1.4，`opencode-go/deepseek-v4.1-flash`，插件就是 `init` 写的那份；2026-10-25：`opencode-go/glm-5.3-flash`（Z.ai 的 GLM-5.3 Flash）跑的命令被守卫拦下 | 没有收尾检查。守卫失败或超时就拒绝这次调用。不是只读、又读不出命令或路径时，也拒绝。子 agent 的调用没有完整跑过 |
 | 其他 agent | 无 | `AGENTS.md` 里的规则；还有提交检查，不管是谁提交的，坏提交都会被拦下 | — | | |
@@ -1245,11 +1245,14 @@ issue 里没写的那一节，对应的字段就留一个 `TODO(reviewer)`，绝
 
 ```
 Project:
-  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+  note        lesson incident-138: test/api.test.ts: a test calls a server on
+              this machine and does not set NO_PROXY; set NO_PROXY and no_proxy
+              to 127.0.0.1,localhost while the test runs, then put the old
+              values back
 ```
 
 项目里第一次跑完整的 `doctor` 碰到一课新的，会单独说一次，哪怕没查出问题：
-`note    new lesson: incident-138 (<what>); doctor now runs it in this project`。
+`note        new lesson: incident-138 (<what>); doctor now runs it in this project`。
 见过哪些课记在 `.git/yokoten/state.json` 里，这个文件不会被提交。
 
 会话开头也会听到新的一课，只说一次，前提是它在这里查出了问题。就一行，还写明用哪条命令看在哪里：
