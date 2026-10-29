@@ -2,7 +2,7 @@
 
 import '../repo/home.ts';
 import assert from 'node:assert/strict';
-import { chmodSync, constants, existsSync, lstatSync, lutimesSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
+import { chmodSync, constants, existsSync, lstatSync, lutimesSync, mkdirSync, openSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
@@ -292,7 +292,8 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   const tree = join(lead, 'wt-1225');
   assert.equal(sandbox.git('worktree', 'add', '-q', '-b', 'task-1225', tree).status, 0);
   // In a shell command a path has forward slashes, as a worker types it: bash eats a Windows backslash.
-  const shellTree = tree.replaceAll('\\', '/');
+  // The long real path: a Windows runner's temp folder has 8.3 short names (RUNNER~1), and `~` is no plain path (#1237).
+  const shellTree = realpathSync.native(tree).replaceAll('\\', '/');
   const options = { root: null, config: DEFAULTS, env: { HOME: sandbox.home }, cwd: lead };
   const call = (action: { command?: string; paths?: string[] }, more: { worker?: boolean; cwd?: string; env?: Record<string, string> } = {}) =>
     judge({ paths: [], ...action, worker: more.worker ?? true, cwd: more.cwd ?? lead }, { ...options, env: { ...options.env, ...more.env } });
