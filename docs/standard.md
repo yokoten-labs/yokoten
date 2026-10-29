@@ -185,12 +185,13 @@ Tests: [test/commands/kanban/feed/steps.test.ts](../test/commands/kanban/feed/st
 Every vendor sends a tool call in its own shape.
 An adapter maps that call to one `Action`.
 There is no shared list of tool names.
-An `Action` has `command`, `commands`, `paths`, `cwd` and `worker`.
+An `Action` has `command`, `commands`, `paths`, `cwd`, `worker` and `leavesSandbox`.
 `command` is the shell text, when the call is a shell.
 `commands` holds several shell texts, when one call carries more than one; the guard checks each on its own.
 `paths` lists the files an edit would touch.
 `cwd` is the folder, when the event names one.
 `worker` is true when the call comes from a worker.
+`leavesSandbox` is true when the shell call asks to run outside the agent's sandbox; the lead is asked, a worker is refused.
 A record asked for one transcript for every vendor.
 The code has no such mapper yet.
 What the adapters share today is `Action`.
@@ -198,7 +199,7 @@ A tool with no adapter sends the guard protocol instead: [the guard protocol](re
 
 | Runtime | Names the hook watches | How a call becomes an Action | Fields the reader uses |
 | --- | --- | --- | --- |
-| `claude-code` | `Bash`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit` | The reader ignores the tool name. A `command` is a shell. A path is an edit. Copilot uses this reader. | `command`, `file_path`, `path`, `notebook_path`, `cwd`, `agent_type`, `tool_input` |
+| `claude-code` | `Bash`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit` | The reader ignores the tool name. A `command` is a shell. A path is an edit. Copilot uses this reader. | `command`, `file_path`, `path`, `notebook_path`, `cwd`, `agent_type`, `tool_input`, `dangerouslyDisableSandbox` |
 | `codex` | `Bash`, `apply_patch` | `Bash` is a shell. `apply_patch` is an edit. A shell that contains a patch is an edit too. | `command`, `tool_name`, `cwd`, `agent_type`, `tool_input` |
 | `gemini` | `run_shell_command`, `write_file`, `replace` | The shell name is a shell. The edit names are edits. No desk runtime. | `command`, `file_path`, `tool_name`, `cwd`, `tool_input` |
 | `antigravity` | `run_command`, `write_to_file`, `replace_file_content`, `multi_replace_file_content` | The shell name is a shell. The edit names are edits. No desk runtime. | `CommandLine`, `Cwd`, `TargetFile`, `name`, `args`, `toolCall`, `workspacePaths` |

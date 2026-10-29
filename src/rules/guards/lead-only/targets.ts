@@ -115,8 +115,32 @@ export function gitRootAbove(folder: string, known: Map<string, string | null>):
   return found;
 }
 
-// `keepsRestores`: false leaves out `git checkout` and `git restore`, which bring back committed files.
-export function writeTargets(words: string[], folder: string | null, rootOf: FileRules['rootOf'], { keepsRestores = true } = {}): WriteTarget[] {
+/**
+ * Whether a `git checkout` or `git restore` (its arguments after the subcommand) takes the
+ * files from another commit than the index or HEAD (#1212): `git checkout main -- x`,
+ * `git restore --source=main x`. A restore from the index or HEAD puts back what is there.
+ * `git checkout <ref> <path>` with no `--` names a ref when it has two plain words or more.
+ */
+export function restoresFromOtherRef(sub: string | undefined, args: string[]): boolean {
+  const isOther = (ref: string | undefined) => ref !== undefined && ref !== '' && ref !== 'HEAD' && ref !== '@';
+  if (sub === 'checkout') {
+    const dash = args.indexOf('--');
+    const plain = plainArgs(dash === -1 ? args : args.slice(0, dash), ['-b', '-B', '--orphan', '--conflict', '--pathspec-from-file']);
+    return dash === -1 ? plain.length > 1 && isOther(plain[0]) : isOther(plain[0]);
+  }
+  if (sub !== 'restore') return false;
+  for (const [index, arg] of args.entries()) {
+    if (arg === '--') break;
+    if (arg === '-s' || arg === '--source') return isOther(args[index + 1]);
+    if (arg.startsWith('--source=')) return isOther(arg.slice('--source='.length));
+    if (/^-s./.test(arg)) return isOther(arg.slice(2));
+  }
+  return false;
+}
+
+// `keepsRestores`: false leaves out `git checkout` and `git restore`, which bring back committed
+// files; 'otherRef' keeps only those that take the files from another commit (#1212).
+export function writeTargets(words: string[], folder: string | null, rootOf: FileRules['rootOf'], { keepsRestores = true }: { keepsRestores?: boolean | 'otherRef' } = {}): WriteTarget[] {
   const targets: WriteTarget[] = [];
   const marks = unquotedRedirects.get(words);
   for (const [index, word] of words.entries()) {
@@ -135,7 +159,11 @@ export function writeTargets(words: string[], folder: string | null, rootOf: Fil
     const name = programName(program);
     const args = withoutShellRedirects(words, at + 1);
     if (isGit(program)) {
-      if (!keepsRestores && ['checkout', 'restore'].includes(gitParts(args, folder).sub ?? '')) continue;
+      const parts = gitParts(args, folder);
+      if (['checkout', 'restore'].includes(parts.sub ?? '')) {
+        if (keepsRestores === false) continue;
+        if (keepsRestores === 'otherRef' && !restoresFromOtherRef(parts.sub, parts.args)) continue;
+      }
       targets.push(...gitWrites(args, folder, rootOf));
     }
     else if (Object.hasOwn(WRITERS, name)) targets.push(...WRITERS[name](args, folder).map((path) => ({ path, from: folder })));

@@ -17,6 +17,20 @@ import { pathsFor } from '../../../platform/paths.ts';
 import { foldsCase, isLeadOnly, stripWorktreeRoot } from './edit.ts';
 import { writeTargets, type FileRules } from './targets.ts';
 
+// Each folder or file name in a settings path: a word that holds none of them can't write one,
+// even after a `cd` (`cd .claude && echo x > settings.json` names both). Built on first use:
+// config.ts and this module load each other.
+let settingsPart: RegExp | null = null;
+const namesSettingsPart = (word: string): boolean => {
+  settingsPart ??= new RegExp(
+    [...new Set([...GUARD_SETTINGS, ...HOME_GUARD_SETTINGS].flatMap((path) => path.split('/')).filter((part) => part !== '**'))]
+      .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .join('|'),
+    'i',
+  );
+  return settingsPart.test(word);
+};
+
 const SETTINGS_FIX = "say yes only if you asked for this change: an agent may not change the rules it works under on its own";
 const SANDBOX_FIX = 'say yes only if this command must run outside the sandbox and you trust what it does';
 
@@ -59,11 +73,16 @@ const settingsWriteAsk = (shown: string): Finding => ({
 /**
  * The question before the lead's shell write to a guard setting (#1212), or null. A target
  * the guard can't place is not asked about: lead-only refuses that only for a worker, and
- * the lead's own command is not stopped for a path it wrote unclearly.
+ * the lead's own command is not stopped for a path it wrote unclearly. A `git checkout` or
+ * `git restore` from the index or HEAD puts back reviewed content and asks nothing; one
+ * from another commit changes the setting, so it asks.
  */
 export function guardSettingsWrite(words: string[], { rules, folder, env, platform }: { rules: FileRules; folder: string | null; env: Env; platform: NodeJS.Platform }): Finding | null {
+  // Most lead commands name no part of a settings path: they skip the write read, which
+  // costs the command's read budget (#226), so a long command stays readable.
+  if (!words.some(namesSettingsPart)) return null;
   const paths = commandPlace.current ? pathsFor(commandPlace.current.platform) : nodePath;
-  for (const target of writeTargets(words, folder, rules.rootOf)) {
+  for (const target of writeTargets(words, folder, rules.rootOf, { keepsRestores: 'otherRef' })) {
     if (target.isUnread || target.path === '' || target.path === '-') continue;
     const ruled = rules.ruled(target, env);
     if (ruled !== null && isGuardSetting(ruled.path, platform)) return settingsWriteAsk(ruled.path);

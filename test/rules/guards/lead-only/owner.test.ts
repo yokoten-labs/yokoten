@@ -74,6 +74,14 @@ test('guard settings: the lead\'s edit or shell write asks; a worker\'s is refus
   assert.equal(lead('cat .claude/settings.json'), null, 'a read asks nothing');
   assert.equal(lead('echo x > notes.md'), null);
   assert.equal(checkCommand('echo x > ~/.claude/settings.json', { env: { HOME: sandbox.home }, cwd: sandbox.repo })?.id, 'guard-settings');
+  // A restore from the index or HEAD puts back reviewed content: no question. One from another commit changes the setting.
+  for (const command of ['git checkout -- .githooks/pre-commit', 'git checkout HEAD -- .claude/settings.json', 'git checkout .claude/settings.json', 'git restore .claude/settings.json', 'git restore --staged .claude/settings.json', 'git restore --source=HEAD yokoten.json', 'git restore -s HEAD yokoten.json']) {
+    assert.equal(lead(command), null, command);
+  }
+  for (const command of ['git checkout main -- .claude/settings.json', 'git checkout origin/x .claude/settings.json', 'git restore --source=main .claude/settings.json', 'git restore -s main yokoten.json', 'git restore -smain yokoten.json', 'git restore --source main --worktree .codex/config.toml']) {
+    assert.equal(lead(command)?.id, 'guard-settings', command);
+  }
+  assert.equal(lead('git checkout main -- src/a.ts'), null, 'another file from another commit asks nothing');
   // A refusal anywhere on the line wins over the question.
   assert.equal(lead('echo {} > .claude/settings.json && git push --tags')?.id, 'release');
   assert.equal(checkCommand('echo {} > .claude/settings.json', { env: { YOKOTEN_ROLE: 'worker' }, cwd: sandbox.repo })?.id, 'lead-only');
