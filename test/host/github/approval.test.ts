@@ -937,11 +937,11 @@ test('review: from the fourth review on, the review asks the author to reconside
   // The third review (two earlier) still lists everything.
   const third = await run(2);
   assert.ok(third.body.includes('a nit') && !third.body.includes('reconsider'));
-  // The fourth: the reconsider line, no new nit or medium; still an approval line when nothing blocks.
+  // The fourth that approves: nothing to reconsider, so it lists everything and approves.
   const fourth = await run(3);
   assert.equal(fourth.event, 'APPROVE');
-  assert.match(fourth.body, /review round 4; a review ends in three\..*reconsider the approach/);
-  assert.ok(!fourth.body.includes('a nit') && !fourth.body.includes('a medium'));
+  assert.ok(!fourth.body.includes('reconsider'));
+  assert.ok(fourth.body.includes('a nit') && fourth.body.includes('a medium'));
   assert.match(fourth.body, /^\*\*✅ Approve\*\* · 1 Important, 1 Nit · /, 'the count stays honest');
   assert.equal(parseLeadApproval(fourth.body)?.model, MODEL);
   // A high finding still asks for changes, and is the only finding shown.

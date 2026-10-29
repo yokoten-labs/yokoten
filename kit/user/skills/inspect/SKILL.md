@@ -67,8 +67,9 @@ when there is none.
 A review ends in three rounds. After a clean round, give the `reviewer` only the diff since
 the last reviewed commit; after changes were asked for, the whole diff again. Give it the
 findings already posted: it does not list them again, but a blocking one it finds again is
-still open and still blocks. It names the bug class so every instance is fixed. The fourth review lists no new
-findings; it asks the author to reconsider the approach. A high finding still blocks.
+still open and still blocks. It names the bug class so every instance is fixed. From
+the fourth review, one that asks for changes lists only the blocking findings and asks
+the author to reconsider the approach; one that approves lists everything.
 
 ## 6. Hand over
 
