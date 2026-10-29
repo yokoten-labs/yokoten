@@ -332,7 +332,8 @@ test('unmarked work: any command or edit in a checkout with no mark is caught; a
   assert.equal(checkUnmarkedFolder(join(tree, 'src'))?.id, 'unmarked-worktree');
   // The message shows the worktree from the call's folder, or as <worktree>: never a machine path.
   assert.equal(checkUnmarkedFolder(tree, {}, base)?.fix, 'stop and ask the lead to run `yokoten worker mark <worktree>` for the worktree at wt (from this folder), then run this again');
-  assert.ok(!JSON.stringify(checkUnmarkedFolder(tree)).includes(base), 'no folder to show it from: <worktree>');
+  const bare = checkUnmarkedFolder(tree);
+  assert.ok(bare?.fix.includes('the worktree at <worktree>') && !bare.fix.includes(base) && !bare.what.includes(base), 'no folder to show it from: <worktree>');
   assert.equal(checkUnmarkedFolder(join(tree, 'src', 'new.ts'))?.id, 'unmarked-worktree', 'a file not made yet');
   for (const words of [['git', 'commit', '-m', 'x'], ['git', 'status'], ['python3', 's.py'], ['make', 'commit'], ['ls']]) {
     assert.equal(checkUnmarkedWork(words, tree)?.id, 'unmarked-worktree', words.join(' '));

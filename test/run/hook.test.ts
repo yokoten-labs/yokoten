@@ -285,6 +285,8 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   const lead = makeTempDir('yokoten-lead-');
   const tree = join(lead, 'wt-1225');
   assert.equal(sandbox.git('worktree', 'add', '-q', '-b', 'task-1225', tree).status, 0);
+  // In a shell command a path has forward slashes, as a worker types it: bash eats a Windows backslash.
+  const shellTree = tree.replaceAll('\\', '/');
   const options = { root: null, config: DEFAULTS, env: { HOME: sandbox.home }, cwd: lead };
   const call = (action: { command?: string; paths?: string[] }, more: { worker?: boolean; cwd?: string; env?: Record<string, string> } = {}) =>
     judge({ paths: [], ...action, worker: more.worker ?? true, cwd: more.cwd ?? lead }, { ...options, env: { ...options.env, ...more.env } });
@@ -301,13 +303,13 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
     'git cherry-pick task',
     'git commit-tree HEAD^{tree} -m x',
   ];
-  for (const command of routes) assert.equal(run(`cd ${tree} && ${command}`)?.id, 'unmarked-worktree', command);
-  const found = run(`cd ${tree} && git commit -m x`);
+  for (const command of routes) assert.equal(run(`cd ${shellTree} && ${command}`)?.id, 'unmarked-worktree', command);
+  const found = run(`cd ${shellTree} && git commit -m x`);
   assert.ok(found?.fix.includes('for the worktree at wt-1225 (from this folder)'), found?.fix);
-  assert.ok(!JSON.stringify(found).includes(lead), 'no machine path in the message');
+  assert.ok(![found?.what, found?.fix].join(' ').includes(lead), 'no machine path in the message');
   // The same with no cd, from the worktree itself; with git -C; and an edit there.
   assert.equal(run('git commit -m x', { cwd: tree })?.id, 'unmarked-worktree', 'no cd, in its own cwd');
-  assert.equal(run(`git -C ${tree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
+  assert.equal(run(`git -C ${shellTree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
   assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] })?.id, 'unmarked-worktree', 'an edit');
   // The lead's main checkout: refused too, but the fix asks for a worktree, never a mark on it.
   const main = run('git status', { cwd: sandbox.repo });
@@ -315,10 +317,10 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   assert.ok(!main?.fix.includes(`yokoten worker mark ${sandbox.repo}`), main?.fix);
   assert.ok(main?.fix.includes('git worktree add'), main?.fix);
   // Negative controls: a lead or another agent type, a worker with YOKOTEN_ROLE=worker, work in no checkout, a plain cd.
-  assert.equal(run(`cd ${tree} && git commit -m x`, { worker: false }), null, 'a lead or another agent type passes');
+  assert.equal(run(`cd ${shellTree} && git commit -m x`, { worker: false }), null, 'a lead or another agent type passes');
   assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] }, { worker: false }), null, 'a lead edit passes');
-  assert.equal(run(`cd ${tree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
-  assert.equal(run(`cd ${tree}`), null, 'a plain cd runs nothing');
+  assert.equal(run(`cd ${shellTree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
+  assert.equal(run(`cd ${shellTree}`), null, 'a plain cd runs nothing');
   assert.equal(call({ paths: [join(lead, 'notes.md')] }), null, 'an edit in no checkout: only a command can commit it');
   // A link in no checkout that points into the unmarked worktree is judged, and named, where it points.
   writeFileSync(join(tree, 'notes.txt'), 'x');
@@ -345,13 +347,13 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   }
   assert.match(run('ls')?.fix ?? '', /^cd into your marked worktree first/);
   // git told to work elsewhere: the lead-only rule, which can't tell the folder, answers first.
-  assert.notEqual(run(`git --work-tree=${tree} commit -m x`), null, 'git --work-tree');
+  assert.notEqual(run(`git --work-tree=${shellTree} commit -m x`), null, 'git --work-tree');
   // Marked: the commit check sees the worker, so this rule lets it through.
   writeFileSync(join(sandbox.repo, '.git', 'worktrees', basename(tree), 'yokoten-worker'), '');
-  assert.equal(run(`cd ${tree} && ls`), null, 'cd into the marked worktree, then work');
+  assert.equal(run(`cd ${shellTree} && ls`), null, 'cd into the marked worktree, then work');
   assert.equal(run('ls')?.id, 'unmarked-worktree', 'the lead folder stays refused once a worktree is marked');
-  for (const command of routes) assert.notEqual(run(`cd ${tree} && ${command}`)?.id, 'unmarked-worktree', `marked: ${command}`);
-  assert.equal(run(`cd ${tree} && git commit -m x`), null, 'a marked worktree passes');
+  for (const command of routes) assert.notEqual(run(`cd ${shellTree} && ${command}`)?.id, 'unmarked-worktree', `marked: ${command}`);
+  assert.equal(run(`cd ${shellTree} && git commit -m x`), null, 'a marked worktree passes');
   assert.equal(run('git commit -m x', { cwd: tree }), null, 'a marked cwd passes');
   assert.equal(call({ paths: [join(tree, 'src', 'a.ts')] }), null, 'an edit in a marked worktree passes');
 });
