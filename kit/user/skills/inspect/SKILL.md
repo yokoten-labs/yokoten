@@ -58,7 +58,20 @@ The `reviewer` agent's Output section is the one layout: a one-page report, the
 verdict and the SHA first, one item of at most 25 words per finding that names the fix,
 the evidence folded, and what was not checked last. A reviewer decides; it never asks.
 
-## 5. Hand over
+Tag each finding **Important** (high or medium), **Nit** (low) or **Pre-existing**. The
+first line states the count, for example "2 Important, 1 Nit", and says "Nothing to fix"
+when there is none.
+
+## 5. Rounds
+
+A review ends in three rounds. After a clean round, give the `reviewer` only the diff since
+the last reviewed commit; after changes were asked for, the whole diff again. Give it the
+findings already posted: it does not list them again, but a blocking one it finds again is
+still open and still blocks. It names the bug class so every instance is fixed. From
+the fourth review, one that asks for changes lists only the blocking findings and asks
+the author to reconsider the approach; one that approves lists everything.
+
+## 6. Hand over
 
 Post the findings on the pull request. Only the owner approves. Never approve with
 the owner's account, and never merge a SHA other than the one reviewed.
