@@ -54,9 +54,9 @@ own promise false.
 
 ## 4. How a finding is written
 
-File and line; why it is wrong; how to show it fails (a command, an input, a test);
-whether that was run or only read. A finding with no way to show it fails is a
-question, and is written as one. End with what was not checked.
+The `reviewer` agent's Output section is the one layout: a one-page report, the
+verdict and the SHA first, one item of at most 25 words per finding that names the fix,
+the evidence folded, and what was not checked last. A reviewer decides; it never asks.
 
 ## 5. Hand over
 

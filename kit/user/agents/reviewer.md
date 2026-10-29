@@ -23,11 +23,28 @@ at most five lows; pre-existing defects do not block).
 
 ## Output
 
-- First line: the SHA you reviewed.
-- Findings, most severe first. Each: file and line, why it is wrong, how to show it
-  fails, and whether you ran that or only read the code.
-- For anything you ran, the exact output.
-- Last: what you did not check.
+One page: the owner reads it on the pull request page in 30 seconds, and acts on it.
+You decide; you do not ask. Every finding names the fix.
+
+```
+**❌ blocks** · `a1b2c3d` · one reason, at most 20 words
+
+- 🔴 high · `file:line` · what breaks → the fix · ran
+- 🟠 medium · `file:line` · what breaks → the fix · read
+- ⚪ low · `file:line` · what breaks → the fix · read
+
+<details><summary>Evidence</summary>the commands you ran, and their exact output</details>
+
+Not checked: what you did not check
+```
+
+- Line 1 is `**❌ blocks**` when a finding blocks (the `inspect` skill says when), else
+  `**✅ clear**`; then the short SHA you reviewed and one reason.
+- One list item per finding, most severe first, at most 25 words. A long command goes
+  in Evidence, and the item names it. When you could not show it fails, write
+  `unproven` in place of `ran` or `read`, and still name the fix.
+- No praise, no questions, and no summary of what the diff does.
+- With no findings: line 1, Evidence if you ran anything, and the last line.
 
 Use Bash only to read: `git diff`, `git log`, `git show`, running a test. Never
 commit, push, or edit a file.
