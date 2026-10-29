@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import fileTimes, { fileBlock, fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, tapLines, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
-import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { capOf, DEFAULT_CAP, SLOW_RATIO, slowProblems, TIMES_FILE, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -61,6 +61,10 @@ test('layers: no module imports from a layer above its own', () => {
 const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/helpers.ts', 'repo/home.ts', 'repo/invoke.ts', 'repo/merge-utc.test.ts', 'repo/docs/docs.test.ts', 'repo/docs/readme-tables.test.ts', 'repo/docs/screens.test.ts', 'repo/docs/screen-rules.ts', 'repo/docs/captured-screens.ts'];
 // Kit prose has no src module. This test reads the skill files (#531).
 const PROSE_TESTS = ['setup/kit-habits.test.ts'];
+// A module whose tests ran past the Windows job's time cap in one file (issue #1243) has a
+// folder of test files in place of it, one for each area, and one helper module they share.
+const SPLIT_TESTS: Record<string, string> = { 'setup/install.ts': 'setup/install/helpers.ts' };
+const splitFolder = (module: string) => module.replace(/\.ts$/, '/');
 // Modules with no test file of their own. Keep it short: a new module gets its test file.
 const NO_TEST_FILE = [
   'agents/agent-skills.ts', // no tests yet (#152)
@@ -70,7 +74,7 @@ const NO_TEST_FILE = [
   'setup/files.ts', // no tests yet (#152); the install tests and this file use it
   'platform/paths.ts', // test/ holds 7 entries, the cap; its tests are in test/rules/guards/commands/no-wipe.test.ts, its first user (#1015)
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
-  'platform/disk.ts', // the same cap; its tests are in test/setup/install.test.ts, with the runtime copy, its first user (#1109)
+  'platform/disk.ts', // the same cap; its tests are in test/setup/install/runtime.test.ts, with the runtime copy, its first user (#1109)
   'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users, and test/commands/kanban/ (readProgram, startAndLetGo)
   'rules/text/screen.ts', // its tests are in test/repo/docs/screens.test.ts, with the screen test of record 0049 (#1099)
 ];
@@ -86,11 +90,12 @@ function testFileProblems(modules: string[], tests: string[]): string[] {
   const problems: string[] = [];
   for (const path of tests) {
     if (TEST_TOP.includes(path) || PROSE_TESTS.includes(path)) continue;
+    if (Object.entries(SPLIT_TESTS).some(([module, helper]) => path === helper || (path.startsWith(splitFolder(module)) && path.endsWith('.test.ts')))) continue;
     const module = path.replace(/\.test\.ts$/, '.ts');
     if (module === path || !modules.includes(module)) problems.push(`test/${path} is not the test file of a src module (src/${module})`);
   }
   for (const module of modules) {
-    const hasFile = tests.includes(module.replace(/\.ts$/, '.test.ts'));
+    const hasFile = tests.includes(module.replace(/\.ts$/, '.test.ts')) || (module in SPLIT_TESTS && tests.some((path) => path.startsWith(splitFolder(module)) && path.endsWith('.test.ts')));
     if (!hasFile && !NO_TEST_FILE.includes(module)) problems.push(`src/${module} has no test/${module.replace(/\.ts$/, '.test.ts')}`);
     if (hasFile && NO_TEST_FILE.includes(module)) problems.push(`src/${module} has a test file now: take it off NO_TEST_FILE`);
   }
@@ -107,6 +112,14 @@ test('test files: each one is the test file of a src module, at the same path (#
     'test/run/util.ts is not the test file of a src module (src/run/util.ts)',
     'test/top.test.ts is not the test file of a src module (src/top.ts)',
   ]);
+  // A split module: its folder of test files stands for its one file (issue #1243).
+  assert.deepEqual(testFileProblems(['setup/install.ts', ...NO_TEST_FILE], ['setup/install/hooks.test.ts', 'setup/install/helpers.ts']), []);
+  assert.deepEqual(testFileProblems(['setup/install.ts', 'setup/init.ts', ...NO_TEST_FILE], ['setup/install/hooks.test.ts', 'setup/init/hooks.test.ts', 'setup/install/other.ts']), [
+    'test/setup/init/hooks.test.ts is not the test file of a src module (src/setup/init/hooks.ts)',
+    'test/setup/install/other.ts is not the test file of a src module (src/setup/install/other.ts)',
+    'src/setup/init.ts has no test/setup/init.test.ts',
+  ]);
+  assert.deepEqual(testFileProblems(['setup/install.ts', ...NO_TEST_FILE], ['setup/install/helpers.ts']), ['src/setup/install.ts has no test/setup/install.test.ts']);
   const tests = filesUnder(join(ROOT, 'test'));
   assert.ok(tests.includes('run/check.test.ts'), 'test/run/check.test.ts not found; the scan is broken');
   assert.deepEqual(
@@ -2295,7 +2308,6 @@ const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
   'test/run/cli.test.ts': { cap: 9, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache, the demo loop and --help through the real entry' },
   'test/setup/init.test.ts': { cap: 10, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
-  'test/setup/install.test.ts': { cap: 7, reason: 'it runs the copy that install writes, from its own path, which is other code than this checkout' },
 };
 const CHILD_FIX = 'use sandbox.call in place of sandbox.run, or call the function; keep a child only for the entry, with a comment saying why';
 
@@ -2361,7 +2373,7 @@ test('child processes: each test file starts at most CHILD_CAP, or its allowance
   assert.deepEqual(helpers, [], 'no helper starts a child now; a new one counts in each file where it is called');
   const paths = execFileSync('git', ['ls-files', 'test'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((path) => path.endsWith('.test.ts'));
   const files = Object.fromEntries(paths.map((path) => [path, readFileSync(join(ROOT, path), 'utf8')]));
-  assert.ok(childStarts(files['test/setup/install.test.ts'] ?? '', helpers).lines.length > 0, 'no child found in install.test.ts; the count is broken');
+  assert.ok(childStarts(files['test/setup/install/skills.test.ts'] ?? '', helpers).lines.length > 0, 'no child found in install/skills.test.ts; the count is broken');
   assert.deepEqual(childProblems(files, helpers), []);
 });
 
@@ -2377,7 +2389,7 @@ const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/commands/more/advice/doctor.test.ts': { cap: 22, reason: 'the advice doctor prints for each finding' },
   'test/agents/runtimes/muse.test.ts': { cap: 15, reason: "init and doctor on a Muse Code project: its settings and trust" },
   'test/agents/runtimes/grok.test.ts': { cap: 12, reason: "init and doctor on a Grok CLI project: its settings and trust" },
-  'test/setup/install.test.ts': { cap: 11, reason: 'doctor after install, and init from the installed copy' },
+  'test/setup/install/hooks.test.ts': { cap: 8, reason: 'doctor after install for each agent that has a user-level hooks file' },
   'test/run/learn.test.ts': { cap: 10, reason: 'the lesson loop: init, then doctor reads the lesson' },
   'test/commands/hook.test.ts': { cap: 8, reason: 'init writes the hooks that these tests then call' },
   'test/agents/runtimes/small/opencode.test.ts': { cap: 8, reason: 'init and doctor on an OpenCode project' },
@@ -2651,6 +2663,30 @@ test('windows known: a slow file gets twice its last time over the cap; a file t
   assert.deepEqual(judgeKnown([`test/a.test.ts :: ${TIMED_OUT}`], known), { added: [`test/a.test.ts :: ${TIMED_OUT}`], fixed: ['test/b.test.ts :: fixed now'] }, "the time-out is new; its file's waiver is not fixed; another file's is");
 });
 
+// Issue #1243: install.test.ts took 241 s against the cap of 240 s and timed out at random.
+// A file over 75% of the cap fails the times check, with its name, so it is split in time.
+test('windows times: a file over 75% of the cap fails the check and is named; a waiver only goes (#1243)', () => {
+  const times = readTimes('180 test/at.test.ts\n180.5 test/over.test.ts\n240 test/setup/big.test.ts\n10 test/a.test.ts\n');
+  assert.equal(SLOW_RATIO, 0.75);
+  assert.deepEqual(slowProblems(times, 240, {}), [
+    'test/over.test.ts took 180.5 s on Windows, over 75% of the 240 s cap (180 s): split it by area, as test/setup/install/ is, before it times out at random',
+    'test/setup/big.test.ts took 240 s on Windows, over 75% of the 240 s cap (180 s): split it by area, as test/setup/install/ is, before it times out at random',
+  ]);
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': 'r', 'test/setup/big.test.ts': 'r' }), [], 'a waived file passes');
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': 'r', 'test/setup/big.test.ts': 'r', 'test/a.test.ts': 'r', 'test/gone.test.ts': 'r' }), [
+    'test/a.test.ts took 10 s, under 180 s: take it off SLOW_WAIVERS',
+    'SLOW_WAIVERS names test/gone.test.ts, which has no time in windows-times.txt: take it off',
+  ]);
+  // The limit follows the cap that the run is given.
+  assert.deepEqual(slowProblems(readTimes('100 test/a.test.ts\n'), 120, {}), ['test/a.test.ts took 100 s on Windows, over 75% of the 120 s cap (90 s): split it by area, as test/setup/install/ is, before it times out at random']);
+  assert.deepEqual(slowProblems(new Map(), 240, {}), []);
+  // The real table, with the real waivers and the default cap.
+  const real = readTimes(readFileSync(TIMES_FILE, 'utf8'));
+  assert.ok(real.size > 50 && !real.has('test/setup/install.test.ts'), 'the times file is read, and the split file has no time left');
+  assert.ok(['skills', 'plugin', 'hooks', 'runtime', 'marks', 'files'].every((area) => real.has(`test/setup/install/${area}.test.ts`)), 'each install test file has a time');
+  assert.deepEqual(slowProblems(real, DEFAULT_CAP), []);
+});
+
 test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {
   const tap = [
     'TAP version 13',
@@ -2764,7 +2800,7 @@ test('windows scope: native Windows skips the desk, its fence and the kanban ser
   // The desk command's tests run git and shell filters in the fence: the desk area, not a skip inside a test (#1056).
   assert.ok(windows.skipped.some((entry) => entry.file === 'test/commands/desk/finish.test.ts' && entry.area === 'desk'), 'test/commands/desk/ is in the desk area');
   // The CLI, the guard hooks and install still run there.
-  for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install.test.ts', 'test/host/github/server.test.ts']) {
+  for (const kept of ['test/commands/more/check.test.ts', 'test/rules/guards/bash/read/run.test.ts', 'test/setup/install/skills.test.ts', 'test/host/github/server.test.ts']) {
     assert.ok(windows.run.some((file) => file.replace(/\\/g, '/') === kept), kept);
   }
   assert.equal(windows.run.length + windows.skipped.length, files.length, 'every file either runs or is skipped with a reason');
