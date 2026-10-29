@@ -4,6 +4,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
+import { namesConfigFolder } from '../../../../src/rules/guards/worker/config.ts';
 import { makeTempDir, allowed } from '../../../../test/repo/helpers.ts';
 
 test('guard: a worker does not change yokoten config folder; the lead may (#591)', () => {
@@ -151,6 +152,63 @@ test('guard: a worker does not change yokoten config folder; the lead may (#591)
   assert.equal(checkCommand('cd other && git clean -fdx', { cwd: tree, env: worker })?.id, 'discard-work', 'the config rule passes; losing work does not');
   assert.equal(checkCommand('cd out && chmod 000 workers', { cwd: tree, env: worker })?.id, 'worker-mark', 'a symlink out of the worktree');
   allowed(`rm ${join(base, 'other-file')}`, worker);
+});
+
+// #1241: a folder whose name only starts with `yokoten` is not yokoten's config folder.
+const NOT_CONFIG_NAMES = [
+  '~/.config/yokoten-mac/run.sh',
+  '~/.config/yokoten.bak/x',
+  'bash ~/.config/yokoten-mac/run.sh /some/wt br -- npm test',
+  '~\\.config\\yokoten-mac\\run.sh',
+  '~/.config/yokoten_old/x',
+  '~/.config/yokoten2',
+];
+// Text that may still reach the folder: the end, a separator, a quote, a glob, a shell
+// character, a Windows stream or trailing dots, with either separator.
+const CONFIG_NAMES = [
+  '~/.config/yokoten',
+  '~/.config/yokoten/',
+  '~/.config/yokoten/workers',
+  '"~/.config/yokoten"',
+  "'~/.config/yokoten'",
+  '~/.config/yok*',
+  '~/.config/yokoten*',
+  '~/.config/yokoten.*',
+  '~/.config/yokoten?',
+  '~/.config/{yokoten,x}/w',
+  '~/.config/yokoten$X/w',
+  '$HOME/.config/yokoten;ls',
+  '~/.config/yokoten&&x',
+  '~/.config/yokoten|x',
+  '~/.config/yokoten)',
+  '~/.config/yokoten:stream',
+  '~/.config/yokoten./workers',
+  '~/.c*/yokoten./workers',
+  '~\\.config\\yokoten',
+  '~\\.config\\yokoten\\',
+  '~\\.config\\yokoten\\workers',
+  '$HOME\\.config\\yokoten;ls',
+  '%USERPROFILE%\\.config\\yokoten',
+];
+
+test('namesConfigFolder: the name ends at a path boundary (#1241)', () => {
+  for (const text of NOT_CONFIG_NAMES) assert.equal(namesConfigFolder(text), false, text);
+  for (const text of CONFIG_NAMES) assert.equal(namesConfigFolder(text), true, text);
+});
+
+test('guard: a worker command on a folder named like the config folder is not refused as it (#1241)', () => {
+  const base = makeTempDir('yokoten-config-prefix-');
+  const home = join(base, 'home');
+  mkdirSync(join(home, '.config', 'yokoten'), { recursive: true });
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: home };
+  // Outside home, so the blunt `~/.config` rule (#591) is not what decides.
+  for (const command of ['rm /srv/.config/yokoten-mac/run.sh', 'rm /srv/.config/yokoten.bak/x']) allowed(command, worker);
+  for (const command of ['rm /srv/.config/yokoten/workers', 'rm /srv/.config/yokoten./workers', 'rm /srv/.config/yokoten*']) {
+    assert.equal(checkCommand(`bash -c '${command}'`, { cwd: process.cwd(), env: worker })?.id, 'worker-mark', command);
+  }
+  for (const command of CONFIG_NAMES) {
+    assert.equal(checkCommand(`rm ${command}`, { cwd: process.cwd(), env: worker })?.id, 'worker-mark', command);
+  }
 });
 
 // #591: an edit inside yokoten's config folder may clear the worker list, through a symlink too.
