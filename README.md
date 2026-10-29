@@ -85,11 +85,11 @@ You need one command to start. Four more help along the way.
 
 | Command | What it does |
 |---|---|
-| `npx yokoten` | sets up what is missing, then shows where you are and the next step |
-| `yokoten check` | looks for secrets and broken rules before you commit; the commit check runs it too |
-| `yokoten desk` | gives one task to one AI, in its own fenced desk |
-| `yokoten kanban` | shows the team at a glance, live and read only (preview) |
-| `yokoten tidy` | lists old branches, worktrees and desks; `--local` saves them, then moves them to its trash folder |
+| `npx yokoten` | sets up what is missing, then shows the next step |
+| `yokoten check` | looks for secrets and broken rules before a commit |
+| `yokoten desk` | gives one task to one AI, in its own desk |
+| `yokoten kanban` | shows the team at a glance (preview) |
+| `yokoten tidy` | lists old branches, worktrees and desks |
 
 `yokoten help --all` lists the rest, in groups by job: Start, Work, Guard, Merge and CI, Maintain.
 
@@ -98,16 +98,17 @@ You need one command to start. Four more help along the way.
 Any AI model works. The guard checks the commands the agent runs, not the model.
 
 - **Agents**: the guard runs with each agent below. The [agent table](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with) in the guide holds the evidence: the date, how each run went, and what to know first.
+- **Trust first**: `yes` means you run `npx yokoten trust` once in the folder, so the agent runs the guard.
 
-| Agent | Verified end to end | Needs `npx yokoten trust` first | Models tested |
+| Agent | Verified end to end | Trust first | Models tested |
 |---|---|---|---|
 | Claude Code | ✅ yes | no | `deepseek-flash` |
 | GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
+| Antigravity CLI | ✅ yes | no | `gemini-3.8-flash-high` |
 | Codex CLI | ✅ yes | yes | `deepseek-flash` |
 | Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | ✅ yes | yes | the default model |
+| DeepSeek Harness | ✅ yes | no | the default DeepSeek model |
+| Grok CLI | ✅ yes | yes | the default model |
 | Gemini CLI | not yet | no | — |
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 

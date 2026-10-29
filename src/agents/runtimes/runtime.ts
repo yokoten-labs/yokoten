@@ -171,7 +171,7 @@ export const GUIDE_AGENTS: readonly GuideEntry[] = [
       'Runs repo hooks only after you trust the folder: run `yokoten trust` there. Skips them without a word otherwise. A hook that times out lets the call go on',
   },
   {
-    label: 'Antigravity CLI (`agy`)',
+    label: 'Antigravity CLI',
     adapter: 'antigravity',
     verified: 'yes, 2026-10-19: agy 1.4.2, `agy -p`, model `gemini-3.8-flash-high`',
     caveats: 'No stop check yet. Without `.yokoten/`, every call is refused: agy fails closed. The lead runs a worker\'s done-when check',
@@ -190,14 +190,14 @@ export const GUIDE_AGENTS: readonly GuideEntry[] = [
       'Runs the hooks only after you trust the folder: run `yokoten trust`. Muse passes no `YOKOTEN_ROLE` to a hook, so mark a worker\'s worktree with `yokoten worker mark <dir>`. It is not known to pass `YOKOTEN_RELEASE_APPROVAL` either, so release outside Muse. A hook that fails or times out lets the call go on',
   },
   {
-    label: 'DeepSeek Harness (`dsh`)',
+    label: 'DeepSeek Harness',
     adapter: 'deepseek-harness',
     verified: 'yes, 2026-10-20: dsh 0.2.1-rc.2, `dsh headless --patch .dsh/yokoten.patch.yml`, default DeepSeek model',
     caveats:
       'Runs hooks only through a bridge you add to each profile: see [DeepSeek Harness](#deepseek-harness). Without it, or without the patch, dsh runs no hooks and says nothing. Not guarded on Windows yet (#332). No stop check: the lead runs a worker\'s done-when check',
   },
   {
-    label: 'Grok CLI (`grok`)',
+    label: 'Grok CLI',
     adapter: 'grok',
     verified: 'yes, 2026-10-20: Grok CLI 1.0.52, `grok -p --trust --always-approve`, default model',
     caveats:
