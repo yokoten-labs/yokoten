@@ -56,7 +56,7 @@ test('installScreen: a first install on each system, its rows from the result (#
     assert.match(text, /^yokoten install · this computer is set up$/m, platform);
     assert.match(text, /^ {2}ok {10}guard {7}on for Claude Code, Codex CLI$/m, platform);
     assert.match(text, /^ {2}ok {10}skills {6}yokoten$/m, platform);
-    assert.match(text, /^ {2}can't check other AIs {3}2 not installed here; run install again later$/m, platform);
+    assert.match(text, /^ {2}note {8}other AIs {3}2 not installed here; run install again later$/m, platform);
     assert.match(text, /^Next: `yokoten init`$/m, platform);
     assert.doesNotMatch(text, /PATH/, `${platform}: the launcher's folder is on the PATH`);
   }
@@ -128,7 +128,7 @@ test('install and uninstall: the entry prints one screen, --list every file (#10
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten install · this computer is set up$/m);
   assert.match(result.stdout, /^ {2}ok +guard +on for Claude Code$/m);
-  assert.match(result.stdout, /^ {2}can't check +other AIs +\d+ not installed here/m);
+  assert.match(result.stdout, /^ {2}note +other AIs +\d+ not installed here/m);
   assert.match(result.stdout, /^Next: `yokoten init`$/m);
   fit(result.stdout);
   const list = await sandbox.call(['install', '--list']);

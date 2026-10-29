@@ -24,7 +24,7 @@ const PREVIEW: UpdateResult = {
   ok: true,
   state: 'preview',
   version: VERSION,
-  summary: '3 line(s) added, 2 removed',
+  summary: '3 lines added, 2 removed',
   changes: [
     { kind: 'added', line: '| 9 | Nothing reaches main without a pull request | x |' },
     { kind: 'removed', line: '| 4 | A fix task changes code | x |' },

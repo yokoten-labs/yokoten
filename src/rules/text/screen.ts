@@ -29,6 +29,47 @@ export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string
   return lines;
 }
 
+/**
+ * The usage line as units that never break in two: the words of one `|` alternative, and a bracket
+ * group with its content, so a line never ends in `allow` with its `<mark>` on the next one (#1239).
+ * A `|` stays at the end of its unit.
+ */
+function usageUnits(usage: string): string[] {
+  const hasTopPipe = / \| /.test(usage.replace(/\[[^\]]*(?:\[[^\]]*\][^\]]*)*\]/g, ''));
+  const units: string[] = [];
+  let unit = '';
+  let depth = 0;
+  let isQuoted = false;
+  for (const char of usage) {
+    if (char === '"') isQuoted = !isQuoted;
+    else if (!isQuoted && char === '[') depth++;
+    else if (!isQuoted && char === ']') depth = Math.max(0, depth - 1);
+    if (char === ' ' && !isQuoted && unit !== '' && (unit.endsWith('|') || (depth === 0 && !hasTopPipe))) {
+      units.push(unit);
+      unit = '';
+    } else unit += char;
+  }
+  if (unit !== '') units.push(unit);
+  return units;
+}
+
+/** The usage line, wrapped at `width` between its units (see usageUnits). */
+export function wrapUsage(prefix: string, usage: string, width = SCREEN_WIDTH): string[] {
+  const lines: string[] = [];
+  const indent = ' '.repeat(prefix.length);
+  let line = prefix;
+  let isEmpty = true;
+  for (const unit of usageUnits(usage)) {
+    if (!isEmpty && line.length + 1 + unit.length > width) {
+      lines.push(line);
+      line = indent + unit;
+    } else line += isEmpty ? unit : ` ${unit}`;
+    isEmpty = false;
+  }
+  lines.push(line);
+  return lines;
+}
+
 /** A screen's first line: `yokoten <command> · <what is true now>`. */
 export const title = (command: string, summary: string): string[] => wrap(`yokoten ${command} · `, summary);
 
@@ -94,6 +135,12 @@ export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.re
 /** One row with no mark: a label, then the text, wrapped under itself (#1027). */
 export function field(label: string, text: string): string[] {
   return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(LABEL_COLUMN)}`, text);
+}
+
+/** An ISO stamp as `YYYY-MM-DD HH:MM UTC`, the one way a screen shows a time. A stamp that does not parse comes through as it is. */
+export function utcText(stamp: string): string {
+  const time = Date.parse(stamp);
+  return Number.isNaN(time) ? stamp : `${new Date(time).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
 
 /** The last line: the one command to type next. */
@@ -217,7 +264,7 @@ export function helpScreen(spec: HelpSpec): string[] {
   // One text column for the whole page: examples, options and every section (issue #1115).
   const column = columnFor([...examples, ...spec.options, ...sections.flatMap((part) => part.rows)].map(([label]) => label));
   return screen(
-    wrap('Usage: ', spec.usage),
+    wrapUsage('Usage: ', spec.usage),
     ...spec.summary.map((paragraph) => wrap('', paragraph)),
     section(spec.examples.length > 1 ? 'Examples' : 'Example', spec.examples.length > 1 ? table(examples, column) : spec.examples.map((example) => `  ${example.command}`)),
     section('Options', table(spec.options, column)),

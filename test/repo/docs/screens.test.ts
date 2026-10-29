@@ -12,7 +12,7 @@ import { dirname, join, relative, sep } from 'node:path';
 import { test } from 'node:test';
 import {
   askLine, failure, field, helpScreen, isDoneMark, LABEL_COLUMN, MARK_COLUMN, MARKS, moreLine, nextLine, noteLine, row, ROW_INDENT, ROW_TEXT_COLUMN, screen, SCREEN_WIDTH, section,
-  spaced, summaryLine, table, title, underRow, wrap,
+  spaced, summaryLine, table, title, underRow, wrap, wrapUsage,
 } from '../../../src/rules/text/screen.ts';
 import { blankHitsIn, isScreenCode, limitOf, machinePathsIn, NOT_SCREEN, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
 import { healedWaivers, invoke, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
@@ -672,7 +672,7 @@ function c2Screens(): ScreenRun[] {
     ok: true,
     state: 'preview',
     version: VERSION,
-    summary: '2 line(s) added, 1 removed',
+    summary: '2 lines added, 1 removed',
     changes: [
       { kind: 'added', line: '| 9 | Nothing reaches main without a pull request | x |' },
       { kind: 'removed', line: '| 4 | A fix task changes code | x |' },
@@ -815,6 +815,22 @@ test('screens: desk --help is built from the help spec and keeps every limit (#1
   const lines = commandHelp(desk);
   assert.deepEqual(screenProblems({ text: lines.join('\n'), isHelp: true }), []);
   for (const heading of ['Examples:', 'Options:', 'The fence:']) assert.ok(lines.includes(heading), `desk --help has ${heading}`);
+});
+
+// The usage line breaks between its parts and never inside one: `allow` stays with its `<mark>` (#1239).
+test('usage: a long usage line breaks between alternatives and bracket groups, never inside one (#1239)', () => {
+  assert.deepEqual(
+    wrapUsage('Usage: ', 'yokoten marks [add | remove | fill | off <kind> | on <kind> | allow <mark> --here | allow --remove <mark> --here]'),
+    ['Usage: yokoten marks [add | remove | fill | off <kind> | on <kind> |', '       allow <mark> --here | allow --remove <mark> --here]'],
+  );
+  assert.deepEqual(
+    wrapUsage('Usage: ', 'yokoten init [dir] [--no-ci] [--github --yes [--remove-default-labels] [--board]]'),
+    ['Usage: yokoten init [dir] [--no-ci]', '       [--github --yes [--remove-default-labels] [--board]]'],
+  );
+  assert.deepEqual(wrapUsage('Usage: ', 'yokoten version'), ['Usage: yokoten version']);
+  const learn = wrapUsage('Usage: ', 'yokoten learn <issue> [--write] | --ship <id> | --export <id> [--out <file>] | --import <file> [--write] | --upstream "<what happened>" [--area <name>] [--fix <idea>] | --upstream --list | --upstream --done <id>');
+  assert.ok(learn.every((line) => line.length <= SCREEN_WIDTH), 'no line is wider than the screen');
+  assert.ok(learn.slice(1).every((line) => line.startsWith('       --') || line.startsWith('       <')), `each later line starts with a whole alternative: ${learn.join(' / ')}`);
 });
 
 // ---- Every render in the suite (test/repo/invoke.ts, #1115) ----

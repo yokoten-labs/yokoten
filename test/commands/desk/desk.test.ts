@@ -236,6 +236,8 @@ test('desk <issue>: a desk whose .git points at a planted config is refused; no 
   const result = await call(['14']);
   assert.equal(result.status, 1);
   assert.match(result.stderr.replace(/\s+/g, ' '), /yokoten desk · git does not run in this desk outside the fence: .*commondir is there: it would point git at a config the desk wrote Next: look at the desk by hand: it is kept in `[^`]+` ?$/);
+  assert.match(result.stderr.replace(/\s+/g, ' '), /the desk's \.git\/commondir is there/, 'the problem names a file inside the desk (#1239)');
+  assert.equal(result.stderr.includes(sandbox.home), false, 'the screen shows no machine path (#1239)');
   assert.ok(!existsSync(marker), 'finish ran the planted filter outside the fence');
   assert.ok(existsSync(join(home, '14', '.git')), 'the desk is kept');
   assert.equal(readRecord(home, '14')?.state, 'kept');

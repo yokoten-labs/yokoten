@@ -641,7 +641,7 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
   const all = commandOf(report, 'doctor --all');
   if (left.length > 5) road.push(row('to do', `${count(left.length - 5, 'more step')}, listed by \`${all}\``));
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
-  if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')} read the code host; doctor checks them after a push`));
+  if (unchecked) road.push(row("can't check", `${count(unchecked, 'step')}: ${unchecked === 1 ? 'it reads' : 'they read'} the code host; doctor checks ${unchecked === 1 ? 'it' : 'them'} after a push`));
   const notes = (report.notes ?? []).length;
   const next = parts.next ?? (report.next ? nextCommand(report.next) : null);
   // A problem fails doctor, so it is never folded; it comes first, each block spaced when an item wraps (#1115).

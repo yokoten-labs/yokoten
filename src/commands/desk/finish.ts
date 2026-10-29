@@ -58,10 +58,11 @@ function kindOf(path: string): 'file' | 'folder' | 'other' | 'none' {
  */
 export function deskGitProblem(desk: string): string | null {
   const git = join(desk, '.git');
-  if (kindOf(git) !== 'folder') return `${git} is not a real folder`;
-  if (kindOf(join(git, 'config')) !== 'file') return `${join(git, 'config')} is not a real file`;
+  // Names inside the desk (.git/config), never the desk's own path: the message shows no machine path.
+  if (kindOf(git) !== 'folder') return "the desk's .git is not a real folder";
+  if (kindOf(join(git, 'config')) !== 'file') return "the desk's .git/config is not a real file";
   for (const part of ['commondir', 'gitdir', 'config.worktree']) {
-    if (kindOf(join(git, part)) !== 'none') return `${join(git, part)} is there: it would point git at a config the desk wrote`;
+    if (kindOf(join(git, part)) !== 'none') return `the desk's .git/${part} is there: it would point git at a config the desk wrote`;
   }
   return null;
 }

@@ -41,7 +41,7 @@ yokoten 0.1.2 · set up; stage 1 of 5, safety net
   to do       Name the owner (CODEOWNERS)
   to do       Set up the bot account
   to do       Add a license and a security policy
-  can't check 9 steps read the code host; doctor checks them after a push
+  can't check 9 steps: they read the code host; doctor checks them after a push
 
   note        16 uncommitted files, the oldest changed 1 minute ago
 

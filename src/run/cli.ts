@@ -264,7 +264,7 @@ export const COMMANDS: Command[] = [
           rows: [
             ['read', 'it reads GitHub through gh and says which standard labels and milestone it would add'],
             ['change', 'it changes GitHub only with --github --yes'],
-            ['notNow ci', 'with "notNow" ci in yokoten.json, it writes no workflow and no Dependabot config'],
+            ['CI off', 'when yokoten.json lists ci under "notNow", init writes no workflow and no Dependabot file'],
           ],
         },
       ],
@@ -272,7 +272,7 @@ export const COMMANDS: Command[] = [
     },
     options: [
       { name: '--list', text: 'show every file init wrote or kept' },
-      { name: '--no-ci', text: 'keep CI off: no workflows or Dependabot, and "notNow" ci in yokoten.json' },
+      { name: '--no-ci', text: 'keep CI off: no workflows and no Dependabot file; yokoten.json records it' },
       { name: '--github', text: 'work on GitHub too; goes with --yes' },
       { name: '--yes', text: 'add the standard labels, a first milestone and up to 8 area labels on GitHub' },
       { name: '--remove-default-labels', text: "also delete GitHub's default labels outside the set" },
@@ -478,7 +478,7 @@ export const COMMANDS: Command[] = [
           rows: [
             ['schemas', 'each tool schema, for Claude, Gemini and OpenAI strict mode'],
             ['names', 'the tool and property names'],
-            ['annotations', 'all four annotations'],
+            ['annotations', 'every tool sets readOnlyHint, destructiveHint, idempotentHint and openWorldHint'],
             ['count', 'fewer than 40 tools'],
             ['results', 'an outputSchema result carries both structuredContent and text'],
             ['stdout', 'it reports any line that is not JSON-RPC'],

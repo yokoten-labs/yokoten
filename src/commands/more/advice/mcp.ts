@@ -208,7 +208,7 @@ export function lintStdout(lines: string[]): Finding[] {
   }
   if (problems.length <= STDOUT_LIMIT) return problems;
   const rest = problems.length - STDOUT_LIMIT;
-  return [...problems.slice(0, STDOUT_LIMIT), finding('mcp-stdout', `${rest} more stdout line(s) are not JSON-RPC`, 'write logs to stderr; stdout must carry one JSON-RPC message per line and nothing else')];
+  return [...problems.slice(0, STDOUT_LIMIT), finding('mcp-stdout', `${rest} more stdout ${rest === 1 ? 'line is' : 'lines are'} not JSON-RPC`, 'write logs to stderr; stdout must carry one JSON-RPC message per line and nothing else')];
 }
 
 

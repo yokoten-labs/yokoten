@@ -1574,7 +1574,7 @@ function addCoreRules(root: string, kit: string, env: Env): Step {
   if (moved.frontMatter) notes.push(setupNote('agents-md', 'AGENTS.md: the front matter stays at the very top, as it was'));
   if (moved.hadBom) notes.push(setupNote('agents-md', 'AGENTS.md: the byte order mark at the start is gone; the kit version line must come first'));
   notes.push(setupNote('agents-md', 'AGENTS.md: read the core rules, and remove any rule of yours under them that says the same thing'));
-  return stepOf({ changes: [changeOf('updated', 'file', 'AGENTS.md', `AGENTS.md: the core rules are on top, and your ${moved.lines} line(s) moved under \`${PROJECT_HEADING}\`; only their heading levels changed (${restore})`)], notes });
+  return stepOf({ changes: [changeOf('updated', 'file', 'AGENTS.md', `AGENTS.md: the core rules are on top, and your ${moved.lines} ${moved.lines === 1 ? 'line' : 'lines'} moved under \`${PROJECT_HEADING}\`; only their heading levels changed (${restore})`)], notes });
 }
 
 // ---- The kit version in AGENTS.md (#141) ----
@@ -1752,7 +1752,8 @@ export function readCoreRules(root: string): CoreRules | null {
 /** A short summary of an update: line counts, then the sections it touches. */
 export function summarizeUpdate(rules: { changes: LineChange[]; sections: SectionChanges }): string {
   const count = (kind: LineChange['kind']) => rules.changes.filter((change) => change.kind === kind).length;
-  const parts = [`${count('added')} line(s) added, ${count('removed')} removed`];
+  const added = count('added');
+  const parts = [`${added} ${added === 1 ? 'line' : 'lines'} added, ${count('removed')} removed`];
   for (const kind of ['changed', 'added', 'removed'] as const) {
     if (rules.sections[kind].length) parts.push(`sections ${kind}: ${rules.sections[kind].join(', ')}`);
   }

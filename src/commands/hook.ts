@@ -10,6 +10,7 @@ import { ADAPTERS, adapterFor, askOf, canAskOf, contextOf, isUnattended, rewrite
 import { type Env, loadConfig } from '../rules/config.ts';
 import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, settleAsk, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { DESK_OWN_SANDBOX_NOTE, type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
+import { utcText } from '../rules/text/screen.ts';
 import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
 import { checkChanged, readGit } from '../run/check.ts';
@@ -898,7 +899,7 @@ export function anchorScreen(anchors: readonly Anchor[]): string[] {
   if (!anchors.length) return screen(title('anchor', 'no checkpoints yet'), row('to do', 'A worker records one when its checks pass and its tree is clean'));
   return screen(
     title('anchor', `${count(anchors.length, 'checkpoint')}, newest first`),
-    spaced(anchors.map((anchor) => row('ok', `${anchor.commit.slice(0, 12)} saved ${anchor.at}, after ${anchor.check} passed`))),
+    spaced(anchors.map((anchor) => row('ok', `${anchor.commit.slice(0, 12)} saved ${utcText(anchor.at)}, after ${anchor.check} passed`))),
     nextLine('git switch -c try-2 <commit>'),
   );
 }
