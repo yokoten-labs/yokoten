@@ -59,6 +59,7 @@ Stuck: if the task can't be done, or the brief looks wrong, stop and say so in t
 Stop: after the same step fails three times, or the guard refuses three times, stop.
       Go back to your last anchor, or write your report. Stopping is good work.
 Report: what you changed, the commands you ran with their output, what you are unsure of.
+Proof: before you say "done", run a real test, type check or build, and show its output.
 ```
 
 A worker runs its commands under the guard. Say so in the brief:
@@ -78,6 +79,17 @@ report, so the lead always hears.
 
 Keep the hard lines few: only what the guard can't catch. A long list of warnings
 makes a worker anxious, not careful.
+
+## Which model and effort
+
+Name the model and the effort for each role. Pick from this table.
+
+| Role | Model | Effort |
+| --- | --- | --- |
+| Worker | Sonnet or Opus | medium. Never low: Sonnet at low may skip real checks. |
+| Reviewer | A different model family from the author | medium |
+| Lookups and reading logs | Haiku or Sonnet | low or medium |
+| The hardest problem | Fable | Only after Opus at xhigh failed it twice. |
 
 ## Start it
 

@@ -36,7 +36,17 @@ test('kit habits: the lead names outside pull requests in the session summary (#
   assert.ok(dispatch.includes('even when it is zero'), 'a quiet week is said, so the owner knows the watch ran');
 });
 
-const NPM_SETTING = 'Require two-factor authentication and disallow bypass 2fa tokens';
+test('kit habits: dispatch names the model and effort per role, and asks for proof before done (#1222)', () => {
+  const dispatch = readSkill('dispatch');
+  assert.ok(dispatch.includes('## Which model and effort'));
+  assert.ok(dispatch.includes('| Worker | Sonnet or Opus | medium. Never low: Sonnet at low may skip real checks. |'), 'the worker row: never low');
+  assert.ok(dispatch.includes('| Reviewer | A different model family from the author | medium |'), 'the reviewer is another family');
+  assert.ok(dispatch.includes('| Lookups and reading logs | Haiku or Sonnet |'), 'lookups use a light model');
+  assert.ok(dispatch.includes('Only after Opus at xhigh failed it twice'), 'Fable is the last resort');
+  assert.ok(dispatch.includes('Proof: before you say "done", run a real test, type check or build, and show its output.'), 'the brief asks for proof');
+});
+
+const NPM_SETTING ='Require two-factor authentication and disallow bypass 2fa tokens';
 
 /** Reasons the release skill misses the first publish (#538). */
 function findFirstReleaseGaps(skill: string): string[] {
