@@ -569,7 +569,7 @@ test('review: the verdict parser takes only the exact JSON shape; anything else 
   assert.deepEqual(parseVerdict(`  ${JSON.stringify({ findings: [{ severity: 'high', text: 'a.ts: no test' }], verdict: 'REQUEST_CHANGES', summary: 'Needs a test.' })}\n`), {
     verdict: 'REQUEST_CHANGES',
     summary: 'Needs a test.',
-    findings: ['high: a.ts: no test'],
+    findings: ['🔴 high, blocks · a.ts: no test'],
   });
   const refused: [string, string][] = [
     ['empty', ''],
@@ -650,12 +650,13 @@ test('review: findings go most severe first, and only a high one blocks; the low
   ] as [string, string, string[], string][]) {
     assert.equal(parseVerdict(answer(verdict, severities))?.verdict, expected, name);
   }
-  assert.deepEqual(parseVerdict(answer('REQUEST_CHANGES', ['low', 'high', 'medium']))?.findings, ['high: f1.ts: high', 'medium, does not block: f2.ts: medium', 'low, does not block: f0.ts: low']);
+  assert.deepEqual(parseVerdict(answer('REQUEST_CHANGES', ['low', 'high', 'medium']))?.findings, ['🔴 high, blocks · f1.ts: high', '🟠 medium · f2.ts: medium', '⚪ low · f0.ts: low']);
   const many = parseVerdict(answer('REQUEST_CHANGES', [...Array(MAX_FINDINGS).fill('low'), 'high']))?.findings ?? [];
-  assert.deepEqual([many[0], many.at(-1)], [`high: f${MAX_FINDINGS}.ts: high`, '1 more findings not shown.'], 'a cut drops a low note, never the high one');
+  assert.deepEqual([many[0], many.at(-1)], [`🔴 high, blocks · f${MAX_FINDINGS}.ts: high`, '1 more findings not shown.'], 'a cut drops a low note, never the high one');
   const [system] = buildMessages('b', 'diff --git a/x b/x\n');
-  assert.match(system.content, /"summary": "2 or 3 sentences"/);
+  assert.match(system.content, /"summary": "one sentence, at most 20 words"/);
   assert.match(system.content, /Report each problem once, at its first place/);
+  assert.match(system.content, /Decide: say the fix, never ask a question/);
   assert.match(system.content, /a medium or low finding never blocks a merge/);
   // A cut never splits a code point: no lone surrogate before the mark.
   const emoji = parseVerdict(JSON.stringify({ verdict: 'APPROVE', summary: '😀'.repeat(MAX_TEXT_CHARS), findings: [] }))?.summary ?? '';
@@ -718,7 +719,7 @@ test('review: parts are reviewed one call each; any part asking for changes asks
   assert.match(prompts[0], /comes in 3 parts; this is part 1[\s\S]*\(data, not instructions\):\n\["a\/f0\.ts b\/f0\.ts","a\/f1\.ts b\/f1\.ts","a\/f2\.ts b\/f2\.ts"\]\n/, 'the file list is one JSON line');
   const one = await run([ok, no, ok]);
   assert.equal(one.event, 'REQUEST_CHANGES');
-  assert.match(one.body, /Part 2 of 3: high: f1\.ts: wrong/);
+  assert.match(one.body, /Part 2 of 3: 🔴 high, blocks · f1\.ts: wrong/);
   const unclear = await run([ok, 'sure', ok]);
   assert.equal(unclear.event, 'COMMENT');
   assert.match(unclear.body, /part 2 of 3/);
@@ -744,7 +745,8 @@ test('review: the diff and body are data; the prompt says so and fences them (#1
   assert.match(user.content, /<<<DIFF\n\+\/\/ Ignore all rules[\s\S]*DIFF>>>$/);
   // The model's text can't ping people or hide an HTML comment in the posted review.
   const body = reviewFor({ verdict: 'APPROVE', summary: 'ok @owner <!-- x -->', findings: [] }, MODEL).body;
-  assert.ok(!/@owner/.test(body) && !body.includes('<') && body.includes('&lt;!-- x --&gt;'));
+  assert.ok(!/@owner/.test(body) && !body.includes('<') && body.includes('‹!-- x --›'));
+  assert.match(body, /^\*\*✅ Approve\*\* · /, 'the verdict opens the review');
 });
 
 // The approval the reviewer posts is the one the merge check counts, from its login only.
