@@ -128,7 +128,27 @@ test('guard: a worker does not clear or hide YOKOTEN_ROLE; a read of it and the 
     assert.equal(found?.what, 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', command);
     assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
   }
-  for (const command of ['echo $YOKOTEN_ROLE', 'unset FOO']) allowed(command, worker);
+  // Allowed characters, not grammar: a name the guard can't read as written is refused.
+  for (const command of [
+    'unset YOKOTEN_ROL{E,}',
+    'unset $(echo YOKOTEN_ROLE)',
+    'unset "$(echo YOKOTEN_ROLE)"',
+    'unset `echo YOKOTEN_ROLE`',
+    'unset YOKOTEN_$(echo ROLE)',
+    'unset ${!YOKOTEN*}',
+    'unset YOKOTEN_ROLE$()',
+    'unset YOKOTEN_RO?E',
+  ]) {
+    const found = check(command, worker);
+    assert.equal(found?.what, 'this clears YOKOTEN_ROLE, so the commit check would no longer see a worker', command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  // `exec -c` empties the environment.
+  for (const command of ['exec -c git status', 'exec -lc git status']) {
+    assert.match(check(command, worker)?.what ?? '', /^`exec -c` starts a program with an empty environment/, command);
+    assert.ok(check(command, {})?.id !== 'worker-mark', `the lead may: ${command}`);
+  }
+  for (const command of ['echo $YOKOTEN_ROLE', 'unset FOO', 'unset FOO BAR', 'exec git status']) allowed(command, worker);
 });
 
 // The ways to drop the mark that name a real worktree's git folder, by absolute path or
