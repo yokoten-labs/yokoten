@@ -209,11 +209,18 @@ export const OFFER = 'Tell the user in plain words, one step at a time, and offe
  */
 export const PLUGIN_COMMANDS = 'In this session, yokoten runs as /yokoten:init, /yokoten:doctor and /yokoten:update.';
 
-/** One step in the JSON map: its mark, its outside standard, and the reason for "not now". */
+/**
+ * One step in the JSON map: its mark, how it is judged and why it matters (the road step's
+ * own text, so a reader can show it for a done step too, #1203), its outside standard, and
+ * the reason for "not now".
+ */
 export interface StepState {
   id: string;
   stage: number;
   mark: Mark;
+  /** Always set by doctor; optional so a hand-built report for a screen test may leave it out. */
+  how?: string;
+  why?: string;
   standard?: string;
   reason?: string;
 }
@@ -855,7 +862,7 @@ function doctorRun(
     // The "can't check" steps of a stage that share one reason share one row too.
     const unchecked = new Map<string, string[]>();
     for (const { step, mark } of walked) {
-      const stepState: StepState = { id: step.key, stage: step.stage, mark };
+      const stepState: StepState = { id: step.key, stage: step.stage, mark, how: step.how, why: step.why };
       if (step.standard) stepState.standard = step.standard;
       steps.push(stepState);
       if (mark === 'done') {
