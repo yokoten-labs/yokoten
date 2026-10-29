@@ -549,7 +549,8 @@ test('output: both homes are hidden when HOME and the system home differ (#205)'
 test('output: a Windows home is hidden with either slash, any case, and in MSYS form (#205)', () => {
   const options = { platform: 'win32', systemHome: 'C:\\Users\\me' };
   assert.equal(hideHome('C:\\Users\\me\\a, c:/users/ME/b, /c/Users/me/c', {}, options), '~\\a, ~/b, ~/c');
-  assert.equal(hideHome('C:\\Users\\meg\\a', {}, options), 'C:\\Users\\meg\\a');
+  // Another account's home is no home of ours, and it still names a person (#1237).
+  assert.equal(hideHome('C:\\Users\\meg\\a', {}, options), 'C:\\Users\\<user>\\a');
   assert.equal(hideHome('/C/USERS/me', {}, { ...options, platform: 'linux' }), '/C/USERS/me', 'case counts off Windows');
 });
 
@@ -557,11 +558,12 @@ test('output: a home path cut short at the end of a line is hidden (#404)', () =
   const options = { systemHome: '/home/jonathan' };
   assert.equal(hideHome('see /home/jona\nsee /home/jonat', {}, options), 'see ~\nsee ~');
   assert.equal(hideHome('see /home/jonath\r\nnext', {}, options), 'see ~\r\nnext');
-  // Fewer than 4 characters of the name, or a cut path inside a line, stays.
-  assert.equal(hideHome('see /home/jon\nat /home/jona and on', {}, options), 'see /home/jon\nat /home/jona and on');
-  assert.equal(hideHome('/home/jonas', {}, options), '/home/jonas', 'a longer name is another folder');
+  // Fewer than 4 characters of the name, or a cut path inside a line, is no cut of the home:
+  // it reads as another account's home, whose name is hidden all the same (#1237).
+  assert.equal(hideHome('see /home/jon\nat /home/jona and on', {}, options), 'see /home/<user>\nat /home/<user> and on');
+  assert.equal(hideHome('/home/jonas', {}, options), '/home/<user>', 'a longer name is another folder');
   // A cut that ends in an ellipsis or spaces is cut too.
-  assert.equal(hideHome('a /home/jona…\nb /home/jonat...\nc /home/jonath  \nd /home/jon...', {}, options), 'a ~…\nb ~...\nc ~  \nd /home/jon...');
+  assert.equal(hideHome('a /home/jona…\nb /home/jonat...\nc /home/jonath  \nd /home/jon...', {}, options), 'a ~…\nb ~...\nc ~  \nd /home/<user>...');
 });
 
 test('output: a home written in a URL, with %2F or %5C for its slashes, is hidden (#404)', () => {

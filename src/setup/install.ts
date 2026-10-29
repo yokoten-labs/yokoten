@@ -44,6 +44,8 @@ import { type Change, changeOf, copyRuntime, HOME_DIR, isEditedManaged, isManage
 import { type Finding, finding, type RuleId } from '../rules/text/message.ts';
 import { type Gh, readLocalLogins, readLogin } from '../host/github/index.ts';
 import { FOUND_HEADER, foundHeader, homeIn, loadMarkKinds, markLines, type Mark, homeOf, isDomainShaped, isLink, isEmailShaped, OWN_HEADER, isPersonalEmail, loadMarks, loadWrittenMarks, marksFile, NO_HOME, writtenMarksOnly, privateRemoteHosts, systemHome } from '../rules/privacy.ts';
+import { isPersonFolder, SHARED_ACCOUNTS } from '../rules/privacy/home.ts';
+import { usersFolderUser } from '../platform/paths.ts';
 
 /**
  * Where yokoten keeps its runtime, its config and the private marks. With no absolute home
@@ -1117,26 +1119,9 @@ export const REAL_USER_PROBE: UserNameProbe = {
   now: () => new Date(),
 };
 
-// Account names that every machine of a kind has (a CI runner, a container, a cloud VM).
-// They name nobody, and hiding them would hide common words such as "root" and "test".
-const SHARED_ACCOUNTS = new Set([
-  ...['root', 'runner', 'user', 'users', 'admin', 'administrator', 'guest', 'nobody', 'temp', 'dev', 'test', 'app', 'build'],
-  ...['ubuntu', 'debian', 'node', 'vscode', 'codespace', 'codespaces', 'gitpod', 'vagrant', 'ec2-user', 'jenkins'],
-]);
-// The folders in a Windows Users folder that are not a person's: shared, system and service accounts.
-const WINDOWS_SHARED_FOLDERS = new Set(['public', 'default', 'default user', 'all users', 'wdagutilityaccount', 'temp', 'postgres', 'mysql', 'sshd', 'updatususer', 'wsiaccount', 'defaultapppool']);
-const WINDOWS_SHARED_PATTERN = /^(?:defaultuser\d+|.*\.migrated|\.net v.*|classic \.net apppool|mssql.*|\$.*)$/;
-/** Whether a folder in a Windows Users folder is a person's. */
-const isPersonFolder = (name: string): boolean => !WINDOWS_SHARED_FOLDERS.has(name.toLowerCase()) && !WINDOWS_SHARED_PATTERN.test(name.toLowerCase()) && !SHARED_ACCOUNTS.has(name.toLowerCase());
-// A folder that holds the users' homes: its child is a user name.
-const USERS_FOLDER = /^(?:\/home|\/Users|\/mnt\/[a-z]\/Users|\/[a-z]\/Users|[A-Za-z]:[\\/]Users)$/i;
-
-/** The user name in a home path such as `/home/<name>` or `C:\Users\<name>`, or null for any other path. */
-function homeUserName(home: string | undefined): string | null {
-  const path = (home ?? '').replace(/[\\/]+$/, '');
-  const split = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  return split > 0 && USERS_FOLDER.test(path.slice(0, split)) ? path.slice(split + 1) : null;
-}
+// The shared account names and the users-folder shapes live with the privacy rule and the
+// path reader, which hide the same names in what yokoten prints (#1237).
+const homeUserName = usersFolderUser;
 
 /** The Windows user names machine.json keeps: the folders found, when, and how long the read took. */
 interface WindowsUsersCache {

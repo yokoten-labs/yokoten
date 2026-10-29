@@ -124,3 +124,140 @@ export function isPathInside(path: string, folder: string, platform: NodeJS.Plat
   const outer = comparable(folder, platform);
   return inner === outer || inner.startsWith(outer.endsWith(sep) ? outer : outer + sep);
 }
+
+// ---- The one path reader (#1237) ----
+//
+// A path word is read here, once, as the system that runs the command reads it: POSIX, `~`,
+// a drive (`C:/x`, `C:\x`), Git Bash's `/c/x`, WSL's `/mnt/c/x` and a UNC share. What the
+// system would read two ways is null, and the caller refuses it: a guard that guesses lets
+// one of the two ways through. The platform is an argument, so Linux CI tests every system.
+
+/** How a path word is written, whatever system reads it; null for a word that is no path. */
+export type PathForm = 'home' | 'drive' | 'git-bash' | 'wsl' | 'unc' | 'device' | 'posix' | 'relative';
+
+/** The way `word` is written: the first rule that fits, in the order of the type. */
+export function pathForm(word: string): PathForm | null {
+  if (word === '') return null;
+  if (word === '~' || /^~[\\/]/.test(word)) return 'home';
+  if (/^[\\/]{2}[?.][\\/]/.test(word)) return 'device';
+  if (/^[\\/]{2}[^\\/]/.test(word)) return 'unc';
+  if (/^[A-Za-z]:[\\/]/.test(word)) return 'drive';
+  if (/^\/mnt\/[A-Za-z](?:\/|$)/.test(word)) return 'wsl';
+  if (/^\/[A-Za-z](?:\/|$)/.test(word)) return 'git-bash';
+  if (word.startsWith('/')) return 'posix';
+  return 'relative';
+}
+
+// An 8.3 short name, as Windows spells a long folder name for old programs: `RUNNER~1`, `GITHUB~1.TXT`.
+const SHORT_NAME = /^[^~\\/]{1,8}~\d+(?:\.[^\\/.]{0,3})?$/;
+
+/** Whether a part of a path is a Windows 8.3 short name (`RUNNER~1`). */
+export const isShortName = (part: string): boolean => SHORT_NAME.test(part);
+
+/**
+ * Whether a part of a Windows path reads two ways: Windows drops a trailing dot or space from
+ * a name, so `...`, `a.` and `a ` may each name another folder than Node's path functions say,
+ * and a `:` past the drive names a file's data stream. `.` and `..` are read by both alike.
+ */
+const isUnsureWindowsPart = (part: string): boolean => part !== '.' && part !== '..' && (/[. ]$/.test(part) || /[:<>"|?*]/.test(part));
+
+/** Where a path word is read: the place, the home folder, and the folder a relative word is read from. */
+export type PathReading = PathPlace & { home?: string | null; folder?: string | null };
+
+/**
+ * A path word as `place.platform` reads it, as a full path; null when it can't be placed,
+ * which the caller refuses. On Windows a short-name part (`RUNNER~1`) is spelled out by the
+ * system's own real path, so a check after this sees the long name git reports; with no real
+ * path to ask (another system's path on this disk), a short name is null.
+ *
+ * - `~`, `~/x`: in `home`; null with no home. `~name` is another account's home: null.
+ * - A drive (`C:/x`, `C:\x`) and a UNC share (`\\host\share`, `//host/share`) on Windows. POSIX
+ *   reads `C:/x` as a folder named `C:` in `folder`, `\` as a letter, and `//x` as `/x`.
+ * - Git Bash `/c/x` and `/tmp/x`: on Windows as `fromGitBash` reads them; any `/` path elsewhere is POSIX.
+ * - A device path (`\\?\C:\x`, `\\.\pipe`): null, it skips the system's own reading.
+ * - A relative word: from `folder`; null with no folder, or past the drive root.
+ */
+export function readPath(word: string, place: PathReading): string | null {
+  const { platform } = place;
+  const form = pathForm(word);
+  if (form === null || (word.startsWith('~') && form !== 'home')) return null;
+  if (platform !== 'win32') {
+    // POSIX reads `\` as a letter and a drive as a folder name: only `/` and `~/` start a full path.
+    if (form === 'home') return place.home ? posix.join(place.home, word.slice(2)) : null;
+    if (word.startsWith('/')) return posix.normalize(word);
+    return place.folder ? posix.resolve(place.folder, word) : null;
+  }
+  let full: string | null;
+  switch (form) {
+    case 'device':
+      return null;
+    case 'home':
+      full = place.home ? win32.join(place.home, word.slice(2)) : null;
+      break;
+    case 'drive':
+    case 'unc':
+      full = win32.normalize(word);
+      break;
+    case 'git-bash':
+    case 'wsl':
+    case 'posix':
+      // A `/` path Git Bash keeps as its own (`/dev/null`) is no file on the disk.
+      full = fromGitBash(word, platform, place.tmp);
+      if (full?.startsWith('/')) return null;
+      break;
+    case 'relative':
+      // `C:x` is from the drive's own current folder, and `\x` from the current drive's root: neither is `folder`.
+      if (/^[A-Za-z]:/.test(word) || word.startsWith('\\')) return null;
+      full = place.folder && !climbsPastDrive(place.folder, word, platform) ? win32.resolve(place.folder, word) : null;
+      break;
+  }
+  if (full === null) return null;
+  const parts = word.split(/[\\/]+/).filter(Boolean);
+  // The drive itself (`C:`) is the one part a `:` may end.
+  if (parts.slice(form === 'drive' ? 1 : 0).some(isUnsureWindowsPart)) return null;
+  if (!full.split(/[\\/]+/).some(isShortName)) return full;
+  const real = place.realPath ?? (isHostPaths(platform) ? realPath : null);
+  const long = real === null ? null : real(full);
+  return long === null || long.split(/[\\/]+/).some(isShortName) ? null : long;
+}
+
+// ---- Users folders (#1237) ----
+//
+// The folder that holds the homes, and the user name right under it: `/home/<n>`,
+// `/Users/<n>`, `C:\Users\<n>`, `C:/Users/<n>`, Git Bash's `/c/Users/<n>` and WSL's
+// `/mnt/c/Users/<n>`. A WSL user's Windows home is not their $HOME, so the name is read by
+// the shape, whatever the home folder is.
+
+/** A folder that holds the users' homes: its child is a user name. */
+export const USERS_FOLDER = /^(?:\/home|\/Users|\/mnt\/[a-z]\/Users|\/[a-z]\/Users|[A-Za-z]:[\\/]+Users)$/i;
+
+/** The user name in a home path such as `/home/<name>` or `C:\Users\<name>`, or null for any other path. */
+export function usersFolderUser(home: string | undefined): string | null {
+  const path = (home ?? '').replace(/[\\/]+$/, '');
+  const split = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+  return split > 0 && USERS_FOLDER.test(path.slice(0, split).replace(/[\\/]+$/, '')) ? path.slice(split + 1) : null;
+}
+
+// A character of a user name in text: not a separator, a space, a quote or shell punctuation.
+const NAME_CHAR = String.raw`[^\s\\/"'\x60<>|:*?;,(){}\[\]=&$]`;
+// A users folder in text, at the start of a path, then the name: a Windows name may hold a
+// space, when a separator follows it (`C:\Users\Jane Doe\x`). Separators may be doubled, as
+// JSON writes `\`. A drive path is Windows, where case never counts.
+const USERS_FOLDER_SOURCE = String.raw`(?<![\p{L}\p{N}_.~\\-])((?:\/mnt\/[a-z]|\/[a-z])?\/Users|\/home|[A-Za-z]:[\\/]+[Uu][Ss][Ee][Rr][Ss])([\\/]+)(${NAME_CHAR}+(?:(?: ${NAME_CHAR}+)+(?=[\\/]))?)`;
+const USERS_FOLDER_IN_TEXT = { exact: new RegExp(USERS_FOLDER_SOURCE, 'gu'), folded: new RegExp(USERS_FOLDER_SOURCE, 'giu') };
+
+/**
+ * `text` with each user name in a users-folder path given to `replace`, which returns what
+ * to write in its place, or null to keep it. A name's trailing dots (a full stop) stay out
+ * of it, and a name of only dots (`...`) or one already hidden (`~`, `%USERNAME%`) is kept.
+ * `ignoresCase` reads `/HOME/x` and `/c/users/x` too, as Windows does.
+ */
+export function replaceUsersFolderNames(text: string, replace: (name: string) => string | null, { ignoresCase = true }: { ignoresCase?: boolean } = {}): string {
+  if (!/home|users/i.test(text)) return text;
+  return text.replace(ignoresCase ? USERS_FOLDER_IN_TEXT.folded : USERS_FOLDER_IN_TEXT.exact, (hit, folder: string, slash: string, written: string) => {
+    const name = written.replace(/[.…]+$/, '');
+    if (name === '' || name.startsWith('~') || name.startsWith('%')) return hit;
+    const shown = replace(name);
+    return shown === null ? hit : `${folder}${slash}${shown}${written.slice(name.length)}`;
+  });
+}

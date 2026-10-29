@@ -255,6 +255,12 @@ export const RULES = {
     check: 'the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json "privacy.allow" lets one through; an address in SECURITY.md, or in the people fields of a package manifest (package.json, composer.json, Cargo.toml, pyproject.toml), is public on purpose and only a note; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)',
     docs: guide('privacy'),
   },
+  'user-folder': {
+    rule: 'no user name from a home folder path in text that leaves the machine (core rule 11, #1237)',
+    why: 'a home folder path such as /home/<name> or C:\\Users\\<name> names the account, and a WSL user\'s Windows home is not their $HOME, so hiding $HOME alone misses it',
+    check: 'the text an agent posts with gh, a desk message, an upstream note, a lesson pack and a prompt are read for /home/<name>, /Users/<name>, C:\\Users\\<name>, C:/Users/<name>, /c/Users/<name> and /mnt/c/Users/<name>; a shared account (runner, root, Public) and a placeholder (someone, name, <name>, ~) pass; a hit is `sure`. The repo scan leaves them to the private marks, which name your own accounts, because tests and docs hold made-up homes. What yokoten prints shows the name as <user>',
+    docs: guide('privacy'),
+  },
   ip: {
     rule: 'no IP address in the repo (core rule 11)',
     why: 'an IP address can lead to your server or your home network',
