@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, rowsText } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
+import { hideHome } from '../../../src/rules/privacy.ts';
 import { machineStateFile } from '../../../src/setup/install.ts';
 import { NODE_FIXED } from '../../../src/setup/doctor/machine.ts';
 import { agentTempDirCheck, nodeSecurityCheck, diskSpaceChecks, doctor, findDriveMount, isLowOnSpace, isWsl, leftoverControl, leftoverTempCheck, type MachineProbe, machineControl, parseLxss, quoteForShell, REAL_MACHINE, readHostDisk, saveHostCache, selfTest } from '../../../src/setup/doctor/index.ts';
@@ -310,7 +311,8 @@ test('machine: the leftover note shows in full doctor only, and never changes th
   const full = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB) });
   const clean = doctor(sandbox.repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, machine: fakeMachine(100 * GB) });
   assert.equal(full.ok, clean.ok, 'a note never fails doctor');
-  assert.ok(rowsOf(full.lines).some((line) => line === `  note        leftover-temp-folders: 1 yokoten-* folder older than a day in ${temp}; run \`find '${temp}' -maxdepth 1 -name 'yokoten-*' -mmin +1440 -exec rm -rf {} +\` yourself; it removes only the ones older than a day`), full.lines.join('\n'));
+  // As yokoten prints it: on the Windows runner the temp folder is under `C:\Users\RUNNER~1`, a user name it hides (#1237).
+  assert.ok(rowsOf(full.lines).some((line) => line === hideHome(`  note        leftover-temp-folders: 1 yokoten-* folder older than a day in ${temp}; run \`find '${temp}' -maxdepth 1 -name 'yokoten-*' -mmin +1440 -exec rm -rf {} +\` yourself; it removes only the ones older than a day`, env)), full.lines.join('\n'));
   assert.ok(!clean.lines.some((line) => line.includes('leftover-temp-folders')), 'a clean temp folder: no note');
   const session = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB), session: true });
   assert.ok(!session.lines.some((line) => line.includes('yokoten-*')), 'full doctor only');

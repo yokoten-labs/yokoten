@@ -681,10 +681,14 @@ test('upstream: a note hides the project, home and owner, and refuses a secret o
 
 // #1237: a WSL user's Windows home is not their HOME; the note hides its name all the same.
 test('upstream: a note hides the user name in any users-folder path, whatever HOME is (#1237)', () => {
-  for (const home of ['/home/alice', 'C:\\Users\\alice', undefined]) {
-    const note = redactNote('the hook broke in C:\\Users\\alice\\proj and /mnt/c/Users/alice/proj', placeIn(null), { HOME: home });
-    assert.deepEqual(note, { text: 'the hook broke in C:\\Users\\<user>\\proj and /mnt/c/Users/<user>/proj' }, String(home));
+  const text = 'the hook broke in C:\\Users\\alice\\proj and /mnt/c/Users/alice/proj';
+  for (const home of ['/home/alice', undefined]) {
+    assert.deepEqual(redactNote(text, placeIn(null), { HOME: home }), { text: 'the hook broke in C:\\Users\\<user>\\proj and /mnt/c/Users/<user>/proj' }, `HOME ${home ? 'a POSIX home' : 'unset'}`);
   }
+  // `C:\Users\alice` is a home only where the host reads it as a full path (Windows): there
+  // the own home is `~`, elsewhere the name is `<user>`. Either way the name is gone.
+  const windowsHome = redactNote(text, placeIn(null), { HOME: 'C:\\Users\\alice' });
+  assert.ok('text' in windowsHome && !/alice/i.test(windowsHome.text), 'HOME a Windows home: no name is left');
 });
 
 test('upstream: a symlink into the project, a relative path and a symlink into home are hidden too', () => {

@@ -2872,6 +2872,8 @@ test('makeRedactor and hideHome: no user name is left in a users-folder path, wh
   assert.equal(none('(see C:\\Users\\alice).'), '(see C:\\Users\\<user>).');
   // A POSIX account name holds no space, so prose after it stays.
   assert.equal(none('see /home/alice for details.'), 'see /home/<user> for details.');
+  // The Windows runner's temp folder: the home by its short name, which the own-home pass can't match (#1237).
+  assert.equal(hideHome("in C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\yokoten-a1; run `find 'C:\\Users\\RUNNER~1\\AppData'`", {}, { platform: 'win32', systemHome: 'C:\\Users\\runneradmin' }), "in C:\\Users\\<user>\\AppData\\Local\\Temp\\yokoten-a1; run `find 'C:\\Users\\<user>\\AppData'`");
   assert.equal(none('/home/alice,bob and /home/a=b/x'), '/home/<user> and /home/<user>/x');
   assert.equal(none('\\\\?\\C:\\Users\\alice'), '\\\\?\\C:\\Users\\<user>');
   assert.equal(none('"\\/home\\/alice\\/x"'), '"\\/home\\/<user>\\/x"');
