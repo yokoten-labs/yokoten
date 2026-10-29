@@ -100,6 +100,10 @@ export const leaveSandboxAsk = (): Finding => ({
   ask: true,
 });
 
+/** A worker's edit or write of a guard setting: refused, since no one is there to say yes (#1212). */
+export const workerSettingsRefusal = (ask: Finding): Finding =>
+  finding('guard-settings', ask.what.replace(/^this /, "a worker's "), 'leave guard, hook and sandbox settings as they are; if your task needs a change, stop and tell the lead');
+
 /** A worker's command outside the sandbox: refused, since no one is there to say yes. */
 export const workerLeavesSandbox = (): Finding =>
   finding('leave-sandbox', "a worker's command asks to run outside the agent's sandbox", 'run it inside the sandbox; if the task needs more, stop and ask the lead');

@@ -14,7 +14,7 @@ import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, c
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
 import { heredocPost, plainBreak, writeRisk, withoutStdin, tildesPlain, isUnsure, writesNoFile, writesFile, QUOTED_TILDE, folderAfter } from '../bash/body.ts';
 import { checkLeadOnlyWrites } from '../lead-only/writes.ts';
-import { guardSettingsWrite } from '../lead-only/owner.ts';
+import { guardSettingsWrite, workerSettingsRefusal } from '../lead-only/owner.ts';
 import { fileRules, plainArgs, type FileRules } from '../lead-only/targets.ts';
 import { withBudget } from '../bash/read/run.ts';
 import { commandWords } from '../bash/read/read.ts';
@@ -122,8 +122,12 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // history (#824). Only a commit pays for it.
       checkCommitPrivacy(words, { env, privacy: config?.privacy, folder: postCwd });
     if (reason) return reason;
-    // The lead's write to a guard setting asks the owner, once nothing else refuses the line (#1212).
-    asked ??= askRules ? guardSettingsWrite(words, { rules: askRules, folder: postCwd, env, platform: placeNow.platform }) : null;
+    // The lead's write to a guard setting asks the owner, once nothing else refuses the line;
+    // a worker's is refused: lead-only covers the repo's copies, this the home ones (#1212).
+    const settingsRules = askRules ?? rules;
+    const settings = settingsRules ? guardSettingsWrite(words, { rules: settingsRules, folder: postCwd, env, platform: placeNow.platform }) : null;
+    if (settings && rules) return workerSettingsRefusal(settings);
+    asked ??= settings;
     later ??=
       checkGitConfigEnvironment(words) ??
       // The likely folder, read as written: a write there is refused, never let through.

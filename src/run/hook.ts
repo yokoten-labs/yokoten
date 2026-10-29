@@ -11,7 +11,7 @@ import module from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '../rules/config.ts';
-import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, homeGuardSetting, isGuardSetting, leaveSandboxAsk, realPath as real, settingsEditAsk, stopsFile, stopsOffFile, workerLeavesSandbox } from '../rules/guards/index.ts';
+import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, homeGuardSetting, isGuardSetting, leaveSandboxAsk, realPath as real, settingsEditAsk, stopsFile, stopsOffFile, workerLeavesSandbox, workerSettingsRefusal } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
 import { noteLine } from '../rules/text/screen.ts';
@@ -1852,14 +1852,15 @@ export function judge(
       if (reason) return reason;
     }
   }
-  // The lead's edit of a user settings file under home asks the owner, in any folder (#1212).
-  if (isLead && asked === null) {
+  // An edit of a user settings file under home asks the owner, in any folder; a worker's is refused (#1212).
+  if (asked === null) {
     // Both sides real: a link, or a short Windows temp name, must not hide home (#1212).
     const realEnv = env.HOME ? { ...env, HOME: real(env.HOME) } : env;
     for (const p of action.paths) {
       const full = resolve(action.cwd ?? root ?? cwd, p);
       const home = homeGuardSetting(full, env, platform) ?? homeGuardSetting(real(full), realEnv, platform);
       if (home !== null) {
+        if (!isLead) return workerSettingsRefusal(settingsEditAsk(home));
         asked = settingsEditAsk(home);
         break;
       }

@@ -91,6 +91,18 @@ test('guard settings: the lead\'s edit or shell write asks; a worker\'s is refus
   // A refusal anywhere on the line wins over the question.
   assert.equal(lead('echo {} > .claude/settings.json && git push --tags')?.id, 'release');
   assert.equal(checkCommand('echo {} > .claude/settings.json', { env: { YOKOTEN_ROLE: 'worker' }, cwd: sandbox.repo })?.id, 'lead-only');
+  // The home copies are no repo's lead-only files: a worker is refused them here, never asked.
+  const homeSettings = join(sandbox.home, '.claude', 'settings.json');
+  const workerHome = { ...options, env: { HOME: sandbox.home, YOKOTEN_ROLE: 'worker' } };
+  for (const found of [
+    judge({ paths: [homeSettings], worker: false }, workerHome),
+    judge({ paths: [homeSettings], worker: true }, { ...options, env: { HOME: sandbox.home } }),
+    checkCommand('echo x > ~/.claude/settings.json', { env: { HOME: sandbox.home, YOKOTEN_ROLE: 'worker' }, cwd: sandbox.repo }),
+  ]) {
+    assert.equal(found?.id, 'guard-settings');
+    assert.equal(found?.ask, undefined, 'a worker gets no question');
+    assert.match(found?.what ?? '', /^a worker's /);
+  }
 });
 
 test('leave sandbox: the lead\'s call asks, a worker\'s is refused (#1212)', () => {
