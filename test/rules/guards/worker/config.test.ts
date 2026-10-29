@@ -201,9 +201,11 @@ test('guard: a worker command on a folder named like the config folder is not re
   const home = join(base, 'home');
   mkdirSync(join(home, '.config', 'yokoten'), { recursive: true });
   const worker = { YOKOTEN_ROLE: 'worker', HOME: home };
-  // Outside home, so the blunt `~/.config` rule (#591) is not what decides.
-  for (const command of ['rm /srv/.config/yokoten-mac/run.sh', 'rm /srv/.config/yokoten.bak/x']) allowed(command, worker);
-  for (const command of ['rm /srv/.config/yokoten/workers', 'rm /srv/.config/yokoten./workers', 'rm /srv/.config/yokoten*']) {
+  // Outside home, so the blunt `~/.config` rule (#591) is not what decides. A real folder, with
+  // forward slashes: on Windows a Git Bash path like /srv can't be placed, and is refused as such.
+  const out = base.replace(/\\/g, '/');
+  for (const command of [`rm ${out}/.config/yokoten-mac/run.sh`, `rm ${out}/.config/yokoten.bak/x`]) allowed(command, worker);
+  for (const command of [`rm ${out}/.config/yokoten/workers`, `rm ${out}/.config/yokoten./workers`, `rm ${out}/.config/yokoten*`]) {
     assert.equal(checkCommand(`bash -c '${command}'`, { cwd: process.cwd(), env: worker })?.id, 'worker-mark', command);
   }
   for (const command of CONFIG_NAMES) {
