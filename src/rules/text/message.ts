@@ -226,10 +226,10 @@ export const RULES = {
     docs: guide('managing-agents-like-a-team'),
   },
   'unmarked-worktree': {
-    rule: 'a worker subagent commits only in a worktree that carries the worker mark (#1225)',
+    rule: 'a worker subagent works only in a worktree that carries the worker mark (#1225)',
     why: 'the commit check knows a worker only by YOKOTEN_ROLE or the worktree\'s mark, so in an unmarked worktree a worker\'s commit passes as the lead\'s',
-    check: 'for a subagent the runtime names a worker (no YOKOTEN_ROLE=worker in its environment), the tool-call guard stops a `git commit`, after any cd or `git -C`, in a git checkout that has no worker mark and is not on the worker list. A marked worktree, a lead, and a worker with YOKOTEN_ROLE=worker pass. A floor rule: no setting turns it off',
-    docs: guide('managing-agents-like-a-team'),
+    check: 'for a subagent the runtime names a worker (no YOKOTEN_ROLE=worker in its environment), the tool-call guard stops any shell command whose folder (the cwd, or the folder it follows through cd or `git -C`) is inside a git checkout that has no worker mark and is not on the worker list, and an edit or write to a file inside such a checkout. A plain cd, a command in no checkout, and reads with the read tools pass. A marked worktree, a lead, another agent type and a worker with YOKOTEN_ROLE=worker pass. A floor rule: no setting turns it off',
+    docs: guide('the-core-rules'),
   },
   'file-lease': {
     rule: 'the guard stops an edit to a file that an open change is moving or deleting (#911)',

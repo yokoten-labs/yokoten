@@ -131,10 +131,12 @@ test('hook: a worker writes no lead-only file in another repo or a CODEOWNERS an
     { file: join(sandbox.repo, 'docs', 'guide.md'), tool: 'Write', refused: false },
     { file: join(own.repo, 'CODEOWNERS'), tool: 'Write', refused: false },
   ];
+  // The worker carries YOKOTEN_ROLE=worker too: a worker by agent type alone may not work in
+  // these unmarked checkouts at all (#1225), and this test is about the lead-only files.
   const call = async (hook: string[], { file, tool }: { file: string; tool: 'Write' | 'Bash' }, worker: boolean) => {
     const toolInput = tool === 'Bash' ? { command: `echo x > ${file.replaceAll('\\', '/')}` } : { file_path: file, content: 'x' };
     const input = JSON.stringify({ cwd: sandbox.repo, tool_name: tool, tool_input: toolInput, ...(worker ? { agent_type: 'worker' } : {}) });
-    return sandbox.call(hook, { input });
+    return sandbox.call(hook, { input, ...(worker ? { extra: { YOKOTEN_ROLE: 'worker' } } : {}) });
   };
   for (const hook of [['hook'], ['hook', '--commands-only']]) {
     for (const row of cases) {

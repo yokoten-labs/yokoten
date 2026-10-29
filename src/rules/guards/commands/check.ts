@@ -4,7 +4,7 @@ import { checkCommandTitle } from '../../pr.ts';
 import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
 import { mayPost, unreadPost } from '../../privacy/posts.ts';
 import { type Config, type Env } from '../../config.ts';
-import { markFinding, checkWorkerWrites, checkUnmarkedCommit } from '../worker/mark.ts';
+import { markFinding, checkWorkerWrites, checkUnmarkedWork } from '../worker/mark.ts';
 import { checkWorkerBox } from '../worker/box.ts';
 import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark } from '../worker/sends.ts';
@@ -101,8 +101,6 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       hostWorkflowOff(words) ??
       // A worker hears its own rule first: what it may not send, its own unmark, and the git folder (#555, #566).
       (env.YOKOTEN_ROLE === 'worker' ? (checkWorkerSends(words) ?? checkWorkerUnmark(words) ?? checkWorkerWrites(words, { folder: postCwd, near: nearCwd, command, env })) : null) ??
-      // A worker by agent type that commits where the commit check can't see a worker (#1225).
-      (workerByType ? checkUnmarkedCommit(words, postCwd, env) : null) ??
       // An alias runs another command under a new name: refused, not parsed (#560).
       // For a worker the worker rule already answers, with its own id.
       checkShellAlias(words, env) ??
@@ -117,6 +115,9 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd, platform: placeNow.platform }) : null) ??
+      // A worker by agent type, in a checkout where the commit check can't see a worker (#1225).
+      // After the rules that name a more exact case, which refuse the command too.
+      (workerByType ? checkUnmarkedWork(words, postCwd, env) : null) ??
       // Last, so a worker's own rule names the case first. The commit's content: a repo with no
       // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
       // history (#824). Only a commit pays for it.

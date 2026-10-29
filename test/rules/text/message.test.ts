@@ -25,7 +25,7 @@ import {
 import {
   checkCommand,
   checkEdit,
-  checkUnmarkedCommit,
+  checkUnmarkedWork,
   privateOutput,
 } from '../../../src/rules/guards/index.ts';
 import {
@@ -344,11 +344,11 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   const unmarked = join(makeTempDir(), 'wt');
   mkdirSync(join(unmarked, 'store'), { recursive: true });
   writeFileSync(join(unmarked, '.git'), `gitdir: ${join(unmarked, 'store')}\n`);
-  add(checkUnmarkedCommit(['git', 'commit', '-m', 'x'], unmarked));
+  add(checkUnmarkedWork(['git', 'commit', '-m', 'x'], unmarked));
   // And in a main checkout, the lead's, whose fix asks for a worktree.
   const mainCheckout = join(makeTempDir(), 'main');
   makeGitFolder(mainCheckout);
-  add(checkUnmarkedCommit(['git', 'commit', '-m', 'x'], mainCheckout));
+  add(checkUnmarkedWork(['git', 'commit', '-m', 'x'], mainCheckout));
 
   const known = new Set(ids());
   for (const f of found) {

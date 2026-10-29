@@ -219,38 +219,56 @@ export function protectedGitDirs(folder: string): string[] {
 const MARK_FIX = 'leave the git folder and the worker mark as they are; if your task needs them, stop and tell the lead';
 export const markFinding = (what: string) => finding('worker-mark', what, MARK_FIX);
 
+// ---- A worker by agent type in an unmarked checkout (#1225) ----
+//
+// A subagent the runtime names a worker, with no YOKOTEN_ROLE=worker, starts in the lead's
+// folder and reaches its worktree with a cd. The commit check there sees no YOKOTEN_ROLE and
+// no mark, so whatever the worker commits, by any route (git merge, a script, make), passes
+// as the lead's. The guard does not read which commands make commits: it refuses all work in
+// such a checkout, by folder. A folder in no checkout has nothing to commit to.
+
 /**
- * For a worker the runtime named by its agent type, with no YOKOTEN_ROLE=worker (#1225): a
- * `git commit` in a checkout with no worker mark, or null. Such a subagent starts in the
- * lead's folder and reaches its worktree with a cd; the commit check there sees no
- * YOKOTEN_ROLE and no mark, so the commit would pass as the lead's. `folder` is where the
- * command runs, after any cd; `git -C` moves it on. An unknown folder is left to the rules
- * that refuse it, and a folder outside any checkout has nothing to commit to.
+ * Why a worker by agent type may not work in `folder`, or null: null when it is in no
+ * checkout, or its checkout carries the mark, is on the worker list, or can't be read
+ * (`workerMarkAt` fails closed to a worker, and the commit check does the same).
  */
-export function checkUnmarkedCommit(words: string[], folder: string | null, env: Env = {}): Finding | null {
-  for (const place of findProgramPlaces(words)) {
-    if (!isGit(place.word)) continue;
-    const { sub, dir } = gitParts(withoutShellRedirects(words, place.index + 1), folder);
-    if (sub !== 'commit' || dir === null) continue;
-    const link = gitLinkAbove(dir);
-    if (link === null || workerMarkAt(dir, env) !== null) continue;
-    // A main checkout is the lead's own: marking it would make the lead a worker.
-    if (link.kind === 'folder') {
-      return finding(
-        'unmarked-worktree',
-        `this commits in ${link.top}, a main checkout with no worker mark: the lead's checkout, where the commit check can't tell that a worker made this commit`,
-        'a worker does not commit in the lead\'s checkout; stop and ask the lead to give you your own worktree (`git worktree add <folder>`, then `yokoten worker mark <folder>`)',
-      );
-    }
+export function checkUnmarkedFolder(folder: string, env: Env = {}): Finding | null {
+  const link = gitLinkAbove(folder);
+  if (link === null || link.kind === 'broken' || workerMarkAt(folder, env) !== null) return null;
+  // A main checkout is the lead's own: marking it would make the lead a worker.
+  if (link.kind === 'folder') {
     return finding(
       'unmarked-worktree',
-      `this commits in ${link.top}, which has no worker mark, so the commit check can't tell that a worker made this commit`,
-      `stop and ask the lead to run \`yokoten worker mark ${link.top}\`, then commit again`,
+      "this works in a main checkout with no worker mark: the lead's own checkout, where the commit check can't tell that a worker made a commit",
+      'a worker does not work in the lead\'s checkout; stop and ask the lead to give you your own worktree (`git worktree add <folder>`, then `yokoten worker mark <folder>`)',
     );
+  }
+  return finding(
+    'unmarked-worktree',
+    `this works in ${link.top}, which has no worker mark, so the commit check can't tell that a worker made a commit there`,
+    `stop and ask the lead to run \`yokoten worker mark ${link.top}\`, then run this again`,
+  );
+}
+
+/**
+ * For a worker by agent type: why one command may not run, or null. `folder` is where it runs,
+ * after any cd; a `git -C` folder counts too. A plain cd runs nothing, so it is not judged: the
+ * worker's box rule keeps it in bounds, and the next command is judged where it lands. An
+ * unknown folder is left to the rules that refuse it.
+ */
+export function checkUnmarkedWork(words: string[], folder: string | null, env: Env = {}): Finding | null {
+  const places = findProgramPlaces(words);
+  if (places.every((place) => programName(place.word) === 'cd')) return null;
+  const folders = [folder];
+  for (const place of places) {
+    if (isGit(place.word)) folders.push(gitParts(withoutShellRedirects(words, place.index + 1), folder).dir);
+  }
+  for (const each of new Set(folders)) {
+    const found = each === null ? null : checkUnmarkedFolder(each, env);
+    if (found) return found;
   }
   return null;
 }
-
 
 // Text that names a git folder: the mark, a `.git` part, git's options and variables for one.
 const NAMES_GIT_DIR = new RegExp(`${WORKER_MARK}|(^|[\\s'"=:/\\\\(\`;&|<>])\\.git(?=$|[\\s'"/\\\;&|)\`<>])|--(absolute-)?git-(dir|common-dir|path)\\b|\\bGIT_(DIR|COMMON_DIR)\\b|gitdir`, 'i');

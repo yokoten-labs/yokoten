@@ -11,7 +11,7 @@ import module from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isMainThread, parentPort, Worker, workerData } from 'node:worker_threads';
 import { type Config, DEFAULTS, type Env, type IgnoredPart, loadConfig } from '../rules/config.ts';
-import { checkCommand, checkEdit, checkTeamEdit, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, realPath as real, stopsFile, stopsOffFile } from '../rules/guards/index.ts';
+import { checkCommand, checkEdit, checkTeamEdit, checkUnmarkedFolder, checkWorkerMarkEdit, configFolder, DONE_WHEN_FILE, gitLinkAbove, realPath as real, stopsFile, stopsOffFile } from '../rules/guards/index.ts';
 import { type LeaseMap, leaseFor } from '../rules/guards/lease.ts';
 import { type Finding, finding } from '../rules/text/message.ts';
 import { noteLine } from '../rules/text/screen.ts';
@@ -1831,14 +1831,18 @@ export function judge(
   // A worker's edit inside a git folder may change the worker mark (#555), in any repo;
   // one inside a team folder may speak for another agent (#674);
   // one inside yokoten's config folder may change the worker list (#591).
+  // A worker by agent type edits only in a checkout the commit check sees as a worker's (#1225).
+  // It answers last, so a rule that names a more exact case (a lead-only file) is heard first.
+  let unmarked: Finding | null = null;
   if (env.YOKOTEN_ROLE === 'worker') {
     const folder = resolve(action.cwd ?? root ?? cwd);
     for (const p of action.paths) {
       const reason = checkWorkerMarkEdit(resolve(folder, p), folder, env) ?? checkTeamEdit(resolve(folder, p));
       if (reason) return reason;
+      if (workerByType) unmarked ??= checkUnmarkedFolder(dirname(resolve(folder, p)), env);
     }
   }
-  if (!ruled.length) return null;
+  if (!ruled.length) return unmarked;
   const reals = ruled.map((repo) => ({ config: repo.config, root: repo.root, real: real(repo.root) }));
   // One map and one branch read for each repo a call touches, and one clock for its leases.
   const branches = new Map<string, string>();
@@ -1857,7 +1861,7 @@ export function judge(
     const reason = checkEdit(rel, { config: best.config, env }) ?? leaseFinding(rel, best.root, now, branches);
     if (reason) return reason;
   }
-  return null;
+  return unmarked;
 }
 
 /** How long the guard may read one tool call. YOKOTEN_GUARD_DEADLINE_MS changes it. */
