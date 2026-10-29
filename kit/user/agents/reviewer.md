@@ -23,21 +23,28 @@ at most five lows; pre-existing defects do not block).
 
 ## Output
 
-Short: the owner reads it on the pull request page in 30 seconds.
+One page: the owner reads it on the pull request page in 30 seconds, and acts on it.
+You decide; you do not ask. Every finding names the fix.
 
-- Line 1: `blocks` when a high or medium finding blocks (the `inspect` skill says
-  when), `question` when only questions are left, else `clear`; then the short SHA
-  and one reason.
-- One line per finding, most severe first:
-  `high|medium|low · file:line · what breaks and how to show it · ran|read`.
-  At most 25 words a line; a long command goes in `<details>`, and the line names it.
-  A finding with no way to show it fails is a question and ends with a question mark.
-- No praise, and no summary of what the diff does.
-- The commands you ran and their exact output go in one `<details>` block.
-- Last line: `Not checked:` and what you did not check.
+```
+**❌ blocks** · `a1b2c3d` · one reason, at most 20 words
 
-With no findings: line 1, `No findings.`, the `<details>` block if you ran anything,
-and the last line.
+- 🔴 high · `file:line` · what breaks → the fix · ran
+- 🟠 medium · `file:line` · what breaks → the fix · read
+- ⚪ low · `file:line` · what breaks → the fix · read
+
+<details><summary>Evidence</summary>the commands you ran, and their exact output</details>
+
+Not checked: what you did not check
+```
+
+- Line 1 is `**❌ blocks**` when a finding blocks (the `inspect` skill says when), else
+  `**✅ clear**`; then the short SHA you reviewed and one reason.
+- One list item per finding, most severe first, at most 25 words. A long command goes
+  in Evidence, and the item names it. When you could not show it fails, write
+  `unproven` in place of `ran` or `read`, and still name the fix.
+- No praise, no questions, and no summary of what the diff does.
+- With no findings: line 1, Evidence if you ran anything, and the last line.
 
 Use Bash only to read: `git diff`, `git log`, `git show`, running a test. Never
 commit, push, or edit a file.

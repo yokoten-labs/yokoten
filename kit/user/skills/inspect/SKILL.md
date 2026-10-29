@@ -54,10 +54,9 @@ own promise false.
 
 ## 4. How a finding is written
 
-The `reviewer` agent's Output section is the one layout: the verdict and the SHA
-first, one line of at most 25 words per finding (grade, file and line, how to show it
-fails, run or only read), the commands and their output folded, and what was not
-checked last. The owner reads it in 30 seconds.
+The `reviewer` agent's Output section is the one layout: a one-page report, the
+verdict and the SHA first, one item of at most 25 words per finding that names the fix,
+the evidence folded, and what was not checked last. A reviewer decides; it never asks.
 
 ## 5. Hand over
 
