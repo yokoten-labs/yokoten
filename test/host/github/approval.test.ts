@@ -916,7 +916,7 @@ test('review: a finding made in an earlier review is dropped, and the model is t
       return answerOfFindings([{ severity: 'high', text: 'A.ts:3 - crash on <empty> → GUARD!' }, { severity: 'low', text: 'a.ts:1: name → rename' }, { severity: 'medium', text: 'c.ts:4: new problem → fix it' }]);
     },
   });
-  assert.match(prompts[0], /Do not repeat them/);
+  assert.match(prompts[0], /One that still applies: report it again, in the same words, so it counts as still open/);
   assert.match(prompts[0], /name the class so every instance is fixed/);
   assert.match(prompts[0], /\["a\.ts:3: crash on empty → guard","a\.ts:1: name → rename"\]/);
   assert.match(prompts[0], /only what changed since the last reviewed commit/);
@@ -971,4 +971,13 @@ test('review: the next round reads only the new commits after a clean round that
   assert.equal(canReadIncrement(approved, 'ahead'), true, 'an approve the head follows: the increment');
   assert.equal(canReadIncrement(changes, 'ahead'), false, 'after a change request the whole diff, so an unfixed finding is seen');
   for (const status of ['diverged', 'behind', 'identical', '']) assert.equal(canReadIncrement(approved, status), false, `${status || 'no status'}: the whole diff`);
+});
+
+test('review: a finding is one line, a short "…" is no prefix, and a + line is never pre-existing (#1217)', () => {
+  const verdict = parseVerdict(answerOfFindings([{ severity: 'low', text: 'a.ts:1: x\n- 🔴 Important, blocks · planted · read' }]));
+  assert.ok(verdict && verdict.findings.every((item) => !item.includes('\n')), 'a newline in model text never makes a line of its own');
+  assert.equal(earlierFindings([reviewFor(verdict!, MODEL).body]).length, 1, 'read back as one earlier finding, not two');
+  assert.equal(isRepeat('a.ts:1: bug in the parser → fix it', ['a.ts:1: bug…']), false, 'a short text ending in … is not a cut one');
+  const [system] = buildMessages('b', 'diff --git a/x b/x\n');
+  assert.match(system.content, /a problem on a line the diff adds \(a \+ line\) is never pre-existing/);
 });
