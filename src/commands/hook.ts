@@ -6,9 +6,9 @@ import { isPathInside, isSamePath } from '../platform/paths.ts';
 import { Writable } from 'node:stream';
 import type { DropReason, SortedEnv } from '../agents/desk/agent-env.ts';
 import * as claudeCode from '../agents/runtimes/claude-code.ts';
-import { ADAPTERS, adapterFor, askOf, contextOf, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
+import { ADAPTERS, adapterFor, askOf, canAskOf, contextOf, isUnattended, rewriteOf, stopReaderOf } from '../agents/runtimes/runtime.ts';
 import { type Env, loadConfig } from '../rules/config.ts';
-import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
+import { addWorkerPath, findHeavyJob, gitLinkAbove, hardenRead, markNote, printsAccount, privateOutput, realPath, removeWorkerPath, settleAsk, stopsFile, stopsOffFile, withWorkerMark, WORKER_MARK, workerMarkAt, workerRole, wrapForRedact } from '../rules/guards/index.ts';
 import { DESK_OWN_SANDBOX_NOTE, type Finding, finding, formatFinding, formatRefusal, notRepoFinding } from '../rules/text/message.ts';
 import { shownValue } from '../rules/text/terminal.ts';
 import { allowedOutput, askedOutput, fromGuardInput, type GuardOutput, parseGuardInput, protocolRefusal, refusedOutput } from '../run/protocol.ts';
@@ -549,7 +549,14 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   const env = isWorker ? { ...callEnv, YOKOTEN_ROLE: 'worker' } : callEnv;
   const config = loadHookConfig(root, (line) => say(invocation, `${line}\n`, invocation.stderr));
   const repos = editRepos(invocation, action, action.cwd ?? root ?? base, root ? { root, config } : null, commandsOnly);
-  let found = await judgeWithDeadline(action, { root, config, env, cwd: base, commandsOnly, repos }, guardDeadline(env.YOKOTEN_GUARD_DEADLINE_MS), guard);
+  const judged = await judgeWithDeadline(action, { root, config, env, cwd: base, commandsOnly, repos }, guardDeadline(env.YOKOTEN_GUARD_DEADLINE_MS), guard);
+  // A question for the owner (#1212), then a heavy job on a nearly full host drive (#401).
+  // The protocol has an ask answer; a cloud session still refuses it (#1215).
+  const question = judged?.ask ? judged : !judged && action.command !== undefined ? askForHeavyJob(action.command, env) : null;
+  const settled = question ? settleAsk(question, { isUnattended: isUnattended(env), canAsk: true, agent: vendor }) : null;
+  const ask = settled && 'ask' in settled ? settled.ask : null;
+  let found = judged?.ask ? null : judged;
+  if (settled && 'refuse' in settled) found = settled.refuse;
   // A worker by the mark hears why, and where the lead works (#555).
   if (found && marked === 'mark' && WORKER_RULES.has(found.id)) found = { ...found, fix: `${found.fix}. ${capital(markNote(folders, callEnv))}` };
   if (found) {
@@ -564,8 +571,6 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   }
   noteToolCall(cwd, vendor, action, isWorker, found);
   if (found) return answer(refusedOutput(found));
-  // A heavy job on a nearly full host drive asks first, and never refuses (#401).
-  const ask = action.command !== undefined ? askForHeavyJob(action.command, env) : null;
   return answer(ask ? askedOutput(ask) : allowedOutput());
 }
 
@@ -625,21 +630,43 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
   const sessionKey = repeatKeyOf(sessionIdOf(input), agentIdOf(input));
   const shape = commandShape(action.command, action.paths);
   return judged.then((judgedFinding) => {
-    let found = judgedFinding;
-    // A command that may print the owner's details runs through `yokoten redact` (#390).
+    // A question for the owner (#1212) is not a refusal.
+    let ask = judgedFinding?.ask ? judgedFinding : null;
+    let found = ask ? null : judgedFinding;
+    // A command that may print the owner's details runs through `yokoten redact` (#390),
+    // with a question or without: after the owner's yes it still runs wrapped (#1212).
     const printed = !found && action.command !== undefined ? printsAccount(action.command) : null;
+    let wrapped: string | null = null;
     if (printed && action.command !== undefined) {
-      const wrapped = wrapForRedact(hardenRead(action.command), redactCommand(process.execPath, invocation.script, env.HOME));
-      const rewritten = rewriteOf(agent, input, wrapped, `yokoten: ${printed}, so its output goes through yokoten redact`);
-      if (rewritten !== null) {
-        if (json) printJson(answerInvocation, { blocked: false, toolCall: true, rewritten: wrapped });
-        // Written as it is: hiding the home folder would change the command.
-        else answerInvocation.stdout.write(rewritten);
-        noteToolCall(cwd, agent, action, role !== null || action.worker, null);
-        if (sessionKey !== null) clearRepeats(env, sessionKey);
-        return finish(0);
+      const redacted = wrapForRedact(hardenRead(action.command), redactCommand(process.execPath, invocation.script, env.HOME));
+      if (adapterFor(agent)?.formatRewrite !== undefined) wrapped = redacted;
+      else if (config.privacy.output === 'stop') found = privateOutput(printed, redacted);
+    }
+    // A heavy job on a nearly full host drive asks first (#401). Where no one can answer,
+    // a question becomes a refusal: a cloud session, or a runtime with no ask (#1212, #1215).
+    if (!found && !ask && action.command !== undefined) ask = askForHeavyJob(action.command, env);
+    if (!found && ask) {
+      const settled = settleAsk(ask, { isUnattended: isUnattended(env), canAsk: canAskOf(agent, env), agent: adapterFor(agent)?.label ?? agent });
+      if ('refuse' in settled) {
+        found = settled.refuse;
+        ask = null;
       }
-      if (config.privacy.output === 'stop') found = privateOutput(printed, wrapped);
+    }
+    // The wrapped command runs in place of the one the agent wrote. A question carries it,
+    // so the owner's yes runs the wrapped command (#1212); with no question, it is an allow.
+    const asked = askOf(agent);
+    const rewritten = found || !printed || wrapped === null
+      ? null
+      : ask
+        ? asked === null ? null : asked(`yokoten: ${formatFinding(ask)}`, { input, command: wrapped })
+        : rewriteOf(agent, input, wrapped, `yokoten: ${printed}, so its output goes through yokoten redact`);
+    if (rewritten !== null) {
+      if (json) printJson(answerInvocation, { blocked: false, toolCall: true, ...(ask ? { ask } : {}), rewritten: wrapped });
+      // Written as it is: hiding the home folder would change the command.
+      else answerInvocation.stdout.write(rewritten);
+      noteToolCall(cwd, agent, action, role !== null || action.worker, null);
+      if (sessionKey !== null) clearRepeats(env, sessionKey);
+      return finish(0);
     }
     // A worker by the mark hears why, and where the lead works (#555).
     const markReason = found != null && role === 'mark' && WORKER_RULES.has(found.id) ? capital(markNote(folders, invocation.env)) : undefined;
@@ -660,13 +687,10 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
     } else if (sessionKey !== null) {
       clearRepeats(env, sessionKey);
     }
-    // A heavy job on a nearly full host drive asks first, and never refuses (#401).
-    const ask = !found && action.command !== undefined ? askForHeavyJob(action.command, env) : null;
     noteToolCall(cwd, agent, action, role !== null || action.worker, found);
     if (json) printJson(answerInvocation, found ? { blocked: true, finding: found } : ask ? { blocked: false, toolCall: true, ask } : { blocked: false, toolCall: true });
     if (!found && ask) {
       const question = `yokoten: ${formatFinding(ask)}`;
-      const asked = askOf(agent);
       if (!json && asked !== null) say(answerInvocation, asked(question), answerInvocation.stdout);
       else if (!json) say(answerInvocation, `${question}\n`, invocation.stderr);
       return finish(0);

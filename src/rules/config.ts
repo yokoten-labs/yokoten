@@ -62,6 +62,48 @@ export const DEFAULTS: Config = {
 };
 
 /**
+ * The files that hold an agent's hooks, permissions, sandbox or fence settings, from the
+ * repo root (#1212). The lead's change to one asks the owner first (record 0054), so the
+ * list names settings files only: skills, agents and commands are not here, and asks stay
+ * rare (record 0056). Every entry is also in the default "leadOnly", so a worker is refused
+ * it; test/rules/guards/lead-only/owner.test.ts holds that, and that each adapter's own
+ * hook and sandbox files are here. A project's own "leadOnly" does not change this list.
+ */
+export const GUARD_SETTINGS: readonly string[] = [
+  'yokoten.json',
+  '.githooks/**',
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.codex/config.toml',
+  '.codex/hooks.json',
+  '.gemini/settings.json',
+  '.grok/hooks/**',
+  '.grok/sandbox.toml',
+  '.grok/config.toml',
+  '.muse/hooks.json',
+  '.agents/hooks.json',
+  '.dsh/hooks.json',
+  '.dsh/yokoten.patch.yml',
+];
+
+/**
+ * The same settings in the home folder, from home (#1212): the user hooks `yokoten install`
+ * writes and each agent's own user settings. A user-level hook there turns the guard off
+ * in every repo.
+ */
+export const HOME_GUARD_SETTINGS: readonly string[] = [
+  '.claude/settings.json',
+  '.claude/settings.local.json',
+  '.codex/config.toml',
+  '.codex/hooks.json',
+  '.gemini/settings.json',
+  '.grok/hooks/**',
+  '.grok/sandbox.toml',
+  '.grok/config.toml',
+  '.config/muse/settings.json',
+];
+
+/**
  * The part of yokoten.json the hook ignored: "file" for the whole file, or the key path
  * of one key that has the wrong shape, such as "leadOnly" or "layout.maxEntries".
  */

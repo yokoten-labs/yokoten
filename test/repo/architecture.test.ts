@@ -158,6 +158,20 @@ test('host: nothing outside src/host/ names a GitHub API (#33)', () => {
   assert.deepEqual(namesHostApi(files), [], 'move the host call into an adapter in src/host/');
 });
 
+// Only src/agents/ names a runtime (AGENTS.md "Layers"). The guard's ask asks the adapter
+// whether the session can answer (#1212, #1215): a runtime's own markers and flags stay there.
+const RUNTIME_MARKERS = /CLAUDE_CODE_REMOTE|dangerouslyDisableSandbox|permissionDecision/;
+const LAYERS_WITHOUT_RUNTIMES = ['src/rules/', 'src/run/', 'src/commands/'];
+const namesRuntimeMarker = (files: Record<string, string>) => Object.keys(files).filter((p) => LAYERS_WITHOUT_RUNTIMES.some((layer) => p.startsWith(layer)) && RUNTIME_MARKERS.test(files[p]));
+
+test('agents: rules, run and commands name no runtime marker; the adapter answers for it (#1212)', () => {
+  assert.deepEqual(namesRuntimeMarker({ 'src/rules/a.ts': 'env.CLAUDE_CODE_REMOTE', 'src/commands/b.ts': 'tool.dangerouslyDisableSandbox', 'src/run/c.ts': "permissionDecision: 'ask'", 'src/agents/runtimes/claude-code.ts': 'env.CLAUDE_CODE_REMOTE' }), ['src/rules/a.ts', 'src/commands/b.ts', 'src/run/c.ts']);
+  const files: Record<string, string> = {};
+  for (const path of execFileSync('git', ['ls-files', 'src'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter(Boolean)) files[path] = readFileSync(join(ROOT, path), 'utf8');
+  assert.ok(Object.keys(files).some((p) => p.startsWith('src/agents/') && RUNTIME_MARKERS.test(files[p])), 'src/agents/ names no marker; the scan is broken');
+  assert.deepEqual(namesRuntimeMarker(files), [], 'move the runtime knowledge into its adapter in src/agents/runtimes/');
+});
+
 test('AGENTS.md: the core rules here are the kit\'s, word for word', () => {
   const core = (path: string) => readFileSync(join(ROOT, path), 'utf8').split('\n## This project')[0];
   assert.equal(core('AGENTS.md'), core('kit/project/AGENTS.md'), 'change kit/project/AGENTS.md and copy it here, or the other way round');

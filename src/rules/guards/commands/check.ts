@@ -14,6 +14,7 @@ import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, c
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
 import { heredocPost, plainBreak, writeRisk, withoutStdin, tildesPlain, isUnsure, writesNoFile, writesFile, QUOTED_TILDE, folderAfter } from '../bash/body.ts';
 import { checkLeadOnlyWrites } from '../lead-only/writes.ts';
+import { guardSettingsWrite, workerSettingsRefusal } from '../lead-only/owner.ts';
 import { fileRules, plainArgs, type FileRules } from '../lead-only/targets.ts';
 import { withBudget } from '../bash/read/run.ts';
 import { commandWords } from '../bash/read/read.ts';
@@ -33,9 +34,9 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     gitAnswers.map = outerAnswers ?? new Map();
     commandPlace.current = options.place ?? outerPlace ?? hostPathPlace();
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
-    // The file rules are looked up once per call, and only for a worker.
-    const rules = isWorker ? fileRules(options.repos ?? []) : undefined;
-    return withBudget(command.length, () => checkEachCommand(command, { ...options, rules }));
+    // The file rules are looked up once per call: a worker's lead-only files, the lead's guard settings (#1212).
+    const files = fileRules(options.repos ?? []);
+    return withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files }));
   } catch {
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
@@ -50,9 +51,9 @@ type GuardConfig = Pick<Config, 'commands'> & Partial<Pick<Config, 'privacy' | '
 /** A repo whose file rules apply, by its root, with its yokoten.json "leadOnly". */
 export type RuledRepo = { root: string; leadOnly: string[] };
 
-type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules };
+type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules; askRules?: FileRules };
 
-function checkEachCommand(command: string, { env, config, cwd, titles = false, rules }: EachOptions): Finding | null {
+function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules }: EachOptions): Finding | null {
   const commands = commandWords(command);
   // checkCommand set the place just before this call.
   const placeNow = commandPlace.current ?? hostPathPlace();
@@ -86,6 +87,8 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
   // Rules that refuse any form of a setting or a write (#361, #664). They answer after the
   // rest, which name the case more exactly; the first one found is kept.
   let later: Finding | null = null;
+  // A question for the owner, kept until the whole line is read: any refusal wins (#1212).
+  let asked: Finding | null = null;
   for (const words of commands) {
     const mayWrite = heredoc !== undefined || fills || writesFile(words) || isUnsure(words) || writers.some((other) => other !== words);
     // The name is built only on a refusal (#498).
@@ -119,6 +122,12 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // history (#824). Only a commit pays for it.
       checkCommitPrivacy(words, { env, privacy: config?.privacy, folder: postCwd });
     if (reason) return reason;
+    // The lead's write to a guard setting asks the owner, once nothing else refuses the line;
+    // a worker's is refused: lead-only covers the repo's copies, this the home ones (#1212).
+    const settingsRules = askRules ?? rules;
+    const settings = settingsRules ? guardSettingsWrite(words, { rules: settingsRules, folder: postCwd, env, platform: placeNow.platform }) : null;
+    if (settings && rules) return workerSettingsRefusal(settings);
+    asked ??= settings;
     later ??=
       checkGitConfigEnvironment(words) ??
       // The likely folder, read as written: a write there is refused, never let through.
@@ -140,7 +149,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
   const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : null;
-  return worker ?? later;
+  return worker ?? later ?? asked;
 }
 
 /**

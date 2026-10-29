@@ -187,18 +187,19 @@ agent 离开以后，它的列表也丢掉。
 每家厂商的工具调用长得不一样。
 适配器把它收成同一个 `Action`。
 没有一份大家共用的工具名清单。
-`Action` 有 `command`、`commands`、`paths`、`cwd` 和 `worker`。
+`Action` 有 `command`、`commands`、`paths`、`cwd`、`worker` 和 `leavesSandbox`。
 是 shell 时，`command` 就是那条命令。
 `paths` 是这次编辑会碰到的文件。
 事件里写了目录时，`cwd` 就是那个目录。
 调用来自 worker 时，`worker` 为真。
+shell 调用要求在 agent 的沙箱外运行时，`leavesSandbox` 为真；lead 会先问主人，worker 直接被拒。
 曾经有人要一份所有厂商共用的会话记录。
 代码里还没有那个映射。
 适配器今天共用的就是 `Action`。
 
 | 运行时 | hook 盯着的名字 | 怎么收成 Action | 读取的字段 |
 | --- | --- | --- | --- |
-| `claude-code` | `Bash`、`Edit`、`Write`、`MultiEdit`、`NotebookEdit` | 读取器不看工具名。有 `command` 就是 shell。有路径就是编辑。Copilot 用的是同一个读取器。 | `command`、`file_path`、`path`、`notebook_path`、`cwd`、`agent_type`、`tool_input` |
+| `claude-code` | `Bash`、`Edit`、`Write`、`MultiEdit`、`NotebookEdit` | 读取器不看工具名。有 `command` 就是 shell。有路径就是编辑。Copilot 用的是同一个读取器。 | `command`、`file_path`、`path`、`notebook_path`、`cwd`、`agent_type`、`tool_input`、`dangerouslyDisableSandbox` |
 | `codex` | `Bash`、`apply_patch` | `Bash` 是 shell。`apply_patch` 是编辑。shell 里夹了补丁，也算编辑。 | `command`、`tool_name`、`cwd`、`agent_type`、`tool_input` |
 | `gemini` | `run_shell_command`、`write_file`、`replace` | shell 那个名字是 shell。编辑那些名字是编辑。没有工位运行时。 | `command`、`file_path`、`tool_name`、`cwd`、`tool_input` |
 | `antigravity` | `run_command`、`write_to_file`、`replace_file_content`、`multi_replace_file_content` | shell 那个名字是 shell。编辑那些名字是编辑。没有工位运行时。 | `CommandLine`、`Cwd`、`TargetFile`、`name`、`args`、`toolCall`、`workspacePaths` |
