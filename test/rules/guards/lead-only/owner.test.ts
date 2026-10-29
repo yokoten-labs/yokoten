@@ -2,6 +2,7 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
+import { realpathSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { ADAPTERS, canAskOf, isUnattended } from '../../../../src/agents/runtimes/runtime.ts';
@@ -65,6 +66,12 @@ test('guard settings: the lead\'s edit or shell write asks; a worker\'s is refus
   assert.equal(judge({ paths: ['.claude/skills/x/SKILL.md'], worker: false }, worker)?.id, 'lead-only', 'a worker is still refused every lead-only path');
   assert.equal(judge({ paths: ['AGENTS.md'], worker: false }, options), null, 'the lead edits the rules in words freely');
   assert.equal(judge({ paths: [join(sandbox.home, '.claude', 'settings.json')], worker: false }, { ...options, env: { HOME: sandbox.home } })?.id, 'guard-settings', 'the user settings too');
+  if (process.platform !== 'win32') {
+    // HOME through a link, the file by its real path: a short Windows temp name does the same.
+    const linked = join(sandbox.repo, '..', 'home-link');
+    symlinkSync(sandbox.home, linked);
+    assert.equal(judge({ paths: [join(realpathSync(sandbox.home), '.claude', 'settings.json')], worker: false }, { ...options, env: { HOME: linked } })?.id, 'guard-settings', 'a linked home too');
+  }
   // A shell write.
   const lead = (command: string) => checkCommand(command, { env: {}, cwd: sandbox.repo });
   assert.equal(lead('echo {} > .claude/settings.json')?.ask, true);

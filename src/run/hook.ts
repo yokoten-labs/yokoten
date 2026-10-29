@@ -1854,8 +1854,11 @@ export function judge(
   }
   // The lead's edit of a user settings file under home asks the owner, in any folder (#1212).
   if (isLead && asked === null) {
+    // Both sides real: a link, or a short Windows temp name, must not hide home (#1212).
+    const realEnv = env.HOME ? { ...env, HOME: real(env.HOME) } : env;
     for (const p of action.paths) {
-      const home = homeGuardSetting(real(resolve(action.cwd ?? root ?? cwd, p)), env, platform);
+      const full = resolve(action.cwd ?? root ?? cwd, p);
+      const home = homeGuardSetting(full, env, platform) ?? homeGuardSetting(real(full), realEnv, platform);
       if (home !== null) {
         asked = settingsEditAsk(home);
         break;
