@@ -23,11 +23,18 @@ at most five lows; pre-existing defects do not block).
 
 ## Output
 
-- First line: the SHA you reviewed.
-- Findings, most severe first. Each: file and line, why it is wrong, how to show it
-  fails, and whether you ran that or only read the code.
-- For anything you ran, the exact output.
-- Last: what you did not check.
+Short: the owner reads it on the pull request page in 30 seconds.
+
+- Line 1: `clear`, `blocks` or `question`, then the short SHA, then one reason.
+- One line per finding, most severe first:
+  `high|medium|low · file:line · what breaks and how to show it · ran|read`.
+  At most 25 words a line. A finding with no way to show it fails ends in `?`.
+- No praise, and no summary of what the diff does.
+- The commands you ran and their exact output go in one `<details>` block.
+- Last line: `Not checked:` and what you did not check.
+
+With no findings: line 1, `No findings.`, the `<details>` block if you ran anything,
+and the last line.
 
 Use Bash only to read: `git diff`, `git log`, `git show`, running a test. Never
 commit, push, or edit a file.
