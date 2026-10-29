@@ -443,7 +443,9 @@ test('doctor: shows the review step in stage 4, and a session never asks gh abou
   execFileSync('git', ['init', '-q', root]);
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
   const full = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh({ ...ADMIN, [RULES]: withApprovals(1) }).gh });
-  assert.deepEqual(full.report.steps?.find((s) => s.id === 'review'), { id: 'review', stage: 4, mark: 'done', standard: 'Scorecard: Code-Review' });
+  const { how, why, ...review } = full.report.steps?.find((s) => s.id === 'review') ?? {};
+  assert.deepEqual(review, { id: 'review', stage: 4, mark: 'done', standard: 'Scorecard: Code-Review' });
+  assert.ok(how && why, 'the step says how it is judged and why (#1203)');
   assert.deepEqual(full.report.selfTest, { ok: true, failed: [], ran: true, skipped: [] }, 'the server control still passes no step');
   const session = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: () => { throw new Error('a session called gh'); } });
   assert.notEqual(session.report.next?.id, 'review');
@@ -822,7 +824,7 @@ test('doctor: notes when Muse, outside a desk, can send ~/.claude/CLAUDE.md to i
   const body = 'not-sent-to-muse';
   const rules = join(sandbox.home, '.claude', 'CLAUDE.md');
   const hooks = join(sandbox.repo, '.muse', 'hooks.json');
-  const env = { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' };
+  const env = { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '', YOKOTEN_MIN_FREE_GB: '0' };
   const noGh = () => {
     throw new Error('no network in this test');
   };
@@ -877,7 +879,7 @@ test('doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder
   writeFileSync(hooks, '{}\n');
   const desk = join(sandbox.home, 'desk');
   const team = join(sandbox.home, 'team');
-  const base = { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' };
+  const base = { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '', YOKOTEN_MIN_FREE_GB: '0' };
   const inDesk = { ...base, YOKOTEN_DESK: desk, YOKOTEN_TEAM: team };
   const noGh = () => {
     throw new Error('no network in this test');
