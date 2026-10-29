@@ -263,7 +263,14 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
   assert.equal(caught('yokoten x: it broke. Type `yokoten x --help`.', { isFailure: true }), '', 'a backticked command with a space is');
   for (const word of ['CODEOWNERS', 'Makefile', 'main', 'git']) assert.match(caught(`yokoten x: it broke. See \`${word}\`.`, { isFailure: true }), /does not say what to do next/, `\`${word}\` is a name, not a command`);
   assert.equal(caught('yokoten x: it broke. Run `./install.sh`.', { isFailure: true }), '', 'a script path with ./ is a command');
-  for (const text of ['[/home/alice/notes]', '<C:\\Users\\alice>', 'make 2>/home/alice/err.log', 'at,/home/alice/x', 'a;/home/alice', '{/home/alice}', 'a|/home/alice/x', 'x>C:\\Users\\a', 'cwd:C:\\Users\\alice\\work', 'HOME:/home/alice/x', 'GET /home/alice/x', 'the endpoint /api/state']) {
+  for (const command of ['TZ=UTC git commit --amend --no-edit --date=now', 'trustedFolders = ["~/work"]', 'make test', 'cargo test', 'go test ./...', 'pytest', 'forge test', 'unset X', 'source ~/.bashrc', 'nice npm test', '$env:TZ = "UTC"']) {
+    assert.equal(caught(`yokoten x · it broke\n\nFix: \`${command}\``, { isFailure: true }), '', `a Fix line is a command by construction: ${command}`);
+  }
+  for (const command of ['TZ=UTC git commit', 'make test', 'cargo test', 'go test ./...', 'pytest', 'forge test', 'unset X', 'source ~/.bashrc', 'nice npm test']) {
+    assert.match(caught(`  MISSING     it broke, type \`${command}\` first`), /keep their fix inside the text/, `in a sentence, a known command counts: ${command}`);
+  }
+  assert.match(caught('  MISSING     it broke\n              Fix: `TZ=UTC git commit`\n\n  MISSING     it broke too\n              Fix: `TZ=UTC git commit`'), /same-fix-once|2 times/, 'two identical Fix lines');
+  for (const text of ['[/home/alice/notes]', '<C:\\Users\\alice>', 'make 2>/home/alice/err.log', 'at,/home/alice/x', 'a;/home/alice', '{/home/alice}', 'a|/home/alice/x', 'x>C:\\Users\\a', 'cwd:C:\\Users\\alice\\work', 'HOME:/home/alice/x', 'GET /home/alice/x', 'the endpoint /api/state', '#!/home/USER/.nvm/v/bin/node', '**/home/USER/x', '*/home/USER/x*']) {
     assert.match(caught(`yokoten x · ${text} is gone`), /1 paths on this machine show/, `${text} shows a path of this machine`);
   }
   for (const text of ['make 2>/dev/null', 'make >/dev/null', '#!/bin/sh', 'layout.exempt "crates/*/tests/data"', '<project>/src/a.ts', 'GET /api/state', 'POST /api/x/y', 'see file:///x and https://example.com/a/b', 'CODEOWNERS:3 /src/host/github.ts matches no file', 'src/a/b.ts']) {

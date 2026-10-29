@@ -75,15 +75,15 @@ const FIX_LINE = /^\s*Fix: /;
 // and not the path of an API call after its verb (`GET /api/state`). What may come before a path that is
 // NOT a machine path is listed, not what may come before one that is: a path glued to a word, `~`, `.`,
 // `/` or `-` is part of a link, a home path or a relative path; a path after a `<name>` placeholder
-// (`<project>/src/a.ts`) is relative; `2>/dev/null` is a redirect, and only that one path. Anything
-// A shebang (`#!/bin/sh`) and a glob (`crates/*/x`) are not machine paths either. Anything
-// else before it (`[`, `<`, `,`, `;`, `{`, `|`, `:`, `>`, a space) is a path of this machine.
+// (`<project>/src/a.ts`) is relative; `2>/dev/null` and `>/dev/null` are redirects, and only that one path;
+// `#!/bin/...` and `#!/usr/bin/...` name an interpreter; a path after `word/*` is a glob (`crates/*/x`).
+// Anything else before it (`[`, `<`, `,`, `;`, `{`, `|`, `:`, `>`, `*`, a space) is a path of this machine.
 const PART = /[^\s`'")\]}<>,;|]/.source;
 const MACHINE_PATH = new RegExp(
   [
-    `${/(?<![\w~./*-])\/(?!\/)/.source}${PART}+(?:\\/${PART}*)+`,
-    /(?<![\w~./*-])\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w/-])/.source,
-    `${/(?<![\w~./*-])[A-Za-z]:[\\/]/.source}${PART}*`,
+    `${/(?<![\w~./-])\/(?!\/)/.source}${PART}+(?:\\/${PART}*)+`,
+    /(?<![\w~./-])\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w/-])/.source,
+    `${/(?<![\w~./-])[A-Za-z]:[\\/]/.source}${PART}*`,
     `${/(?<![\w~./\\-])\\\\+[^\s\\`'")]+\\+/.source}${PART}*`,
   ].join('|'),
   'g',
@@ -92,23 +92,31 @@ const API_CALL = /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) $/;
 const PLACEHOLDER = /<[\w-]+>$/;
 const REDIRECT = /\d*>$/;
 const SHEBANG = /#!$/;
-// A CODEOWNERS pattern is a path inside the repo, and the finding names it as it is written (`/docs/x` and `docs/x` differ there):
-// the path that "matches no file" is not a path of this machine.
-const CODEOWNERS_PATTERN = /^ matches no file/;
+const INTERPRETER = /^\/(?:usr\/)?bin\//;
+const GLOB = /\w\/\*$/;
+// A CODEOWNERS pattern is a path inside the repo, and the finding names it as it is written (`/docs/x` and `docs/x`
+// differ there): `CODEOWNERS:<n> <pattern> matches no file`, with the pattern maybe on the next line.
+const CODEOWNERS_BEFORE = /CODEOWNERS(?::\d+)?\s+$/;
+const CODEOWNERS_AFTER = /^ matches no file/;
 // A command in backticks is not a file name (`AGENTS.md`, `src/a.ts`) or a flag (`--write`).
 const BACKTICKED = /`([^`]+)`/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
-const COMMAND_WORDS = 'yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget|claude|codex|muse|gemini|grok|opencode|wsl|bash|sh|rm|mv|cp|mkdir|chmod|ln|echo|cat|curl';
+const COMMAND_WORDS = 'yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget|claude|codex|muse|gemini|grok|opencode|wsl|bash|sh|rm|mv|cp|mkdir|chmod|ln|echo|cat|curl|make|cargo|go|pytest|forge|dotnet|unset|source|nice|env|pwsh';
 const RUN_WORD = new RegExp(`\\b[Rr]un (?:(?:${COMMAND_WORDS})\\b|${/`/.source})`);
-const COMMAND_START = new RegExp(`^(?:(?:${COMMAND_WORDS})\\s+\\S|\\./)`);
+// In a sentence: a known command word and another word, a leading NAME=value, or ./script.
+const COMMAND_START = new RegExp(`^(?:(?:[A-Za-z_][A-Za-z0-9_]*=\\S*\\s+|(?:${COMMAND_WORDS})\\s+)\\S|\\./|pytest$)`);
 
 /**
- * The commands a line names in backticks: text whose first word is a known command word and has
- * something after it (`git commit`), or that starts with `./` (`./install.sh`). A file name
- * (`CODEOWNERS`, `Makefile`, `AGENTS.md`), a word (`main`, `git`) and a flag (`--write`) are not.
+ * The commands a line names in backticks. On a `Fix: ` line every backticked text is one: the line
+ * is a command by construction (`TZ=UTC git commit`, `trustedFolders = [...]`). In a sentence, text
+ * counts when it starts with a known command word and another word (`git commit`), a `NAME=value`,
+ * or `./` (`./install.sh`). A file name (`CODEOWNERS`, `Makefile`, `AGENTS.md`), a word (`main`,
+ * `git`) and a flag (`--write`) are not.
  */
-export const commandsIn = (line: string): string[] =>
-  [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => COMMAND_START.test(text));
+export const commandsIn = (line: string): string[] => {
+  const texts = [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => text !== '');
+  return FIX_LINE.test(line) ? texts : texts.filter((text) => COMMAND_START.test(text));
+};
 
 /** Whether a line is a Fix line with a command: `Fix: \`<command>\``. */
 const isFixLine = (line: string): boolean => FIX_LINE.test(line) && commandsIn(line).length > 0;
@@ -123,7 +131,9 @@ export function machinePathsIn(text: string): string[] {
       const before = text.slice(0, found.index);
       const path = found[0];
       if (API_CALL.test(before)) return !path.startsWith('/api/');
-      if (PLACEHOLDER.test(before) || SHEBANG.test(before) || CODEOWNERS_PATTERN.test(text.slice((found.index ?? 0) + path.length))) return false;
+      if (PLACEHOLDER.test(before) || GLOB.test(before)) return false;
+      if (SHEBANG.test(before) && INTERPRETER.test(path)) return false;
+      if (CODEOWNERS_BEFORE.test(before) && CODEOWNERS_AFTER.test(text.slice((found.index ?? 0) + path.length))) return false;
       if (REDIRECT.test(before)) return !/^\/dev\/null(?![\w/-])/.test(path);
       return true;
     })

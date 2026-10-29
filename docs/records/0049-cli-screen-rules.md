@@ -59,10 +59,10 @@ a release.
    | `spaced-items` | a blank line between items when one wraps |
    | `fix-line` | a problem's command is on its own last line, `Fix: <command>` |
    | `same-fix-once` | one Fix line shows once per screen |
-   | `no-internal-path` | no absolute path of this machine, whatever its root; links, `~`, relative paths, globs, `GET /api/...`, `2>/dev/null` and a shebang are fine |
+   | `no-internal-path` | no absolute path of this machine, whatever its root; links, `~`, relative paths, globs (`crates/*/x`), `GET /api/...`, `>/dev/null`, a shebang (`#!/bin/`, `#!/usr/bin/`) and a CODEOWNERS finding's pattern (`CODEOWNERS:3 /docs/ matches no file`) are fine |
 
    The table is the source: a rule changes in its row, and this record repeats no number of
-   it. (A command in the rules is backticked text that starts with a known command word and another word, or with `./`: not a file name or a word.)
+   it. (A command in the rules is backticked text that starts with a known command word and another word, or with `./`, or any backticked text on a `Fix:` line: not a file name or a word.)
 
 5. **The limits are calibrated on the owner's verdicts.** The captured screens are in
    `test/repo/docs/captured-screens.ts`. The test fails when a limit passes a screen he judged
