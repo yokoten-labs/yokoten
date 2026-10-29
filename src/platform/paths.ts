@@ -259,7 +259,8 @@ const WINDOWS_ROOT = String.raw`(?:${DRIVE_LETTER}:|(?:\\\\[?.]\\UNC\\|[\\/]{2,}
 const AFTER_ESCAPE = String.raw`(?<=(?<!\\)\\[ntr])`;
 // A Windows name holds spaces and most punctuation; it ends at a separator, a quote, a line
 // end, or a character Windows does not allow in a name (`< > : | ? *`).
-const WINDOWS_NAME = String.raw`[^\\/"\n\r\t<>:|?*\x00]+`;
+// A line or paragraph separator (U+2028, U+2029) ends it too.
+const WINDOWS_NAME = String.raw`[^\\/"\n\r\t\u2028\u2029<>:|?*\x00]+`;
 // A POSIX account name holds no space: the name ends there, or at a separator or quote.
 const POSIX_NAME = String.raw`[^\\/"\s<>|\x00]+`;
 // Windows folds case, so the drive forms do; `/home` and `/Users` match as written.
@@ -284,21 +285,79 @@ function trimName(written: string): string {
   }
 }
 
+// Where prose starts after a Windows name that no separator ends: `, ; ' (` and a space, or a
+// shell joiner (`&&`, `||`, `|`).
+const PROSE_START = /[,;'(](?=\s)|\s+(?:&&|\|)/u;
+// Words that start prose after a name, not a part of it (`C:\Users\alice for details`).
+const PROSE_WORDS = new Set(['a', 'an', 'and', 'or', 'but', 'for', 'to', 'in', 'on', 'at', 'of', 'by', 'from', 'with', 'is', 'was', 'are', 'has', 'had', 'the', 'then', 'see', 'as', 'if', 'when', 'where', 'which', 'that', 'this', 'it', 'not', 'no', 'did', 'does', 'do', 'fails', 'failed', 'works', 'holds', 'gives', 'shows']);
+// A Windows name has at most this many words when nothing after it says where it ends.
+const MOST_NAME_WORDS = 3;
+
+/**
+ * The part of `written` that is a Windows user name, when `next` (the character after it) is
+ * no separator: prose may follow. It ends at the first prose start, before a drive letter
+ * that the next path begins with (`, C:\x`), before a prose word, and after three words.
+ * More is hidden than can be told, never less.
+ */
+function windowsNameIn(written: string, next: string): string {
+  let name = written;
+  const prose = PROSE_START.exec(name);
+  if (prose) name = name.slice(0, prose.index);
+  // `alice, C` before `:\Users\bob`: the letter is the next path's drive.
+  if (next === ':' && name === written) name = name.replace(/(?:^|[^\p{L}\p{N}_])[A-Za-z]$/u, '');
+  const words = name.split(/(?<=\S)(?=\s)/u);
+  let kept = 0;
+  for (let index = 0; index < words.length; index++) {
+    if (index >= MOST_NAME_WORDS || (index > 0 && PROSE_WORDS.has(words[index].trim().toLowerCase()))) break;
+    kept += words[index].length;
+  }
+  return name.slice(0, kept);
+}
+
+// Up to three more words a macOS folder name made by hand may hold, when a separator ends them.
+const SPACED_FOLDER_REST = /^(?: [^\s\\/"<>|\x00]+){1,3}(?=\\*\/|\\)/u;
+
+type FolderHit = { folder: string; slash: string; written: string; index: number; next: string };
+
 /**
  * `text` with each user name in a users-folder path given to `replace`, with the form it was
- * written in; `replace` returns what to write in its place, or null to keep it. Trailing
- * prose punctuation stays out of a name, and a name of only dots (`...`) or one already
- * hidden or a variable (`~`, `%USERNAME%`, `$USER`) is kept.
+ * written in and the text after the name; `replace` returns what to write in its place, or
+ * null to keep it. Trailing prose punctuation stays out of a name, and a name of only dots
+ * (`...`) or one already hidden or a variable (`~`, `%USERNAME%`, `$USER`) is kept. The scan
+ * goes on right after each name, so a second path in the prose after it is read too.
  */
-export function replaceUsersFolderNames(text: string, replace: (name: string, form: UsersFolderForm) => string | null): string {
+export function replaceUsersFolderNames(text: string, replace: (name: string, form: UsersFolderForm, after: string) => string | null): string {
   if (!/home|users/i.test(text)) return text;
-  const each = (formOf: (folder: string) => UsersFolderForm) => (hit: string, folder: string, slash: string, written: string) => {
-    const name = trimName(written);
-    if (/^[.~%$]|^\.+$/.test(name) || name === '') return hit;
-    const shown = replace(name, formOf(folder));
-    return shown === null ? hit : `${folder}${slash}${shown}${written.slice(name.length)}`;
+  const pass = (input: string, pattern: RegExp, nameOf: (hit: FolderHit) => string, formOf: (folder: string) => UsersFolderForm) => {
+    let out = '';
+    let last = 0;
+    pattern.lastIndex = 0;
+    for (let found = pattern.exec(input); found !== null; found = pattern.exec(input)) {
+      const [whole, folder, slash, written] = found;
+      const start = found.index + folder.length + slash.length;
+      const name = nameOf({ folder, slash, written, index: found.index, next: input[found.index + whole.length] ?? '' });
+      const end = start + name.length;
+      const shown = name === '' || /^[.~%$]|^\.+$/.test(name) ? null : replace(name, formOf(folder), input.slice(end));
+      if (shown !== null) {
+        out += input.slice(last, start) + shown;
+        last = end;
+      }
+      // Go on after the name, never inside the folder: an empty name moves past the separator.
+      pattern.lastIndex = Math.max(end, start, found.index + 1);
+    }
+    return out + input.slice(last);
   };
-  return text
-    .replace(WINDOWS_USERS_IN_TEXT, each(() => 'windows'))
-    .replace(POSIX_USERS_IN_TEXT, each((folder) => (/wsl/i.test(folder) ? 'wsl' : folder.endsWith('home') ? 'home' : 'users')));
+  const windowsName = ({ written, next }: FolderHit) => {
+    const isFolder = next !== '' && /[\\/]/.test(next) && !/\s$/u.test(written);
+    return trimName(isFolder ? written : windowsNameIn(written, next));
+  };
+  const posixName = (input: string) => ({ folder, written, index, slash }: FolderHit) => {
+    const name = trimName(written);
+    // Under /Users only, a folder made by hand may hold spaces when a separator ends the run (#1237).
+    if (name !== written || folder.endsWith('home')) return name;
+    const rest = SPACED_FOLDER_REST.exec(input.slice(index + folder.length + slash.length + written.length));
+    return rest ? written + rest[0] : name;
+  };
+  const windows = pass(text, WINDOWS_USERS_IN_TEXT, windowsName, () => 'windows');
+  return pass(windows, POSIX_USERS_IN_TEXT, posixName(windows), (folder) => (/wsl/i.test(folder) ? 'wsl' : folder.endsWith('home') ? 'home' : 'users'));
 }

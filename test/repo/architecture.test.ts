@@ -1754,35 +1754,39 @@ test('platform: no new process.platform read outside the list, and the list only
 // moves onto the reader and expires; a `kept:` one reads no path (a name or text check).
 const PATH_REGEX_EXPIRY = '2026-11-30';
 const PATH_REGEX_WAIVERS: [path: string, count: number, reason: string, expires: string | null][] = [
-  ['agents/copilot.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
-  ['agents/desk/fence/srt.ts', 4, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
-  ['commands/hook.ts', 1, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
-  ['commands/tidy/put-away.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['agents/copilot.ts', 3, 'follow-up: Windows long paths and trailing separators in src/platform (#1242); two are a // comment test', PATH_REGEX_EXPIRY],
+  ['agents/runtimes/codex.ts', 1, 'kept: startsWith(\'//\') skips the comment lines before a JSON file, not a path', null],
+  ['rules/text/message.ts', 2, 'kept: the user-folder rule text names C:\\Users\\<name>; words, not a path read', null],
+  ['run/check.ts', 1, 'kept: startsWith(\'//\') reads a comment line of source, not a path', null],
+  ['run/hook.ts', 1, 'kept: C:\\Windows is the fallback for SystemRoot, a value, not a path read', null],
+  ['agents/desk/fence/srt.ts', 4, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['commands/hook.ts', 1, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
+  ['commands/tidy/put-away.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
   ['host/hosts.ts', 2, 'kept: splits a git remote address (user@host:path), not a file path', null],
   ['rules/config.ts', 1, 'kept: refuses a block entry that holds any separator, a name check', null],
   ['rules/guards/bash/read/words.ts', 1, 'kept: isGit reads the program name after the last separator', null],
-  ['rules/guards/commands/lose-work.ts', 5, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
-  ['rules/guards/commands/no-wipe.ts', 14, 'follow-up: no-wipe rm targets onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/lose-work.ts', 5, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/commands/no-wipe.ts', 14, 'follow-up: no-wipe rm targets onto readPath (#1242)', PATH_REGEX_EXPIRY],
   ['rules/guards/commands/token.ts', 2, 'kept: the credential file name at the end of any path, a name check', null],
-  ['rules/guards/hooks/settings.ts', 1, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
+  ['rules/guards/hooks/settings.ts', 1, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
   ['rules/guards/worker/box.ts', 2, 'kept: PLAIN_PATH is the characters a worker cd may use (readPath places it), and the ~N directory-stack word', null],
-  ['rules/guards/worker/config-command.ts', 17, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
-  ['rules/guards/worker/config.ts', 10, 'follow-up: worker config-folder reads onto readPath', PATH_REGEX_EXPIRY],
-  ['rules/guards/worker/mark.ts', 5, 'follow-up: a path parts helper for the part scans', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/config-command.ts', 17, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/config.ts', 10, 'follow-up: worker config-folder reads onto readPath (#1242)', PATH_REGEX_EXPIRY],
+  ['rules/guards/worker/mark.ts', 5, 'follow-up: a path parts helper for the part scans (#1242)', PATH_REGEX_EXPIRY],
   ['rules/pr.ts', 1, 'kept: the program name after the last separator', null],
-  ['rules/privacy/home.ts', 3, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['rules/privacy/home.ts', 3, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
   ['rules/privacy/secrets.ts', 3, 'kept: PATH_VALUE, a value that starts like a path is no secret; a text filter', null],
-  ['rules/privacy.ts', 13, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['rules/privacy.ts', 13, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
   ['run/notes/translations.ts', 1, 'kept: a link that is a URL or a full path stays as written; a text filter', null],
-  ['run/protocol.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
+  ['run/protocol.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
   ['setup/advice/adopt.ts', 3, 'kept: a prompt with any home or drive path in it is refused; a text filter that reads no path', null],
-  ['setup/doctor/machine.ts', 1, 'follow-up: Windows long paths and trailing separators in src/platform', PATH_REGEX_EXPIRY],
-  ['setup/doctor/self-test.ts', 1, 'follow-up: privacy home forms onto src/platform/paths.ts', PATH_REGEX_EXPIRY],
+  ['setup/doctor/machine.ts', 2, 'follow-up: Windows long paths and trailing separators in src/platform (#1242)', PATH_REGEX_EXPIRY],
+  ['setup/doctor/self-test.ts', 1, 'follow-up: privacy home forms onto src/platform/paths.ts (#1242)', PATH_REGEX_EXPIRY],
   ['setup/install.ts', 3, 'kept: finds a yokoten launcher in a hook command by its file name', null],
 ];
 
 // Path-shaped pieces of a regex, as they are written in TypeScript source.
-const PATH_REGEX_SIGN = /\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]:|\\w:|\\\/\(?(?:home|Users|mnt)|\\\/\(?\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]|cygdrive|\^\\\\\\\\|startsWith\('\\\\\\\\|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/g;
+const PATH_REGEX_SIGN = /\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]:|\\w:|\\\/\(?(?:home|Users|mnt|tmp)|\\\/\(?\[(?:A-Za-z|a-zA-Z|a-z|A-Z)\]|\b[A-Za-z]:\\\\|startsWith\('\/\/'|\\:|cygdrive|\^\\\\\\\\|startsWith\('\\\\\\\\|\[[^\]\s]*(?:\/[^\]\s]*\\\\|\\\\[^\]\s]*\/)[^\]\s]*\]/g;
 
 /** How many path-shaped regex pieces the lines of code in `text` hold, not counting comments. */
 const pathRegexCount = (text: string): number => text.split('\n').reduce((count, line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? count : count + (line.match(PATH_REGEX_SIGN)?.length ?? 0)), 0);
@@ -1801,9 +1805,12 @@ test('paths: the scan counts each path piece, two on a line too, and not a comme
     "const unc = /^\\\\\\\\[^\\\\]+/, starts = path.startsWith('\\\\\\\\');",
     'const either = /^\\/(home|Users)\\//;',
     "const plain = /^[a-z]+$/, escaped = text.replace(/\\\\/g, '\\\\\\\\');",
+    "const literal = /^C:\\\\/, slashes = path.startsWith('//');",
+    'const temp = /^\\/tmp\\//, colon = /^x\\:/;',
   ].join('\n');
-  // drive: 2 pieces; home 1; split 1; upper and word 2; bash and cygdrive 2; unc and startsWith 2; either 1.
-  assert.equal(pathRegexCount(text), 11);
+  // drive: 2 pieces; home 1; split 1; upper and word 2; bash and cygdrive 2; unc and startsWith 2; either 1;
+  // a literal drive and `//` 2; /tmp and an escaped colon 2.
+  assert.equal(pathRegexCount(text), 15);
 });
 
 test('paths: no new path regex in src/ outside src/platform/ and the waivers; each waiver has a reason and a live expiry (#1237)', () => {
@@ -1817,6 +1824,7 @@ test('paths: no new path regex in src/ outside src/platform/ and the waivers; ea
     if (reason.startsWith('kept: ')) assert.equal(expires, null, `${path}: a kept waiver reads no path, so it has no expiry`);
     else {
       assert.match(reason, /^follow-up: \S.{10,}/, `${path}: a waiver says "kept:" or names its "follow-up:" area`);
+      assert.match(reason, /#\d+/, `${path}: a follow-up waiver names its open issue (#N)`);
       assert.match(expires ?? '', /^\d{4}-\d{2}-\d{2}$/, `${path}: a follow-up waiver has an expiry`);
       assert.ok(Date.now() <= Date.parse(`${expires}T23:59:59Z`), `${path}: its waiver expired on ${expires}; move it onto readPath, or renew it with a reason`);
     }

@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import type { Config, Env } from './config.ts';
-import { climbsPastDrive, fromGitBash, replaceUsersFolderNames, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
+import { climbsPastDrive, fromGitBash, replaceUsersFolderNames, usersFolderUser, type PathPlace, type UsersFolderForm } from '../platform/paths.ts';
 import { CONTACT_EMAIL_NOTE, type Finding, finding, isFailingFinding, noteWork, type RuleId } from './text/message.ts';
 import { findEnvironmentValues, findLineIgnores, findSecretHits, type IgnoreDirective, makeSafeIgnoreReason, makeSecretHider, parseIgnoreFile, SECRET } from './privacy/secrets.ts';
 
@@ -1056,7 +1056,7 @@ export function scanText(
     }
     // A home folder path names its account, whatever $HOME is (#1237). Text that leaves the
     // machine only: the repo's tests and docs hold made-up homes, and the marks name the real ones.
-    const folderGrade = allowsLocalNetwork ? null : usersFolderGrade(line);
+    const folderGrade = allowsLocalNetwork ? null : usersFolderGrade(line, env);
     if (folderGrade !== null) {
       problems.push(finding('user-folder', 'a home folder path with a user name', 'write the home as ~, or the name as <user>', { ...where, grade: folderGrade, ...ignoreFields('user-folder', [], true) }));
     }
@@ -1137,11 +1137,11 @@ export function hideHome(text: string, env: Env, options: { platform?: string; s
 
 // Words a web route or an import puts under `/home` (`GET /home/settings`, `"/home/utils"`):
 // pages and code folders, not accounts. A name with a web file's ending, or only digits (an id), is one too.
-const HOME_ROUTE_WORDS = new Set(['settings', 'utils', 'index', 'components', 'lib', 'src', 'api', 'assets', 'static', 'page', 'pages', 'views', 'view', 'dashboard', 'profile', 'login', 'logout', 'about', 'help', 'config', 'home', 'main', 'feed', 'search']);
+const HOME_ROUTE_WORDS = new Set(['settings', 'utils', 'index', 'components', 'lib', 'src', 'api', 'assets', 'static', 'page', 'pages', 'views', 'view', 'dashboard', 'login', 'logout', 'about', 'home']);
 const isHomeRoute = (name: string): boolean => HOME_ROUTE_WORDS.has(name.toLowerCase()) || /\.(?:html?|js|mjs|ts|jsx|tsx|css|json|php|md|svg|png)$/i.test(name) || /^\d+$/.test(name);
 
 /** Whether a name under a users folder may name a person: not a shared account, and under `/home` no route word. */
-const isPersonUnder = (name: string, form: UsersFolderForm): boolean => isPersonFolder(name) && !((form === 'home' || form === 'users') && isHomeRoute(name));
+const isPersonUnder = (name: string, form: UsersFolderForm): boolean => isPersonFolder(name) && !(form === 'home' && isHomeRoute(name));
 
 /**
  * The user name in every users-folder path left in `text` (`/home/<n>`, `/Users/<n>`,
@@ -1158,19 +1158,24 @@ export function hideUsersFolders(text: string): string {
 
 /**
  * How sure the scan is that `line` names a person by a users-folder path (#1237), or null.
- * Sure for a drive form, a WSL share or `/Users/<n>`; a lower-case `/home/<word>` with no
- * drive may be a route a post shows, so it is a note there, never a refusal.
+ * Sure for a drive form, a WSL share, `/Users/<n>`, the user of this HOME or USERPROFILE, and
+ * a path into a dot-folder (`/home/<n>/.ssh`). Any other lower-case `/home/<word>` may be a
+ * route a post shows, so it is a note there, not a refusal.
  */
-function usersFolderGrade(line: string): 'sure' | 'unknown' | null {
+function usersFolderGrade(line: string, env: Env): 'sure' | 'unknown' | null {
+  const own = new Set([usersFolderUser(env.HOME), usersFolderUser(env.USERPROFILE)].filter((name): name is string => !!name).map((name) => name.toLowerCase()));
   let grade: 'sure' | 'unknown' | null = null;
-  replaceUsersFolderNames(line, (name, form) => {
+  replaceUsersFolderNames(line, (name, form, after) => {
     if (!isPersonUnder(name, form) || USERS_FOLDER_PLACEHOLDERS.has(name.toLowerCase())) return null;
-    if (form === 'home' && /^[a-z0-9._-]+$/.test(name)) grade ??= 'unknown';
+    const isOwn = own.has(name.toLowerCase());
+    const intoDotFolder = /^(?:\\*\/|\\+)\./.test(after);
+    if (form === 'home' && /^[a-z0-9._-]+$/.test(name) && !isOwn && !intoDotFolder) grade ??= 'unknown';
     else grade = 'sure';
     return null;
   });
   return grade;
 }
+
 
 // Names docs and examples put in a users-folder path, which name nobody.
 const USERS_FOLDER_PLACEHOLDERS = new Set(['someone', 'name', 'username', 'yourname', 'your-name', 'you', 'example', 'sample', 'fake', 'other']);
