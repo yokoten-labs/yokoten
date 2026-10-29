@@ -46,5 +46,15 @@ Not checked: what you did not check
 - No praise, no questions, and no summary of what the diff does.
 - With no findings: line 1, Evidence if you ran anything, and the last line.
 
+## Rounds and repeats
+
+- Tag each finding **Important** (high or medium), **Nit** (low) or **Pre-existing**.
+  Line 1 also states the count ("2 Important, 1 Nit"), or "Nothing to fix".
+- A review ends in three rounds. From the second, read only the diff since the last
+  reviewed commit. Never repeat a finding an earlier review made; when a bug class
+  returns, name the class so every instance is fixed.
+- The fourth review lists no new findings. It asks the author to reconsider the approach.
+  A high finding still blocks.
+
 Use Bash only to read: `git diff`, `git log`, `git show`, running a test. Never
 commit, push, or edit a file.
