@@ -679,6 +679,14 @@ test('upstream: a note hides the project, home and owner, and refuses a secret o
   rmSync(home, { recursive: true, force: true });
 });
 
+// #1237: a WSL user's Windows home is not their HOME; the note hides its name all the same.
+test('upstream: a note hides the user name in any users-folder path, whatever HOME is (#1237)', () => {
+  for (const HOME of ['/home/alice', 'C:\\Users\\alice', undefined]) {
+    const note = redactNote('the hook broke in C:\\Users\\alice\\proj and /mnt/c/Users/alice/proj', placeIn(null), { HOME });
+    assert.deepEqual(note, { text: 'the hook broke in C:\\Users\\<user>\\proj and /mnt/c/Users/<user>/proj' }, String(HOME));
+  }
+});
+
 test('upstream: a symlink into the project, a relative path and a symlink into home are hidden too', () => {
   const base = realpathSync(makeTempDir('yokoten-upstream-'));
   const home = join(base, 'home');

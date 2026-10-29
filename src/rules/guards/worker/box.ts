@@ -69,7 +69,7 @@ const PLAIN_PATH = /^(~(?=\/|$)|[A-Za-z]:(?=\/))?[A-Za-z0-9._/-]*$/;
  * too: bash reads a `~` inside a word as a letter, and the reader spells it out before the box
  * judges where it leads, so a worker's real worktree path passes whichever name it holds.
  */
-const isPlainPath = (target: string): boolean => PLAIN_PATH.test(target.split('/').map((part, index) => (index > 0 && isShortName(part) && /^[A-Za-z0-9._-]+$/.test(part.replace('~', '')) ? 'x' : part)).join('/'));
+export const isPlainPath = (target: string): boolean => PLAIN_PATH.test(target.split('/').map((part) => (isShortName(part) && /^[A-Za-z0-9._-]+$/.test(part.replace('~', '')) ? 'x' : part)).join('/'));
 // git options a worker may give before the subcommand: none of them moves a folder.
 export const GIT_PLAIN_OPTIONS = new Set(['--no-pager', '-P', '--version', '--help']);
 const GIT_CONFIG_READS = new Set(['--get', '--get-all', '--get-regexp', '--list', '-l']);

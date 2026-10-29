@@ -180,7 +180,8 @@ export type PathReading = PathPlace & { home?: string | null; folder?: string | 
 export function readPath(word: string, place: PathReading): string | null {
   const { platform } = place;
   const form = pathForm(word);
-  if (form === null || (word.startsWith('~') && form !== 'home')) return null;
+  // A device path is Windows' way past its own reading; on any system it is refused, never guessed.
+  if (form === null || form === 'device' || (word.startsWith('~') && form !== 'home')) return null;
   if (platform !== 'win32') {
     // POSIX reads `\` as a letter and a drive as a folder name: only `/` and `~/` start a full path.
     if (form === 'home') return place.home ? posix.join(place.home, word.slice(2)) : null;
@@ -189,8 +190,6 @@ export function readPath(word: string, place: PathReading): string | null {
   }
   let full: string | null;
   switch (form) {
-    case 'device':
-      return null;
     case 'home':
       full = place.home ? win32.join(place.home, word.slice(2)) : null;
       break;
@@ -203,7 +202,8 @@ export function readPath(word: string, place: PathReading): string | null {
     case 'posix':
       // A `/` path Git Bash keeps as its own (`/dev/null`) is no file on the disk.
       full = fromGitBash(word, platform, place.tmp);
-      if (full?.startsWith('/')) return null;
+      if (full === null || full.startsWith('/')) return null;
+      full = win32.normalize(full);
       break;
     case 'relative':
       // `C:x` is from the drive's own current folder, and `\x` from the current drive's root: neither is `folder`.

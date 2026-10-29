@@ -4,6 +4,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand, realPath } from '../../../../src/rules/guards/index.ts';
+import { isPlainPath } from '../../../../src/rules/guards/worker/box.ts';
 import { makeTempDir, allowed } from '../../../../test/repo/helpers.ts';
 
 test('guard: a worker stays in its box: plain cd inside the worktree, short settings list (#591)', () => {
@@ -421,6 +422,25 @@ test('guard: a worker cd may name a path that starts with a drive, and stays in 
   assert.equal(check(`cd ${drivePath} && ls`), null, 'a drive and forward slashes');
   assert.equal(check(`cd ${drivePath}/../../.. && ls`)?.id, 'worker-mark', 'out of the box');
   for (const command of ['cd C: && ls', 'cd C:wt && ls', 'cd CD:/wt && ls', 'cd /wt/C:/x && ls']) assert.equal(check(command)?.id, 'worker-mark', command);
+});
+
+// #1237 (comment 4): on the GitHub Windows runner the temp folder holds a short name
+// (`RUNNER~1`), so a worker's real worktree path did too, and its cd into it was refused.
+// A short-name part is plain; the reader spells it out before the box judges where it leads.
+test('guard: a worker cd may name its worktree by a path with a short name, and stays in its box (#1237)', () => {
+  for (const path of ['C:/Users/RUNNER~1/wt', 'RUNNER~1', 'a/GITHUB~1/b', 'LONGNA~1.TXT', '~/x', 'C:/wt']) assert.equal(isPlainPath(path), true, path);
+  for (const path of ['a/~1', '~1', 'a/b~c', 'TOOLONGNAME~1', 'a/RUN$R~1', 'C:wt', 'a/~/b']) assert.equal(isPlainPath(path), false, path);
+  // On this disk, as the temp folder spells it: on the Windows runner that is the short name.
+  const base = makeTempDir('yokoten-box-short-');
+  const worker = { YOKOTEN_ROLE: 'worker', HOME: join(base, 'home') };
+  const box = join(base, 'box');
+  mkdirSync(join(box, 'wt'), { recursive: true });
+  writeFileSync(join(box, '.git'), 'gitdir: ' + join(base, 'store') + '\n');
+  mkdirSync(join(base, 'store'));
+  const written = join(box, 'wt').replaceAll('\\', '/');
+  const check = (command: string) => checkCommand(command, { cwd: box, env: worker });
+  assert.equal(check(`cd ${written} && ls`), null, written.replace(/^.*\/box\//, '<box>/'));
+  assert.equal(check(`cd ${written}/../../.. && ls`)?.id, 'worker-mark', 'out of the box');
 });
 
 test('guard: a worker may set a name its own repo declares in worker.settings, and no other (#1135)', () => {

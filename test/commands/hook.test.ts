@@ -1364,6 +1364,17 @@ test('hook: protection 1 refuses the red-team calls that lose work (#828)', asyn
   assert.equal((await bash('git checkout -- src/cart/import.ts')).status, 0);
 });
 
+// #1237: the stop log masks the user name of a users-folder path that is not this HOME.
+test('hook: a stop line hides the user name in any users-folder path (#1237)', async () => {
+  const sandbox = makeSandbox();
+  const log = join(sandbox.home, '.config', 'yokoten', 'stops.jsonl');
+  const command = 'git push --tags /mnt/c/Users/alice/repo C:\\Users\\alice\\repo';
+  const result = await sandbox.call(['hook'], { input: JSON.stringify({ cwd: sandbox.repo, tool_input: { command } }) });
+  assert.equal(result.status, 2);
+  const [line] = readFileSync(log, 'utf8').trim().split('\n').map((text) => JSON.parse(text));
+  assert.equal(line.command, 'git push --tags /mnt/c/Users/<user>/repo C:\\Users\\<user>\\repo');
+});
+
 // #621: a stop writes one line to the stop log on this computer, with the command masked.
 test('hook: a stop writes a masked line to the stop log (#621)', async () => {
   const sandbox = makeSandbox();

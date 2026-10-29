@@ -668,6 +668,8 @@ test('redact: in-process, the given stdin comes out hidden, a long one streamed 
   assert.deepEqual(await run(`by ${OWNER} at ${HOST}\nlast`), { code: 0, stdout: 'by <owner> at <host>\nlast', stderr: '', output: 'by <owner> at <host>\nlast' });
   const long = `${'line one\n'.repeat(50_000)}${EMAIL}\n`;
   assert.equal((await run(long)).stdout, `${'line one\n'.repeat(50_000)}<email>\n`);
+  // #1237: a users-folder path that is not this HOME still loses its name.
+  assert.equal((await run('C:\\Users\\alice\\x /mnt/c/Users/alice/y')).stdout, 'C:\\Users\\<user>\\x /mnt/c/Users/<user>/y');
   assert.deepEqual(await run(''), { code: 0, stdout: '', stderr: '', output: '' });
 });
 
