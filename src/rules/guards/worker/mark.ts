@@ -1,5 +1,5 @@
 import { accessSync, closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, statSync, type Stats } from 'node:fs';
-import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { isPathInside, isSamePath } from '../../../platform/paths.ts';
 import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
@@ -228,13 +228,28 @@ export const markFinding = (what: string) => finding('worker-mark', what, MARK_F
 // such a checkout, by folder. A folder in no checkout has nothing to commit to.
 
 /**
+ * A worktree as a message shows it: relative to `from`, the folder the call runs in, so no
+ * machine path is printed; `<worktree>` when there is no such folder or the path is on another
+ * drive.
+ */
+function shownWorktree(top: string, from: string | null): string {
+  if (from === null) return '<worktree>';
+  const path = relative(realPath(from), top);
+  if (path === '') return '.';
+  return isAbsolute(path) ? '<worktree>' : path.split(sep).join('/');
+}
+
+/**
  * Why a worker by agent type may not work in `folder`, or null: null when it is in no
  * checkout, or its checkout carries the mark, is on the worker list, or can't be read
- * (`workerMarkAt` fails closed to a worker, and the commit check does the same).
+ * (`workerMarkAt` fails closed to a worker, and the commit check does the same). The folder
+ * is read by its real path, so a link is judged, and named, where it points. `from` is the
+ * folder the call runs in, for the message.
  */
-export function checkUnmarkedFolder(folder: string, env: Env = {}): Finding | null {
-  const link = gitLinkAbove(folder);
-  if (link === null || link.kind === 'broken' || workerMarkAt(folder, env) !== null) return null;
+export function checkUnmarkedFolder(folder: string, env: Env = {}, from: string | null = null): Finding | null {
+  const real = realPath(folder);
+  const link = gitLinkAbove(real);
+  if (link === null || link.kind === 'broken' || workerMarkAt(real, env) !== null) return null;
   // A main checkout is the lead's own: marking it would make the lead a worker.
   if (link.kind === 'folder') {
     return finding(
@@ -243,10 +258,11 @@ export function checkUnmarkedFolder(folder: string, env: Env = {}): Finding | nu
       'a worker does not work in the lead\'s checkout; stop and ask the lead to give you your own worktree (`git worktree add <folder>`, then `yokoten worker mark <folder>`)',
     );
   }
+  const shown = shownWorktree(link.top, from);
   return finding(
     'unmarked-worktree',
-    `this works in ${link.top}, which has no worker mark, so the commit check can't tell that a worker made a commit there`,
-    `stop and ask the lead to run \`yokoten worker mark ${link.top}\`, then run this again`,
+    `this works in the worktree at ${shown} (from this folder), which has no worker mark, so the commit check can't tell that a worker made a commit there`,
+    `stop and ask the lead to run \`yokoten worker mark <worktree>\` for the worktree at ${shown} (from this folder), then run this again`,
   );
 }
 
@@ -262,7 +278,7 @@ const OUTSIDE_FIX = 'cd into your marked worktree first (`cd <worktree> && <comm
  * so it is not judged: the worker's box rule keeps it in bounds, and the next command is
  * judged where it lands.
  */
-export function checkUnmarkedWork(words: string[], folder: string | null, env: Env = {}): Finding | null {
+export function checkUnmarkedWork(words: string[], folder: string | null, env: Env = {}, from: string | null = folder): Finding | null {
   const places = findProgramPlaces(words);
   if (places.every((place) => programName(place.word) === 'cd')) return null;
   const folders = [folder];
@@ -272,8 +288,8 @@ export function checkUnmarkedWork(words: string[], folder: string | null, env: E
   for (const each of new Set(folders)) {
     if (each === null) return finding('unmarked-worktree', "yokoten can't tell which folder this runs in, so it can't tell whether the commit check would see a worker there", OUTSIDE_FIX);
     if (workerMarkAt(each, env) !== null) continue;
-    if (gitLinkAbove(each) === null) return finding('unmarked-worktree', "this runs outside any git checkout, where a worker's work can reach a checkout the commit check does not see as a worker's", OUTSIDE_FIX);
-    const found = checkUnmarkedFolder(each, env);
+    if (gitLinkAbove(realPath(each)) === null) return finding('unmarked-worktree', "this runs outside any git checkout, where a worker's work can reach a checkout the commit check does not see as a worker's", OUTSIDE_FIX);
+    const found = checkUnmarkedFolder(each, env, from);
     if (found) return found;
   }
   return null;

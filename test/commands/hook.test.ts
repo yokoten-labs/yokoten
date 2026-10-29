@@ -151,6 +151,21 @@ test('hook: a worker writes no lead-only file in another repo or a CODEOWNERS an
   }
 });
 
+// #1225 review: a link in a folder outside any repo that points at a lead-only file is ruled
+// by the repo it points into. The file rules once looked only at the folder as written.
+test('hook: a worker edit through a link outside the repo to a lead-only file is refused (#1225)', async () => {
+  const sandbox = makeSandbox();
+  const away = makeTempDir('yokoten-away-');
+  sandbox.write('AGENTS.md', '# rules\n');
+  symlinkSync(join(sandbox.repo, 'AGENTS.md'), join(away, 'rules-link'));
+  const edit = (file_path: string, extra?: Record<string, string>) =>
+    sandbox.call(['hook', '--commands-only'], { cwd: away, input: JSON.stringify({ cwd: away, tool_name: 'Edit', tool_input: { file_path } }), extra });
+  const result = await edit(join(away, 'rules-link'), { YOKOTEN_ROLE: 'worker' });
+  assert.equal(result.status, 2, result.stderr);
+  assert.match(result.stderr, /lead-only/);
+  assert.equal((await edit(join(away, 'rules-link'))).status, 0, 'the lead may');
+});
+
 test('hook: the five safeguards hold in a repo with no yokoten.json (#816)', async () => {
   const sandbox = makeSandbox();
   assert.ok(!existsSync(join(sandbox.repo, 'yokoten.json')), 'no init, no yokoten.json');

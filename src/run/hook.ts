@@ -1841,7 +1841,8 @@ export function judge(
     for (const p of action.paths) {
       const reason = checkWorkerMarkEdit(resolve(folder, p), folder, env) ?? checkTeamEdit(resolve(folder, p));
       if (reason) return reason;
-      if (workerByType) unmarked ??= checkUnmarkedFolder(dirname(resolve(folder, p)), env);
+      // By real path: a link in no checkout that points into one is judged where it points.
+      if (workerByType) unmarked ??= checkUnmarkedFolder(dirname(real(resolve(folder, p))), env, folder);
     }
   }
   if (!ruled.length) return unmarked;

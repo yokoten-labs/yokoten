@@ -117,7 +117,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd, platform: placeNow.platform }) : null) ??
       // A worker by agent type, in a checkout where the commit check can't see a worker (#1225).
       // After the rules that name a more exact case, which refuse the command too.
-      (workerByType ? checkUnmarkedWork(words, postCwd, env) : null) ??
+      (workerByType ? checkUnmarkedWork(words, postCwd, env, from) : null) ??
       // Last, so a worker's own rule names the case first. The commit's content: a repo with no
       // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
       // history (#824). Only a commit pays for it.

@@ -303,8 +303,8 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   ];
   for (const command of routes) assert.equal(run(`cd ${tree} && ${command}`)?.id, 'unmarked-worktree', command);
   const found = run(`cd ${tree} && git commit -m x`);
-  assert.ok(found?.fix.includes(`yokoten worker mark ${tree}`), found?.fix);
-  assert.ok(found?.what.includes(tree), found?.what);
+  assert.ok(found?.fix.includes('for the worktree at wt-1225 (from this folder)'), found?.fix);
+  assert.ok(!JSON.stringify(found).includes(lead), 'no machine path in the message');
   // The same with no cd, from the worktree itself; with git -C; and an edit there.
   assert.equal(run('git commit -m x', { cwd: tree })?.id, 'unmarked-worktree', 'no cd, in its own cwd');
   assert.equal(run(`git -C ${tree} commit -m x`)?.id, 'unmarked-worktree', 'git -C');
@@ -320,6 +320,16 @@ test('hook: a worker by agent type may not work in a checkout with no worker mar
   assert.equal(run(`cd ${tree} && git commit -m x`, { env: { YOKOTEN_ROLE: 'worker' } }), null, 'YOKOTEN_ROLE=worker: the commit check sees it');
   assert.equal(run(`cd ${tree}`), null, 'a plain cd runs nothing');
   assert.equal(call({ paths: [join(lead, 'notes.md')] }), null, 'an edit in no checkout: only a command can commit it');
+  // A link in no checkout that points into the unmarked worktree is judged, and named, where it points.
+  writeFileSync(join(tree, 'notes.txt'), 'x');
+  symlinkSync(join(tree, 'notes.txt'), join(lead, 'readme-link'));
+  symlinkSync(tree, join(lead, 'tree-link'));
+  const linked = call({ paths: [join(lead, 'readme-link')] });
+  assert.equal(linked?.id, 'unmarked-worktree', 'a file link into the worktree');
+  assert.ok(linked?.fix.includes('the worktree at wt-1225 ') && !linked.fix.includes('readme-link'), linked?.fix);
+  const viaFolder = call({ paths: [join(lead, 'tree-link', 'src', 'a.ts')] });
+  assert.equal(viaFolder?.id, 'unmarked-worktree', 'a folder link into the worktree');
+  assert.ok(viaFolder?.fix.includes('the worktree at wt-1225 ') && !viaFolder.fix.includes('tree-link'), viaFolder?.fix);
   // From the lead's folder, in no checkout: a script could chdir into the worktree and commit,
   // so every command there is refused, and the fix names no folder of this machine.
   const outside = [
