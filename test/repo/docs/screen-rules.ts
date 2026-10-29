@@ -72,17 +72,43 @@ const FIX_LINE = /^\s*Fix: /;
 // An absolute path on this machine, any root (#1128): `/` and two or more parts (`/bin/sh`, `/dev/null`,
 // `/Library/x`), or one part of a known root folder (`/tmp`); a Windows drive with either slash
 // (`C:\`, `C:/`) or in Git Bash's form (`/c/Users/...`); a UNC path (`\\server\share`). Not a link, not ~,
-// and not the path of an API call (`GET /api/state`). A path stands alone: after a space, a quote, `(`,
-// `=` or a backtick, never glued to a word (`<project>/src/a.ts`, `2>/dev/null`, a link, `~/x`).
-const MACHINE_PATH = /(?<=^|[\s'"(=`])(?<!\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) )(?:\/[^\s`'"\/)]+(?:\/[^\s`'")]*)+|\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w\/-])|[A-Za-z]:[\\/][^\s`'")]*|\\{2,}[^\s\\`'")]+\\+[^\s`'")]*)/gm;
+// and not the path of an API call after its verb (`GET /api/state`). What may come before a path that is
+// NOT a machine path is listed, not what may come before one that is: a path glued to a word, `~`, `.`,
+// `/` or `-` is part of a link, a home path or a relative path; a path after a `<name>` placeholder
+// (`<project>/src/a.ts`) is relative; `2>/dev/null` is a redirect, and only that one path. Anything
+// A shebang (`#!/bin/sh`) and a glob (`crates/*/x`) are not machine paths either. Anything
+// else before it (`[`, `<`, `,`, `;`, `{`, `|`, `:`, `>`, a space) is a path of this machine.
+const PART = /[^\s`'")\]}<>,;|]/.source;
+const MACHINE_PATH = new RegExp(
+  [
+    `${/(?<![\w~./*-])\/(?!\/)/.source}${PART}+(?:\\/${PART}*)+`,
+    /(?<![\w~./*-])\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w/-])/.source,
+    `${/(?<![\w~./*-])[A-Za-z]:[\\/]/.source}${PART}*`,
+    `${/(?<![\w~./\\-])\\\\+[^\s\\`'")]+\\+/.source}${PART}*`,
+  ].join('|'),
+  'g',
+);
+const API_CALL = /\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) $/;
+const PLACEHOLDER = /<[\w-]+>$/;
+const REDIRECT = /\d*>$/;
+const SHEBANG = /#!$/;
+// A CODEOWNERS pattern is a path inside the repo, and the finding names it as it is written (`/docs/x` and `docs/x` differ there):
+// the path that "matches no file" is not a path of this machine.
+const CODEOWNERS_PATTERN = /^ matches no file/;
 // A command in backticks is not a file name (`AGENTS.md`, `src/a.ts`) or a flag (`--write`).
 const BACKTICKED = /`([^`]+)`/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
-const RUN_WORD = /\b[Rr]un (?:(?:yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget)\b|`)/;
+const COMMAND_WORDS = 'yokoten|gh|git|npm|npx|node|pnpm|yarn|export|cd|sudo|brew|winget|claude|codex|muse|gemini|grok|opencode|wsl|bash|sh|rm|mv|cp|mkdir|chmod|ln|echo|cat|curl';
+const RUN_WORD = new RegExp(`\\b[Rr]un (?:(?:${COMMAND_WORDS})\\b|${/`/.source})`);
+const COMMAND_START = new RegExp(`^(?:(?:${COMMAND_WORDS})\\s+\\S|\\./)`);
 
-/** The commands a line names in backticks: not a file name (no space, and a slash or an extension) and not a flag. */
+/**
+ * The commands a line names in backticks: text whose first word is a known command word and has
+ * something after it (`git commit`), or that starts with `./` (`./install.sh`). A file name
+ * (`CODEOWNERS`, `Makefile`, `AGENTS.md`), a word (`main`, `git`) and a flag (`--write`) are not.
+ */
 export const commandsIn = (line: string): string[] =>
-  [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => text !== '' && !text.startsWith('-') && !(!/\s/.test(text) && (/[\\/]/.test(text) || /\.[A-Za-z0-9]{1,6}$/.test(text))));
+  [...line.matchAll(BACKTICKED)].map((found) => (found[1] ?? '').trim()).filter((text) => COMMAND_START.test(text));
 
 /** Whether a line is a Fix line with a command: `Fix: \`<command>\``. */
 const isFixLine = (line: string): boolean => FIX_LINE.test(line) && commandsIn(line).length > 0;
@@ -91,7 +117,18 @@ const isFixLine = (line: string): boolean => FIX_LINE.test(line) && commandsIn(l
 const showsCommand = (line: string): boolean => commandsIn(line).length > 0 || RUN_WORD.test(line);
 
 /** The absolute paths on this machine that a text shows (the no-internal-path rule): not ~, not a link. */
-export const machinePathsIn = (text: string): string[] => text.match(MACHINE_PATH) ?? [];
+export function machinePathsIn(text: string): string[] {
+  return [...text.matchAll(MACHINE_PATH)]
+    .filter((found) => {
+      const before = text.slice(0, found.index);
+      const path = found[0];
+      if (API_CALL.test(before)) return !path.startsWith('/api/');
+      if (PLACEHOLDER.test(before) || SHEBANG.test(before) || CODEOWNERS_PATTERN.test(text.slice((found.index ?? 0) + path.length))) return false;
+      if (REDIRECT.test(before)) return !/^\/dev\/null(?![\w/-])/.test(path);
+      return true;
+    })
+    .map((found) => found[0]);
+}
 
 /** What a screen is for the limits: its text as a person reads it, and whether the command failed. */
 export interface ScreenText {

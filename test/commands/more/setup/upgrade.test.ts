@@ -76,7 +76,7 @@ test('upgrade: the two updates carry the HTTPS override, and nothing is removed 
     for (const call of calls) assert.deepEqual({ count: call.count, key: call.key, value: call.value }, HTTPS_GIT, `${call.args} carries the override`);
     assert.match(result.stdout, /^yokoten upgrade · the yokoten plugin is up to date \(beta channel\)$/m);
     assert.match(result.stdout, /^ {2}ok {10}the plugin yokoten-beta@yokoten: updated$/m);
-    assert.match(result.stdout, /^Next: restart Claude Code; a session already running keeps the old copy$/m);
+    assert.match(result.stdout, /^Next: restart Claude Code; a session already running keeps the old copy\.$/m);
   }
 });
 

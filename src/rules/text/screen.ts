@@ -99,7 +99,14 @@ export function field(label: string, text: string): string[] {
 /** The last line: the one command to type next. */
 export const nextLine = (command: string): string[] => wrap('Next: ', `\`${command}\``);
 
-/** The last line when the next step is a sentence, not one bare command: `Next: <sentence>.`, a full stop at the end. */
+/** A part of a finding as a sentence: a capital first, a full stop last. */
+export const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
+
+/**
+ * The last line when the next step is a sentence, not one bare command: `Next: <sentence>.`, a
+ * full stop at the end. It starts with a small letter, as `Next: fix it, then ...` does everywhere:
+ * the caller writes it so, and a name that has a capital (`Claude Code`) keeps it.
+ */
 export const nextSentence = (text: string): string[] => wrap('Next: ', /[.!?]$/.test(text.trim()) ? text.trim() : `${text.trim()}.`);
 
 /** Where the rest is: the flag that shows it all. */

@@ -249,7 +249,7 @@ test('check: a CODEOWNERS line whose file moved says it protects nothing (#667)'
   sandbox.git('add', '.');
   const result = await sandbox.call(['check']);
   assert.equal(result.status, 1, result.stderr);
-  assert.match(flat(result.stderr), /\.github\/CODEOWNERS:3 src\/host\/github\.ts matches no file: this rule protects nothing; point it at the new path/);
+  assert.match(flat(result.stderr), /\.github\/CODEOWNERS:3 \/src\/host\/github\.ts matches no file: this rule protects nothing; point it at the new path/);
   assert.match(flat(result.stderr), /Ask the lead or owner to change it in \.github\/CODEOWNERS/);
   // A project with no CODEOWNERS gets no CODEOWNERS finding.
   sandbox.git('rm', '-qf', '.github/CODEOWNERS');

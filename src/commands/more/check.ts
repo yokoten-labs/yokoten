@@ -35,7 +35,7 @@ import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, 
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { count, fail, failure, field, type Invocation, isTerminal, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, type RowMark, say, screen, show, showOnPullRequest, spaced, summaryLine, title, underRow, usage, wrap } from '../shared.ts';
-import { MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow } from '../../rules/text/screen.ts';
+import { asSentence, MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow } from '../../rules/text/screen.ts';
 
 /** How long `check --pr <number>` waits for gh. */
 const GH_TIMEOUT_MS = 15000;
@@ -113,8 +113,6 @@ export function checkJson(result: CheckResult): CheckJson {
 /** The words after `yokoten` that ran this check: `check`, or `check --pr`. */
 const checkCommand = (mode: CheckMode): string => `check${mode === 'tree' ? '' : ` --${mode}`}`;
 
-/** A part of a finding as a sentence: a capital first, a full stop last. */
-const asSentence = (text: string): string => `${text.charAt(0).toUpperCase()}${text.slice(1)}${/[.!?]$/.test(text) ? '' : '.'}`;
 
 /**
  * The notes of a check (#1027, #1115). By default they fold into one row with the command

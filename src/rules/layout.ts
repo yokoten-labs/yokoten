@@ -213,7 +213,7 @@ export function checkCodeOwners(files: string[], text: string, file: string = CO
     if (!pattern || reserved.has(pattern)) return;
     const matcher = compileCodeOwnersPattern(pattern);
     if (files.some((path) => matcher.test(path))) return;
-    problems.push(finding('stale-codeowners', `${pattern.replace(/^\//, '')} matches no file: this rule protects nothing; point it at the new path`, `ask the lead or owner to change it in ${file}`, {
+    problems.push(finding('stale-codeowners', `${pattern} matches no file: this rule protects nothing; point it at the new path`, `ask the lead or owner to change it in ${file}`, {
       file,
       line: index + 1,
       why: 'a moved or renamed file leaves its CODEOWNERS line behind, so the new path has no owner review',

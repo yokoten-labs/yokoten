@@ -48,12 +48,12 @@ function refuse(invocation: Invocation, refusal: BotRefusal): 1 {
 const sayNote = (invocation: Invocation, text: string): void => print(invocation, noteLine(text), invocation.stderr);
 
 /** The refusal of a program the bot does not run (#295). */
-export const programRefusal = (program: string): BotRefusal => ({ rule: 'program', what: 'the bot runs gh and git only', fix: `Run \`${program}\` without the bot.` });
+export const programRefusal = (program: string): BotRefusal => ({ rule: 'program', what: 'the bot runs gh and git only', fix: `run \`${program}\` without the bot.` });
 
 /** The refusal of a command that never ran, or that a signal ended (#282): only the file and the code or signal, never the token. */
 export function runRefusal(file: string, ran: { error?: Error; signal?: NodeJS.Signals | null }): BotRefusal | null {
-  if (ran.error) return { rule: 'run', what: `could not run ${file}: ${(ran.error as NodeJS.ErrnoException).code ?? ran.error.message.split('\n')[0]}`, fix: `Check that \`${file}\` is installed and on PATH, then run the command again.` };
-  if (ran.signal) return { rule: 'run', what: `${file} was ended by ${ran.signal}`, fix: 'Run the command again.' };
+  if (ran.error) return { rule: 'run', what: `could not run ${file}: ${(ran.error as NodeJS.ErrnoException).code ?? ran.error.message.split('\n')[0]}`, fix: `check that \`${file}\` is installed and on PATH, then run the command again.` };
+  if (ran.signal) return { rule: 'run', what: `${file} was ended by ${ran.signal}`, fix: 'run the command again.' };
   return null;
 }
 
@@ -118,14 +118,14 @@ async function bot(invocation: Invocation, written: string[]): Promise<number> {
   const config = botConfig(env);
   if (typeof config === 'string') {
     if (found()) return refusePost();
-    return refuse(invocation, { rule: 'setup', what: config, fix: 'Set it up, then run the command again.' });
+    return refuse(invocation, { rule: 'setup', what: config, fix: 'set it up, then run the command again.' });
   }
   if (!requireRoot(invocation, cwd)) return 1;
   const remote = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd, env, encoding: 'utf8' });
   const repo = repoOf(remote);
   if (!repo) {
     if (found()) return refusePost();
-    return refuse(invocation, { rule: 'remote', what: 'the origin remote is not a GitHub repo, so nothing was sent', fix: 'Point `origin` at the GitHub repo, or run the command without the bot.' });
+    return refuse(invocation, { rule: 'remote', what: 'the origin remote is not a GitHub repo, so nothing was sent', fix: 'point `origin` at the GitHub repo, or run the command without the bot.' });
   }
   let token: string;
   try {
@@ -263,14 +263,14 @@ export function postRefusalOf(problems: PostProblems): BotRefusal | null {
   const blocksOf = ({ part }: (typeof POST_PARTS)[number]): string[][] => [problemRows(problems[part]), part === 'labels' ? spaced(problems.choices.map((choice) => wrap('  ', choice.trim()))) : []];
   if (parts.length === 1) {
     const [only] = parts;
-    return { rule: 'post', what: `nothing was sent: ${total} in ${only.name}`, fix: `Fix ${only.fix}, then run the same command again.`, blocks: blocksOf(only) };
+    return { rule: 'post', what: `nothing was sent: ${total} in ${only.name}`, fix: `fix ${only.fix}, then run the same command again.`, blocks: blocksOf(only) };
   }
   const names = parts.map(({ name }) => name);
   const joined = `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
   return {
     rule: 'post',
     what: `nothing was sent: ${total} in ${joined}`,
-    fix: 'Fix them all, then run the same command again.',
+    fix: 'fix them all, then run the same command again.',
     blocks: parts.flatMap((part) => {
       const [rows, choices] = blocksOf(part);
       return [section(`In ${part.name} (${problems[part.part].length})`, rows), choices];
@@ -289,7 +289,7 @@ export function utcRefusal(commits: PushedCommit[], head: string | null): BotRef
   return {
     rule: 'push',
     what: `nothing was pushed: ${count(commits.length, 'commit')} ${commits.length === 1 ? 'has' : 'have'} a time zone other than UTC`,
-    fix: `Run \`${utcFix(commits, head)}\` on the branch, then push again.`,
+    fix: `run \`${utcFix(commits, head)}\` on the branch, then push again.`,
     blocks: [
       // The hash leads the text, not a label: a long hash would push the subject to a column of its own.
       spaced(commits.map(({ short, subject }) => row('to do', `${short} ${subject}`))),
@@ -328,7 +328,7 @@ function refuseNonUtcPush(invocation: Invocation, command: string[]): boolean {
     const head = git(['rev-parse', '--verify', '--quiet', 'HEAD'], [0, 1]).text.trim() || null;
     refuse(invocation, utcRefusal(commits, head));
   } catch {
-    refuse(invocation, { rule: 'push', what: 'nothing was pushed: git could not say which commits this push sends, so their time zones were not checked', fix: 'Check that each branch you push exists, then push again.' });
+    refuse(invocation, { rule: 'push', what: 'nothing was pushed: git could not say which commits this push sends, so their time zones were not checked', fix: 'check that each branch you push exists, then push again.' });
   }
   return true;
 }
@@ -350,7 +350,7 @@ function refuseLeak(invocation: Invocation, config: Config, args: string[], read
 const UNREADABLE = 'unreadable';
 
 function refuseUnreadable(invocation: Invocation): number {
-  return refuse(invocation, { rule: 'post', what: 'nothing was sent: the body file could not be read', fix: 'Write the file, then run the same command again.' });
+  return refuse(invocation, { rule: 'post', what: 'nothing was sent: the body file could not be read', fix: 'write the file, then run the same command again.' });
 }
 
 /** A pull request body a command is about to set, read and not yet checked. */
@@ -635,7 +635,7 @@ function chooseMilestone(invocation: Invocation, wanted: CommandMilestone, gh: G
     sayNote(invocation, `gh could not read the milestone of issue ${named}, so the pull request gets none; pass --milestone. \`check --pr\` asks for it`);
     return null;
   }
-  refuse(invocation, { rule: 'post', what: 'nothing was sent: 1 problem in the milestone', fix: 'Fix the command, then run it again.', blocks: [problemRows([noMilestoneFinding(wanted.issues)])] });
+  refuse(invocation, { rule: 'post', what: 'nothing was sent: 1 problem in the milestone', fix: 'fix the command, then run it again.', blocks: [problemRows([noMilestoneFinding(wanted.issues)])] });
   return false;
 }
 

@@ -15,7 +15,7 @@ import {
   spaced, summaryLine, table, title, underRow, wrap,
 } from '../../../src/rules/text/screen.ts';
 import { blankHitsIn, isScreenCode, limitOf, machinePathsIn, NOT_SCREEN, RATCHETS, type RatchetId, ratchetsOf, readSource, SCREEN_RULES, screenProblems, type SourceFile } from './screen-rules.ts';
-import { healedWaivers, invoke, readText, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
+import { healedWaivers, invoke, readText, type RenderWaiver, RENDER_WAIVED, RENDER_WAIVED_MOST, renderKey, renderProblems } from '../invoke.ts';
 import { COMMANDS, commandHelp } from '../../../src/run/cli.ts';
 import { styleText } from '../../../src/commands/shared.ts';
 import { servingScreen } from '../../../src/commands/kanban/server.ts';
@@ -261,6 +261,14 @@ test('screen limits: each limit catches its known-bad screen, and every rule has
   assert.match(caught('yokoten x: it broke. Fix the file `AGENTS.md`.', { isFailure: true }), /does not say what to do next/, 'a backticked file name is not a next step');
   assert.match(caught('yokoten x: it broke. See `src/a.ts` and `--write`.', { isFailure: true }), /does not say what to do next/, 'a path and a flag are not next steps');
   assert.equal(caught('yokoten x: it broke. Type `yokoten x --help`.', { isFailure: true }), '', 'a backticked command with a space is');
+  for (const word of ['CODEOWNERS', 'Makefile', 'main', 'git']) assert.match(caught(`yokoten x: it broke. See \`${word}\`.`, { isFailure: true }), /does not say what to do next/, `\`${word}\` is a name, not a command`);
+  assert.equal(caught('yokoten x: it broke. Run `./install.sh`.', { isFailure: true }), '', 'a script path with ./ is a command');
+  for (const text of ['[/home/alice/notes]', '<C:\\Users\\alice>', 'make 2>/home/alice/err.log', 'at,/home/alice/x', 'a;/home/alice', '{/home/alice}', 'a|/home/alice/x', 'x>C:\\Users\\a', 'cwd:C:\\Users\\alice\\work', 'HOME:/home/alice/x', 'GET /home/alice/x', 'the endpoint /api/state']) {
+    assert.match(caught(`yokoten x · ${text} is gone`), /1 paths on this machine show/, `${text} shows a path of this machine`);
+  }
+  for (const text of ['make 2>/dev/null', 'make >/dev/null', '#!/bin/sh', 'layout.exempt "crates/*/tests/data"', '<project>/src/a.ts', 'GET /api/state', 'POST /api/x/y', 'see file:///x and https://example.com/a/b', 'CODEOWNERS:3 /src/host/github.ts matches no file', 'src/a/b.ts']) {
+    assert.equal(caught(`yokoten x · ${text} is gone`), '', `${text} shows no path of this machine`);
+  }
   assert.equal(caught('  MISSING     the file is odd\n              Fix: `AGENTS.md`'), '', 'a file name is not a command, so it is not a fix that hides in the text');
   assert.equal(caught('  MISSING     AGENTS.md is odd, see `AGENTS.md`'), '', 'a backticked file name in a problem is not a command to run');
   assert.match(caught('  MISSING     AGENTS.md is odd, so run `yokoten update`'), /keep their fix inside the text/, 'a backticked command in a problem is');
@@ -722,7 +730,7 @@ interface Captured { key: string; command: string; platform: NodeJS.Platform; ex
  */
 /** How many screens WAIVED may hold. Lower it in the same change that takes a screen off. */
 const WAIVED_MOST = 0;
-const WAIVED: Record<string, string> = {
+const WAIVED: Record<string, RenderWaiver> = {
 };
 
 /** Renders every screen of the list, in order, on sandboxes of its own. */
@@ -778,7 +786,7 @@ test('screens: every screen the command list reaches keeps the limits of record 
   const captured: Captured[] = checked.map(({ run, status, text, problems }) => ({ key: run.key, command: ['yokoten', ...run.words].join(' '), platform: run.platform ?? process.platform, exit: status, text, problems, colour: styleText(text, run.words[0] !== 'hook') }));
   const dump = `${JSON.stringify(captured, null, 2)}\n`;
   try {
-    assert.deepEqual(captured.flatMap((each) => machinePathsIn(`${each.text}\n${each.colour}`)), [],'the capture shows no path on this machine: the owner shares it (no-internal-path, #1115)');
+    assert.deepEqual(captured.flatMap((each) => machinePathsIn(`${each.command}\n${each.text}\n${each.colour}`)), [], 'the capture shows no path on this machine: the owner shares it (no-internal-path, #1115)');
     const broken: string[] = [];
     const healed: string[] = [];
     for (const { run, text, problems } of checked) {
@@ -799,8 +807,8 @@ test('screens: every screen the command list reaches keeps the limits of record 
     const missing = families.flatMap((family) => PLATFORMS.filter((platform) => !runs.some((run) => run.lines && run.platform === platform && familyOf(run) === family)).map((platform) => `${family}: no screen for ${platform}`));
     assert.deepEqual(missing, [], 'each pure screen is rendered for linux, win32 and darwin (#1115)');
     assert.deepEqual([...broken, ...healed, ...stale], [], 'build the screen with src/rules/text/screen.ts (record 0049)');
-    assert.ok(Object.values(WAIVED).every((reason) => reason.includes('#1115')), 'each waiver names issue #1115');
-    assert.ok(Object.values(WAIVED).every((reason) => SCREEN_RULES.some((rule) => reason.includes(rule.id))), 'each waiver names the rule the screen breaks (#1128)');
+    assert.ok(Object.values(WAIVED).every((waiver) => waiver.reason.includes('#1115')), 'each waiver names issue #1115');
+    assert.ok(Object.values(WAIVED).every((waiver) => waiver.rules.length > 0 && waiver.rules.every((rule) => waiver.reason.includes(rule))), 'each waiver lists rules and its reason names every one (#1128)');
     assert.ok(Object.keys(WAIVED).length <= WAIVED_MOST, `WAIVED holds ${Object.keys(WAIVED).length}; the most is ${WAIVED_MOST}, and it only goes down`);
   } finally {
     if (CAPTURE_FILE) writeFileSync(CAPTURE_FILE, dump);
