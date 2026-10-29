@@ -260,7 +260,7 @@ test('learn --upstream: keeps a note with the project hidden, refuses a token, a
   const token = `ghp_${'b'.repeat(36)}`;
   result = await upstream([`the guard printed ${token}`]);
   assert.equal(result.status, 1);
-  assert.equal(result.stderr, 'yokoten learn · the note was not kept, because it holds a secret (GitHub token)\n\nNext: say what happened without it, and run\n      `yokoten learn --upstream "<what happened>"` again\n');
+  assert.equal(result.stderr, 'yokoten learn · the note was not kept, because it holds a secret (GitHub token)\n\nNext: say what happened without it, and run\n      `yokoten learn --upstream "<what happened>"` again.\n');
   assert.ok(!result.stdout.includes(token) && !result.stderr.includes(token));
   assert.equal(readdirSync(inbox).length, 1);
   // --area takes a known area; a note needs words.

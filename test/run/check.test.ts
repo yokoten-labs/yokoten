@@ -249,7 +249,7 @@ test('check: a CODEOWNERS line whose file moved says it protects nothing (#667)'
   sandbox.git('add', '.');
   const result = await sandbox.call(['check']);
   assert.equal(result.status, 1, result.stderr);
-  assert.match(flat(result.stderr), /\.github\/CODEOWNERS:3 \/src\/host\/github\.ts matches no file: this rule protects nothing; point it at the new path/);
+  assert.match(flat(result.stderr), /\.github\/CODEOWNERS:3 src\/host\/github\.ts matches no file: this rule protects nothing; point it at the new path/);
   assert.match(flat(result.stderr), /Ask the lead or owner to change it in \.github\/CODEOWNERS/);
   // A project with no CODEOWNERS gets no CODEOWNERS finding.
   sandbox.git('rm', '-qf', '.github/CODEOWNERS');
@@ -663,7 +663,7 @@ test('check --pr: a base or head commit not in the checkout is one finding, neve
   assert.equal(cloned.status, 0, cloned.stderr);
   let result = await sandbox.call(['check', '--pr'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }) } });
   assert.equal(result.status, 1);
-  assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix it, then `yokoten check` More: \S+#use-it-as-a-github-action $/);
+  assert.match(flat(result.stderr), /^yokoten check --pr · 1 problem MISSING the pull request's base commit is not in this checkout .+\. Use `fetch-depth: 0` in actions\/checkout, so the checkout has the whole history\. Next: fix it, then `yokoten check`\. More: \S+#use-it-as-a-github-action $/);
   noGitError(result.stderr);
   const summary = join(sandbox.home, 'summary.md');
   result = await sandbox.call(['check', '--pr', '--json'], { cwd: clone, extra: { GITHUB_EVENT_PATH: event({ base, head }), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });

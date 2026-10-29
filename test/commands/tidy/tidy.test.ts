@@ -277,7 +277,7 @@ test('tidy --empty: deletes only trash over 7 days old, after one question; no t
   assert.equal(piped.status, 1);
   assert.ok(piped.stdout.startsWith(`yokoten tidy --empty · 1 trash folder over 7 days old, ${size}\n\n`), piped.stdout);
   assert.match(piped.stdout, /\n\n +next +trash +2026-10-10T000000Z: [\d.]+ KB, put away \d{4}-\d{2}-\d{2}\.\n/);
-  assert.match(piped.stderr, /^yokoten tidy · --empty asks before it deletes, and there is no terminal to ask\n +in\. Nothing was deleted\n\nNext: run it in a terminal, or add `--yes`\n$/);
+  assert.match(piped.stderr, /^yokoten tidy · --empty asks before it deletes, and there is no terminal to ask\n +in\. Nothing was deleted\n\nNext: run it in a terminal, or add `--yes`\.\n$/);
   assert.deepEqual(left(), all);
 
   const no = await sandbox.call(['tidy', '--empty'], { isTTY: true, input: 'n\n', extra: { NO_COLOR: '1' } });

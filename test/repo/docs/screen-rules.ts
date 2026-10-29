@@ -72,8 +72,9 @@ const FIX_LINE = /^\s*Fix: /;
 // An absolute path on this machine, any root (#1128): `/` and two or more parts (`/bin/sh`, `/dev/null`,
 // `/Library/x`), or one part of a known root folder (`/tmp`); a Windows drive with either slash
 // (`C:\`, `C:/`) or in Git Bash's form (`/c/Users/...`); a UNC path (`\\server\share`). Not a link, not ~,
-// and not the path of an API call (`GET /api/state`).
-const MACHINE_PATH = /(?<![\w:~.\/-])(?<!\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) )(?:\/[^\s`'"\/)]+(?:\/[^\s`'")]*)+|\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w\/-])|[A-Za-z]:[\\/][^\s`'")]*|\\{2,}[^\s\\`'")]+\\+[^\s`'")]*)/g;
+// and not the path of an API call (`GET /api/state`). A path stands alone: after a space, a quote, `(`,
+// `=` or a backtick, never glued to a word (`<project>/src/a.ts`, `2>/dev/null`, a link, `~/x`).
+const MACHINE_PATH = /(?<=^|[\s'"(=`])(?<!\b(?:GET|POST|PUT|PATCH|DELETE|HEAD) )(?:\/[^\s`'"\/)]+(?:\/[^\s`'")]*)+|\/(?:tmp|var|private|home|Users|mnt|opt|usr|root|run|srv|Volumes|etc|bin|dev|Library|proc|sys)(?![\w\/-])|[A-Za-z]:[\\/][^\s`'")]*|\\{2,}[^\s\\`'")]+\\+[^\s`'")]*)/gm;
 // A command in backticks is not a file name (`AGENTS.md`, `src/a.ts`) or a flag (`--write`).
 const BACKTICKED = /`([^`]+)`/g;
 // A command to run named without backticks, as in `run gh auth login` (#1115).
