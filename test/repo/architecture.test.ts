@@ -14,7 +14,7 @@ import { HOME_DIR, homeDirOf, VERSION } from '../../src/setup/files.ts';
 import { noteWork } from '../../src/rules/text/message.ts';
 import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/linear.ts';
 import fileTimes, { fileBlock, fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, tapLines, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
-import { capOf, DEFAULT_CAP, SLOW_RATIO, slowProblems, TIMES_FILE, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
+import { capOf, DEFAULT_CAP, SLOW_RATIO, SLOW_WAIVERS, slowProblems, TIMES_FILE, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -2672,11 +2672,19 @@ test('windows times: a file over 75% of the cap fails the check and is named; a 
     'test/over.test.ts took 180.5 s on Windows, over 75% of the 240 s cap (180 s): split it by area, as test/setup/install/ is, before it times out at random',
     'test/setup/big.test.ts took 240 s on Windows, over 75% of the 240 s cap (180 s): split it by area, as test/setup/install/ is, before it times out at random',
   ]);
-  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': 'r', 'test/setup/big.test.ts': 'r' }), [], 'a waived file passes');
-  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': 'r', 'test/setup/big.test.ts': 'r', 'test/a.test.ts': 'r', 'test/gone.test.ts': 'r' }), [
+  const w = { reason: 'r', issue: 1, expires: '2026-11-15' };
+  const day = Date.parse('2026-11-15T12:00:00Z');
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': w, 'test/setup/big.test.ts': w }, SLOW_RATIO, day), [], 'a waived file passes, up to its last day');
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': w, 'test/setup/big.test.ts': w, 'test/a.test.ts': w, 'test/gone.test.ts': w }, SLOW_RATIO, day), [
     'test/a.test.ts took 10 s, under 180 s: take it off SLOW_WAIVERS',
     'SLOW_WAIVERS names test/gone.test.ts, which has no time in windows-times.txt: take it off',
   ]);
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': w, 'test/setup/big.test.ts': { reason: 'r', issue: 2, expires: '2026-11-14' } }, SLOW_RATIO, day), [
+    'test/setup/big.test.ts: its waiver expired on 2026-11-14; split it (issue #2), or renew the waiver with a reason',
+  ], 'an expired waiver fails');
+  assert.deepEqual(slowProblems(times, 240, { 'test/over.test.ts': w, 'test/setup/big.test.ts': { reason: 'r', issue: 2, expires: '2026-13-01' } }, SLOW_RATIO, day), [
+    'test/setup/big.test.ts: its waiver expired on 2026-13-01; split it (issue #2), or renew the waiver with a reason',
+  ], 'a date that is no day has expired');
   // The limit follows the cap that the run is given.
   assert.deepEqual(slowProblems(readTimes('100 test/a.test.ts\n'), 120, {}), ['test/a.test.ts took 100 s on Windows, over 75% of the 120 s cap (90 s): split it by area, as test/setup/install/ is, before it times out at random']);
   assert.deepEqual(slowProblems(new Map(), 240, {}), []);
@@ -2685,6 +2693,9 @@ test('windows times: a file over 75% of the cap fails the check and is named; a 
   assert.ok(real.size > 50 && !real.has('test/setup/install.test.ts'), 'the times file is read, and the split file has no time left');
   assert.ok(['skills', 'plugin', 'hooks', 'runtime', 'marks', 'files'].every((area) => real.has(`test/setup/install/${area}.test.ts`)), 'each install test file has a time');
   assert.deepEqual(slowProblems(real, DEFAULT_CAP), []);
+  for (const [file, { reason, issue, expires }] of Object.entries(SLOW_WAIVERS)) {
+    assert.ok(reason && issue > 0 && /^\d{4}-\d{2}-\d{2}$/.test(expires), `${file}: a waiver has a reason, an issue and an expiry`);
+  }
 });
 
 test('windows known: each failure keeps the first line of its error, with folders hidden, counted by kind', () => {

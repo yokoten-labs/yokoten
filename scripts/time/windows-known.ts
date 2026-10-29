@@ -402,16 +402,20 @@ export const DEFAULT_CAP = 240;
 /** The share of the cap that a file's last time may reach; over it, the file is split before it times out. */
 export const SLOW_RATIO = 0.75;
 
-/** Files over SLOW_RATIO that wait for a split, each with the reason. A waiver may only go: it fails once its file is under the limit. */
-export const SLOW_WAIVERS: Record<string, string> = {
-  'test/setup/init.test.ts': 'recorded at the cap, so it timed out on the last run; it still has to be split by area, like test/setup/install/ (issue #1243)',
+/** A waiver for a slow file: why, the issue that splits it, and the last day (UTC) it holds; a date that can't be read has expired. */
+export type SlowWaiver = { reason: string; issue: number; expires: string };
+
+/** Files over SLOW_RATIO that wait for a split. A waiver may only go: it fails once its file is under the limit, or after its expiry. */
+export const SLOW_WAIVERS: Record<string, SlowWaiver> = {
+  'test/setup/init.test.ts': { reason: 'recorded at the cap; it still has to be split by area, like test/setup/install/', issue: 1249, expires: '2026-11-15' },
 };
 
 /**
  * The problems with a times table: a file whose last time is over SLOW_RATIO of the cap, named
- * with its time and the limit, and a waiver whose file is not over it (any more) or is not listed.
+ * with its time and the limit, and a waiver whose file is not over it (any more), is not listed,
+ * or whose expiry has passed.
  */
-export function slowProblems(times: Map<string, number>, cap: number, waivers: Record<string, string> = SLOW_WAIVERS, ratio = SLOW_RATIO): string[] {
+export function slowProblems(times: Map<string, number>, cap: number, waivers: Record<string, SlowWaiver> = SLOW_WAIVERS, ratio = SLOW_RATIO, now = Date.now()): string[] {
   const limit = cap * ratio;
   const problems: string[] = [];
   for (const [file, seconds] of times) {
@@ -421,6 +425,7 @@ export function slowProblems(times: Map<string, number>, cap: number, waivers: R
     const seconds = times.get(file);
     if (seconds === undefined) problems.push(`SLOW_WAIVERS names ${file}, which has no time in windows-times.txt: take it off`);
     else if (seconds <= limit) problems.push(`${file} took ${seconds} s, under ${limit} s: take it off SLOW_WAIVERS`);
+    else if (!(now <= Date.parse(`${waivers[file].expires}T23:59:59Z`))) problems.push(`${file}: its waiver expired on ${waivers[file].expires}; split it (issue #${waivers[file].issue}), or renew the waiver with a reason`);
   }
   return problems;
 }
