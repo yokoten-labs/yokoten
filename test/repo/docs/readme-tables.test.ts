@@ -167,3 +167,12 @@ test('npm: package.json describes yokoten in the README\'s own opening words', (
   assert.notEqual(description, 'A guard. It stops mistakes.', 'positive control: a different text is not equal');
   assert.equal(description, readmeOpening(read('README.md')), 'copy the README\'s first two paragraphs into package.json "description"');
 });
+
+// The Claude plugin directory lists .claude-plugin/plugin.json: its description is the same
+// one sentence, and its version follows package.json, so a release changes both (#1223).
+test('plugin: plugin.json says the README opening and has the package version (#1223)', () => {
+  const plugin = JSON.parse(read('.claude-plugin/plugin.json')) as { description: string; version: string };
+  const pkg = JSON.parse(read('package.json')) as { version: string };
+  assert.equal(plugin.description, readmeOpening(read('README.md')), 'copy the opening of README.md into .claude-plugin/plugin.json "description"');
+  assert.equal(plugin.version, pkg.version, 'set .claude-plugin/plugin.json "version" to package.json "version"');
+});
