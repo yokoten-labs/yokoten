@@ -202,7 +202,7 @@ test('doctor --files: only steps judged from files, no gh and no child but git; 
   // A terminal gets colour; the words are what count here.
   const plainText = screen.result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
   assert.ok(!plainText.includes('doctor --all'), plainText);
-  assert.match(plainText, /^More: the code host and this machine are not read; `(npx )?yokoten doctor` reads them$/m);
+  assert.match(plainText, /^More: files only; `(npx )?yokoten doctor` also reads the code host and this machine$/m);
   assert.deepEqual(screen.programs.filter((program) => program !== 'git'), []);
   // Positive control: the same repo without --files lists the host steps, and asks gh for them.
   const plain = await watched(['doctor', '--json']);

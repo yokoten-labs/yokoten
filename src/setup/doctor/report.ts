@@ -661,7 +661,7 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
       spaced(problemRows(problems)),
       spaced(road),
       spaced(keptNoteRows(report.notes ?? [], all)),
-      [...(next ? nextLine(next) : []), ...moreLine(isFiles ? `the code host and this machine are not read; \`${commandOf(report, 'doctor')}\` reads them` : `\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+      [...(next ? nextLine(next) : []), ...moreLine(isFiles ? `files only; \`${commandOf(report, 'doctor')}\` also reads the code host and this machine` : `\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
     );
   };
   // The next step and up to four more, fewer when problems and notes take the room, so the
