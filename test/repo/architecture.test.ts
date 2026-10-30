@@ -16,7 +16,7 @@ import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/l
 import fileTimes, { fileBlock, fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, tapLines, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
 import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
-import { BRANCH_CHARS, HOST_CHARS, isTestCommand, mask, quote, remoteLine, SETUP_FAILED } from '../../.github/mac/run.ts';
+import { BRANCH_CHARS, HOST_CHARS, isTestCommand, mask, quote, remoteLine, sendEnv, SETUP_FAILED } from '../../.github/mac/run.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = join(ROOT, 'src');
@@ -2879,5 +2879,6 @@ test('mac runner: only test commands go, quoted, and the address never shows (#1
   const host = '192.0.2.10';
   assert.equal(mask('ssh 192.0.2.10 at /Users/someone/work, me@192.0.2.10', host), 'ssh MAC at ~/work, USER@HOST');
   assert.equal(mask('192a0b2c10', host), '192a0b2c10', 'the dots in the address are not wildcards');
+  assert.deepEqual(Object.keys(sendEnv({ PATH: 'p', GIT_TRACE: '0', GIT_TRACE2_EVENT: '/x', GIT_CURL_VERBOSE: '1', GIT_SSH: 'x', GIT_SSH_COMMAND: 'x', GIT_SSH_VARIANT: 'ssh', GIT_DIR: 'd' })), ['PATH', 'GIT_DIR'], 'nothing that writes or runs with the host is passed on');
   assert.equal(mask('> yokoten@0.1.3 typecheck', host), '> yokoten@0.1.3 typecheck', 'a package version is not an address');
 });

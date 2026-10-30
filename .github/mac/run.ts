@@ -8,8 +8,8 @@
 //
 // Only test commands run (TEST_COMMANDS): the Mac is the owner's own account, so this is no
 // shell there. The branch's tests still run as that account, as they did when the lead ran
-// them; a sandbox for them is a follow-up. A checkout with uncommitted changes to tracked files
-// is refused, so a green run always means the commit that was sent.
+// them; a sandbox for them is a follow-up (issue #1255). A checkout with uncommitted changes, or
+// with untracked files that are not ignored, is refused, so a green run means the commit sent.
 //
 // It pushes the branch to the Mac's bare repo (~/work/yokoten.git) over ssh, checks it out in
 // a Mac worktree named after the branch (node_modules shared from ~/work/yokoten-cap), runs the
@@ -64,6 +64,15 @@ export function remoteLine(branch: string, command: string[]): string {
   return `{ ${setup.join(' && ')}; } || { echo ${quote(SETUP_FAILED)} >&2; exit 2; }; nice ${command.map(quote).join(' ')}`;
 }
 
+/**
+ * The environment for git and ssh, without what could write the host somewhere or run another
+ * command: every GIT_TRACE* (a set one, even "0", makes git print private hosts), GIT_CURL_VERBOSE,
+ * and GIT_SSH, GIT_SSH_COMMAND and GIT_SSH_VARIANT.
+ */
+export function sendEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !/^GIT_(TRACE|CURL_VERBOSE|SSH)/i.test(name)));
+}
+
 function fail(message: string): never {
   process.stderr.write(`run.ts: ${message}\n`);
   process.exit(2);
@@ -82,7 +91,9 @@ function main(): void {
   const top = git('rev-parse', '--show-toplevel') ?? fail('not in a git checkout');
   const branch = git('branch', '--show-current') || fail('no branch checked out; check one out and commit first');
   if (!BRANCH_CHARS.test(branch)) fail('the branch name has characters this runner does not send');
-  if (git('-C', top, 'status', '--porcelain', '--untracked-files=no') !== '') fail('tracked files have uncommitted changes; commit them first, since only the commit goes to the Mac');
+  const status = git('-C', top, 'status', '--porcelain');
+  if (status === null) fail('git status failed here, so the runner cannot tell what would be left out');
+  if (status !== '') fail('there are uncommitted changes or untracked files; commit them (or ignore them) first, since only the commit goes to the Mac');
   let host = '';
   try {
     host = readFileSync(HOST_FILE, 'utf8').trim();
@@ -91,15 +102,12 @@ function main(): void {
   }
   if (!HOST_CHARS.test(host)) fail('the Mac address in ~/.config/yokoten-mac/host is not a plain host');
 
-  // A set GIT_TRACE or GIT_CURL_VERBOSE, even "0", makes git print private hosts.
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.GIT_TRACE;
-  delete env.GIT_CURL_VERBOSE;
+  const env = sendEnv(process.env);
   const push = spawnSync('git', ['-C', top, 'push', '-q', '-f', `ssh://${host}/~/work/yokoten.git`, `${branch}:${branch}`], { env, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
   if (push.status !== 0) fail(`the push to the Mac failed (exit ${push.status})`);
 
   let setupFailed = false;
-  const ssh = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', host, remoteLine(branch, command)], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const ssh = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', host, remoteLine(branch, command)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   for (const [from, to] of [[ssh.stdout, process.stdout], [ssh.stderr, process.stderr]] as const) {
     let rest = '';
     from.setEncoding('utf8');
