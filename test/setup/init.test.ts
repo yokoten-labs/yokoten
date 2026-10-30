@@ -1571,7 +1571,7 @@ test('init: a yokoten.json "areas" that is not a list stops init before it write
 
 // The kit version mark in AGENTS.md (#141): newer is never "behind", and no mark compares by content.
 test('core rules: the kit version mark tells older from newer; no mark compares by content (#141)', () => {
-  assert.equal(compareVersions('0.2.0', '0.1.9'), 1);
+  assert.equal(compareVersions('0.8.0', '0.1.9'), 1);
   assert.equal(compareVersions('0.1.10', '0.1.9'), 1, 'numbers, not text');
   assert.equal(compareVersions('1.0.0', '1.0.0'), 0);
   assert.equal(compareVersions('1.0.0-beta.2', '1.0.0'), -1, 'a pre-release is older than its release');
@@ -1581,15 +1581,15 @@ test('core rules: the kit version mark tells older from newer; no mark compares 
   assert.equal(readKitVersion('<!-- yokoten kit 0.3.1 -->\r\n# rules\n'), '0.3.1');
   assert.equal(readKitVersion('# rules\n'), null);
 
-  const kit = '<!-- yokoten kit 0.2.0 -->\n# rules\n\n## This project\n';
+  const kit = '<!-- yokoten kit 0.8.0 -->\n# rules\n\n## This project\n';
   const own = '## This project\n\nours\n';
-  const newer = compareCoreRules(`<!-- yokoten kit 0.3.0 -->\n# rules, later\n\n${own}`, kit);
-  assert.deepEqual(newer, { state: 'newer', version: '0.3.0', kitVersion: '0.2.0' });
+  const newer = compareCoreRules(`<!-- yokoten kit 0.9.0 -->\n# rules, later\n\n${own}`, kit);
+  assert.deepEqual(newer, { state: 'newer', version: '0.9.0', kitVersion: '0.8.0' });
   const older = compareCoreRules(`<!-- yokoten kit 0.1.0 -->\n# old rules\n\n${own}`, kit);
   assert.equal(older.state, 'behind');
-  assert.equal(older.state === 'behind' && older.updated, `<!-- yokoten kit 0.2.0 -->\n# rules\n\n${own}`, 'the update writes the new mark');
+  assert.equal(older.state === 'behind' && older.updated, `<!-- yokoten kit 0.8.0 -->\n# rules\n\n${own}`, 'the update writes the new mark');
   const unmarked = compareCoreRules(`# old rules\n\n${own}`, kit);
-  assert.equal(unmarked.state === 'behind' && unmarked.updated, `<!-- yokoten kit 0.2.0 -->\n# rules\n\n${own}`, 'no mark: an unknown version, compared by content');
+  assert.equal(unmarked.state === 'behind' && unmarked.updated, `<!-- yokoten kit 0.8.0 -->\n# rules\n\n${own}`, 'no mark: an unknown version, compared by content');
   assert.equal(compareCoreRules(`# rules\n\n${own}`, kit).state, 'same', 'the mark alone is no change');
   assert.equal(compareCoreRules(`<!-- yokoten kit 0.9.0 -->\n# rules\n\n${own}`, kit).state, 'same', 'a newer mark with the same text is up to date');
   assert.equal(compareCoreRules(`<!-- yokoten kit {{version}} -->\n# rules, later\n\n${own}`, kit).state, 'behind', 'a mark that is not a version is unknown');

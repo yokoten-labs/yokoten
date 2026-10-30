@@ -6,6 +6,79 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+### Added
+
+- `yokoten doctor --all --json` now gives every step its `how` (how yokoten judges it) and `why`, the done steps too, so a tool that shows the report can say how each step was judged. The JSON of `doctor --all --json` and `check --json` is now pinned by a test: keys may be added, never renamed or removed (#1202, #1203).
+- `yokoten doctor --files` judges the project only from the files in the checkout. It reads no code host, starts no `gh`, uses no network and says nothing about the machine, so it gives the same answer on every machine. A step judged from the code host or the machine is left out, not shown as "can't check". With `--json`, the report has the same keys as `doctor --all --json`. Each step in `--json` now also says what it is judged from (`"source": "files"`, `"host"` or `"machine"`) and gives its plain task title (`"title"`) (#1256).
+
+### Changed
+
+- yokoten describes itself in one sentence in the README, on npm and on the site: "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup." (#1139).
+- The `reviewer` agent and the `inspect` skill now write a one-page review you can act on in 30 seconds: the verdict and the commit first, one line per finding that names the fix (no questions), the evidence folded away, and what was not checked last (#1199).
+- A review now ends in three rounds (issue #1217). The `reviewer` agent, the `inspect` skill and the DeepSeek review read only the diff since the last reviewed commit after a clean round (the whole diff after a change request), never list an earlier finding again while a blocking one still blocks, and tag each one Important, Nit or Pre-existing. The first line gives the count, or says "Nothing to fix". From the fourth review, one that asks for changes lists only what blocks and asks the author to reconsider the approach.
+- The `dispatch` skill now has a short table that names the model and effort for each role (worker, reviewer, lookups, the hardest problem), and the brief asks the worker to run a real test, type check or build and show its output before it says "done" (#1222).
+
+### Fixed
+
+- On a terminal with colour, a `can't check` row no longer starts its text two columns to the right of the other rows. It keeps its word and its colour but drops the `?` glyph, so every row of `doctor`, `check` and the setup screens lines up. This replaces the glyph choice of 2026-10-24, by the owner's decision on 2026-10-29 (#1160).
+- The README and guide tables keep their code on one line on GitHub: the commands table has shorter cells, the agent names no longer carry a command in brackets, and the header "Needs `npx yokoten trust` first" is now "Trust first", with the command in the line above the table. The zh-CN, zh-TW and ja copies change the same way (#1162).
+- `yokoten doctor` no longer calls a working setup missing. `forge test` (Foundry) counts as a
+  test runner. A Renovate config counts as dependency updates. A `.changeset/` folder counts as
+  a changelog. A license inside a `licenses/` or `LICENSES/` folder counts. A Dockerfile, a
+  Makefile or a script inside a `build/` folder is source, not build output. A CLAUDE.md with no
+  AGENTS.md now says the rules exist but only Claude Code reads them, and the fix says to move
+  them to AGENTS.md and import them (#1167).
+- `yokoten check` no longer fails a new repo on things that are public on purpose (#1169). An email address in SECURITY.md, or in the people fields of package.json, composer.json, Cargo.toml or pyproject.toml, is now a note. Loopback and the three private ranges (RFC 1918) pass in the repo's files. A post by an agent may name loopback, but a private address there is still stopped. The folder cap of 7 entries fails only a repo whose yokoten.json has a "layout" key. yokoten's own has one, and `yokoten init` writes one. Any other repo gets one note that lists its wide folders. A personal email anywhere else, and a public address, still fail.
+- A desk now starts each agent with its own sandbox off, for that run only. The agent's own
+  sandbox can't start inside a desk, so shell commands failed when the project turned it on.
+  The desk's fence is the sandbox there. Claude Code gets `--settings`, Codex gets
+  `-c sandbox_mode="danger-full-access"`, Grok gets `--sandbox off`, and Muse Code gets
+  `--disable-sandbox`. No settings file changes. A command that asks for the agent's own
+  sandbox is refused, and the start screen says why the sandbox is off (#1171).
+- A desk now works on a network that reaches the model only through a proxy: when
+  `HTTPS_PROXY` is set, the desk's proxy sends each allowed host through it, and a host off
+  the list still never leaves. The start screen names the proxy by host and port only, never
+  its password. Each desk also gets its own writable temp folder (`TMPDIR`, `TEMP`, `TMP`)
+  instead of the caller's, so an agent started from a Claude Code shell no longer fails on a
+  read-only `/tmp/claude` (#1172).
+- On macOS, an agent in a desk can again start git and other programs by name when a
+  folder early on its PATH is a link into a hidden folder, such as `~/bin` linked to
+  dotfiles. Every desk now gives the agent a PATH of only the folders it can walk, each by
+  its real path, on every system (#1181).
+- The CI workflow `yokoten init` adds no longer treats a moved file as docs-only. A pull request that moves a code file into `docs/` used to list only the new path, so it skipped the tests; now both paths count, and it runs in full (#1188).
+- On Windows, a worker started with `YOKOTEN_ROLE=worker` may `cd` by a path that starts with a drive, such as `C:/...`. The guard refused it before, even into the worker's own worktree; where the `cd` leads is still checked (#1225).
+- In a CI run, each line of the `check` step now starts with its file and line, as the terminal does, and shows at the right level: a problem as an error, a warning as a warning, and a plain note as a notice. The count on the check screen ("6 notes, 1 warning among them") now matches the annotations. A test value such as `PRIVATE-MESSAGE-TEXT-MUST-NOT-LEAVE` is no longer reported as a secret, and a value that is reported says what matched in plain words, with `[not sure]` in place of `[unknown]` (#1239).
+- On `check`, `merge` and the other problem screens, every place (`docs/a.md:3`) now stands on its own line under the mark, and the text follows at one column. On screens with labels, a long label still stands alone and its text lines up with the other labels' text. `yokoten trust` run outside a terminal now says to open a terminal and type it there. `doctor` no longer shows "Or install the Claude Code plugin" above its Fix line. `adopt` says "no model key was found". `learn --help` no longer lists `--ship`, `--export` and `--import` twice. The `check` screen no longer calls an ignore a pull request adds a warning; it is a note, as in the CI log. `changelog` and `mcp --check` rows start their text in one column (#1239).
+- A screen audit of every command. Usage lines of `init`, `marks` and `learn` now break between parts, never inside one. `init --help` and `mcp --help` explain `--no-ci` and the tool annotations in plain words. `update` says "2 lines added", not "2 line(s)". `kanban --text` and `anchor` show times as `2026-10-26 10:00 UTC`, as `ci-health` does. `install` no longer marks "other AIs not installed" as "can't check". The first-run and `doctor` row for steps that need the code host reads "9 steps: they read the code host". A refused desk names `.git/commondir` inside the desk, not a path on this machine (#1239).
+- The worker guard no longer reads a folder whose name only starts with `yokoten` as yokoten's config folder (#1241). `~/.config/yokoten-mac` and `~/.config/yokoten.bak` are other folders now. The name still counts when it ends at the end of the text, a separator, a quote, a glob, a brace, `$`, a shell character, a `:` or trailing dots, so every path that can reach `~/.config/yokoten` is still refused. The worker rule for any command that changes something under `~/.config` is unchanged.
+- The guard's force-push refusal says what the push can do: `git push --force can overwrite the remote`, in place of "forces the push" (#1257).
+- A screen row marked `can't check` keeps two spaces before its text, so it no longer reads as one phrase with it; every screen's text starts one column later (#1267).
+- An agent's name in a docs table, such as GitHub Copilot CLI, now stays on one line. On the docs site, a code span in a table cell stays whole, and a wide table scrolls instead. On a screen, an agent's name stays on one line too. `kanban --text` now shows an agent's full name on a line of its own instead of cutting it (#1268).
+
+  On `yokoten kanban --text`, a long agent name now stands whole on its own line, and the session rows have a blank line between them, as every screen with a wrapped row does.
+- The `tests` step of `yokoten doctor` no longer prints one 125-column line when a project has no test command: the job it asks for is said in short pieces that fit an 80-column terminal (#1274).
+
+### Security
+
+- The guard now asks the owner before the lead changes a settings file that holds an
+  agent's hooks, permissions, sandbox or fence, such as `.claude/settings.json`,
+  `.codex/config.toml`, `yokoten.json` or `~/.claude/settings.json`. Skills, agents and
+  commands are not asked about. It also asks before a Claude Code shell call that leaves
+  the sandbox. A worker is refused both. Where no one can answer, the question becomes a
+  refusal that says the owner's yes is needed: in a Claude Code cloud session, and in an
+  agent whose hook can't ask, such as Codex. This holds for the low-disk heavy-job question
+  too (#1212, #1215).
+- A worker subagent now runs shell commands only inside a checkout that carries the worker mark. The commit check knows a worker only by `YOKOTEN_ROLE` or the mark, so its commits elsewhere, made by any route, used to pass as the lead's. The tool guard now stops such a worker's commands outside a marked checkout, and its edits in an unmarked one. In a worktree it tells the lead to run `yokoten worker mark <worktree>`; in the lead's own checkout it asks for a worktree of its own; outside any checkout it says to cd into the marked worktree first. A worker also can no longer clear `YOKOTEN_ROLE` within a command (`unset`, `export -n`, `exec -c` and the like) (#1225).
+- yokoten no longer prints a user name from a home folder path that is not your own $HOME (#1237). The output, the stop log, `redact`, upstream notes and the board now show the name as `<user>`. This covers a WSL user's Windows home (`C:\Users\<name>`, `/mnt/c/Users/<name>`, `/cygdrive/c/Users/<name>`), device and share forms (`\\?\C:\Users\<name>`, `\\server\c$\Users\<name>`, `\\wsl$\<distro>\home\<name>`), JSON-escaped paths, and another account's home. A name with spaces under `C:\Users` or `/Users` (`Kim Do`, `Mary Jane Watson Parker`) is hidden up to the next separator, or to the end of its line when no separator follows. The rest of that line may be hidden too: no rule can tell where such a name ends, so yokoten hides more, never less. It still ends at a line end (a newline, `\r`, `\v`, `\f`, U+0085, U+2028 or U+2029), a tab, ` && `, ` || `, ` | `, a double quote, a colon or another character Windows bans in a name, or the next path. A name under `/home` ends at a space, since no account name holds one. A shared account (`runner`, `Public`, `Shared`) and a web route under `/home` (`/home/settings`) stay. A post, a desk message, a note or a lesson pack is refused (rule `user-folder`) when it holds a name in a drive form, a WSL share, or `/Users/<name>`. A name under `/home` is refused too when it is your own user, in $HOME or USERPROFILE, when it has capitals or other characters, or when the path goes on into a dot-folder (`/home/<name>/.ssh`). Any other lower-case `/home/<word>` is only a note, since it may be a route. The worker guard now reads a `cd` path through one path reader: a Windows short name such as `RUNNER~1` in a worker's own worktree path is accepted, and a path part that Windows reads two ways (`...`, `a.`) is refused.
+
+### Internal
+
+- The screen checker reads any absolute path of the machine (`/bin/sh`, `/Library/...`, a UNC path, `C:\` and `C:/`) unless it is glued to a word, a link, `~`, a `word/*` glob, a placeholder, `GET /api/...`, `>/dev/null`, a `#!/bin/` or `#!/usr/bin/` shebang, or a CODEOWNERS finding's pattern. Backticked text on a `Fix:` line is a command; in a sentence it counts only when it starts with a known command word and another word, a `NAME=value`, or `./`. A `- ` list item ends a run of prose, and a waiver's reason must name every rule the screen breaks. A `Next:` line that is a sentence ends with a full stop (its callers write it with a small letter), and the reporter's GitHub Actions branch has a test (#1128).
+- The release's checks run on every pull request, from the same file a release tag runs, so a tag never meets a step for the first time. No test reporter writes to `/dev/null`, which failed the first v0.1.2 release run (#1149).
+- The install tests, one file that took 241 s of the Windows job's 240 s cap, are six files by area in `test/setup/install/`, with the same 73 tests. The Windows times check now fails for any test file over 75% of the cap and names it, so a file is split before it times out at random (#1243).
+
 ## [0.1.2] - 2026-10-28
 
 ### Added
@@ -774,7 +847,8 @@ The README is also in [中文](https://github.com/yokoten-labs/yokoten/blob/v0.1
 - Problems show on the changed lines of the pull request, with how to fix them.
 - A translation is flagged when only the English changed; a newer CI run on main cancels the older one.
 
-[Unreleased]: https://github.com/yokoten-labs/yokoten/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/yokoten-labs/yokoten/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.1.2
 [0.1.1]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.1.1
 [0.1.0]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.1.0

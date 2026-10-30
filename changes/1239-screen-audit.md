@@ -1,3 +1,0 @@
-Fixed
-
-A screen audit of every command. Usage lines of `init`, `marks` and `learn` now break between parts, never inside one. `init --help` and `mcp --help` explain `--no-ci` and the tool annotations in plain words. `update` says "2 lines added", not "2 line(s)". `kanban --text` and `anchor` show times as `2026-10-26 10:00 UTC`, as `ci-health` does. `install` no longer marks "other AIs not installed" as "can't check". The first-run and `doctor` row for steps that need the code host reads "9 steps: they read the code host". A refused desk names `.git/commondir` inside the desk, not a path on this machine (#1239).
