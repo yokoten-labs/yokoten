@@ -259,3 +259,17 @@ test('control: a sample or a status line with another version is read as that ve
   assert.equal(statusVersion('Version 9.9. The decisions\n'), '9.9');
   assert.equal(statusVersion('版本 9.9。背后的决定\n'), '9.9');
 });
+
+// #1282: "until v0.1.3" outlived the version. A plan with a date lives in an issue, not in the text.
+/** The lines of `text` that promise something up to a named version. */
+const versionPromises = (text: string) => text.split('\n').filter((line) => /\b(?:until|by) v\d+\.\d+/i.test(line));
+
+test('versions: no doc or source promises something until a named version (#1282)', () => {
+  const sources = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[]).filter((path) => path.endsWith('.ts')).map((path) => join('src', path));
+  const found = ['README.md', 'docs/guide.md', 'docs/standard.md', 'docs/server.md', ...sources].flatMap((path) => versionPromises(read(path)).map((line) => `${path}: ${line.trim()}`));
+  assert.deepEqual(found, []);
+});
+
+test('control: a promise up to a version is caught, a past fact is not (#1282)', () => {
+  assert.equal(versionPromises('uses the old fence until v9.9.\nRemove all by v9.9.9.\nBefore v9.9 it was called board.').length, 2);
+});

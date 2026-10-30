@@ -25,7 +25,7 @@
   "kanban": {
     "label": "かんばん",
     "title": "ライン全体を一枚のボードに",
-    "body": "v0.1.2 でまずプレビュー。`yokoten kanban --text` で、各セッションの状態、あなたを待っている pull request、Actions の調子を一覧できます。読むだけで何も変えず、ブラウザのページは次に作ります。",
+    "body": "まずプレビュー。`yokoten kanban --text` で、各セッションの状態、あなたを待っている pull request、Actions の調子を一覧できます。読むだけで何も変えず、ブラウザのページは次に作ります。",
     "more": "かんばんについて",
     "tag": "プレビュー"
   }

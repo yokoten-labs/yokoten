@@ -25,7 +25,7 @@
   "kanban": {
     "label": "The kanban",
     "title": "The whole line on one board",
-    "body": "A preview in v0.1.2: `yokoten kanban --text` shows each session and its state, the pull requests that wait on you, and the health of Actions. It only reads; the page in your browser comes next.",
+    "body": "A preview: `yokoten kanban --text` shows each session and its state, the pull requests that wait on you, and the health of Actions. It only reads; the page in your browser comes next.",
     "more": "About the kanban",
     "tag": "preview"
   }
