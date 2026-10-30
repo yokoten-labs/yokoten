@@ -94,6 +94,12 @@ export interface Step {
    * leaves it out is judged from the files in the checkout, the same on every machine.
    */
   source?: 'host' | 'machine';
+  /**
+   * The check from the repo's files alone, for `doctor --files` (#1256), when `check` also
+   * reads this machine for a files step. Its `what` and `fix` must read no machine state
+   * when this check says the step is not done.
+   */
+  checkFiles?: (root: string) => Found;
 }
 
 /** What a step is judged from, as `doctor --json` names it: files, host or machine (#1256). */
@@ -101,6 +107,13 @@ export type StepSource = 'files' | 'host' | 'machine';
 
 /** What `step` is judged from: its own `source`, or the files in the checkout (#1256). */
 export const stepSource = (step: Pick<Step, 'source'>): StepSource => step.source ?? 'files';
+
+/** The steps `doctor --files` walks (#1256): the files steps, each judged by its files-only check when it has one. */
+export const filesSteps = (steps: readonly Step[]): Step[] =>
+  steps.filter((step) => stepSource(step) === 'files').map((step) => {
+    const { checkFiles } = step;
+    return checkFiles ? { ...step, check: (root: string) => checkFiles(root) } : step;
+  });
 
 const read = (path: string) => {
   try {
@@ -771,6 +784,8 @@ export const ROAD: Step[] = [
     stage: 1,
     key: 'tool-hook',
     check: (root, env) => hasProjectHook(root) && !isGuardOff(root, env),
+    // Muse's trust store is this machine's; the files say only that the guard is set up (#1256).
+    checkFiles: (root) => hasProjectHook(root),
     what: (root, env) => (hasProjectHook(root) && isGuardOff(root, env) ? (readMuseTrust(root, env).userChoiceFix ? 'the guard is off in Muse Code: you set it not to trust this folder' : 'the guard is off in Muse Code until you trust this folder') : 'no tool-call guard in .claude/settings.json'),
     fix: (root, env) => (hasProjectHook(root) && isGuardOff(root, env) ? (readMuseTrust(root, env).userChoiceFix ?? TRUST_FIX) : '`yokoten init` adds it'),
     why: 'the guard stops a risky command, like a force push, before the agent runs it',

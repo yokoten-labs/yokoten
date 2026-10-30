@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { makeSandbox, pathWithoutGh, rowsText } from '../../repo/helpers.ts';
 import { DEFAULTS } from '../../../src/rules/config.ts';
 import { doctor, type DoctorReport, reportJson, STEP_TITLES } from '../../../src/setup/doctor/index.ts';
+import { VERSION } from '../../../src/setup/files.ts';
 
 test('doctor: a marks file it can not read is named as unreadable, not missing (#656)', async () => {
   const sandbox = makeSandbox();
@@ -86,6 +87,56 @@ test('doctor: --files --json has the keys of --all --json, and only the steps ju
     assert.deepEqual([left(step.mark), step.source, step.title], [left(twin.mark), 'files', twin.title], `${String(step.id)}: as --all judges it`);
   }
   for (const found of filesJson.findings) for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof found[key], 'string', `${String(found.id)}.${key}`);
+});
+
+/** A repo whose stage 1 files steps are done, so the first step left on the whole road is commit-check, a machine step. */
+function stageOneFilesDone() {
+  const sandbox = makeSandbox();
+  sandbox.write('AGENTS.md', '# Rules\n');
+  sandbox.write('.claude/settings.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'npx yokoten hook' }] }] } }));
+  sandbox.write('.yokoten/VERSION', `${VERSION}\n`);
+  sandbox.withTests();
+  return sandbox;
+}
+
+const noNetwork = () => { throw new Error('no network in this test'); };
+/** The report doctor gives, with --files or without, for `home`. */
+const reportIn = (repo: string, env: Record<string, string>, files: boolean) => doctor(repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noNetwork, files }).report;
+
+// The page shows `stage` and `next` (#1256): under --files both come from the files steps
+// alone, so `next` never names a step the page can't show.
+test('doctor --files: stage and next come from the files steps only, never a host or machine step (#1256)', () => {
+  const sandbox = stageOneFilesDone();
+  const plain = reportIn(sandbox.repo, sandbox.env, false);
+  // Positive control: on the whole road, the first step left is a machine step.
+  assert.equal(plain.next?.id, 'commit-check', JSON.stringify(plain.steps?.filter((step) => step.mark !== 'done')));
+  assert.equal(plain.steps?.find((step) => step.id === 'commit-check')?.source, 'machine');
+  const files = reportIn(sandbox.repo, sandbox.env, true);
+  const firstLeft = files.steps?.find((step) => step.mark === 'next' || step.mark === 'to do');
+  assert.ok(firstLeft, 'a files step is left');
+  assert.equal(files.next?.id, firstLeft.id, 'next is the first files step left');
+  assert.equal(firstLeft.mark, 'next');
+  assert.equal(files.stage, firstLeft.stage);
+  assert.equal(files.steps?.find((step) => step.id === files.next?.id)?.source, 'files');
+});
+
+// Muse's trust store is this machine's (#1256): under --files, tool-hook reads the project's
+// files only, so a home whose store does not trust the folder gives the mark an empty home gives.
+test('doctor --files: tool-hook reads no Muse trust store; plain doctor still does (#1256)', () => {
+  const sandbox = stageOneFilesDone();
+  sandbox.write('.muse/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'npx yokoten hook' }] }] } }));
+  const untrusting = join(sandbox.home, 'untrusting');
+  const store = join(untrusting, '.config', 'muse', 'trust.json');
+  mkdirSync(join(store, '..'), { recursive: true });
+  writeFileSync(store, JSON.stringify({ schema_version: 1, projects: { '/somewhere/else': { decision: 'trusted' } } }));
+  const empty = join(sandbox.home, 'empty');
+  mkdirSync(empty);
+  const markIn = (home: string, files: boolean) => reportIn(sandbox.repo, { ...sandbox.env, HOME: home }, files).steps?.find((step) => step.id === 'tool-hook')?.mark;
+  assert.equal(markIn(untrusting, true), markIn(empty, true), 'the same mark with any home');
+  assert.equal(markIn(untrusting, true), 'done', 'the project hook is in place');
+  // Positive control: plain doctor reads the store, and the guard is off in Muse there.
+  assert.equal(markIn(empty, false), 'done');
+  assert.notEqual(markIn(untrusting, false), 'done');
 });
 
 test('check: --json keeps its shape and never prints the value it found (#1202)', async () => {

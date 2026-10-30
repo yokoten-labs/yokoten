@@ -15,7 +15,7 @@ import { VERSION } from '../files.ts';
 import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
-import { type DefaultBranchFiles, type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, type StepSource, stepSource, stepText, uncheckedText, walk } from '../road.ts';
+import { type DefaultBranchFiles, type Mark, missingPaths, filesSteps, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, type StepSource, stepSource, stepText, uncheckedText, walk } from '../road.ts';
 import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
 import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, deskFenceCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, type LessonCheck, lessonChecks, lessonRows, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
@@ -400,6 +400,8 @@ export interface DoctorView {
   session?: SessionNote[];
   /** The full map, for full doctor. */
   full?: FullView;
+  /** True for `doctor --files` (#1256): the screen says what it leaves out. */
+  files?: boolean;
 }
 
 /** A yokoten command as this machine runs it: `yokoten <words>`, or `npx yokoten <words>` (#500). */
@@ -638,7 +640,9 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
   const heading = parts.title ?? title('doctor', report.stage === null && !problems.length ? `${doctorSummary(report)}, nothing to do` : doctorSummary(report));
   if (report.stage === null && !problems.length && !parts.lead?.length && parts.next === undefined) return screen(...lead, heading);
   const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
-  const all = commandOf(report, 'doctor --all');
+  // `--files` (#1256) lists its own map, and leaves out what reads the host or this machine.
+  const isFiles = report.view?.files === true;
+  const all = commandOf(report, isFiles ? 'doctor --files --all' : 'doctor --all');
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
   const notes = (report.notes ?? []).length;
   const next = parts.next ?? (report.next ? nextCommand(report.next) : null);
@@ -657,7 +661,7 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
       spaced(problemRows(problems)),
       spaced(road),
       spaced(keptNoteRows(report.notes ?? [], all)),
-      [...(next ? nextLine(next) : []), ...moreLine(`\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+      [...(next ? nextLine(next) : []), ...moreLine(isFiles ? `the code host and this machine are not read; \`${commandOf(report, 'doctor')}\` reads them` : `\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
     );
   };
   // The next step and up to four more, fewer when problems and notes take the room, so the
@@ -1071,7 +1075,7 @@ function roadRows(where: Walk, root: string, env: Env, { server, config, elsewhe
  * it is not run here.
  */
 function filesRun(root: string, { env, config, base, findings, lead }: { env: Env; config: Config; base: Omit<DoctorReport, 'ok' | 'repo' | 'stage' | 'next' | 'findings'>; findings: Finding[]; lead: string[] }): { ok: boolean; report: DoctorReport } {
-  const where = walk(road(root, env, ROAD.filter((step) => stepSource(step) === 'files'), undefined, config), config.notNow);
+  const where = walk(road(root, env, filesSteps(ROAD), undefined, config), config.notNow);
   const left = where.steps.filter((w) => w.mark === 'next' || w.mark === 'to do').map((w) => w.step);
   const missing = missingPaths(root, left, config);
   const elsewhere = missing.length ? readDefaultBranchFiles(root, missing, env) : null;
@@ -1086,7 +1090,7 @@ function filesRun(root: string, { env, config, base, findings, lead }: { env: En
   const ok = base.selfTest.ok && !isCoreBehind;
   const version: CheckRow = { mark: base.selfTest.ok ? 'ok' : 'MISSING', name: `yokoten ${VERSION} (${base.channel})`, what: `self-test ${base.selfTest.ok ? 'ok' : 'FAILED'}` };
   const full: FullView = { version, jumps: [], stages: stageRows, project, unsaved: [], machine: [], server: [] };
-  return { ok, report: { ...base, ok, repo: true, stage: where.stage, next, findings, steps, notes, server: [], lessons: [], view: { lead, full } } };
+  return { ok, report: { ...base, ok, repo: true, stage: where.stage, next, findings, steps, notes, server: [], lessons: [], view: { lead, full, files: true } } };
 }
 
 /** A sentence and its fix, split at the first `; `: the fix goes on a Fix line when it starts with a command. */
