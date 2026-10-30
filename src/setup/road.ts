@@ -356,11 +356,11 @@ const testsFix = (root: string) => {
   // A test script does not make this Node when another language is already detected.
   const isNode = testLanguages(root).length === 0 && (testScript(root) !== '' || isWorkspaces(root));
   const command = !isNode ? '<your test command>' : isWorkspaces(root) ? workspacesTest(root).replaceAll('`', '') : 'npm test';
-  const install = isNode && existsSync(join(root, 'package-lock.json')) ? ', {run: npm ci}' : '';
+  const run = isNode && existsSync(join(root, 'package-lock.json')) ? `\`npm ci\`, then \`${command}\`` : `\`${command}\``;
   const uses = isNode ? 'the checkout and setup-node steps of the other jobs' : 'the checkout step of the other jobs';
-  const steps = `[<${uses}>${install}, {run: ${command}}]`;
   const start = existsSync(join(root, file)) ? `in ${file}` : `run \`yokoten init\` to add ${file}, then in it`;
-  return `${start}, add this job under \`jobs:\`. Copy the \`uses:\` lines from the other jobs, because they are pinned: \`tests: {runs-on: ubuntu-latest, steps: ${steps}}\`. Then add \`tests\` to the \`needs\` list of the \`ci\` job, so a failing test blocks the merge`;
+  // Short code spans: a span never breaks on the screen (#1268), so one long span runs past 80 columns (#1274).
+  return `${start}, add a \`tests\` job under \`jobs:\` with \`runs-on: ubuntu-latest\`. Its steps: ${uses}, with their pinned \`uses:\` lines, then a step that runs ${run}. Then add \`tests\` to the \`needs\` list of the \`ci\` job, so a failing test blocks the merge`;
 };
 
 /** Tracked build output, as yokoten.json lets it through; null outside a git repo. */

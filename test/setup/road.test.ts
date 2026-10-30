@@ -352,7 +352,7 @@ test('road: the tests step stays next with only a lint step, and says what is mi
   const dir = makeTempDir('yokoten-tests-fix-');
   try {
     writeFileSync(join(dir, 'package.json'), NPM_WS['package.json']);
-    assert.match(tests?.fix(dir, {}, undefined) ?? '', /\{run: npm test --workspaces\}\]\}`\. Then add `tests` to the `needs` list of the `ci` job/);
+    assert.match(tests?.fix(dir, {}, undefined) ?? '', /a step that runs `npm test --workspaces`\. Then add `tests` to the `needs` list of the `ci` job/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -679,7 +679,9 @@ test('road: the tests step names the workflow file, the job to add and the needs
   try {
     const fix = () => tests?.fix(dir, {}, undefined) ?? '';
     // No workflow file yet: init adds it first. No package.json: a placeholder command.
-    assert.equal(fix(), 'run `yokoten init` to add .github/workflows/yokoten.yml, then in it, add this job under `jobs:`. Copy the `uses:` lines from the other jobs, because they are pinned: `tests: {runs-on: ubuntu-latest, steps: [<the checkout step of the other jobs>, {run: <your test command>}]}`. Then add `tests` to the `needs` list of the `ci` job, so a failing test blocks the merge');
+    assert.equal(fix(), 'run `yokoten init` to add .github/workflows/yokoten.yml, then in it, add a `tests` job under `jobs:` with `runs-on: ubuntu-latest`. Its steps: the checkout step of the other jobs, with their pinned `uses:` lines, then a step that runs `<your test command>`. Then add `tests` to the `needs` list of the `ci` job, so a failing test blocks the merge');
+    // #1274: a code span never breaks on the screen, so each one fits the fix column of doctor.
+    for (const span of fix().match(/`[^`]*`/g) ?? []) assert.ok(span.length <= 50, span);
     // A test script and a pinned checkout: one line of real YAML a beginner can paste.
     const pin = '3d3c42e5aac5ba805825da76410c181273ba90b1';
     const setup = 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1';
