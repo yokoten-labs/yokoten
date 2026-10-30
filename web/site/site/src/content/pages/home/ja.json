@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "yokoten は、AI コーディングエージェントの取り返しのつかないミスを止めます。コマンド一つで準備完了：npx yokoten。"
+    "description": "yokoten は、AI コーディングエージェントの取り返しのつかないミスを止めます。コマンドひとつで、設定はいりません。"
   },
   "hero": {
     "headline": "AI エージェントの取り返しのつかないミスを止める。",

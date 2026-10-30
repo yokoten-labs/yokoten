@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command sets it up: npx yokoten."
+    "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup."
   },
   "hero": {
     "headline": "Stops the mistake you can't undo.",
