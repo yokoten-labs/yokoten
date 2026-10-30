@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeSandbox, pathWithoutGh, rowsText } from '../../repo/helpers.ts';
-import { DEFAULTS } from '../../../src/rules/config.ts';
+import { DEFAULTS, type Env } from '../../../src/rules/config.ts';
 import { doctor, type DoctorReport, reportJson, STEP_TITLES } from '../../../src/setup/doctor/index.ts';
 import { VERSION } from '../../../src/setup/files.ts';
 
@@ -100,8 +100,8 @@ function stageOneFilesDone() {
 }
 
 const noNetwork = () => { throw new Error('no network in this test'); };
-/** The report doctor gives, with --files or without, for `home`. */
-const reportIn = (repo: string, env: Record<string, string>, files: boolean) => doctor(repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noNetwork, files }).report;
+/** The report doctor gives in `repo`, with --files or without. */
+const reportIn = (repo: string, env: Env, files: boolean) => doctor(repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noNetwork, files }).report;
 
 // The page shows `stage` and `next` (#1256): under --files both come from the files steps
 // alone, so `next` never names a step the page can't show.
