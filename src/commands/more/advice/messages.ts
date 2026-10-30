@@ -7,7 +7,7 @@ import { CLAIM_WARNING, messageProblem, readableMessage, senderLine, wrapMessage
 import { appendMessage, changedSinceRead, keepReadState, loadReadState, outboxNames, readOutbox, sendProblem, unread } from '../../../agents/desk/team/outbox.ts';
 import { LEAD, makeTeam, oneLine, readRoster } from '../../../agents/desk/team/team.ts';
 import { type Me, whoAmI } from '../../../agents/desk/team/who.ts';
-import { fail, field, LABEL_COLUMN, type Invocation, moreLine, parse, print, readInput, rootOf, row, screen, spaced, title, usage, wrap } from '../../shared.ts';
+import { fail, field, LABEL_COLUMN, type Invocation, MARK_COLUMN, moreLine, parse, print, readInput, rootOf, row, screen, spaced, title, usage, wrap } from '../../shared.ts';
 
 /** How many unread messages `msg inbox` shows at once. */
 const INBOX_MAX = 50;
@@ -106,7 +106,7 @@ export function inboxScreen({ name, messages, problems, waiting, reply }: InboxR
     title('msg', `${messages.length} new ${messages.length === 1 ? 'message' : 'messages'}`),
     spaced([
       ...messages.flatMap((message) => [
-        field(shortLabel(message.from), `${message.time}   ${message.withheld === undefined ? message.text : `[withheld: ${message.withheld}; tell the lead]`}`),
+        field(shortLabel(message.from), `${message.time}   ${message.withheld === undefined ? message.text : `[withheld: ${message.withheld}; tell the lead]`}`, MARK_COLUMN),
         ...(message.claims ? [row('MISSING', CLAIM_WARNING)] : []),
       ]),
       ...problems.map((problem) => row('note', `a message was withheld: ${problem}`)),
@@ -132,7 +132,7 @@ export function whoResult(me: Me): WhoResult {
 export const whoScreen = ({ name, lead, members }: WhoResult): string[] =>
   screen(
     title('msg', `you are ${name} on the team`),
-    spaced([field('lead', lead), ...members.map((member) => field(member.name, member.line))]),
+    spaced([field('lead', lead, MARK_COLUMN), ...members.map((member) => field(member.name, member.line, MARK_COLUMN))]),
     members.length ? [] : row('note', 'no desk has joined yet; `yokoten desk` adds each agent'),
   );
 

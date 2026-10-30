@@ -54,9 +54,9 @@ test('installScreen: a first install on each system, its rows from the result (#
   for (const platform of ['linux', 'win32', 'darwin'] as const) {
     const text = keepsRules(installScreen(freshInstall(platform), place(platform)));
     assert.match(text, /^yokoten install · this computer is set up$/m, platform);
-    assert.match(text, /^ {2}ok {10}guard {7}on for Claude Code, Codex CLI$/m, platform);
-    assert.match(text, /^ {2}ok {10}skills {6}yokoten$/m, platform);
-    assert.match(text, /^ {2}note {8}other AIs {3}2 not installed here; run install again later$/m, platform);
+    assert.match(text, /^ {2}ok {11}guard {7}on for Claude Code, Codex CLI$/m, platform);
+    assert.match(text, /^ {2}ok {11}skills {6}yokoten$/m, platform);
+    assert.match(text, /^ {2}note {9}other AIs {3}2 not installed here; run install again later$/m, platform);
     assert.match(text, /^Next: `yokoten init`$/m, platform);
     assert.doesNotMatch(text, /PATH/, `${platform}: the launcher's folder is on the PATH`);
   }
@@ -66,16 +66,16 @@ test('installScreen: a first install on each system, its rows from the result (#
 
 test('installScreen: the PATH step is said for the system the screen is for (#1038)', () => {
   const linux = keepsRules(installScreen(freshInstall('linux'), place('linux', { launcherOnPath: false })));
-  assert.match(linux, /^ {2}note {8}command {5}~\/\.local\/bin is not on your PATH yet$/m);
-  assert.match(linux, /^ {26}`export PATH="\$HOME\/\.local\/bin:\$PATH"`$/m);
+  assert.match(linux, /^ {2}note {9}command {5}~\/\.local\/bin is not on your PATH yet$/m);
+  assert.match(linux, /^ {27}`export PATH="\$HOME\/\.local\/bin:\$PATH"`$/m);
   const windows = keepsRules(installScreen(freshInstall('win32'), place('win32', { launcherOnPath: false })));
-  assert.match(windows, /^ {2}note {8}command {5}~\\\.local\\bin is not on your PATH yet$/m);
+  assert.match(windows, /^ {2}note {9}command {5}~\\\.local\\bin is not on your PATH yet$/m);
   assert.match(windows, /"Edit environment variables for\s+your account"/);
   assert.doesNotMatch(windows, /export PATH/, 'Windows has no shell profile line');
   // A profile that already adds the folder: a new shell finds the launcher.
   const added = freshInstall('linux');
   added.changes.push({ state: 'added', kind: 'profile', path: under('linux', '.bashrc'), note: 'open a new shell' });
-  assert.match(keepsRules(installScreen(added, place('linux', { launcherOnPath: false }))), /^ {2}note {8}command {5}~\/\.bashrc adds ~\/\.local\/bin to your PATH$/m);
+  assert.match(keepsRules(installScreen(added, place('linux', { launcherOnPath: false }))), /^ {2}note {9}command {5}~\/\.bashrc adds ~\/\.local\/bin to your PATH$/m);
 });
 
 test('installScreen: nothing changed, a problem, and no home folder (#1115)', () => {
@@ -87,7 +87,7 @@ test('installScreen: nothing changed, a problem, and no home folder (#1115)', ()
   partly.problems.push(finding('codex-user-hook', `${under('linux', '.codex', 'hooks.json')} is not valid JSON`, 'run `yokoten install` again', { why: 'the guard is not on for Codex CLI until it is' }));
   const text = keepsRules(installScreen(partly, place('linux', { launcherOnPath: false })), true);
   assert.match(text, /^yokoten install · this computer is partly set up$/m);
-  assert.match(text, /^ {2}MISSING {5}guard {7}~\/\.codex\/hooks\.json is not valid JSON\n {26}The guard is not on for Codex CLI until it is\.\n {26}Fix: `yokoten install`$/m);
+  assert.match(text, /^ {2}MISSING {6}guard {7}~\/\.codex\/hooks\.json is not valid JSON\n {27}The guard is not on for Codex CLI until it is\.\n {27}Fix: `yokoten install`$/m);
   const noHome: SetupResult = { ok: false, changes: [], problems: [finding('machine-runtime', 'no home folder', "set HOME to your home folder's full path, then run `yokoten install` again")], notes: [] };
   keepsRules(installScreen(noHome, place('linux', { home: null })), true);
 });
@@ -106,7 +106,7 @@ test('uninstallScreen: counts of what went, and a second run with nothing to rem
     notes: [],
   };
   const text = keepsRules(uninstallScreen(removed));
-  assert.match(text, /^ {2}ok {10}removed {5}1 skill, 1 agent, 1 hook$/m);
+  assert.match(text, /^ {2}ok {11}removed {5}1 skill, 1 agent, 1 hook$/m);
   assert.match(text, /^To install again: `yokoten install`$/m);
   assert.deepEqual(uninstallScreen({ ok: true, changes: [], problems: [], notes: [] }), ['yokoten uninstall · nothing to remove: yokoten is not installed on this computer']);
   const stuck = { ...removed, ok: false, problems: [finding('user-guard', '~/.claude/settings.json is not JSON, so the Claude Code hooks are still in it', 'run `yokoten uninstall` again', { why: 'uninstall never rewrites a file it cannot read' })] };
@@ -116,9 +116,9 @@ test('uninstallScreen: counts of what went, and a second run with nothing to rem
 test('listScreen: every change as a row, its state the mark (#1115)', () => {
   const text = keepsRules(listScreen('install', freshInstall('linux'), place('linux')));
   assert.match(text, /^yokoten install · this computer is set up$/m);
-  assert.match(text, /^ {2}wrote {7}skill yokoten in ~\/\.claude\/skills$/m);
-  assert.match(text, /^ {2}linked {6}skill yokoten in ~\/\.agents\/skills$/m);
-  assert.match(text, /^ {2}skipped {5}Gemini CLI hooks in ~\/\.gemini: not installed here$/m);
+  assert.match(text, /^ {2}wrote {8}skill yokoten in ~\/\.claude\/skills$/m);
+  assert.match(text, /^ {2}linked {7}skill yokoten in ~\/\.agents\/skills$/m);
+  assert.match(text, /^ {2}skipped {6}Gemini CLI hooks in ~\/\.gemini: not installed here$/m);
 });
 
 test('install and uninstall: the entry prints one screen, --list every file (#1027)', async () => {
@@ -132,8 +132,8 @@ test('install and uninstall: the entry prints one screen, --list every file (#10
   assert.match(result.stdout, /^Next: `yokoten init`$/m);
   fit(result.stdout);
   const list = await sandbox.call(['install', '--list']);
-  assert.match(list.stdout, /^ {2}kept {8}skill yokoten in ~[\\/]\.claude[\\/]skills$/m);
-  assert.match(list.stdout, /^ {2}skipped {5}Codex CLI hooks in ~[\\/]\.codex: not installed here$/m);
+  assert.match(list.stdout, /^ {2}kept {9}skill yokoten in ~[\\/]\.claude[\\/]skills$/m);
+  assert.match(list.stdout, /^ {2}skipped {6}Codex CLI hooks in ~[\\/]\.codex: not installed here$/m);
   const removed = await sandbox.call(['uninstall']);
   assert.equal(removed.status, 0, removed.stderr);
   assert.match(removed.stdout, /^yokoten uninstall · removed what install wrote$/m);

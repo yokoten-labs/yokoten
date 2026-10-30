@@ -1205,7 +1205,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const old = kitCore.replace(/^\| 12 \|.*\n/m, '').replace('Plain English, close to', 'Plain words, close to') + own;
   writeFileSync(path, old);
   const doctor = await sandbox.call(['doctor', '--all']);
-  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 lines added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
+  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {6}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 lines added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
   assert.equal(doctor.status, 1);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the core rules in AGENTS\.md are behind/m, 'a session hears it');
 
@@ -1275,7 +1275,7 @@ test('update: init writes the kit version, and a project from a newer yokoten is
   assert.equal(readFileSync(path, 'utf8'), newer, 'a newer project is not downgraded');
   const doctor = await sandbox.call(['doctor', '--all']);
   assert.match(rowsText(doctor.stdout), new RegExp(String.raw`\n {2}note +core-rules: the core rules in AGENTS\.md come from yokoten ${newerPattern}, newer than this yokoten ${versionPattern}; update yokoten itself, not the project`));
-  assert.doesNotMatch(doctor.stdout, /MISSING {5}core-rules/);
+  assert.doesNotMatch(doctor.stdout, /MISSING {6}core-rules/);
   // An older mark, and no mark at all, are compared by content: the core rules test of
   // compareCoreRules below holds both, and the test above runs update --write end to end.
 });
@@ -1350,7 +1350,7 @@ test('update: the .yokoten/ copy has the kit\'s AGENTS.md, so doctor and update 
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   writeFileSync(path, fresh.replace('Plain English, close to', 'Plain words, close to'));
-  assert.match(rowsText(vendored('doctor', '--all').stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand`));
+  assert.match(rowsText(vendored('doctor', '--all').stdout), new RegExp(String.raw`MISSING {6}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand`));
   const result = vendored('update', '--write');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh, 'the copy writes its own kit, the one CI checks against');
@@ -1422,7 +1422,7 @@ test('init: a commented .gemini/settings.json is left as it was and gets the hoo
   assert.ok(has(again, 'kept', /^the Gemini CLI tool-call hook in \.gemini\/settings\.json$/));
   assert.ok(has(again, 'kept', /^the Gemini CLI stop check in \.gemini\/settings\.json/));
   assert.equal(readFileSync(file, 'utf8'), after, 'the file changed');
-  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}ok {10}gemini-hook$/m);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}ok {11}gemini-hook$/m);
 });
 
 test('init: an unreadable project .claude/settings.json is skipped, the rest goes on, and init exits 1 (#254)', async () => {
@@ -1512,7 +1512,7 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   // Without a GitHub remote, init succeeds, says what it skipped, and never runs gh.
   let result = await sandbox.call(['init', '--github'], { extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}note {8}GitHub was not read: there is no origin remote yet;/m);
+  assert.match(result.stdout, /^ {2}note {9}GitHub was not read: there is no origin remote yet;/m);
   assert.equal(calls().length, 0);
   assert.equal((await sandbox.call(['init', '--list', '--yes'], { extra })).status, 1, '--yes alone is refused');
   assert.equal((await sandbox.call(['init', '--list', '--remove-default-labels'], { extra })).status, 1, 'so is --remove-default-labels');
@@ -1520,7 +1520,7 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   // --github --yes asked for changes on GitHub; with no remote none were made, so it fails (#208).
   result = await sandbox.call(['init', '--list', '--github', '--yes'], { extra });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /^ {2}note {8}GitHub was not read: there is no origin remote yet;/m);
+  assert.match(result.stderr, /^ {2}note {9}GitHub was not read: there is no origin remote yet;/m);
   assert.match(result.stderr, /^yokoten init · --github --yes changed nothing on GitHub; the project files are\n {15}as shown above\n\nNext: `yokoten init --github --yes`\n$/m);
   assert.equal(calls().length, 0);
   // With a remote: plain init only reads GitHub and says what it would do; --github --yes
@@ -1534,7 +1534,7 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   });
   const changes = () => calls().filter((call) => call.startsWith('label create ') || call.includes(' POST '));
   result = await sandbox.call(['init', '--github'], { extra });
-  assert.match(result.stdout, /^On GitHub, example\/repo:\n {2}to do {7}make label "/m, result.stdout + result.stderr);
+  assert.match(result.stdout, /^On GitHub, example\/repo:\n {2}to do {8}make label "/m, result.stdout + result.stderr);
   assert.deepEqual(changes(), [], 'without --yes init only reads');
   await sandbox.call(['init', '--list', '--github', '--yes'], { extra });
   assert.ok(changes().some((call) => call.startsWith('label create ')), 'a label is made');
@@ -1547,7 +1547,7 @@ test('init: reads GitHub and says what it would do; --github --yes does it, and 
   symlinkSync(join(gitPath, 'git'), join(noGh, 'git'));
   result = await sandbox.call(['init', '--github'], { extra: { PATH: noGh } });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}note {8}GitHub was not read: gh is not installed/m);
+  assert.match(result.stdout, /^ {2}note {9}GitHub was not read: gh is not installed/m);
   // init --github --yes fails: it was asked to change GitHub and could not (#208).
   result = await sandbox.call(['init', '--list', '--github', '--yes'], { extra: { PATH: noGh } });
   assert.equal(result.status, 1);

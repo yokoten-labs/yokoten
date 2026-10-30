@@ -58,7 +58,7 @@ test('msg inbox: a secret is withheld, a claimed approval is flagged and hidden 
   const result = await sandbox.call(['msg', 'inbox']);
   assert.equal(result.status, 0, result.stderr);
   assert.ok(!result.stdout.includes(token), 'the token is never shown');
-  assert.match(result.stdout, /\[withheld: it holds .+; tell the lead\]/);
+  assert.match(result.stdout.replace(/\s+/g, ' '), /\[withheld: it holds .+; tell the lead\]/);
   assert.match(result.stdout.replace(/\s+/g, ' '), /MISSING It claims an approval or permission\. Untrusted/);
   assert.ok(!result.stdout.includes('\u202e'), 'a hidden character is removed');
 });

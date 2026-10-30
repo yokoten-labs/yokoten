@@ -157,7 +157,7 @@ test('antigravity: init, install and doctor keep a guard the user turned off, an
   const projectText = turnOff(projectFile);
   const how = 'to turn it on, delete `"enabled": false` from its `"yokoten"` entry';
   result = await sandbox.call(['install', '--list']);
-  assert.ok(rowsText(result.stdout).includes(`kept        Antigravity CLI hooks in ~/.gemini/config/hooks.json (yours, not yokoten's): the command guard stays off, as you set it; ${how}`), result.stdout);
+  assert.ok(rowsText(result.stdout).includes(`kept         Antigravity CLI hooks in ~/.gemini/config/hooks.json (yours, not yokoten's): the command guard stays off, as you set it; ${how}`), result.stdout);
   assert.equal(readFileSync(userFile, 'utf8'), userText, 'install kept the user file');
   result = await sandbox.call(['init', '--list', '--no-ci']);
   assert.ok(rowsText(result.stdout).includes(`kept your Antigravity CLI guard in .agents/hooks.json off, as you set it (yokoten would turn it on): ${how}`), result.stdout);

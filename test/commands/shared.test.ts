@@ -19,7 +19,7 @@ import {
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { askOnTerminal, canColour, fail, isColourTerminal, MARK_COLUMN, MARKS, paint, problemRows, row, type RowMark, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
-import { ROW_INDENT } from '../../src/rules/text/screen.ts';
+import { field, ROW_INDENT } from '../../src/rules/text/screen.ts';
 import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup/ask.ts';
 import type { Env } from '../../src/rules/config.ts';
 import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
@@ -359,7 +359,7 @@ test('screen helpers: 80 columns, the label column, plural counts, the old conso
   const { wrap, row, title, nextLine, count, isUnicodeTerminal } = await import('../../src/commands/shared.ts');
   const long = 'word '.repeat(40).trim();
   for (const line of [...wrap('  note        ', long), ...row('note', long, 'label'), ...title('doctor', long)]) assert.ok(line.length <= 80, line);
-  assert.deepEqual(row('ok', 'on for Claude Code', 'guard'), ['  ok          guard       on for Claude Code']);
+  assert.deepEqual(row('ok', 'on for Claude Code', 'guard'), ['  ok           guard       on for Claude Code']);
   assert.deepEqual(nextLine('yokoten init'), ['Next: `yokoten init`']);
   assert.equal(count(1, 'file'), '1 file');
   assert.equal(count(3, 'file'), '3 files');
@@ -369,8 +369,8 @@ test('screen helpers: 80 columns, the label column, plural counts, the old conso
   assert.equal(isUnicodeTerminal({ TERM_PROGRAM: 'vscode' }, 'win32'), true);
   assert.equal(isUnicodeTerminal({}, 'darwin'), true);
   assert.equal(isUnicodeTerminal({ TERM: 'linux' }, 'linux'), false);
-  assert.match(styleLine('  ok          guard', true, false), /√ ok/);
-  assert.match(styleLine('  ok          guard', true, true), /✔ ok/);
+  assert.match(styleLine('  ok           guard', true, false), /√ ok/);
+  assert.match(styleLine('  ok           guard', true, true), /✔ ok/);
 });
 
 // Issue #1115: a fix that starts with a command ends its row on a Fix line, said once.
@@ -390,7 +390,7 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   const checkFix = problemRows([same]).filter((line) => line.includes('Fix: '));
   const doctorFix = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([same]).flat().filter((line) => line.includes('Fix: '));
   assert.deepEqual(checkFix, doctorFix, 'check and doctor show the same Fix line');
-  assert.deepEqual(checkFix, ['              Fix: `yokoten install`']);
+  assert.deepEqual(checkFix, ['               Fix: `yokoten install`']);
   // A fix with a follow-up says it on both screens (the check screen keeps it under the why, doctor under the row).
   const marks = finding('time-zone', 'no marks', 'run `yokoten marks add` and type your name');
   const doctorLines = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([marks]).flat();
@@ -403,7 +403,7 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   const pair = (await import('../../src/commands/more/advice/doctor.ts')).problemRows([marks, other]);
   assert.equal(pair.length, 1, pair.map((block) => block.join('\n')).join('\n---\n'));
   const block = pair[0]!;
-  assert.deepEqual(block.filter((line) => line.includes('Fix: ')), ['              Fix: `yokoten marks add`']);
+  assert.deepEqual(block.filter((line) => line.includes('Fix: ')), ['               Fix: `yokoten marks add`']);
   assert.ok(block.some((line) => line.includes('Type your name.')) && block.some((line) => line.includes('Pick a folder.')), block.join('\n'));
   assert.ok(block.findIndex((line) => line.includes('Pick a folder.')) < block.findIndex((line) => line.includes('Fix: ')), 'follow-ups come before the Fix line');
   // A note keeps its fix's follow-up too (formatNote uses fixCommand).
@@ -412,8 +412,8 @@ test('problem rows: a fix that starts with a command is its own last line, said 
   assert.match(note, /type your name/i, note);
   const zone = finding('time-zone', "this commit's time carries your time zone", 'run `export TZ=UTC`, then keep the command in ~/.bashrc');
   const lines = problemRows([zone, { ...zone, what: 'the committer time carries it too' }]);
-  assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['              Fix: `export TZ=UTC`'], 'one Fix line for both');
-  assert.equal(lines.at(-1), '              Fix: `export TZ=UTC`', 'under the last problem it fixes');
+  assert.deepEqual(lines.filter((line) => line.includes('Fix: ')), ['               Fix: `export TZ=UTC`'], 'one Fix line for both');
+  assert.equal(lines.at(-1), '               Fix: `export TZ=UTC`', 'under the last problem it fixes');
   assert.ok(lines.includes(''), 'a blank line between the rows');
   // A positive control: a fix with no leading command keeps its sentence, and no Fix line.
   const plain = problemRows([finding('time-zone', 'one', 'leave history as it is')]);
@@ -459,8 +459,8 @@ test('fail: the failure screen on stderr, nothing on stdout, exit 1; with --json
 
 test('show: a screen on stdout, as print does (#1115)', () => {
   const { invocation, out, err } = kitInvocation();
-  show(invocation, ['yokoten desk · 2 desks', '', '  ok          one']);
-  assert.equal(out.join(''), 'yokoten desk · 2 desks\n\n  ok          one\n');
+  show(invocation, ['yokoten desk · 2 desks', '', '  ok           one']);
+  assert.equal(out.join(''), 'yokoten desk · 2 desks\n\n  ok           one\n');
   assert.deepEqual(err, []);
   show(invocation, []);
   assert.equal(out.length, 1, 'no lines print nothing');
@@ -508,4 +508,18 @@ test("styleLine: every row's text starts in one column, plain, in colour and in 
   }
   const labelled = row("can't check", 'gh could not reach GitHub', '#12')[0] ?? '';
   assert.equal(strip(styleLine(labelled, true)).indexOf('gh could not'), labelled.indexOf('gh could not'), 'a labelled row keeps its column too');
+});
+
+// #1267: `can't check` left one space before its text and read as "can't check 9 steps".
+test('row: the widest mark keeps two spaces before its text (#1267)', () => {
+  const widest = Math.max(...MARKS.map((mark) => mark.length));
+  assert.ok(MARK_COLUMN >= widest + 2, `MARK_COLUMN ${MARK_COLUMN} leaves under two spaces after a ${widest}-character mark`);
+  assert.match(row("can't check", '9 steps')[0] ?? '', /can't check {2}9 steps/);
+});
+
+// From review: a field label that fills its column ran into its text, as `can't check` did.
+test('field: a label that fills its column takes its own line (#1267)', () => {
+  assert.deepEqual(field('short', 'the text', 12), ['  short       the text'], 'positive control: a short label shares its line');
+  assert.deepEqual(field('a-long-desk-name', 'the text', 12), ['  a-long-desk-name', '              the text']);
+  assert.deepEqual(field('exactly-12ch', 'the text', 12), ['  exactly-12ch', '              the text'], 'a label as wide as the column leaves no space, so it moves too');
 });

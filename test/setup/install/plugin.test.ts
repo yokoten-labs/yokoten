@@ -179,7 +179,7 @@ test('install: a managed skill you edited is kept; an untouched copy updates fro
   let result = installIn(sandbox);
   assert.deepEqual(result.changes.find((change) => change.path === dirname(skill)), { state: 'kept', kind: 'skill', path: dirname(skill), yours: true, note: 'your edit' });
   assert.equal(readFileSync(skill, 'utf8'), mine, 'their edit stays');
-  assert.match((await sandbox.call(['install'])).stdout, /^ {2}note {8}kept {8}your own edits stay; the newest copies are in the kit$/m);
+  assert.match((await sandbox.call(['install'])).stdout, /^ {2}note {9}kept {8}your own edits stay; the newest copies are in the kit$/m);
 
   // A copy yokoten wrote from an older kit, which the user did not touch, is replaced.
   writeFileSync(skill, sealManaged(installed.replace('hand a task to a worker', 'hand a task to a helper')));
@@ -241,7 +241,7 @@ test('install: run from the installed copy, it keeps that copy, and the next run
   for (let run = 0; run < 2; run++) {
     const result = spawnSync('node', [installed, 'install', '--list'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /^ {2}kept {8}the runtime ~\/\.local\/share\/yokoten: the copy running now$/m);
+    assert.match(result.stdout, /^ {2}kept {9}the runtime ~\/\.local\/share\/yokoten: the copy running now$/m);
     assert.ok(!result.stdout.includes(sandbox.home), 'output shows the home path');
     assert.ok(existsSync(installed), 'the installed copy is still there');
   }

@@ -110,8 +110,8 @@ export const isDoneMark = (mark: Mark): boolean => mark === 'ok' || mark === 'do
 
 /** Where a row starts: two spaces in from the left edge. */
 export const ROW_INDENT = 2;
-/** The mark's field: the widest mark, `can't check`, and one space. */
-export const MARK_COLUMN = 12;
+/** The mark's field: the widest mark, `can't check`, and two spaces, so it never reads into its text (#1267). */
+export const MARK_COLUMN = 13;
 /** A label's field, after the mark or alone in a `field` row. */
 export const LABEL_COLUMN = 12;
 /** Where a labelled row's text starts, so every text of one screen starts in one column. */
@@ -132,9 +132,11 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
  */
 export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.repeat(hasLabel ? ROW_TEXT_COLUMN : ROW_INDENT + MARK_COLUMN), text);
 
-/** One row with no mark: a label, then the text, wrapped under itself (#1027). */
-export function field(label: string, text: string): string[] {
-  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(LABEL_COLUMN)}`, text);
+/** One row with no mark: a label, then the text, wrapped under itself (#1027). A screen that mixes it with marked rows passes MARK_COLUMN, so every text starts in one column. */
+export function field(label: string, text: string, column = LABEL_COLUMN): string[] {
+  // A label that fills its column takes its own line, as in `row`, so it never runs into the text.
+  if (label.length > column - 1) return [`${' '.repeat(ROW_INDENT)}${label}`, ...wrap(' '.repeat(ROW_INDENT + column), text)];
+  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(column)}`, text);
 }
 
 /** An ISO stamp as `YYYY-MM-DD HH:MM UTC`, the one way a screen shows a time. A stamp that does not parse comes through as it is. */

@@ -26,7 +26,7 @@ test('init screen: a fresh project names each group it wrote, the file count, an
   const text = checked(initScreen(done, LINUX));
   assert.match(text, /^yokoten init · this project is set up$/m);
   for (const group of ['rules: AGENTS.md, the commit check', 'CI: 4 workflows, Dependabot', 'GitHub: issue and PR templates, CODEOWNERS, a security policy', 'agents: guard for Claude Code (7 more ready)']) {
-    assert.match(text, new RegExp(`^ {2}done {8}${group.replace(/[()]/g, '\\$&')}$`, 'm'), group);
+    assert.match(text, new RegExp(`^ {2}done {9}${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), group);
   }
   assert.match(text, /^\d+ files written, none of yours changed$/m);
   assert.equal(text.match(/^Next: /gm)?.length, 1);
@@ -43,7 +43,7 @@ test('init screen: run again it says nothing changed, and shows its notes, never
   const again = init(sandbox.repo, sandbox.env, () => '');
   const text = checked(initScreen(again, LINUX));
   assert.match(text, /^yokoten init · already set up here, nothing changed$/m);
-  assert.match(text, underMark(/^ {2}note {8}yokoten's guard is off in Codex until a person turns it on\n {COL}Fix: `yokoten trust`$/m), 'the trust note keeps its command');
+  assert.match(text, underMark(/^ {2}note {9}yokoten's guard is off in Codex until a person turns it on\n {COL}Fix: `yokoten trust`$/m), 'the trust note keeps its command');
   assert.doesNotMatch(text, /^Next: /m, 'nothing to commit');
 });
 
@@ -55,7 +55,7 @@ test('init screen: a partly new project counts what it added and what was there;
   const done = init(sandbox.repo, sandbox.env, () => '');
   const text = checked(initScreen(done, LINUX));
   assert.match(text, /^\d+ files added, 2 files already there$/m, 'AGENTS.md and CHANGELOG.md');
-  assert.match(text, /^ {2}note {8}your TZ in \.claude\/settings\.json; yokoten wants UTC/m);
+  assert.match(text, /^ {2}note {9}your TZ in \.claude\/settings\.json; yokoten wants UTC/m);
   assert.doesNotMatch(text, /Europe\/Paris/, 'the value is not shown');
 });
 
@@ -75,11 +75,11 @@ test('init --github: the plan is a section of rows, and the command that does it
   const plan = setUpPlanning(fakeGh(['bug'], []).gh, 'https://github.com/me/repo.git', { apply: false, removeDefaults: false });
   const text = checked(initScreen({ ...done, plan }, LINUX));
   assert.match(text, /^On GitHub, me\/repo:$/m);
-  assert.match(text, /^ {2}to do {7}make milestone "First release"$/m);
+  assert.match(text, /^ {2}to do {8}make milestone "First release"$/m);
   assert.match(text, /^ {2}To do these on GitHub: `yokoten init --github --yes`$/m);
   // Skipped: one note with the reason and the fix, on its own line.
   const skipped = planScreen(setUpPlanning(() => '', '', { apply: false, removeDefaults: false }));
-  assert.match(skipped.join('\n'), /^ {2}note {8}GitHub was not read: there is no origin remote yet;/);
+  assert.match(skipped.join('\n'), /^ {2}note {9}GitHub was not read: there is no origin remote yet;/);
   assert.match(skipped.join('\n'), /Fix: `yokoten init --github --yes`$/);
 });
 
@@ -89,7 +89,7 @@ test('init screen: a step left for the person is a MISSING row with its fix; the
   const left = { ...done, problems: [{ id: 'hooks-path', what: 'husky is not set up in this clone yet, so the commit check is not on yet', why: '', fix: 'npm install' }] };
   const text = checked(initScreen(left, LINUX));
   assert.match(text, /^yokoten init · this project is partly set up$/m);
-  assert.match(text, underMark(/^ {2}MISSING {5}husky is not set up in this clone yet, so the commit check is not\n {COL}on yet\n {COL}Fix: `npm install`$/m));
+  assert.match(text, underMark(/^ {2}MISSING {6}husky is not set up in this clone yet, so the commit check is not\n {COL}on yet\n {COL}Fix: `npm install`$/m));
 });
 
 test('init: a folder that does not exist is a failure with one Next line, and nothing is written (#205)', async () => {

@@ -56,7 +56,7 @@ import {
   wasRefusedRecently,
   writeAgentChecks,
 } from '../run/hook.ts';
-import { count, fail, field, type Invocation, nextLine, noteLine, type Output, parse, type Parsed, print, printJson, readInput, requireRoot, rootOf, row, say, screen, show, spaced, title, usage, wrap } from './shared.ts';
+import { count, fail, field, type Invocation, MARK_COLUMN, nextLine, noteLine, type Output, parse, type Parsed, print, printJson, readInput, requireRoot, rootOf, row, say, screen, show, spaced, title, usage, wrap } from './shared.ts';
 
 // Each runtime sends its tool call in its own shape; its adapter turns it into an Action.
 // The table below asks the adapters' contract (#395), never a runtime's name.
@@ -730,7 +730,7 @@ const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export function stopsScreen(state: { isOff: boolean; count: number; file: string }): string[] {
   return screen(
     title('stops', state.isOff ? 'off: no stops logged' : `on: ${count(state.count, 'stop')} logged on this computer`),
-    [...field('log', state.file), ...row('note', state.isOff ? 'yokoten writes no line while it is off' : 'Nothing is sent anywhere; the log stays on this computer')],
+    [...field('log', state.file, MARK_COLUMN), ...row('note', state.isOff ? 'yokoten writes no line while it is off' : 'Nothing is sent anywhere; the log stays on this computer')],
     state.isOff ? wrap('Turn on: ', '`yokoten stops on` starts the writing again') : wrap('Turn off: ', '`yokoten stops off` stops the writing and deletes the log'),
   );
 }

@@ -19,7 +19,7 @@ test('doctor: a marks file it can not read is named as unreadable, not missing (
   mkdirSync(folder);
   const result = await sandbox.call(['doctor', '--all'], { extra: { YOKOTEN_PRIVATE_MARKS: folder } });
   // A row wraps at 80 columns; its lines read as one here.
-  const out = result.stdout.replace(/\n {14}/g, ' ');
+  const out = result.stdout.replace(/\n {15}/g, ' ');
   assert.match(out, /private-marks: a private-marks file can't be read, so the privacy check stops every commit; make ~\/\.config\/yokoten\/private-marks readable/);
   assert.doesNotMatch(out, /is missing or has no marks/);
   assert.doesNotMatch(out, /quietharbor/i);

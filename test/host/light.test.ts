@@ -113,7 +113,7 @@ test('guard cost: full doctor reports it in one line, spawning the guard once; a
     measureGuard: () => { runs++; return { wallMs: 90.2, cpuMs: 60.4 }; },
   } satisfies MachineProbe;
   const full = doctor(sandbox.repo, { env, config: DEFAULTS, machine });
-  assert.ok(full.lines.includes('  ok          guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
+  assert.ok(full.lines.includes('  ok           guard: 90 ms per command (60 ms CPU)'), full.lines.join('\n'));
   assert.equal(runs, 1);
   doctor(sandbox.repo, { env, config: DEFAULTS, machine, session: true });
   assert.equal(runs, 1, 'a session must start fast: no guard run');

@@ -29,7 +29,7 @@ test("install: adds the machine's marks and a git mailmap, and never prints a va
   let result = installIn(sandbox);
   for (const value of ['Jane', 'personal-mail', 'private-host']) assert.ok(!JSON.stringify(result).includes(value), 'the result holds a value');
   // The first run added the kinds; the result names the kinds, never a value.
-  assert.match(listed.stdout, /^ {2}added {7}~\/\.config\/yokoten\/private-marks: git name, git email, private\n {14}remote host from this machine \(the values are not shown\)$/m);
+  assert.match(listed.stdout, /^ {2}added {8}~\/\.config\/yokoten\/private-marks: git name, git email, private\n {15}remote host from this machine \(the values are not shown\)$/m);
   assert.deepEqual(result.notes.filter((note) => note.id === 'private-marks').map((note) => [note.what, note.fix, note.why]), [["optional: add your city or your domains too; yokoten can't find them on its own", 'run `yokoten marks add` and type one; it is not shown', 'for example: your city, a company domain, a server name']]);
   assert.match(readFileSync(marks, 'utf8'), /^# for example: your city, a company domain, a server name$/m);
   // No terminal: the mailmap file is written, but git's own config is not changed (#985).
@@ -87,7 +87,7 @@ test("install names git's global mailmap.file as a setting it asks for, and a no
   const result = installIn(sandbox);
   assert.ok(result.ok, findingsOf(result, sandbox.home));
   assertRows(result, sandbox.home, 'wrote file ~/.config/yokoten/mailmap', 'skipped setting mailmap.file');
-  assert.match((await sandbox.call(['install', '--list'])).stdout, /^ {2}skipped {5}the git setting mailmap\.file: install changes your git config only\n {14}when you say yes$/m);
+  assert.match((await sandbox.call(['install', '--list'])).stdout, /^ {2}skipped {6}the git setting mailmap\.file: install changes your git config\n {15}only when you say yes$/m);
   // Positive control: the old install set it here, with nobody asked.
   assert.equal(sandbox.git('config', '--global', '--get', 'mailmap.file').stdout, '');
   // A no at the terminal: nothing set, and the line gives the command.
@@ -350,7 +350,7 @@ test('install: adds the git name as a mark of its own, never prints it, and not 
   let listed = await sandbox.call(['install', '--list']);
   said.push(listed.stdout, listed.stderr);
   assert.equal(listed.status, 0, listed.stderr);
-  assert.match(listed.stdout, /^ {2}added {7}~\/\.config\/yokoten\/private-marks: git name from this machine \(the\n {14}values are not shown\)$/m);
+  assert.match(listed.stdout, /^ {2}added {8}~\/\.config\/yokoten\/private-marks: git name from this machine \(the\n {15}values are not shown\)$/m);
   assert.doesNotMatch(listed.stdout, /add your real name/, 'no nudge to add the name by hand');
   assert.match(readFileSync(marks, 'utf8'), new RegExp(`${GIT_NAME_BLOCK}$`));
   assert.deepEqual(loadMarkKinds({ HOME: sandbox.home }).filter((mark) => mark.kind === 'git name').map((mark) => mark.value), [SAMPLE_NAME.toLowerCase()]);

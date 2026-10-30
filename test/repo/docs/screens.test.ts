@@ -98,13 +98,13 @@ test('layout: wrap breaks once at 80 columns, under the first text, and never in
 });
 
 test('layout: a title, rows, fields, a section and the Next line, one blank line between blocks (#1099)', () => {
-  const lines = screen(title('tidy', 'nothing to put away'), section('Branches', [...row('ok', 'none old'), ...field('trash', 'empty')]), [], nextLine('yokoten tidy --local'), moreLine('`yokoten tidy --help`'));
+  const lines = screen(title('tidy', 'nothing to put away'), section('Branches', [...row('ok', 'none old'), ...field('trash', 'empty', MARK_COLUMN)]), [], nextLine('yokoten tidy --local'), moreLine('`yokoten tidy --help`'));
   assert.deepEqual(lines, [
     'yokoten tidy · nothing to put away',
     '',
     'Branches:',
-    '  ok          none old',
-    '  trash       empty',
+    '  ok           none old',
+    '  trash        empty',
     '',
     'Next: `yokoten tidy --local`',
     '',
@@ -161,8 +161,8 @@ test('layout: screen() never glues a title to its rows, even when they come in o
   assert.deepEqual(screen(['yokoten · not set up yet', ...rows]), ['yokoten · not set up yet', '', ...rows], 'the bare command too');
   assert.deepEqual(screen(['Branches:', ...rows]), ['Branches:', ...rows], 'a block with no title is left as it is');
   assert.deepEqual(screen(title('tidy', 'x')), ['yokoten tidy · x'], 'a title alone is one line');
-  assert.deepEqual(spaced([title('tidy', 'x'), row('ok', 'a'), row('ok', 'b')]), ['yokoten tidy · x', '', '  ok          a', '  ok          b'], 'spaced() puts a blank line after a title item, not between short rows');
-  assert.deepEqual(spaced([row('ok', 'a'), [...row('ok', 'b'), 'more']]), ['  ok          a', '', '  ok          b', 'more'], 'spaced() still separates when any item has two lines');
+  assert.deepEqual(spaced([title('tidy', 'x'), row('ok', 'a'), row('ok', 'b')]), ['yokoten tidy · x', '', '  ok           a', '  ok           b'], 'spaced() puts a blank line after a title item, not between short rows');
+  assert.deepEqual(spaced([row('ok', 'a'), [...row('ok', 'b'), 'more']]), ['  ok           a', '', '  ok           b', 'more'], 'spaced() still separates when any item has two lines');
 });
 
 test('layout: failure() is the title, then one Next line, a blank line between (#1115)', () => {
@@ -191,12 +191,12 @@ test('layout: MARKS is every row mark and change state, and the columns are name
   assert.equal(new Set(MARKS).size, MARKS.length, 'one word once');
   assert.ok(MARKS.every((mark) => mark.length < MARK_COLUMN), 'every mark fits its field');
   assert.deepEqual(MARKS.filter(isDoneMark), ['ok', 'done', 'wrote', 'updated', 'linked', 'added', 'removed', 'kept']);
-  assert.equal(ROW_TEXT_COLUMN, 26);
+  assert.equal(ROW_TEXT_COLUMN, 27);
   assert.equal(LABEL_COLUMN, 12);
   assert.equal(row('ok', 'text', 'label')[0]?.indexOf('text'), ROW_TEXT_COLUMN, 'a labelled row starts its text at ROW_TEXT_COLUMN');
   assert.equal(row('ok', 'text')[0]?.indexOf('text'), ROW_INDENT + MARK_COLUMN);
   assert.equal(field('trash', 'text')[0]?.indexOf('text'), ROW_INDENT + LABEL_COLUMN);
-  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING     a-very-long-path.md', `${' '.repeat(ROW_TEXT_COLUMN)}text`], "a long label stands on its own line, its text in the label column like every labelled row (#1239)");
+  assert.deepEqual(row('MISSING', 'text', 'a-very-long-path.md'), ['  MISSING      a-very-long-path.md', `${' '.repeat(ROW_TEXT_COLUMN)}text`], "a long label stands on its own line, its text in the label column like every labelled row (#1239)");
   // A short and a long label on one screen: both texts start in the label column (#1239).
   const mixed = [...row('next', 'working', 'w1'), ...row('next', 'working', 'worker-number-two')];
   assert.deepEqual(mixed.map((line) => line.search(/working/)).filter((at) => at >= 0), [ROW_TEXT_COLUMN, ROW_TEXT_COLUMN]);
@@ -800,7 +800,7 @@ test('screens: every screen the command list reaches keeps the limits of record 
     const broken: string[] = [];
     const healed: string[] = [];
     for (const { run, text, problems } of checked) {
-      if (run.key === 'init, a DeepSeek Harness profile') assert.match(text, /note {8}DeepSeek Harness/, `init shows the DeepSeek Harness note: ${text}`);
+      if (run.key === 'init, a DeepSeek Harness profile') assert.match(text, /note {9}DeepSeek Harness/, `init shows the DeepSeek Harness note: ${text}`);
       if (run.place === 'zoned') assert.match(text, /Fix: `export TZ=UTC`/, `the commit check stops on the time zone: ${text}`);
       if (run.place === 'signed-out') assert.match(text, /\n- the pull requests and the Actions runs: gh is not signed in\n {2}Fix: `gh auth login`\n/, `the fake gh answered: ${text}`);
       if (run.key === 'install, bare') assert.match(text, /guard {7}on for /, `install set the sandbox home up: ${text}`);
@@ -834,7 +834,7 @@ test('screens: the first-run block of every README is the screen the first run p
   const withoutVersion = (text: string): string =>
     text
       .replace(/^yokoten \d+\.\d+\.\d+/, 'yokoten VERSION')
-      .replace(/^ {2}note {8}the desk fence can't start:.*\n/m, '')
+      .replace(/^ {2}note {9}the desk fence can't start:.*\n/m, '')
       .replace(/shows every check and \d+ notes?/, 'shows every check and N notes')
       .trimEnd();
   const printed = withoutVersion((await makeSandbox().call([])).output);

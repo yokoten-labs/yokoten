@@ -139,7 +139,7 @@ test('tidy: alone it lists by what you can do, with why and size, and leaves eve
     const lines = text.split('\n');
     const from = lines.indexOf(heading) + 1;
     const length = lines.slice(from).findIndex((line) => /^\S/.test(line));
-    return lines.slice(from, length === -1 ? undefined : from + length).join('\n').replace(/\n\s*\n {26}/g, ' ').replace(/\n {26}/g, ' ');
+    return lines.slice(from, length === -1 ? undefined : from + length).join('\n').replace(/\n\s*\n {27}/g, ' ').replace(/\n {27}/g, ' ');
   };
   const putAway = group('Can put away:');
   assert.match(putAway, /branch +merged-one: merged into the main branch, and no change for a day; no commit of its own\./);
@@ -334,10 +334,10 @@ test('tidyScreen: --local and --empty from their results, the same result giving
   assert.deepEqual(done, [
     'yokoten tidy --local · put away 1 thing in /trash/a',
     '',
-    '  done        branch      one: merged into the main branch; no commit of its',
-    '                          own. Put away.',
+    '  done         branch      one: merged into the main branch; no commit of its',
+    '                           own. Put away.',
     '',
-    '  skipped     branch      two: it changed while tidy saved it, so it stays.',
+    '  skipped      branch      two: it changed while tidy saved it, so it stays.',
     '',
     'More: index.json there says how to bring each one back. It stays 7 days.',
     '',
@@ -345,14 +345,14 @@ test('tidyScreen: --local and --empty from their results, the same result giving
   ]);
   const failed = tidyScreen({ kind: 'local', folder: '/trash/a', moves: [{ item: item('one'), outcome: 'failed', problem: 'in use' }, { item: item('two'), outcome: 'after-failure' }] });
   assert.match(failed.slice(0, 2).join(' '), /put away 0 things in \/trash\/a; a move failed, so the rest +stayed$/);
-  assert.ok(failed.includes('  MISSING     branch      one: not moved, in use'));
+  assert.ok(failed.includes('  MISSING      branch      one: not moved, in use'));
   assert.deepEqual(tidyScreen({ kind: 'local', folder: null, moves: [] }), ['yokoten tidy --local · nothing to put away; nothing was changed']);
   const folders = [{ path: '/trash/2026-10-10T000000Z', created: Date.parse('2026-10-10T00:00:00Z'), size: 2048, isOld: true }];
   const asked = { kind: 'empty' as const, trash: '/trash', folders };
-  assert.deepEqual(tidyScreen(asked), ['yokoten tidy --empty · 1 trash folder over 7 days old, 2.0 KB', '', '  next        trash       2026-10-10T000000Z: 2.0 KB, put away 2026-10-10.']);
-  assert.deepEqual(deletedRow(asked), ['  ok          trash       nothing was deleted.'], 'no answer, or no: nothing was deleted');
+  assert.deepEqual(tidyScreen(asked), ['yokoten tidy --empty · 1 trash folder over 7 days old, 2.0 KB', '', '  next         trash       2026-10-10T000000Z: 2.0 KB, put away 2026-10-10.']);
+  assert.deepEqual(deletedRow(asked), ['  ok           trash       nothing was deleted.'], 'no answer, or no: nothing was deleted');
   const deleted = { ...asked, deleted: [folders[0]!.path] };
-  assert.deepEqual(deletedRow(deleted), ['  done        trash       deleted 1 folder, 2.0 KB.']);
+  assert.deepEqual(deletedRow(deleted), ['  done         trash       deleted 1 folder, 2.0 KB.']);
   assert.deepEqual(tidyScreen(deleted), [...tidyScreen(asked), '', ...deletedRow(deleted)], '--yes: the question\'s screen, then what was deleted');
   assert.deepEqual(tidyScreen(deleted), tidyScreen(structuredClone(deleted)), 'pure');
 });

@@ -214,10 +214,10 @@ test('machine: the notes show in full doctor and never change the exit code; a s
   const full = doctor(sandbox.repo, { env, config: DEFAULTS, machine });
   const quiet = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB) });
   assert.equal(full.ok, quiet.ok, 'a note never fails doctor');
-  assert.ok(rowsOf(full.lines).includes('  note        disk-space: the disk that holds this repo has 0.0 GB free of 250 GB; free some space: delete caches and build outputs you do not need, or move data to another disk'), full.lines.join('\n'));
-  assert.ok(full.lines.some((line) => line.startsWith('  note        agent-temp-dir: ')));
+  assert.ok(rowsOf(full.lines).includes('  note         disk-space: the disk that holds this repo has 0.0 GB free of 250 GB; free some space: delete caches and build outputs you do not need, or move data to another disk'), full.lines.join('\n'));
+  assert.ok(full.lines.some((line) => line.startsWith('  note         agent-temp-dir: ')));
   assert.deepEqual(full.report.notes?.filter((n) => ['disk-space', 'agent-temp-dir'].includes(n.id)).length, 2);
-  assert.ok(quiet.lines.includes('  ok          disk-space: 100 GB free of 250 GB'));
+  assert.ok(quiet.lines.includes('  ok           disk-space: 100 GB free of 250 GB'));
   const session = doctor(sandbox.repo, { env, config: DEFAULTS, machine, session: true });
   assert.ok(session.lines.some((line) => line.startsWith('yokoten: the disk that holds this repo has 0.0 GB free')));
   // The agent-temp-dir note's own text, so a temp path that happens to hold claude-1000 does not matter.
@@ -269,9 +269,9 @@ test('machine: full doctor shows the Node note and never fails on it; a session 
   const old = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB, { nodeVersion: '24.21.0' }) });
   const fixed = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB) });
   assert.equal(old.ok, fixed.ok, 'a note never fails doctor');
-  assert.ok(old.lines.some((line) => line.startsWith('  note        node-security: Node 24.21.0 has known security holes')), old.lines.join('\n'));
+  assert.ok(old.lines.some((line) => line.startsWith('  note         node-security: Node 24.21.0 has known security holes')), old.lines.join('\n'));
   assert.ok(old.report.notes?.some((n) => n.id === 'node-security'));
-  assert.ok(fixed.lines.includes('  ok          node-security: Node 24.22.1'), fixed.lines.join('\n'));
+  assert.ok(fixed.lines.includes('  ok           node-security: Node 24.22.1'), fixed.lines.join('\n'));
   const session = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB, { nodeVersion: '24.21.0' }), session: true });
   assert.ok(!session.lines.some((line) => line.includes('security holes')), 'full doctor only');
 });
@@ -312,7 +312,7 @@ test('machine: the leftover note shows in full doctor only, and never changes th
   const clean = doctor(sandbox.repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, machine: fakeMachine(100 * GB) });
   assert.equal(full.ok, clean.ok, 'a note never fails doctor');
   // As yokoten prints it: on the Windows runner the temp folder is under `C:\Users\RUNNER~1`, a user name it hides (#1237).
-  assert.ok(rowsOf(full.lines).some((line) => line === hideHome(`  note        leftover-temp-folders: 1 yokoten-* folder older than a day in ${temp}; run \`find '${temp}' -maxdepth 1 -name 'yokoten-*' -mmin +1440 -exec rm -rf {} +\` yourself; it removes only the ones older than a day`, env)), full.lines.join('\n'));
+  assert.ok(rowsOf(full.lines).some((line) => line === hideHome(`  note         leftover-temp-folders: 1 yokoten-* folder older than a day in ${temp}; run \`find '${temp}' -maxdepth 1 -name 'yokoten-*' -mmin +1440 -exec rm -rf {} +\` yourself; it removes only the ones older than a day`, env)), full.lines.join('\n'));
   assert.ok(!clean.lines.some((line) => line.includes('leftover-temp-folders')), 'a clean temp folder: no note');
   const session = doctor(sandbox.repo, { env, config: DEFAULTS, machine: fakeMachine(100 * GB), session: true });
   assert.ok(!session.lines.some((line) => line.includes('yokoten-*')), 'full doctor only');

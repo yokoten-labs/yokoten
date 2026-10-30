@@ -29,7 +29,7 @@ import { runGit } from '../../../run/check.ts';
 import { runBot } from './bot.ts';
 import { mergeOrder, nextPick } from './conflicts/order.ts';
 import { MAP_FILE, MAP_MAX_AGE_MS, type ConflictMap } from './conflicts/types.ts';
-import { count, fail, field, type Invocation, nextLine, type Output, parse, requireRoot, row, screen, show, spaced, summaryLine, title, usage } from '../../shared.ts';
+import { count, fail, field, type Invocation, MARK_COLUMN, nextLine, type Output, parse, requireRoot, row, screen, show, spaced, summaryLine, title, usage } from '../../shared.ts';
 
 /** How long one test or check run may take, in ms. */
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -664,7 +664,7 @@ export function planLines(map: ConflictMap): string[] {
     title('train', `the plan for ${count(picks.length, 'pull request')}; nothing merged`),
     spaced(shown.map((pick, index) => row(index === 0 ? 'next' : 'to do', `${labelOf(pick.id)}: ${pick.why}`))),
     picks.length > PLAN_ROWS ? summaryLine(`${count(picks.length - PLAN_ROWS, 'more pull request')}, in the order below`) : [],
-    field('Order', numbers.map((number) => `#${number}`).join(' → ')),
+    field('Order', numbers.map((number) => `#${number}`).join(' → '), MARK_COLUMN),
     // The command merges the ones shown, in this order; a longer queue goes on after them.
     nextLine(`yokoten train ${numbers.slice(0, PLAN_ROWS).join(' ')}`),
   );

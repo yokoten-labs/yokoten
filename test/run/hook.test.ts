@@ -519,7 +519,7 @@ test('hook: a key with the wrong shape gets its default and one line; check name
   sandbox.write('yokoten.json', '{ "colour": "blue" }');
   result = await sandbox.call(['check', '--all']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}note {8}yokoten\.json: "colour" is not a key this version of yokoten knows/m);
+  assert.match(result.stdout, /^ {2}note {9}yokoten\.json: "colour" is not a key this version of yokoten knows/m);
   assert.equal((await call({ command: 'git status' })).stderr, '', 'the hook says nothing');
   // Every wrong key in one run.
   sandbox.write('yokoten.json', '{ "leadOnly": "x", "tests": 5, "notNow": null }');

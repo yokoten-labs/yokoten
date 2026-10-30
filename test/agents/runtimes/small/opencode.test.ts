@@ -477,7 +477,7 @@ test('opencode plugin: init and install keep a plugin the user wrote or edited (
     writeFileSync(projectFile, text);
     // The kept row names the plugin and whose it is; a note under the rows says how to get yokoten's.
     const installed = rowsText((await sandbox.call(['install', '--list'])).stdout);
-    assert.ok(installed.includes('  kept        OpenCode hooks in ~/.config/opencode/plugins/yokoten.ts'), installed);
+    assert.ok(installed.includes('  kept         OpenCode hooks in ~/.config/opencode/plugins/yokoten.ts'), installed);
     assert.ok(installed.includes(state), installed);
     assert.ok(installed.includes(`~/.config/opencode/plugins/yokoten.ts is ${whose}, so yokoten leaves it`), installed);
     assert.ok(installed.includes("To get yokoten's, move that file away and run `yokoten install`"), installed);

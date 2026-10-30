@@ -253,7 +253,7 @@ test('mcpScreen: two tools and one problem, from data', () => {
   const lines = mcpScreen({ reports: [report], problems: [problem], warnings: [], toolCount: 2 });
   assert.match(lines[0], /^yokoten mcp · 1 problem in 1 server$/);
   assert.ok(lines.includes('Next: `yokoten mcp`'));
-  assert.ok(lines.some((line) => /^ {2}MISSING {5}\s*tool "read" inputSchema has a root anyOf/.test(line)));
+  assert.ok(lines.some((line) => /^ {2}MISSING {6}\s*tool "read" inputSchema has a root anyOf/.test(line)));
   const ready = mcpScreen({ reports: [report], problems: [], warnings: [problem], toolCount: 2 });
   assert.deepEqual(ready.slice(0, 1), ['yokoten mcp --check · 2 tools ready']);
   assert.ok(ready.some((line) => /note +1 warning; run yokoten mcp --json/.test(line)));
@@ -269,13 +269,13 @@ test('mcpScreen: the note and the server rows share one text column, and a wrapp
   const warning = lintTools([tool({ anyOf: [{ type: 'string' }] })])[0];
   const ready = mcpScreen({ reports: [long, short, skipped], problems: [], warnings: [warning], toolCount: 3 });
   const column = (text: string) => (ready.find((line) => line.includes(text)) ?? '').indexOf(text);
-  assert.equal(column('2 tools, 410 B'), 26, ready.join('\n'));
-  assert.equal(column('1 warning'), 26, ready.join('\n'));
-  assert.equal(column('1 tool, 410 B'), 26);
+  assert.equal(column('2 tools, 410 B'), 27, ready.join('\n'));
+  assert.equal(column('1 warning'), 27, ready.join('\n'));
+  assert.equal(column('1 tool, 410 B'), 27);
   const at = ready.findIndex((line) => line.includes('1 tool, 410 B'));
   assert.equal(ready[at + 1], '', 'a blank line between the items');
   const wrapped = ready.findIndex((line) => line.includes('a long reason'));
-  assert.ok(ready[wrapped + 1]?.startsWith(' '.repeat(26)) && ready[wrapped + 2] === '', 'a wrapped item keeps a blank line before the next');
+  assert.ok(ready[wrapped + 1]?.startsWith(' '.repeat(27)) && ready[wrapped + 2] === '', 'a wrapped item keeps a blank line before the next');
 });
 
 /** What printJson writes for a value: the bytes a --json reader gets. */

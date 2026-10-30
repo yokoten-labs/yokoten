@@ -292,11 +292,11 @@ test('stoppedDesksScreen: one row each, then the first one to go on with; Window
   assert.deepEqual(stoppedDesksScreen([desk('7', ['f00ba12 fix: a']), desk('8', [])], now), [
     'yokoten desk · 2 other desks stopped mid-task',
     '',
-    '  note        desk 7      stopped 1 h ago · claude-code · task 7 · 1 commit,',
-    '                          last: f00ba12 fix: a',
+    '  note         desk 7      stopped 1 h ago · claude-code · task 7 · 1 commit,',
+    '                           last: f00ba12 fix: a',
     '',
-    '  note        desk 8      stopped 1 h ago · claude-code · task 8 · no commits',
-    '                          yet',
+    '  note         desk 8      stopped 1 h ago · claude-code · task 8 · no commits',
+    '                           yet',
     '',
     'Next: `yokoten desk 7`',
   ]);
