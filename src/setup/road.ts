@@ -87,7 +87,33 @@ export interface Step {
    * default branch, doctor says so in place of the fix (#405).
    */
   paths?: string[][] | ((root: string, config?: Config) => string[][]);
+  /**
+   * What the step is judged from, when it is not the repo's files alone (#1256): `host` for
+   * a step only the code host's API can judge, `machine` for one that reads this machine or
+   * this clone's own git setup (its git config, its remote, the home folder). A step that
+   * leaves it out is judged from the files in the checkout, the same on every machine.
+   */
+  source?: 'host' | 'machine';
+  /**
+   * The check from the repo's files alone, for `doctor --files` (#1256), when `check` also
+   * reads this machine for a files step. Its `what` and `fix` must read no machine state
+   * when this check says the step is not done.
+   */
+  checkFiles?: (root: string) => Found;
 }
+
+/** What a step is judged from, as `doctor --json` names it: files, host or machine (#1256). */
+export type StepSource = 'files' | 'host' | 'machine';
+
+/** What `step` is judged from: its own `source`, or the files in the checkout (#1256). */
+export const stepSource = (step: Pick<Step, 'source'>): StepSource => step.source ?? 'files';
+
+/** The steps `doctor --files` walks (#1256): the files steps, each judged by its files-only check when it has one. */
+export const filesSteps = (steps: readonly Step[]): Step[] =>
+  steps.filter((step) => stepSource(step) === 'files').map((step) => {
+    const { checkFiles } = step;
+    return checkFiles ? { ...step, check: (root: string) => checkFiles(root) } : step;
+  });
 
 const read = (path: string) => {
   try {
@@ -532,6 +558,7 @@ const joinChecks = (key: string, root: string | null, server: ServerRead, mark: 
 /** A stage 5 step made from server checks. `lacking` and `fix` are said when no check has its own words. */
 const serverStep = (key: string, fields: { lacking: string; fix: string; byHand: string; why: string; how: string; standard?: string }): Step => ({
   stage: 5,
+  source: 'host',
   key,
   check: (root, _, server, config) => judgeServer(key, root, server, config),
   what: (root, _, server, config) => joinChecks(key, root, server, 'MISSING', 'what', fields.lacking, config),
@@ -578,6 +605,7 @@ function firstSandboxProblem(root: string, env: Env): { what: string; fix: strin
 const reviewStep: Step = {
   stage: 4,
   key: 'review',
+  source: 'host',
   check: (...[, , server]) => {
     const read = reviewRead(server);
     if ('unread' in read) return null;
@@ -611,6 +639,7 @@ const planningOf = (server: ServerRead): Planning | Unread => {
 /** A stage 2 step judged from the labels and milestones. `isDone` sees only what was read. */
 const planningStep = (key: string, isDone: (planning: Planning) => boolean, fields: Omit<Step, 'stage' | 'key' | 'check' | 'unchecked'>): Step => ({
   stage: 2,
+  source: 'host',
   key,
   check: (...[, , server]) => {
     const planning = planningOf(server);
@@ -755,6 +784,8 @@ export const ROAD: Step[] = [
     stage: 1,
     key: 'tool-hook',
     check: (root, env) => hasProjectHook(root) && !isGuardOff(root, env),
+    // Muse's trust store is this machine's; the files say only that the guard is set up (#1256).
+    checkFiles: (root) => hasProjectHook(root),
     what: (root, env) => (hasProjectHook(root) && isGuardOff(root, env) ? (readMuseTrust(root, env).userChoiceFix ? 'the guard is off in Muse Code: you set it not to trust this folder' : 'the guard is off in Muse Code until you trust this folder') : 'no tool-call guard in .claude/settings.json'),
     fix: (root, env) => (hasProjectHook(root) && isGuardOff(root, env) ? (readMuseTrust(root, env).userChoiceFix ?? TRUST_FIX) : '`yokoten init` adds it'),
     why: 'the guard stops a risky command, like a force push, before the agent runs it',
@@ -763,6 +794,8 @@ export const ROAD: Step[] = [
   {
     stage: 1,
     key: 'commit-check',
+    // core.hooksPath is this clone's git config: a fresh clone never has it set.
+    source: 'machine',
     check: (root, env) => uncheckedHooks(root, env)?.length === 0 && droppedHooks(root, env).length === 0,
     what: (root, env) => {
       const hooks = uncheckedHooks(root, env);
@@ -828,6 +861,8 @@ export const ROAD: Step[] = [
     // CODEOWNERS handle and the labels. This step is the first of those, so it is next.
     stage: 2,
     key: 'remote',
+    // The origin remote and its branches are this clone's, not the repo's files.
+    source: 'machine',
     check: (root, env) => hasPushedOrigin(root, env),
     what: (root, env) => (gitConfig(root, 'remote.origin.url', env) ? 'the origin remote has no branch from this repo, so the work is only on this machine' : 'there is no origin remote, so the work is only on this machine'),
     fix: (root, env) => (gitConfig(root, 'remote.origin.url', env) ? 'push it: `git push -u origin --all`' : 'make the repo on your code host, add it as origin (`git remote add origin <url>`), and push (`git push -u origin --all`)'),
@@ -955,6 +990,7 @@ export const ROAD: Step[] = [
   {
     stage: 4,
     key: 'bot',
+    source: 'machine',
     check: (_, env) => hasBot(env),
     // Names the piece that is missing (#364, #405), as `yokoten bot` finds it.
     what: (_, env) => `the bot is not set up on this machine: ${missingBotSetup(env) ?? 'nothing is missing'}`,
@@ -966,6 +1002,7 @@ export const ROAD: Step[] = [
   {
     stage: 4,
     key: 'skills',
+    source: 'machine',
     check: (_, env) => {
       if (hasPlugin(env)) return true; // the Claude Code plugin brings the skills
       const lacking = skillsLacking(env);

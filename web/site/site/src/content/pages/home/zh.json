@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "yokoten 替你拦住 AI 编程 agent 那些收不回来的错误。一条命令就装好：npx yokoten。"
+    "description": "yokoten 替你拦住 AI 编程 agent 那些收不回来的错误。一条命令，不用设置。"
   },
   "hero": {
     "headline": "拦住 AI agent 那些收不回来的错误。",

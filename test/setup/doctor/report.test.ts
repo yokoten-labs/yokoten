@@ -445,7 +445,7 @@ test('doctor: shows the review step in stage 4, and a session never asks gh abou
   execFileSync('git', ['remote', 'add', 'origin', `https://github.com/${REPO}.git`], { cwd: root });
   const full = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: serverGh({ ...ADMIN, [RULES]: withApprovals(1) }).gh });
   const { how, why, ...review } = full.report.steps?.find((s) => s.id === 'review') ?? {};
-  assert.deepEqual(review, { id: 'review', stage: 4, mark: 'done', standard: 'Scorecard: Code-Review' });
+  assert.deepEqual(review, { id: 'review', stage: 4, mark: 'done', standard: 'Scorecard: Code-Review', source: 'host', title: 'Ask for a review before a merge' });
   assert.ok(how && why, 'the step says how it is judged and why (#1203)');
   assert.deepEqual(full.report.selfTest, { ok: true, failed: [], ran: true, skipped: [] }, 'the server control still passes no step');
   const session = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: () => { throw new Error('a session called gh'); } });

@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, askDeepSeek, bodyKind, type ModelCall, RETRY_WAIT_MS, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -980,4 +980,43 @@ test('review: a finding is one line, a short "…" is no prefix, and a + line is
   assert.equal(isRepeat('a.ts:1: bug in the parser → fix it', ['a.ts:1: bug…']), false, 'a short text ending in … is not a cut one');
   const [system] = buildMessages('b', 'diff --git a/x b/x\n');
   assert.match(system.content, /a problem on a line the diff adds \(a \+ line\) is never pre-existing/);
+});
+
+// #1263: a DeepSeek answer that is not JSON, or a busy API, is tried once more when the
+// first call was quick; the error then says what came back, never the body.
+test('review: a quick failed DeepSeek call is retried once; the error names the kind of body (#1263)', async () => {
+  const good = JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"verdict":"APPROVE"}' } }] });
+  const run = async (answers: [number, string][], took = 1000) => {
+    let clock = 0;
+    const waits: number[] = [];
+    let calls = 0;
+    const call: ModelCall = {
+      fetch: (async () => {
+        const [status, body] = answers[Math.min(calls, answers.length - 1)];
+        calls++;
+        clock += took;
+        return new Response(body, { status });
+      }) as typeof fetch,
+      now: () => clock,
+      wait: async (ms) => {
+        waits.push(ms);
+      },
+    };
+    try {
+      return { answer: await askDeepSeek('key', 'model', [], call), calls, waits };
+    } catch (error) {
+      return { error: (error as Error).message, calls, waits };
+    }
+  };
+  assert.deepEqual(await run([[200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 1, waits: [] }, 'a good answer is one call');
+  assert.deepEqual(await run([[200, '{"choices":[{"fin'], [200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 2, waits: [RETRY_WAIT_MS] }, 'a cut body, then a good one');
+  assert.deepEqual(await run([[503, '<html>busy</html>'], [200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 2, waits: [RETRY_WAIT_MS] }, 'a 5xx, then a good one');
+  assert.deepEqual(await run([[200, ''], [200, '']]), { error: 'the DeepSeek API answer was not JSON (empty), twice (one retry)', calls: 2, waits: [RETRY_WAIT_MS] });
+  assert.deepEqual(await run([[400, '{"error":{"message":"bad request"}}']]), { error: 'the DeepSeek API answered HTTP 400: bad request', calls: 1, waits: [] }, 'a 400 is not retried');
+  const slow = await run([[200, 'x'], [200, good]], MODEL_TIMEOUT_MS / 2);
+  assert.deepEqual(slow, { error: 'the DeepSeek API answer was not JSON (1 characters of other text)', calls: 1, waits: [] }, 'a slow failure is not retried, so two calls stay inside the job');
+  assert.equal(bodyKind('  '), 'empty');
+  assert.equal(bodyKind('<!doctype html><p>502</p>'), 'an HTML page, 25 characters');
+  assert.equal(bodyKind('{"a":'), 'cut off after 5 characters');
+  assert.equal(bodyKind('secret-ish text'), '15 characters of other text', 'the text itself is never shown');
 });

@@ -2,12 +2,13 @@
 
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import childProcess, { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import { test } from 'node:test';
-import { CLI, makeSandbox, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
+import { CLI, makeSandbox, pathWithoutGh, pick, stopCheckoutWalk } from '../../../repo/helpers.ts';
 import { underMark } from '../../../repo/docs/screen-rules.ts';
 import { problemRows, runDoctor, sessionNoteBlocks, sessionScreen } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
@@ -149,6 +150,65 @@ test('doctor: one progress note on a terminal; none off it, in a session, or wit
   const json = await run(true, ['--json']);
   assert.ok(!json.stderr.includes('reading GitHub settings') && !json.stdout.includes('reading GitHub settings'), 'stdout holds only the report');
   JSON.parse(json.stdout);
+});
+
+// #1256: doctor.yokoten.app runs `doctor --files --json` in a sandbox with no gh, no token
+// and no network, and asks anyone to re-run it. It reads the files only: no code host, no gh,
+// so no wait on the host's budget, and no child but git.
+test('doctor --files: only steps judged from files, no gh and no child but git; plain doctor still lists the host steps (#1256)', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('package.json', '{ "name": "demo" }\n');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'first');
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/someone/repo.git');
+  const extra = { PATH: pathWithoutGh(sandbox.home) };
+  /** The programs each run starts, and its result: the patch sees every child, gh too, before it starts. */
+  const watched = async (args: string[], isTTY?: boolean) => {
+    const programs: string[] = [];
+    const originals = { ...childProcess };
+    for (const name of ['execFileSync', 'spawnSync', 'execSync', 'execFile', 'spawn', 'exec'] as const) {
+      const original = originals[name] as (...rest: unknown[]) => unknown;
+      (childProcess as Record<string, unknown>)[name] = (file: string, ...rest: unknown[]) => {
+        programs.push(file);
+        return original(file, ...rest);
+      };
+    }
+    syncBuiltinESMExports();
+    try {
+      return { programs, result: await sandbox.call(args, { extra, isTTY }) };
+    } finally {
+      Object.assign(childProcess, originals);
+      syncBuiltinESMExports();
+    }
+  };
+  const started = Date.now();
+  const { programs, result } = await watched(['doctor', '--files', '--json']);
+  const seconds = (Date.now() - started) / 1000;
+  assert.ok(result.status === 0 || result.status === 1, `exit ${result.status}: ${result.stderr}`);
+  assert.equal(result.stderr, '');
+  assert.ok(programs.includes('git'), 'the patch sees the git reads; else the count is broken');
+  assert.deepEqual(programs.filter((program) => program !== 'git'), [], `a child other than git: ${programs.join(', ')}`);
+  const { steps } = JSON.parse(result.stdout) as { steps: { id: string; mark: string; source: string }[] };
+  assert.ok(steps.length > 0);
+  assert.deepEqual(steps.filter((step) => step.source !== 'files').map((step) => step.id), [], 'only steps judged from files');
+  assert.deepEqual(steps.filter((step) => step.mark === "can't check").map((step) => step.id), [], "no step says can't check");
+  assert.ok(!result.stdout.includes("can't check"));
+  // No host read waits: well under the host's budget of SERVER_TIMEOUT_MS (5 s).
+  assert.ok(seconds < 2.5, `took ${seconds} s`);
+  // A person at a terminal hears no "reading GitHub settings" note either.
+  const screen = await watched(['doctor', '--files'], true);
+  assert.ok(!screen.result.stderr.includes('reading GitHub'), screen.result.stderr);
+  // Its More line says what --files leaves out, never that `doctor --all` shows every check.
+  // A terminal gets colour; the words are what count here.
+  const plainText = screen.result.stdout.replace(/\x1B\[[0-9;]*m/g, '');
+  assert.ok(!plainText.includes('doctor --all'), plainText);
+  assert.match(plainText, /^More: files only; `(npx )?yokoten doctor` also reads the code host and this machine$/m);
+  assert.deepEqual(screen.programs.filter((program) => program !== 'git'), []);
+  // Positive control: the same repo without --files lists the host steps, and asks gh for them.
+  const plain = await watched(['doctor', '--json']);
+  const plainSteps = (JSON.parse(plain.result.stdout) as { steps: { id: string; source: string }[] }).steps;
+  for (const id of ['protection', 'merge-settings', 'labels', 'review']) assert.equal(plainSteps.find((step) => step.id === id)?.source, 'host', id);
+  assert.ok(plain.programs.includes('gh'), `plain doctor tries gh: ${plain.programs.join(', ')}`);
 });
 
 // #1027: one screen by default. Owner 2026-10-25: a wall of text sends a beginner away.

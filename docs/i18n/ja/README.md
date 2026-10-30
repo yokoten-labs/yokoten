@@ -6,9 +6,9 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-AI コーディングツールのための安全な番人。
+yokoten は、AI コーディングエージェントが取り返しのつかないミスをするのを止めます。
 
-AI エージェントは一瞬で大きなミスをします。yokoten はその前に止めます。
+コマンドひとつで、設定はいりません。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 
