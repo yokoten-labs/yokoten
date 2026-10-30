@@ -1,7 +1,6 @@
 {
   "name": "yokoten",
   "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup.",
-  "version": "0.1.2",
   "author": {
     "name": "coo1white",
     "url": "https://github.com/coo1white"

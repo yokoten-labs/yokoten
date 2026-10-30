@@ -169,10 +169,8 @@ test('npm: package.json describes yokoten in the README\'s own opening words', (
 });
 
 // The Claude plugin directory lists .claude-plugin/plugin.json: its description is the same
-// one sentence, and its version follows package.json, so a release changes both (#1223).
-test('plugin: plugin.json says the README opening and has the package version (#1223)', () => {
-  const plugin = JSON.parse(read('.claude-plugin/plugin.json')) as { description: string; version: string };
-  const pkg = JSON.parse(read('package.json')) as { version: string };
+// one sentence (#1223). It has no version on purpose: the marketplace ref is the version (#632).
+test('plugin: plugin.json says the README opening (#1223)', () => {
+  const plugin = JSON.parse(read('.claude-plugin/plugin.json')) as { description: string };
   assert.equal(plugin.description, readmeOpening(read('README.md')), 'copy the opening of README.md into .claude-plugin/plugin.json "description"');
-  assert.equal(plugin.version, pkg.version, 'set .claude-plugin/plugin.json "version" to package.json "version"');
 });
