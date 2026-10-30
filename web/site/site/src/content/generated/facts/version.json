@@ -1,8 +1,8 @@
 {
-  "version": "0.1.2",
+  "version": "0.2.0",
   "node": "^22.23.4 || ^24.22.1 || >=26.12.1",
   "license": "MIT",
-  "records": 54,
-  "mergedPrs": 525,
-  "testFiles": 163
+  "records": 60,
+  "mergedPrs": 563,
+  "testFiles": 171
 }

@@ -154,6 +154,20 @@
     "guard": true
   },
   {
+    "id": "guard-settings",
+    "rule": "the guard, hook, sandbox and fence settings change only with the owner's yes (record 0054)",
+    "why": "an agent that changes the guard or its hooks can turn off the rules it works under, and nobody would see it",
+    "check": "the tool-call guard asks the owner before the lead edits or writes an agent's settings file: the ones that hold hooks, permissions, sandbox or fence settings (yokoten.json, .githooks/, .claude/settings.json and settings.local.json, .codex/config.toml and hooks.json, .gemini/settings.json, .grok/ hooks, sandbox and config, .muse/hooks.json, .agents/hooks.json, .dsh/ hooks), and the same user settings under home. Skills, agents and commands are not asked about. A worker is refused by lead-only. Where no one can answer, in a cloud session or an agent whose hook has no ask, the guard refuses",
+    "guard": true
+  },
+  {
+    "id": "leave-sandbox",
+    "rule": "a command runs outside the sandbox only with the owner's yes (record 0054)",
+    "why": "outside the sandbox a command can write anywhere and reach any host, so the fence no longer holds it",
+    "check": "the tool-call guard asks the owner before the lead's shell call that asks to leave the agent's own sandbox (the runtime adapter reads the flag), and refuses a worker's. In a cloud session it refuses the lead's too, since no one can answer",
+    "guard": true
+  },
+  {
     "id": "worker-push",
     "rule": "a worker commits in its worktree and never pushes or posts",
     "why": "the lead reviews the work before it leaves the machine, and pushes and posts it as the bot",
@@ -168,6 +182,13 @@
     "guard": true
   },
   {
+    "id": "unmarked-worktree",
+    "rule": "a worker subagent works only in a worktree that carries the worker mark (#1225)",
+    "why": "the commit check knows a worker only by YOKOTEN_ROLE or the worktree's mark, so in an unmarked worktree a worker's commit passes as the lead's",
+    "check": "for a subagent the runtime names a worker (no YOKOTEN_ROLE=worker in its environment), the tool-call guard lets a shell command other than a plain cd run only when its folder (the cwd, or the folder it follows through cd or `git -C`) is inside a git checkout that carries the worker mark or is on the worker list. A folder in no checkout, a folder the guard cannot tell, and an unmarked checkout are refused. An edit or write to a file inside an unmarked checkout is refused too; a file in no checkout is not, since only a command can commit it, and the command must run in a marked checkout. Reads with the read tools pass. A lead, another agent type and a worker with YOKOTEN_ROLE=worker pass. A floor rule: no setting turns it off",
+    "guard": true
+  },
+  {
     "id": "file-lease",
     "rule": "the guard stops an edit to a file that an open change is moving or deleting (#911)",
     "why": "two changes to a file that is being moved cannot both go in cleanly",
@@ -178,14 +199,21 @@
     "id": "email",
     "rule": "no personal email address in the repo (core rule 11)",
     "why": "an email address points at a person, and git keeps it after the file is gone",
-    "check": "the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json \"privacy.allow\" lets one through; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)",
+    "check": "the commit check, CI and `check --history` look for email addresses; noreply addresses, example.com and team inboxes at public services pass, and yokoten.json \"privacy.allow\" lets one through; an address in SECURITY.md, or in the people fields of a package manifest (package.json, composer.json, Cargo.toml, pyproject.toml), is public on purpose and only a note; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore email: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)",
     "guard": true
+  },
+  {
+    "id": "user-folder",
+    "rule": "no user name from a home folder path in text that leaves the machine (core rule 11, #1237)",
+    "why": "a home folder path such as /home/<name> or C:\\Users\\<name> names the account, and a WSL user's Windows home is not their $HOME, so hiding $HOME alone misses it",
+    "check": "the text an agent posts with gh, a desk message, an upstream note, a lesson pack and a prompt are read for /home/<name>, /Users/<name>, C:\\Users\\<name>, C:/Users/<name>, /c/Users/<name> and /mnt/c/Users/<name>; a shared account (runner, root, Public) and a placeholder (someone, name, <name>, ~) pass; a hit is `sure`. The repo scan leaves them to the private marks, which name your own accounts, because tests and docs hold made-up homes. What yokoten prints shows the name as <user>",
+    "guard": false
   },
   {
     "id": "ip",
     "rule": "no IP address in the repo (core rule 11)",
     "why": "an IP address can lead to your server or your home network",
-    "check": "the commit check, CI and `check --history` look for IPv4 addresses; localhost and the documentation ranges pass; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)",
+    "check": "the commit check, CI and `check --history` look for IPv4 addresses; loopback, the three private ranges of RFC 1918 and the documentation ranges pass there, but in a post only loopback and the documentation ranges pass, because a private address there describes your own network; a hit is `sure`, and `.yokotenignore` or a `yokoten-ignore ip: reason` line keeps it in the output but does not fail it; the tool-call guard also checks what a `git commit` adds, and the text an agent posts with gh (issues, pull requests, comments, release notes)",
     "guard": true
   },
   {
@@ -647,7 +675,7 @@
     "id": "disk-space",
     "rule": "the disk that holds the repo has room left (record 0012)",
     "why": "on a full disk, every agent session stops, and the agent cannot tell you why",
-    "check": "`doctor` reads the free space of the disk that holds the repo, with no child process; it warns below 20 GB when that is also under 10% of the disk (YOKOTEN_MIN_FREE_GB sets another limit). In WSL, full `doctor` also reads the Windows drive that holds the Linux disk file, and a session repeats the last reading. When a heavy job starts and that reading is low, the tool-call guard asks first; it never refuses",
+    "check": "`doctor` reads the free space of the disk that holds the repo, with no child process; it warns below 20 GB when that is also under 10% of the disk (YOKOTEN_MIN_FREE_GB sets another limit). In WSL, full `doctor` also reads the Windows drive that holds the Linux disk file, and a session repeats the last reading. When a heavy job starts and that reading is low, the tool-call guard asks first; it refuses only where no one can answer: a cloud session or an agent whose hook has no ask",
     "guard": true
   },
   {

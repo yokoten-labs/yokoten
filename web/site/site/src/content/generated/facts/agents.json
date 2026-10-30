@@ -10,7 +10,7 @@
     "trustFirst": true
   },
   {
-    "agent": "Antigravity CLI (agy)",
+    "agent": "Antigravity CLI",
     "verified": true,
     "trustFirst": false
   },
@@ -25,12 +25,12 @@
     "trustFirst": true
   },
   {
-    "agent": "DeepSeek Harness (dsh)",
+    "agent": "DeepSeek Harness",
     "verified": true,
     "trustFirst": false
   },
   {
-    "agent": "Grok CLI (grok)",
+    "agent": "Grok CLI",
     "verified": true,
     "trustFirst": true
   },
