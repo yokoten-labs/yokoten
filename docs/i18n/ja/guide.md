@@ -259,14 +259,14 @@ yokoten は九つの AI コーディングエージェントを、同じルー�
 
 | エージェント | フックのファイル（`init` が書く） | どう止めるか | 機能（rewrite · stop · trust · fails · role） | 確認済み | 注意点 |
 |---|---|---|---|---|---|
-| Claude Code | `.claude/settings.json`: PreToolUse、Stop、SubagentStop | 終了コード 2、理由は stderr へ | yes · yes · yes · closed · yes | yes、2026-10-19: ヘッドレス、DeepSeek `deepseek-flash` 上 | なし |
-| GitHub Copilot CLI | 同じ `.claude/settings.json`: Copilot が読む | 終了コード 2、理由は JSON で stdout へ | no · yes · yes · open · yes | yes、2026-10-19: Copilot CLI 1.0.98、`copilot -p`、モデル `gpt-6-luna`（Auto） | リポジトリのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。タイムアウトしたフックは、呼び出しを通す |
-| Antigravity CLI | `.agents/hooks.json`: `yokoten` の項目、PreToolUse | `{"decision": "deny"}` を stdout へ | no · no · no · closed · yes | yes、2026-10-19: agy 1.4.2、`agy -p`、モデル `gemini-3.8-flash-high` | 停止チェックはまだない。`.yokoten/` がないと、すべての呼び出しが拒否される。agy は安全側に倒れる。ワーカーの done-when チェックはリードが走らせる |
-| Codex CLI | `.codex/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · closed · yes | yes、2026-10-19: Codex 0.163.0、`codex exec`、DeepSeek `deepseek-flash` 上 | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走り、そのあと各フックも信頼が要る。そこで `yokoten trust` を実行する。`codex exec` は信頼していないフックを何も言わずに飛ばす |
-| Muse Code | `.muse/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · open · no | yes、2026-10-19: Muse Code 1.4.10、`muse exec --trust-workspace`、モデル `muse-spark-1.3-contributor` | フックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。Muse はフックに `YOKOTEN_ROLE` を渡さないので、ワーカーのワークツリーは `yokoten worker mark <dir>` で印を付ける。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse の外でリリースする。失敗したフックやタイムアウトしたフックは、呼び出しを通す |
-| DeepSeek Harness | `.dsh/hooks.json`: PreToolUse、そして読み込むための `.dsh/yokoten.patch.yml` | 終了コード 2、理由は stderr へ | no · no · no · open · yes | yes、2026-10-20: dsh 0.2.1-rc.2、`dsh headless --patch .dsh/yokoten.patch.yml`、既定の DeepSeek モデル | フックは、各プロファイルにあなたが足すブリッジを通してだけ走る。[DeepSeek Harness](#deepseek-harness)を見てください。それがなく、パッチもないと、dsh はフックを走らせず、何も言わない。Windows ではまだ守られていない（#332）。停止チェックはない。ワーカーの done-when チェックはリードが走らせる |
-| Grok CLI | `.grok/hooks/yokoten.json`: PreToolUse と Stop | `permissionDecision: "deny"` を stdout へ、そして終了コード 2 | yes · yes · yes · closed · yes | yes、2026-10-20: Grok CLI 1.0.52、`grok -p --trust --always-approve`、既定のモデル | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。`.claude/settings.json` のフックも走らせるので、一つの呼び出しで番人が二回走ることがある。意図的だ |
-| Gemini CLI | `.gemini/settings.json`: BeforeTool と AfterAgent | 終了コード 2、理由は stderr へ | no · yes · yes · closed · no | 端から端までは未実行: 個人のサインインは 2026-06-18 に終わった。有料の API 鍵か組織のライセンスが要る | 個人向けの Google のエージェントは、いま Antigravity CLI だ |
+| Claude&nbsp;Code | `.claude/settings.json`: PreToolUse、Stop、SubagentStop | 終了コード 2、理由は stderr へ | yes · yes · yes · closed · yes | yes、2026-10-19: ヘッドレス、DeepSeek `deepseek-flash` 上 | なし |
+| GitHub&nbsp;Copilot&nbsp;CLI | 同じ `.claude/settings.json`: Copilot が読む | 終了コード 2、理由は JSON で stdout へ | no · yes · yes · open · yes | yes、2026-10-19: Copilot CLI 1.0.98、`copilot -p`、モデル `gpt-6-luna`（Auto） | リポジトリのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。タイムアウトしたフックは、呼び出しを通す |
+| Antigravity&nbsp;CLI | `.agents/hooks.json`: `yokoten` の項目、PreToolUse | `{"decision": "deny"}` を stdout へ | no · no · no · closed · yes | yes、2026-10-19: agy 1.4.2、`agy -p`、モデル `gemini-3.8-flash-high` | 停止チェックはまだない。`.yokoten/` がないと、すべての呼び出しが拒否される。agy は安全側に倒れる。ワーカーの done-when チェックはリードが走らせる |
+| Codex&nbsp;CLI | `.codex/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · closed · yes | yes、2026-10-19: Codex 0.163.0、`codex exec`、DeepSeek `deepseek-flash` 上 | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走り、そのあと各フックも信頼が要る。そこで `yokoten trust` を実行する。`codex exec` は信頼していないフックを何も言わずに飛ばす |
+| Muse&nbsp;Code | `.muse/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · open · no | yes、2026-10-19: Muse Code 1.4.10、`muse exec --trust-workspace`、モデル `muse-spark-1.3-contributor` | フックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。Muse はフックに `YOKOTEN_ROLE` を渡さないので、ワーカーのワークツリーは `yokoten worker mark <dir>` で印を付ける。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse の外でリリースする。失敗したフックやタイムアウトしたフックは、呼び出しを通す |
+| DeepSeek&nbsp;Harness | `.dsh/hooks.json`: PreToolUse、そして読み込むための `.dsh/yokoten.patch.yml` | 終了コード 2、理由は stderr へ | no · no · no · open · yes | yes、2026-10-20: dsh 0.2.1-rc.2、`dsh headless --patch .dsh/yokoten.patch.yml`、既定の DeepSeek モデル | フックは、各プロファイルにあなたが足すブリッジを通してだけ走る。[DeepSeek Harness](#deepseek-harness)を見てください。それがなく、パッチもないと、dsh はフックを走らせず、何も言わない。Windows ではまだ守られていない（#332）。停止チェックはない。ワーカーの done-when チェックはリードが走らせる |
+| Grok&nbsp;CLI | `.grok/hooks/yokoten.json`: PreToolUse と Stop | `permissionDecision: "deny"` を stdout へ、そして終了コード 2 | yes · yes · yes · closed · yes | yes、2026-10-20: Grok CLI 1.0.52、`grok -p --trust --always-approve`、既定のモデル | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。`.claude/settings.json` のフックも走らせるので、一つの呼び出しで番人が二回走ることがある。意図的だ |
+| Gemini&nbsp;CLI | `.gemini/settings.json`: BeforeTool と AfterAgent | 終了コード 2、理由は stderr へ | no · yes · yes · closed · no | 端から端までは未実行: 個人のサインインは 2026-06-18 に終わった。有料の API 鍵か組織のライセンスが要る | 個人向けの Google のエージェントは、いま Antigravity CLI だ |
 | OpenCode | `.opencode/plugins/yokoten.ts`: OpenCode 2 のパーミッション `evaluate` と OpenCode 1 の `tool.execute.before` | OpenCode 2 は `effect` を deny にする。OpenCode 1 は理由を投げる | no · no · no · closed · no | yes、2026-10-23: OpenCode 2.1.4、`opencode-go/deepseek-v4.1-flash`、`init` が書くとおりのプラグイン。2026-10-25: 番人が `opencode-go/glm-5.3-flash`（Z.ai の GLM-5.3 Flash）のコマンドを止めた | 停止チェックはない。失敗した番人やタイムアウトした番人は、呼び出しを拒否する。読み取り専用でない呼び出しで、コマンドもパスも読めないときも拒否する。サブエージェントの呼び出しは、その実行に含まれていない |
 | ほかのエージェント | なし | `AGENTS.md` のルールと、コミットチェック。誰が作った悪いコミットでも止める | — | | |
 
@@ -287,10 +287,10 @@ yokoten は九つの AI コーディングエージェントを、同じルー�
 
 | エージェント | 信頼の記録 | 信頼済みと数える条件 |
 |---|---|---|
-| Copilot CLI | `~/.copilot/config.json`（または `$COPILOT_HOME`）の `trustedFolders` | そのフォルダ、またはその上のフォルダ |
+| Copilot&nbsp;CLI | `~/.copilot/config.json`（または `$COPILOT_HOME`）の `trustedFolders` | そのフォルダ、またはその上のフォルダ |
 | Codex | `~/.codex/config.toml`（または `$CODEX_HOME`）: `[projects]` と `[hooks.state]` | リポジトリのフォルダと正確に一致し、各フックが今のままであること |
-| Muse Code | `~/.config/muse/trust.json`（または `$XDG_CONFIG_HOME/muse/trust.json`） | リポジトリのフォルダと正確に一致すること |
-| Grok CLI | `~/.grok/trusted_folders.toml`（または `$GROK_HOME`）: `[folders."<folder>"]` で `trusted = true` | リポジトリのフォルダと正確に一致すること |
+| Muse&nbsp;Code | `~/.config/muse/trust.json`（または `$XDG_CONFIG_HOME/muse/trust.json`） | リポジトリのフォルダと正確に一致すること |
+| Grok&nbsp;CLI | `~/.grok/trusted_folders.toml`（または `$GROK_HOME`）: `[folders."<folder>"]` で `trusted = true` | リポジトリのフォルダと正確に一致すること |
 
 Doctor は、そのホームフォルダがあるときだけエージェントを調べます（`~/.copilot`、`~/.codex`、`~/.config/muse`、`~/.grok`）。そのフォルダに記録がないとき、または doctor が読めない記録のときは、「can't check」と言い、決して ok とは言いません。
 
@@ -324,7 +324,7 @@ Actions の実行の取り消しと削除は、リードにもワーカーにも
 
 | エージェント | `init` が書くもの | なぜ |
 |---|---|---|
-| Claude Code | `.claude/settings.json`: `sandbox.enabled` が `true` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く |
+| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` が `true` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く |
 | Codex | `.codex/config.toml`: `sandbox_mode` が `workspace-write`、`approval_policy` が `on-request`、`network_access` が `false` | 書き込みはワークツリーにとどまる。ネットワークは切ったまま。その外へ出る前に Codex が聞く |
 | Gemini | `.gemini/settings.json`: `security.disableYoloMode` が `true` | すべてを承認する YOLO モードは切ったまま |
 | Grok | `.grok/sandbox.toml`: `[profiles.yokoten]` が `workspace` の上に作られる | `yokoten` プロファイルが書き込みをワークツリーに保つ。ワーカーは `grok --sandbox yokoten` で走る |
@@ -606,7 +606,7 @@ yokoten check --pr 12
 | `init --github --yes [--remove-default-labels] [--board]` | はじめる | 足りない標準のラベルと、開いているマイルストーンがないときは「First release」を足します。閉じたマイルストーンがすでにそのタイトルを持つときは、新しいものは「Next release」です。閉じたマイルストーンは決して開き直しません。すでにある標準のラベルは標準の色と説明になります。`yokoten.json` の領域が 8 つ以下なら、領域ごとに灰色のラベルを一つ足します。二回目の実行は何も変えません。その集合の外の GitHub の既定のラベル（`question`、`wontfix` など）は `--remove-default-labels` のときだけ消します。`--board` はリポジトリにリンクしたボードも作ります。gh トークンの `project` スコープが要ります |
 | `init --no-ci` | はじめる | CI を切っておきます。`yokoten.json` の `"notNow"` に `"ci"` を足し、ワークフローも Dependabot の設定も書かず、それらがまだキットの複製なら消します。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
 | `trust [dir] [--undo]` | はじめる | ここにインストールされたエージェントで yokoten の番人を有効にします。エージェント自身の信頼の記録に、yokoten のフックを信頼するよう書きます。対象は Codex、Grok CLI、Copilot CLI、Muse Code です。人が端末で実行します。パイプからは何も書きません。フォルダを信頼するのは、yokoten 自身のフックがあり、プロジェクトの Codex のサンドボックスが安全なときだけです。フォルダを信頼すると、そのサンドボックスが効くようになるからです。`init` は端末で一度尋ねます。端末がなければ何も書かず、このコマンドを名指しします。`--undo` は yokoten が書いた項目だけを消し、そのあと変えられたものは残します。[安全が既定](../../records/0014-safe-by-default.md)を見てください |
-| `doctor [--all] [--session] [--json]` | はじめる | プロジェクトが道のどこにいるかを一画面で示します。終わったこと、足りないこと、次のステップです。`--all` はすべての関所とステップ、そしてこのマシンに足りないものを示します。`--session` はセッションの始めのために次のステップだけを出力します。完全な `doctor` は、簡単なコマンドに番人を一度走らせ、`guard: 90 ms per command (60 ms CPU)` と報告します。一回の呼び出しの実時間と CPU 時間（user と system の合計）です。セッションはこれを飛ばします。`--agent gemini` を付けると、Gemini CLI が読む JSON としてステップを出力します |
+| `doctor [--all] [--files] [--session] [--json]` | はじめる | プロジェクトが道のどこにいるかを一画面で示します。終わったこと、足りないこと、次のステップです。`--all` はすべての関所とステップ、そしてこのマシンに足りないものを示します。`--files` はリポジトリのファイルだけで判断します。コードホストを読まず、`gh` を走らせず、ネットワークを使わず、マシンの注意も出しません。だから、どのマシンでも同じ答えになります。`--session` はセッションの始めのために次のステップだけを出力します。完全な `doctor` は、簡単なコマンドに番人を一度走らせ、`guard: 90 ms per command (60 ms CPU)` と報告します。一回の呼び出しの実時間と CPU 時間（user と system の合計）です。セッションはこれを飛ばします。`--agent gemini` を付けると、Gemini CLI が読む JSON としてステップを出力します |
 | `adopt [--all] [--json]` | はじめる | 既定では一画面で、`--all` は表全体を、すべての行の理由つきで示します。古いプロジェクトの導入の表の下書き: 今日どうしているかと、各ステップへの提案された決断。`--json` は行を出力します。何も書きません |
 | `explain [<id>] [--json]` | はじめる | ルールか道のステップ: 何か、なぜか、yokoten がどうチェックするか |
 | `worker mark <dir>` | 進める | `<dir>` のワークツリーをワーカーのものとして印を付けます。すると番人はそこにいるすべてのエージェントをワーカーとして扱います。`YOKOTEN_ROLE` を落とす実行環境（Muse Code）のエージェントもです。番人はワーカーが印を消す素朴な方法を拒否し、読めない `.git` のリンクは印ありと数えます。本当の錠はサーバーとワーカーから保たれる資格情報です。`git worktree remove <dir>` が印を消します。サブフォルダを渡すと、ワークツリーの一番上のフォルダに印を付け、どれかを言います。デスクのような普通のクローンにも印を付けます。印はその `.git` に入ります（#672）。リードは自分のチェックアウトからクローンに印を付けます。メインのチェックアウト（リードが走るクローン、またはワークツリーを持つもの）とサブモジュールには決して印を付けません。ワーカーは印を付けられず、外せません。[対応しているもの](#対応しているもの)を見てください |
@@ -652,7 +652,7 @@ yokoten check --pr 12
 `check`、`doctor`、`hook`、`explain`、`adopt` は `--json` を受け取ります。すると stdout は JSON だけを持ち、エージェントやスクリプトのためのものになります。エラーも JSON です。使用法のエラーやクラッシュは `{ command, ok: false, error }` を出力して終了コード 1 になり、メッセージはまだ stderr へ行きます。各指摘は同じフィールドを持ちます。`id`、`what`、`why`、`fix`、`docs`（ガイドがルールを説明しているときのリンク）、そしてファイルの中なら `file` と `line` です。`yokoten explain <id>` はその `id` を取ります。どのフィールドも非公開の値を持ちません。
 
 - `check --json`: `{ check, ok, findings, notes }`。`check` は `tree`、`staged`、`history`、`pr`、`issue` のどれかです。注意がチェックを失敗させることは決してありません。CI の実行にプルリクエストも issue もないとき、`check --pr` と `check --issue` は ok で、`skipped` に理由を足します。
-- `doctor --json`: `{ version, ok, selfTest, repo, stage, stages, next, findings, steps, notes, server, lessons }`。`selfTest` は `{ ok, failed, ran, skipped, reason? }` です。`ok` はチェックが一つも失敗しなかったことを意味します。コントロールが一時フォルダを作れず走らなかったときは、`ran` が false になり、`skipped` と `reason` が付きます。教訓の指摘は `notes` にあります。新しい教訓は `isNew: true` を持ちます。`--session` では、次のステップ、非公開の印の指摘、そしてルールが遅れているときの `core-rules` だけです。そのとき `notes` は、このマシンだけで作業する件と、セッションが今聞いた教訓の指摘（あれば）を持ちます。
+- `doctor --json`: `{ version, ok, selfTest, repo, stage, stages, next, findings, steps, notes, server, lessons }`。`selfTest` は `{ ok, failed, ran, skipped, reason? }` です。`ok` はチェックが一つも失敗しなかったことを意味します。コントロールが一時フォルダを作れず走らなかったときは、`ran` が false になり、`skipped` と `reason` が付きます。教訓の指摘は `notes` にあります。新しい教訓は `isNew: true` を持ちます。各ステップは `source`（`files`、`host`、`machine` のどれか。何から判断するか）と `title`（ステップを普通のタスクとして書いたもの）を持ちます。`--files` も同じキーを持ち、`files` のステップだけを含みます。`--session` では、次のステップ、非公開の印の指摘、そしてルールが遅れているときの `core-rules` だけです。そのとき `notes` は、このマシンだけで作業する件と、セッションが今聞いた教訓の指摘（あれば）を持ちます。
 - `hook --json`: 止めるとき `{ blocked: true, finding }`、通すとき `{ blocked: false, toolCall: true }`、stdin がツール呼び出しでないとき `{ blocked: false, toolCall: false }`。実行環境はこれを使いません。フックのプロトコルが言うとおり、終了コードと stderr の理由を読みます。
 - `hook --stop --json`: `{ blocked, stop, findings }`。リードでは、`stop_hook_active` が `skipped` に理由を足します。ワーカーはそのフィールドがあってもチェックされます。チェック自体が失敗したときも `skipped` がそう名指しします。ワーカーの done-when チェックが失敗したときは `doneWhen` もです。試行の上限のあと、`skipped` は `stopped with failing checks` です。その停止は、リンクしたワークツリーの `.yokoten-agent.json` に `checks` を `failing` として書きます。そこの通過は `checks` を `passing` にします。stdin が Stop イベントでないときは `{ blocked: false, stop: false }`。
 - `explain --json`: `{ found, id, kind, what, why, check, docs, stage, standard }`。知らない id では `{ id, found: false, ids }` で終了コード 1。id なしでは `{ ids }` で終了コード 0。
@@ -1319,10 +1319,10 @@ yokoten desk claude-code ../desks/42 -- claude -p "$(cat brief.md)"
 
 | エージェント | `<agent>` | 状態を指すもの | コピーするログインのファイル | API のホスト | デスクの中のコマンド |
 |---|---|---|---|---|---|
-| Claude Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`、ログインの更新には `platform.claude.com` | `claude -p "<brief>"` |
+| Claude&nbsp;Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`、ログインの更新には `platform.claude.com` | `claude -p "<brief>"` |
 | Codex、および Codex を通した DeepSeek | `codex` | `CODEX_HOME` | `auth.json` | `api.openai.com`、`api.deepseek.com` | `codex exec --sandbox danger-full-access "<brief>"` |
 | Grok | `grok` | `GROK_HOME` | `auth.json` | `api.x.ai` | `grok -p "<brief>"` |
-| Muse Code | `muse` | `XDG_CONFIG_HOME`、`XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
+| Muse&nbsp;Code | `muse` | `XDG_CONFIG_HOME`、`XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
 
 - **Claude Code** は `platform.claude.com` でログインを更新します。`claude setup-token` のトークンを `CLAUDE_CODE_OAUTH_TOKEN` に入れるか、API 鍵なら更新は要らず、ログインとして通ります。
 - **Codex** はデスクの中で `--sandbox danger-full-access` で走ります。Codex 自身の `workspace-write` のサンドボックスは `.git` を読み取り専用にし、テストが使うパイプを止めるからです。代わりにデスクが囲いです。あなたの `config.toml` は入りません。プロバイダーはコマンドの `-c` で与えてください。ChatGPT のログインには `--host chatgpt.com,auth.openai.com` も要ります。

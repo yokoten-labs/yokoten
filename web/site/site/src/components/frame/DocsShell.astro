@@ -122,7 +122,8 @@ const list = chapters.map((c) => ({ slug: c.data.slug, title: c.data.title }));
   /* The first column names the row (an agent, a command): it stays on one line. */
   .doc :global(.prose tr > td:first-child:not(:only-child)) { white-space: nowrap; }
   .doc :global(.prose td) { padding: 0.55rem 1rem 0.55rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .doc :global(.prose td code) { overflow-wrap: break-word; white-space: normal; }
+  /* A name, an ID, a path or a command in a cell never breaks inside itself; the table scrolls sideways instead (#1268). */
+  .doc :global(.prose td code) { white-space: nowrap; }
   .doc :global(.prose details) { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 1rem; }
   .doc :global(.prose summary) { cursor: pointer; font-weight: 600; }
 </style>

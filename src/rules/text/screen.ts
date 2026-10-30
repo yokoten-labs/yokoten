@@ -10,15 +10,55 @@
 /** The widest line a screen prints (Heroku's CLI style guide; Claude Code's help wraps here too). */
 export const SCREEN_WIDTH = 80;
 
-/** One text as lines no wider than `width`; later lines start under the first line's text. */
+/**
+ * Names of more than one word that a line never breaks inside (#1268): the agents yokoten guards,
+ * and the tools its screens name. A test holds the agent names to the guide's list.
+ */
+export const KEPT_NAMES = [
+  'GitHub Copilot CLI',
+  'Copilot CLI',
+  'Claude Code',
+  'Antigravity CLI',
+  'Codex CLI',
+  'Muse Code',
+  'DeepSeek Harness',
+  'Grok CLI',
+  'Gemini CLI',
+  'GitHub Actions',
+  'Git Bash',
+  'Windows Terminal',
+] as const;
+
+// Stands for a space inside a kept name while a text is cut into words: a private-use character, never whitespace.
+const NAME_JOINER = '\uE000';
+const escapeForPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// The longest name first, so `GitHub Copilot CLI` is kept whole before `Copilot CLI` is tried.
+const KEPT_NAME_PATTERN = new RegExp(
+  `(?<![\\w-])(?:${[...KEPT_NAMES].sort((a, b) => b.length - a.length).map(escapeForPattern).join('|')})(?![\\w-])`,
+  'g',
+);
+
+/**
+ * The words a line may break between. A command in backticks is one word, so a line never breaks
+ * it in two (#1027), also after an opening bracket: `(\`git push -u origin --all\`)` stays whole
+ * (#1099). A path or an ID has no space, so it is one word too, and a kept name is one (#1268).
+ */
+function wordsOf(text: string): string[] {
+  const joined = text.replace(KEPT_NAME_PATTERN, (name) => name.replaceAll(' ', NAME_JOINER));
+  return (joined.match(/[^\s`]*`[^`]*`\S*|\S+/g) ?? []).map((word) => word.replaceAll(NAME_JOINER, ' '));
+}
+
+/**
+ * One text as lines no wider than `width`; later lines start under the first line's text. A line
+ * breaks only between words, never inside a name, an ID, a path or a command: a word longer than
+ * the room left starts the next line, whole.
+ */
 export function wrap(prefix: string, text: string, width = SCREEN_WIDTH): string[] {
   const lines: string[] = [];
   const indent = ' '.repeat(prefix.length);
   let line = prefix;
   let isEmpty = true;
-  // A command in backticks is one word, so a line never breaks it in two (#1027), also
-  // after an opening bracket: `(\`git push -u origin --all\`)` stays whole (#1099).
-  for (const word of text.match(/[^\s`]*`[^`]*`\S*|\S+/g) ?? []) {
+  for (const word of wordsOf(text)) {
     if (!isEmpty && line.length + 1 + word.length > width) {
       lines.push(line);
       line = indent + word;
@@ -132,11 +172,15 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
  */
 export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.repeat(hasLabel ? ROW_TEXT_COLUMN : ROW_INDENT + MARK_COLUMN), text);
 
-/** One row with no mark: a label, then the text, wrapped under itself (#1027). A screen that mixes it with marked rows passes MARK_COLUMN, so every text starts in one column. */
+/**
+ * One row with no mark: a label, then the text, wrapped under itself (#1027). A screen that mixes
+ * it with marked rows passes MARK_COLUMN, so every text starts in one column. A label too wide for
+ * its column takes its own line, as in `row`, so it never runs into its text (#1268).
+ */
 export function field(label: string, text: string, column = LABEL_COLUMN): string[] {
-  // A label that fills its column takes its own line, as in `row`, so it never runs into the text.
-  if (label.length > column - 1) return [`${' '.repeat(ROW_INDENT)}${label}`, ...wrap(' '.repeat(ROW_INDENT + column), text)];
-  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(column)}`, text);
+  const indent = ' '.repeat(ROW_INDENT);
+  if (label.length > column - 1) return [`${indent}${label}`, ...wrap(' '.repeat(ROW_INDENT + column), text)];
+  return wrap(`${indent}${label.padEnd(column)}`, text);
 }
 
 /** An ISO stamp as `YYYY-MM-DD HH:MM UTC`, the one way a screen shows a time. A stamp that does not parse comes through as it is. */

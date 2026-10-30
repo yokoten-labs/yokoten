@@ -5,9 +5,10 @@
 
 import '../home.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { GUIDE_AGENTS, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
 import { checkCommand } from '../../../src/rules/guards/commands/check.ts';
 import { formatRefusal } from '../../../src/rules/text/message.ts';
 import { ROOT } from '../helpers.ts';
@@ -118,10 +119,54 @@ test('the READMEs copy the guide agents table, row for row', () => {
 // one model renamed here.
 test('control: a README agents row that differs from the guide is caught', () => {
   const guide = guideFacts(read('docs/guide.md'));
-  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
+  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex&nbsp;CLI | ✅ yes | yes |', '| Codex&nbsp;CLI | ✅ yes | no |');
   assert.ok(tableProblems(readmeFacts(doctored, '## Works with'), guide).some((one) => one.includes('other-model')), 'a changed model in a README row was not caught');
-  const drifted = read('README.md').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
-  assert.ok(tableProblems(readmeFacts(drifted, '## Works with'), guide).some((one) => one.startsWith('Codex CLI')), 'a changed trust value in a README row was not caught');
+  const drifted = read('README.md').replace('| Codex&nbsp;CLI | ✅ yes | yes |', '| Codex&nbsp;CLI | ✅ yes | no |');
+  assert.ok(tableProblems(readmeFacts(drifted, '## Works with'), guide).some((one) => one.startsWith('Codex&nbsp;CLI')), 'a changed trust value in a README row was not caught');
+});
+
+// #1268: on GitHub a narrow column broke "GitHub Copilot / CLI" and split a model ID at its
+// hyphen. An agent's name opens a row with &nbsp; between its words, so a narrow column wraps
+// only between whole names. (A README may not use `<br>`, #832, so a models cell keeps its commas.)
+const GUIDES = ['docs/guide.md', 'docs/i18n/zh-CN/guide.md', 'docs/i18n/ja/guide.md'];
+/** The multi-word agent names a table may open a row with: the guide's labels, and Copilot's short name. */
+const AGENT_NAMES = [...GUIDE_AGENTS.map((entry) => entry.label), 'Copilot CLI'].filter((name) => name.includes(' '));
+
+/** Each table row of `text` whose first cell starts with an agent name written with a plain space (`Claude Code (…)` too). */
+function brokenNameRows(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => cellsOf(line)[0] ?? '')
+    .filter((cell) => AGENT_NAMES.some((name) => cell.startsWith(name)));
+}
+
+/** Every Markdown file under docs/ but the records, which are history and never rewritten. */
+const DOCS = (function walk(dir: string): string[] {
+  return readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return path === 'docs/records' ? [] : walk(path);
+    return path.endsWith('.md') ? [path] : [];
+  });
+})('docs');
+
+test('tables: an agent name never breaks inside itself (#1268)', () => {
+  assert.ok(AGENT_NAMES.includes('GitHub Copilot CLI') && AGENT_NAMES.length >= 8, 'the agent names are not read from the guide');
+  assert.match(worksWithTable(), /^\| GitHub&nbsp;Copilot&nbsp;CLI \|/m, 'the generated table keeps the name whole');
+  const names = [...new Set([...FILES, ...GUIDES, ...DOCS])].flatMap((file) => brokenNameRows(read(file)).map((cell) => `${file}: ${cell}`));
+  assert.deepEqual(names, [], 'write the name with &nbsp; between its words');
+});
+
+// Known-bad input: a plain space in a name is caught.
+test('control: a name with a plain space is caught (#1268)', () => {
+  assert.deepEqual(brokenNameRows('| Agent | Note |\n|---|---|\n| GitHub Copilot CLI | x |\n| Codex&nbsp;CLI | y |\n| Any other agent | z |\n| Claude Code (cloud) | w |'), ['GitHub Copilot CLI', 'Claude Code (cloud)']);
+});
+
+// The site shows the same tables: a code span in a cell stays on one line, and the table scrolls.
+test('site: a code span in a docs table cell does not wrap (#1268)', () => {
+  const shell = read('web/site/site/src/components/frame/DocsShell.astro');
+  assert.match(shell, /\.prose td code\) \{ white-space: nowrap; \}/, 'DocsShell.astro: keep `white-space: nowrap` on `.prose td code`');
+  assert.match(shell, /\.prose table\) \{[^}]*display: block;[^}]*max-width: 100%;[^}]*overflow-x: auto;/, 'DocsShell.astro: a wide table must scroll in its own box, or a nowrap cell overflows a phone');
 });
 
 /** The refusal sample of a README: the fenced block that starts with the refusal title. */
@@ -173,4 +218,21 @@ test('npm: package.json describes yokoten in the README\'s own opening words', (
 test('plugin: plugin.json says the README opening (#1223)', () => {
   const plugin = JSON.parse(read('.claude-plugin/plugin.json')) as { description: string };
   assert.equal(plugin.description, readmeOpening(read('README.md')), 'copy the opening of README.md into .claude-plugin/plugin.json "description"');
+});
+
+// The site's facts come from the newest release tag, so its brand list must name each agent as
+// either README does: an older one wrote `Antigravity CLI (agy)`, later ones `Antigravity CLI` (#1268).
+test('site: every home-page brand finds its agent in the released and the current README', () => {
+  const brands = read('web/site/site/src/lib/page/brands.ts');
+  const agentName = (name: string): string => name.replace(/\s*\([^)]*\)$/, '').trim();
+  assert.match(brands, /agentName\(a\.agent\) === agentName\(brand\.readme\)/, 'brandsFor compares names without a bracketed note');
+  const names = [...brands.matchAll(/readme: '([^']+)'/g)].map((match) => match[1]);
+  assert.ok(names.length >= 8, 'the brand list is read');
+  const released = (JSON.parse(read('web/site/site/src/content/generated/facts/agents.json')) as { agent: string }[]).map((entry) => agentName(entry.agent));
+  const current = tableAfterHeading(read('README.md'), '## Works with').map((cells) => agentName(cells[0].replace(/&nbsp;/g, ' ')));
+  for (const name of names) {
+    assert.ok(released.includes(agentName(name)), `${name}: not in the released agents.json`);
+    assert.ok(current.includes(agentName(name)), `${name}: not in the README's Works with table`);
+  }
+  assert.equal(agentName('Antigravity CLI (agy)'), 'Antigravity CLI', 'positive control: the note goes');
 });

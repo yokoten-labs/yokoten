@@ -77,7 +77,6 @@ const NO_TEST_FILE = [
   'platform/folder-keys.ts', // the same cap; its case tables are in test/agents/runtimes/codex.test.ts, its first user
   'platform/disk.ts', // the same cap; its tests are in test/setup/install/runtime.test.ts, with the runtime copy, its first user (#1109)
   'platform/process.ts', // the same cap; its case tables are in test/agents/desk/fence/srt.test.ts and desk.test.ts, its first users, and test/commands/kanban/ (readProgram, startAndLetGo)
-  'rules/text/screen.ts', // its tests are in test/repo/docs/screens.test.ts, with the screen test of record 0049 (#1099)
 ];
 
 const filesUnder = (folder: string) =>
