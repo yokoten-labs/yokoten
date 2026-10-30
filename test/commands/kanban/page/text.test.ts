@@ -97,9 +97,22 @@ test('kanban text: no line says the old name', () => {
   assert.doesNotMatch(renderBoardScreen(EMPTY).join('\n'), /yokoten board/);
 });
 
-test('kanban text: a long agent name fits the label field, so every text starts in one column', () => {
-  const lines = renderBoardScreen({ ...EMPTY, sessions: [session({ id: '1', agent: 'Claude Code' }), session({ id: '2', agent: 'A Very Long Agent Name' })] });
+// #1268: a name is never cut; one too long for the label field takes its own line, whole.
+test('kanban text: a long agent name stands whole on its own line, and every text starts in one column', () => {
+  const lines = renderBoardScreen({ ...EMPTY, sessions: [session({ id: '1', agent: 'Claude Code' }), session({ id: '2', agent: 'GitHub Copilot CLI' })] });
   assert.ok(lines.some((line) => /^ {2}note\s{9}Claude {6}a task/.test(line)), lines.join('\n'));
-  assert.ok(lines.some((line) => /^ {2}note\s{9}A Very Lo…\s+a task/.test(line)), lines.join('\n'));
+  const at = lines.findIndex((line) => /^ {2}note\s{9}GitHub Copilot CLI$/.test(line));
+  assert.ok(at >= 0, lines.join('\n'));
+  assert.match(lines[at + 1] ?? '', /^ {27}a task/, 'the text starts in the row text column, under the name');
+  assert.ok(!lines.join('\n').includes('…'), 'no name is cut');
   assertScreen(lines);
+});
+
+// Known-bad input: the label-alone line is the only exception; a row whose text truly starts in
+// another column is still caught.
+test('screen rules: a label alone on its line starts no column, but a second text column is caught (#1268)', () => {
+  const alone = ['Working:', '  note         Claude      a task', '', '  note         GitHub Copilot CLI', '                           a task'].join('\n');
+  assert.deepEqual(screenProblems({ text: alone }), []);
+  const mixed = ['Working:', '  note         Claude      a task', '  note         GitHub Copilot CLI a task', '               more of it'].join('\n');
+  assert.ok(screenProblems({ text: mixed }).some((problem) => problem.includes('[label-columns]')), 'a second text column is caught');
 });

@@ -200,7 +200,13 @@ export function screenProblems({ text, isFailure = false, isHelp = false }: Scre
     if (!tail.flat().some((line) => NEXT_STEP.test(line) || commandsIn(line).length > 0)) problems.push('it failed, but its last line does not say what to do next [next-step]');
   }
   // Where a row's text starts: past the label of a row with a mark and a label, else past its first label (#1115).
-  const columns = new Set(lines.map((line) => (MARK_LABEL.exec(line) ?? TWO_COLUMNS.exec(line))?.[0].length).filter((column) => column !== undefined));
+  // A label too wide for its field stands alone after the mark, and its text starts on the next line,
+  // deeper than a text there would: that line starts no column (`row`, #1268).
+  const isLabelAlone = (line: string, next = ''): boolean => {
+    const head = TWO_COLUMNS.exec(line);
+    return !!head && !MARK_LABEL.test(line) && CONTINUED.test(next) && next.search(/\S/) > head[0].length;
+  };
+  const columns = new Set(lines.filter((line, index) => !isLabelAlone(line, lines[index + 1])).map((line) => (MARK_LABEL.exec(line) ?? TWO_COLUMNS.exec(line))?.[0].length).filter((column) => column !== undefined));
   if (columns.size > limitOf('label-columns')) problems.push(`its rows start their text in ${columns.size} columns (${[...columns].sort((a, b) => a - b).join(', ')}); the most is ${limitOf('label-columns')} [label-columns]`);
   let wrappedExamples = 0;
   let spaced = 0;

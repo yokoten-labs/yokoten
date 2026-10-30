@@ -3,7 +3,7 @@
 // GET /api/state, so the text and the page say the same things. The screen is built only
 // with the layout helpers of ports.ts.
 
-import { counted, moreLines, rowLines, type RowState, screenLines, terminalSafe, titleLines, utcLine, wrapLines } from '../ports.ts';
+import { counted, moreLines, rowLines, type RowState, screenLines, spacedLines, terminalSafe, titleLines, utcLine, wrapLines } from '../ports.ts';
 import { notReadLines } from '../state.ts';
 import type { KanbanActions, KanbanPull, KanbanSession, KanbanState } from './browser/types.ts';
 
@@ -19,13 +19,10 @@ const GROUPS: { state: KanbanSession['state']; heading: string; mark: RowState; 
 const foldRow = (more: number): string[] => rowLines('to do', `${counted(more, 'more row')}, all of them with \`yokoten kanban --json\``);
 
 /**
- * The agent as a label that fits the label field (10 characters): `Claude Code` is `Claude`, a
- * longer name is cut with an ellipsis. `--json` and the page have the full name.
+ * The agent as a row's label: `Claude Code` is `Claude`. A name too long for the label field is
+ * never cut; the row puts it on its own line, whole (#1268).
  */
-const agentLabel = (agent: string): string => {
-  const short = agent.replace(/ Code$/, '') || 'unknown';
-  return short.length > 10 ? `${short.slice(0, 9)}…` : short;
-};
+const agentLabel = (agent: string): string => agent.replace(/ Code$/, '') || 'unknown';
 
 /** One session as a row: the agent, then its task, model and why it needs you. */
 function sessionRow(session: KanbanSession, mark: RowState): string[] {
@@ -42,7 +39,8 @@ function sessionBlocks(sessions: KanbanSession[]): string[][] {
     const inGroup = sessions.filter((session) => session.state === group.state);
     if (!inGroup.length) continue;
     const shown = inGroup.slice(0, group.cap);
-    blocks.push([group.heading, ...shown.flatMap((session) => sessionRow(session, group.mark)), ...(inGroup.length > shown.length ? foldRow(inGroup.length - shown.length) : [])]);
+    // A row that wraps, or a name on its own line, gets a blank line between rows (spaced).
+    blocks.push([group.heading, ...spacedLines([...shown.map((session) => sessionRow(session, group.mark)), ...(inGroup.length > shown.length ? [foldRow(inGroup.length - shown.length)] : [])])]);
   }
   return blocks;
 }
