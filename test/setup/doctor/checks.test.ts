@@ -109,11 +109,11 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   // The plugin is on: install writes no guard of its own, and the plugin's guard counts.
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(!hasGuard(), 'install wrote no guard beside the plugin');
-  assert.match(String(await guardLine()), /^ {2}ok {10}user-guard$/);
+  assert.match(String(await guardLine()), /^ {2}ok {11}user-guard$/);
   // The plugin goes away: no guard is left, and that is a failure with one fix.
   writeFileSync(file, JSON.stringify({ enabledPlugins: { 'yokoten@yokoten': false } }));
   const failed = await sandbox.call(['doctor', '--all']);
-  assert.match(failed.stdout, /^ {2}MISSING {5}user-guard: no guard for Claude Code$/m);
+  assert.match(failed.stdout, /^ {2}MISSING {6}user-guard: no guard for Claude Code$/m);
   assert.match(failed.stdout, underMark(/^ {COL}Fix: `(npx )?yokoten install`$/m), 'its fix, said once under the rows it fixes');
   assert.equal(failed.status, 1, 'a machine with no guard fails doctor');
   const json = JSON.parse((await sandbox.call(['doctor', '--json'])).stdout) as { ok: boolean; findings: { id: string; what: string }[] };
@@ -123,7 +123,7 @@ test('doctor: a guard that left with the plugin fails, and install brings it bac
   // Install again writes install's own guard, and doctor passes.
   assert.equal((await sandbox.call(['install', '--list'])).status, 0);
   assert.ok(hasGuard(), 'install wrote its own guard');
-  assert.match(String(await guardLine()), /^ {2}ok {10}user-guard$/);
+  assert.match(String(await guardLine()), /^ {2}ok {11}user-guard$/);
 });
 
 // #1100: a user who updated yokoten but not the install keeps a guard on Bash alone, so a
@@ -198,8 +198,8 @@ test('doctor: the plugin and install both on is a note that says to uninstall (#
   assert.equal((await sandbox.call(['uninstall'])).status, 0);
   const after = (await sandbox.call(['doctor', '--all'])).stdout;
   assert.doesNotMatch(after, /plugin-and-install/);
-  assert.match(after, /ok {10}runtime/);
-  assert.match(after, /ok {10}session-doctor/);
+  assert.match(after, /ok {11}runtime/);
+  assert.match(after, /ok {11}session-doctor/);
 });
 
 test('doctor: a skills-only copy alone is a note that names the duplicate (#540)', async () => {

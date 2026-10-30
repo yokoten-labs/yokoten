@@ -132,9 +132,9 @@ export function row(mark: RowMark, text: string, label?: string): string[] {
  */
 export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.repeat(hasLabel ? ROW_TEXT_COLUMN : ROW_INDENT + MARK_COLUMN), text);
 
-/** One row with no mark: a label, then the text, wrapped under itself (#1027). */
-export function field(label: string, text: string): string[] {
-  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(LABEL_COLUMN)}`, text);
+/** One row with no mark: a label, then the text, wrapped under itself (#1027). A screen that mixes it with marked rows passes MARK_COLUMN, so every text starts in one column. */
+export function field(label: string, text: string, column = LABEL_COLUMN): string[] {
+  return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(column)}`, text);
 }
 
 /** An ISO stamp as `YYYY-MM-DD HH:MM UTC`, the one way a screen shows a time. A stamp that does not parse comes through as it is. */

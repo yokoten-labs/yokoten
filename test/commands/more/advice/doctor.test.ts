@@ -167,8 +167,8 @@ test('doctor shows one screen: where, what is left, the next command; --all keep
   assert.match(lines[0] ?? '', /^yokoten doctor · stage 1 of 5, safety net$/);
   assert.ok(lines.length <= 24, `one screen, not ${lines.length} lines:\n${short.stdout}`);
   assert.ok(lines.every((line) => line.length <= 80), 'no line passes 80 characters');
-  assert.match(short.stdout, /^ {2}done {8}\d+ of 26 steps$/m);
-  assert.match(short.stdout, /^ {2}next {8}Write the rules for your agents \(AGENTS\.md\)$/m);
+  assert.match(short.stdout, /^ {2}done {9}\d+ of 26 steps$/m);
+  assert.match(short.stdout, /^ {2}next {9}Write the rules for your agents \(AGENTS\.md\)$/m);
   assert.match(lines.at(-2) ?? '', /^Next: `yokoten init`$/);
   assert.match(lines.at(-1) ?? '', /^More: `yokoten doctor --all` shows every check/);
   assert.doesNotMatch(short.stdout, /OpenSSF|Scorecard|OSPS-/, 'no standard ids on the default screen');

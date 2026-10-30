@@ -72,11 +72,11 @@ test('install: the user-level command guard for Antigravity CLI and Copilot CLI,
   writeFileSync(agyFile, JSON.stringify({ lint: { PreToolUse: [{ matcher: 'run_command', hooks: [{ command: './lint.sh' }] }] } }));
   writeFileSync(copilotFile, JSON.stringify({ hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'mine' }] }] } }));
   const before = await sandbox.call(['doctor', '--all']);
-  assert.match(rowsText(before.stdout), /note {8}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
-  assert.match(rowsText(before.stdout), /note {8}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
+  assert.match(rowsText(before.stdout), /note {9}antigravity-user-hook: no command guard in ~\/\.gemini\/config\/hooks\.json; `yokoten install` adds it/);
+  assert.match(rowsText(before.stdout), /note {9}copilot-user-hook: no command guard in ~\/\.copilot\/hooks\/yokoten\.json; `yokoten install` adds it/);
   assertRows(installIn(sandbox), sandbox.home, 'added hook ~/.gemini/config/hooks.json Antigravity CLI', 'added hook ~/.copilot/hooks/yokoten.json Copilot CLI');
   assertRows(installIn(sandbox), sandbox.home, 'kept hook ~/.gemini/config/hooks.json Antigravity CLI', 'kept hook ~/.copilot/hooks/yokoten.json Copilot CLI');
-  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {10}${id}$`, 'm'));
+  for (const id of ['antigravity-user-hook', 'copilot-user-hook']) assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {11}${id}$`, 'm'));
   const saved = JSON.parse(readFileSync(agyFile, 'utf8'));
   assert.ok(saved.lint, "another entry stays");
   assert.equal(saved.yokoten.PreToolUse[0].matcher, 'run_command|write_to_file|replace_file_content|multi_replace_file_content');
@@ -174,7 +174,7 @@ test('install: an unreadable Codex or Gemini CLI hooks file is skipped, the rest
         const run = await sandbox.call(['install']);
         assert.equal(run.status, 1, what);
         assert.ok(!run.output.includes(sandbox.home), `${what}: the home path is shown`);
-        assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  note {8}${bad.id}: ${escape(doctor)}`, 'm'), what);
+        assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  note {9}${bad.id}: ${escape(doctor)}`, 'm'), what);
       }
     }
   }
@@ -207,7 +207,7 @@ test('install: a commented ~/.gemini/settings.json is left as it was and gets th
   assert.ok(again.ok, findingsOf(again, sandbox.home));
   assert.deepEqual(again.changes.filter((change) => change.agent === 'Gemini CLI').map((change) => [change.state, change.note]), [['kept', 'SessionStart doctor'], ['kept', 'command guard']]);
   assert.equal(readFileSync(file, 'utf8'), after, 'the file changed');
-  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}ok {10}gemini-user-hook$/m);
+  assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^ {2}ok {11}gemini-user-hook$/m);
 });
 
 test('install: Gemini CLI allows comments but not trailing commas, and Codex allows neither (#258)', async () => {
@@ -265,7 +265,7 @@ test('install: keys in ~/.claude/settings.json that install does not edit are ke
     assert.equal(key === 'env' ? settings.env : settings.hooks.Notification, value, content);
     assert.ok(hasHook(file, 'SessionStart', 'doctor'), `${content}: no doctor hook`);
     assert.ok(hasHook(file, 'PreToolUse', 'hook'), `${content}: no guard`);
-    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^  ok {10}session-doctor$/m, content);
+    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), /^  ok {11}session-doctor$/m, content);
   }
 });
 
@@ -284,7 +284,7 @@ test('install: other keys under hooks, such as Gemini CLI hooks.disabled, are ke
     assert.equal(settings.hooks.Other, 5, dir);
     assert.ok(hasHook(path, 'SessionStart', 'doctor'), `${dir}: no doctor hook`);
     assert.ok(hasHook(path, guard, 'hook'), `${dir}: no guard`);
-    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {10}${dir.slice(1)}-user-hook$`, 'm'), dir);
+    assert.match(rowsText((await sandbox.call(['doctor', '--all'])).stdout), new RegExp(`^  ok {11}${dir.slice(1)}-user-hook$`, 'm'), dir);
   }
 });
 

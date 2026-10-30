@@ -752,7 +752,7 @@ export function marksScreen(result: MarksResult): string[] {
   switch (result.action) {
     case 'list': {
       const total = result.kinds.reduce((sum, kind) => sum + kind.count, 0);
-      const rows = result.kinds.map(({ kind, count: found, isOff, isFromInstall }) => field(kindLabel(kind), `${found}${isOff ? ', off: install does not add it' : isFromInstall ? ', added by install' : ''}`));
+      const rows = result.kinds.map(({ kind, count: found, isOff, isFromInstall }) => field(kindLabel(kind), `${found}${isOff ? ', off: install does not add it' : isFromInstall ? ', added by install' : ''}`, MARK_COLUMN));
       return screen(
         title('marks', `${total} private ${total === 1 ? 'mark' : 'marks'}, values never shown`),
         spaced([
@@ -771,13 +771,13 @@ export function marksScreen(result: MarksResult): string[] {
       return screen(
         title('marks', 'removed the mark from your private marks'),
         from === undefined ? [] : row('note', result.isSwitched ? `it came from this machine (your ${from}), so install adds it again` : `it came from this machine (a ${from}), so install adds it again while this machine has it`),
-        result.isSwitched && from !== undefined ? field('stop it', `\`yokoten marks off ${kindWord(from)}\``) : [],
+        result.isSwitched && from !== undefined ? field('stop it', `\`yokoten marks off ${kindWord(from)}\``, MARK_COLUMN) : [],
       );
     }
     case 'off':
       return screen(
         title('marks', `install no longer adds your ${result.kind}`),
-        [...row('done', `removed ${count(result.removed, 'mark')} it had added; marks you added yourself are kept`), ...field('undo', `\`yokoten marks on ${kindWord(result.kind)}\``)],
+        [...row('done', `removed ${count(result.removed, 'mark')} it had added; marks you added yourself are kept`), ...field('undo', `\`yokoten marks on ${kindWord(result.kind)}\``, MARK_COLUMN)],
       );
     case 'on': {
       const back = `install adds your ${result.kind} again`;
@@ -797,7 +797,7 @@ export function marksScreen(result: MarksResult): string[] {
         ? title('marks', 'the allow is taken back; the checks stop that mark in this repo again')
         : screen(
             title('marks', 'that mark is allowed in this repo only'),
-            [...row('note', 'the allow is kept on this machine, not in the repo'), ...field('undo', '`yokoten marks allow --remove <mark> --here`')],
+            [...row('note', 'the allow is kept on this machine, not in the repo'), ...field('undo', '`yokoten marks allow --remove <mark> --here`', MARK_COLUMN)],
           );
   }
 }

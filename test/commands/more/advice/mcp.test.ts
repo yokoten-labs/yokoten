@@ -253,7 +253,7 @@ test('mcpScreen: two tools and one problem, from data', () => {
   const lines = mcpScreen({ reports: [report], problems: [problem], warnings: [], toolCount: 2 });
   assert.match(lines[0], /^yokoten mcp · 1 problem in 1 server$/);
   assert.ok(lines.includes('Next: `yokoten mcp`'));
-  assert.ok(lines.some((line) => /^ {2}MISSING {5}\s*tool "read" inputSchema has a root anyOf/.test(line)));
+  assert.ok(lines.some((line) => /^ {2}MISSING {6}\s*tool "read" inputSchema has a root anyOf/.test(line)));
   const ready = mcpScreen({ reports: [report], problems: [], warnings: [problem], toolCount: 2 });
   assert.deepEqual(ready.slice(0, 1), ['yokoten mcp --check · 2 tools ready']);
   assert.ok(ready.some((line) => /note +1 warning; run yokoten mcp --json/.test(line)));

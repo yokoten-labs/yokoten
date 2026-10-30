@@ -19,8 +19,8 @@ test('start: bare yokoten installs, adds the rules, then shows the road (#548)',
   const first = await sandbox.call([]);
   // One screen (#1027): the title says it set up and the stage, one row per step, one Next line, then More.
   assert.match(first.stdout, new RegExp(`^yokoten ${VERSION.replaceAll('.', '\\.')} · set up; stage 1 of 5, safety net$`, 'm'));
-  assert.match(first.stdout, /^ {2}ok {10}guard on for .+ on this computer$/m);
-  assert.match(first.stdout, /^ {2}ok {10}\d+ files written in this project, none of yours changed$/m);
+  assert.match(first.stdout, /^ {2}ok {11}guard on for .+ on this computer$/m);
+  assert.match(first.stdout, /^ {2}ok {11}\d+ files written in this project, none of yours changed$/m);
   assert.equal(first.stdout.match(/^Next: /gm)?.length, 1, 'one Next line');
   // The commit command as the product builds it for this system (one source: commitCommand).
   assert.ok(first.stdout.includes(`Next: \`${commitCommand(process.platform)}\`\nMore: `), first.stdout);
@@ -40,7 +40,7 @@ test('start: a shell that is not UTC gets doctor\'s full report line for that sh
   const sandbox = makeSandbox();
   const result = await sandbox.call(['doctor', '--all'], { extra: { TZ: 'America/New_York', SHELL: '/bin/zsh' } });
   const said = result.stdout.split('\n\n').find((block) => /time zone is not UTC/.test(block)) ?? '';
-  assert.match(said, /^ {2}note {8}shell: your shell's time zone is not UTC, so each commit would\n/);
+  assert.match(said, /^ {2}note {9}shell: your shell's time zone is not UTC, so each commit would\n/);
   assert.match(said, /`export TZ=UTC`/);
   assert.match(said, /~\/\.zshrc/);
   assert.equal(result.stdout.match(/time zone is not UTC/g)?.length, 1, 'said once');
@@ -143,8 +143,8 @@ test('start: an install that failed keeps its problem with the Fix line, and the
   const lines = startScreen({ install: failed, init: ADDED, report: REPORT, place: placeFor('linux') });
   const text = lines.join('\n');
   assert.match(lines[0] ?? '', / · partly set up; stage 1 of 5/);
-  assert.match(text, /^ {2}ok {10}guard on for Claude Code on this computer$/m, 'the guard it did turn on');
-  assert.match(text, /^ {2}MISSING {5}~\/\.codex\/hooks\.json is not valid JSON$/m);
+  assert.match(text, /^ {2}ok {11}guard on for Claude Code on this computer$/m, 'the guard it did turn on');
+  assert.match(text, /^ {2}MISSING {6}~\/\.codex\/hooks\.json is not valid JSON$/m);
   assert.match(text, underMark(/^ {COL}Fix: `yokoten install`$/m));
   assert.deepEqual(screenProblems({ text, isFailure: true }), []);
   // Only install ran: no commit to make, so doctor's own Next stays.

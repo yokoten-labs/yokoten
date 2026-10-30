@@ -1878,7 +1878,7 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     for (const args of [[], ['origin'], ['origin', 'HEAD'], ['origin', 'HEAD:refs/heads/other'], ['--all', 'origin']]) {
       const again = await push(...args);
       assert.equal(again.status, 1, `${args.join(' ')}: ${again.stderr}`);
-      assert.match(again.stderr, new RegExp(`^ {2}to do {7}${tip} zoned-tip$`, 'm'), args.join(' '));
+      assert.match(again.stderr, new RegExp(`^ {2}to do {8}${tip} zoned-tip$`, 'm'), args.join(' '));
     }
     // The advice works: the amend gives the tip UTC dates, and the push goes through.
     sandbox.git('commit', '--amend', '-q', '--no-edit', '--date=now');
@@ -1890,7 +1890,7 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     const second = commit('zoned-author', { GIT_AUTHOR_DATE: '2026-10-27T10:00:00-0700' });
     const two = await push('origin', 'topic');
     assert.equal(two.status, 1, two.stderr);
-    assert.match(two.stderr, new RegExp(`^ {2}to do {7}${second} zoned-author\\n {2}to do {7}${first} zoned-committer\\n`, 'm'));
+    assert.match(two.stderr, new RegExp(`^ {2}to do {8}${second} zoned-author\\n {2}to do {8}${first} zoned-committer\\n`, 'm'));
     assert.match(two.stderr, new RegExp(`Next: run \`TZ=UTC git rebase --ignore-date ${first}\\^\` on the branch`));
     assert.doesNotMatch(two.stderr, /0530|0700|\+05|-07/, 'no offset is printed');
     sandbox.git('rebase', '-q', '--ignore-date', `${first}^`);

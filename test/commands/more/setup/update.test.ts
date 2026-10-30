@@ -48,9 +48,9 @@ test('update: a folder that does not exist is a failure with one Next line (#208
 test('update: one row per core rule that changed, from the result (#1027)', () => {
   const text = checked(updateScreen(PREVIEW));
   assert.match(text, /^yokoten update · 3 core rules changed upstream$/m);
-  assert.match(text, /^ {2}next {8}rule 4: wording changed$/m, 'a changed rule');
-  assert.match(text, /^ {2}next {8}rule 9: new$/m, 'a new rule');
-  assert.match(text, /^ {2}next {8}rule 12: removed$/m, 'a removed rule');
+  assert.match(text, /^ {2}next {9}rule 4: wording changed$/m, 'a changed rule');
+  assert.match(text, /^ {2}next {9}rule 9: new$/m, 'a new rule');
+  assert.match(text, /^ {2}next {9}rule 12: removed$/m, 'a removed rule');
   assert.match(text, /^Your "This project" part stays as it is\.$/m);
   assert.match(text, /Next: `yokoten update --write`\n$/);
   assert.deepEqual(updateScreen({ ...PREVIEW, state: 'up to date', changes: [] }), ['yokoten update · the core rules are up to date, nothing changed']);
@@ -59,7 +59,7 @@ test('update: one row per core rule that changed, from the result (#1027)', () =
 test('update --write: the rules are this version\'s, and the backup is named', () => {
   const text = checked(updateScreen({ ...PREVIEW, state: 'written', backup: 'AGENTS.md.before-yokoten' }));
   assert.match(text, /^yokoten update · the core rules in AGENTS\.md are this version's now$/m);
-  assert.match(text, /^ {2}note {8}the file before it is kept as AGENTS\.md\.before-yokoten;/m);
+  assert.match(text, /^ {2}note {9}the file before it is kept as AGENTS\.md\.before-yokoten;/m);
 });
 
 test('update: a refusal is a failure whose last line is the command to run (R5)', () => {
@@ -93,7 +93,7 @@ test('trust: one screen names each agent, then the way back (#1027)', async () =
   assert.equal(done.status, 0, done.stderr);
   const text = checked(done.stdout.replace(/^note: .*\n\n/, '').trimEnd().split('\n'));
   assert.match(text, /^yokoten trust · the guard now runs in Codex$/m);
-  assert.match(text, /^ {2}done {8}Codex: this folder is trusted now$/m);
+  assert.match(text, /^ {2}done {9}Codex: this folder is trusted now$/m);
   assert.match(text, /^Undo: `yokoten trust --undo`$/m);
   // Again: nothing changed, so the title says so, and there is no way back to show (#1040).
   const again = await sandbox.call(['trust'], { isTTY: true, extra: { NO_COLOR: '1' } });

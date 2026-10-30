@@ -47,7 +47,7 @@ test('install: a project copy carries the kit lessons, and doctor from it runs t
   assert.ok(!existsSync(join(dest, 'kit', 'user')), 'only the project parts of the kit');
   sandbox.write('test/api.test.js', "await fetch('http://127.0.0.1:8080/health');\n");
   const doctor = spawnSync('node', [join(dest, 'bin', 'yokoten.ts'), 'doctor', '--all'], { cwd: sandbox.repo, env: sandbox.env, encoding: 'utf8' });
-  assert.match(rowsText(doctor.stdout), /\n {2}note {8}lesson incident-138: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; /);
+  assert.match(rowsText(doctor.stdout), /\n {2}note {9}lesson incident-138: test\/api\.test\.js: a test calls a server on this machine and does not set NO_PROXY; /);
 });
 
 // A temp folder left beside the copy, in a repo root, is one `git add -A` away from a commit (#204).
@@ -129,7 +129,7 @@ test('install: writes the launcher, and with no terminal prints the PATH line an
   assert.ok(!findingsOf(result, sandbox.home).includes('alias yokoten'));
   // The screen says it once, for this system, and edits nothing.
   const screen = await sandbox.call(['install'], { extra: { SHELL: '/bin/bash' } });
-  assert.match(screen.stdout, /^ {2}note {8}command {5}~\/\.local\/bin is not on your PATH yet$/m);
+  assert.match(screen.stdout, /^ {2}note {9}command {5}~\/\.local\/bin is not on your PATH yet$/m);
   for (const file of ['.bashrc', '.bash_profile', '.zshrc', '.profile']) assert.ok(!existsSync(join(sandbox.home, file)), `${file} was written`);
   // The launcher runs the installed copy, with every argument as it was given.
   const launcher = join(sandbox.home, '.local/bin/yokoten');

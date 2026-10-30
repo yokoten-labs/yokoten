@@ -10,7 +10,7 @@ import { homeOf } from '../../../rules/privacy.ts';
 import { type Finding, fixCommand } from '../../../rules/text/message.ts';
 import { install, isLauncherOnPath, isYes, NOT_INSTALLED, PLUGIN_BRINGS, uninstall, WINDOWS_PATH_STEP } from '../../../setup/install.ts';
 import { type Change, describeChange, type Place, type SetupResult, VERSION, YOUR_EDIT } from '../../../setup/files.ts';
-import { asSentence, count, failure, field, type Invocation, moreLine, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
+import { asSentence, count, failure, field, type Invocation, MARK_COLUMN, moreLine, nextLine, parse, print, row, screen, spaced, title, underRow, usage, wrap } from '../../shared.ts';
 import { askWhenTerminal } from './ask.ts';
 import { previewLines, SET_UP_QUESTION } from './start.ts';
 
@@ -141,7 +141,7 @@ export function uninstallScreen(result: SetupResult): string[] {
 
 /** `--list`: every change as a row under the title, its state as the mark, then the notes and problems (#1115). */
 export function listScreen(command: 'install' | 'uninstall', result: SetupResult, place: Place): string[] {
-  const rows = result.changes.map((change) => field(change.state, shownPath(describeChange(change), place.home)));
+  const rows = result.changes.map((change) => field(change.state, shownPath(describeChange(change), place.home), MARK_COLUMN));
   const notes = result.notes.map((note) => [...row('note', shownPath(note.what, place.home)), ...underRow(asSentence(shownPath(note.fix, place.home)), false)]);
   const head = command === 'install' ? title('install', installSummary(result)) : title('uninstall', uninstallSummary(result));
   return screen(head, spaced(rows), spaced(notes), spaced(result.problems.map((problem) => problemItem(problem, place.home, false))), result.ok ? [] : nextLine(`yokoten ${command}`));

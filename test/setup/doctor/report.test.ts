@@ -291,7 +291,7 @@ test('doctor: the next step comes first, each part is a block, and done steps sh
     assert.equal(lines[at - 1], '', `${heading} starts its block`);
   }
   // The done steps of a stage share one line, and none of them keeps its own.
-  const done = rowsOf(lines).filter((line) => /^ {2}done {8}/.test(line));
+  const done = rowsOf(lines).filter((line) => /^ {2}done {9}/.test(line));
   assert.ok(done.length > 0, text);
   assert.ok(done.some((line) => line.includes(', ')), 'a stage with several done steps lists them together');
   // --json is the same data as before: one entry per step, with no block layout.
@@ -472,7 +472,7 @@ test('doctor: lists the board clicks by hand only when a board is linked, and ne
   const plainResult = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: plain });
   const boardResult = doctor(root, { env: { HOME: root, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: withBoard });
   assert.ok(!rowsOf(plainResult.lines).some((l) => /by hand: board/.test(l)));
-  assert.equal(rowsOf(boardResult.lines).filter((l) => /^ {2}to do {7}by hand: board "demo": /.test(l)).length, 4);
+  assert.equal(rowsOf(boardResult.lines).filter((l) => /^ {2}to do {8}by hand: board "demo": /.test(l)).length, 4);
   assert.equal(boardResult.ok, plainResult.ok);
   assert.deepEqual(boardResult.report.findings, plainResult.report.findings);
 });
@@ -677,7 +677,7 @@ test('doctor: each stage boundary, from a fresh repo to the end of the road', as
 
 test('doctor: a stage that jumped says which stages it passed, once (#514)', async () => {
   const sandbox = makeSandbox();
-  const jumpLine = /^ {2}done {8}stage \d (is done too|counts as done): /m;
+  const jumpLine = /^ {2}done {9}stage \d (is done too|counts as done): /m;
   // The first run has nothing to compare with: stage 1 is next, and no line.
   const first = await sandbox.call(['doctor', '--all']);
   assert.match(first.stdout, /^yokoten doctor · stage 1 of 5, /m);
@@ -698,8 +698,8 @@ test('doctor: a stage that jumped says which stages it passed, once (#514)', asy
   assert.match(jumpedRun.stdout, /^yokoten doctor · stage 4 of 5, /m);
   // Each passed stage says its own reason: stage 2 has steps only the server can check,
   // while stage 3 was already in place.
-  assert.match(flat(jumpedRun.stdout), /^ {2}done {8}stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
-  assert.match(flat(jumpedRun.stdout), /^ {2}done {8}stage 3 is done too: its steps were already in place$/m);
+  assert.match(flat(jumpedRun.stdout), /^ {2}done {9}stage 2 counts as done: \d+ of its steps were already in place and 2 can't be checked yet$/m);
+  assert.match(flat(jumpedRun.stdout), /^ {2}done {9}stage 3 is done too: its steps were already in place$/m);
   // Two stages passed, each in its own line in the singular: never "stages 3 are" (#514).
   assert.doesNotMatch(jumpedRun.stdout, /^stages /m);
   // The lines are told once: the next run starts from stage 4.
@@ -761,7 +761,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   // A fresh change is work going on now: the session does not hear it.
   sandbox.write('a.txt', 'a\n');
   assert.equal((await session()).length, 1, 'only the road');
-  assert.match(flat((await sandbox.call(['doctor', '--all'], { extra })).stdout), /^Unsaved work, only on this machine:\n {2}note {8}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
+  assert.match(flat((await sandbox.call(['doctor', '--all'], { extra })).stdout), /^Unsaved work, only on this machine:\n {2}note {9}uncommitted-changes: \. has 1 uncommitted file, the oldest changed 1 minute ago; /m);
   const old = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
   utimesSync(join(sandbox.repo, 'a.txt'), old, old);
   assert.deepEqual((await session()).slice(1), [[...noteLines('yokoten: . has 1 uncommitted file, the oldest changed 2 days ago; commit them: `git add -A && git commit -m "chore: save work"`; once the repo has a remote, push it.'), ...noteLines(UNSAVED_OFFER)].join('\n')]);
@@ -783,7 +783,7 @@ test('doctor: lists the work only on this machine; a session hears at most three
   assert.equal(lines[3], 'yokoten: 2 more like this; `yokoten doctor` lists them all.');
   assert.ok(lines.every((line) => !line.includes(sandbox.home)), 'never the full home path');
   const full = await sandbox.call(['doctor', '--all'], { extra });
-  assert.equal(full.stdout.match(/^ {2}note {8}(uncommitted-changes|unpushed-commits): /gm)?.length, 5);
+  assert.equal(full.stdout.match(/^ {2}note {9}(uncommitted-changes|unpushed-commits): /gm)?.length, 5);
   assert.match(flat(full.stdout), /uncommitted-changes: ~\/w1 has 1 uncommitted file/, 'a worktree outside the repo shows from ~');
 });
 
@@ -797,7 +797,7 @@ test('doctor: a clean, pushed repo has no unsaved-work note (#365)', async () =>
   sandbox.git('remote', 'add', 'origin', origin);
   sandbox.git('push', '-q', '-u', 'origin', 'main');
   const full = flat((await sandbox.call(['doctor', '--all'])).stdout);
-  assert.match(full, /^Unsaved work, only on this machine:\n {2}ok {10}everything is committed and pushed$/m);
+  assert.match(full, /^Unsaved work, only on this machine:\n {2}ok {11}everything is committed and pushed$/m);
   assert.doesNotMatch((await sandbox.call(['doctor', '--session'])).stdout, /only on this machine/);
 });
 
@@ -1182,7 +1182,7 @@ test('doctor: a shell that is not UTC gets the line for that shell, once, at the
   const full = flat((await sandbox.call(['doctor', '--all'], { extra })).stdout).trimEnd().split('\n');
   // The row before the Next line, where a person looks for the next step.
   const last = full.at(-3) ?? '';
-  assert.match(last, /^ {2}note {8}shell: your shell's time zone is not UTC, so each commit would carry it\./);
+  assert.match(last, /^ {2}note {9}shell: your shell's time zone is not UTC, so each commit would carry it\./);
   assert.match(last, /`set -gx TZ UTC`/);
   assert.match(last, /~\/\.config\/fish\/config\.fish/);
   assert.equal(full.filter((line) => line.includes('time zone is not UTC')).length, 1, 'said once');
@@ -1284,7 +1284,7 @@ test('shortLines: problems and notes that take the room fold more steps, so the 
   const lines = shortLines(reportWith({ ok: false, steps, findings, notes }));
   assert.ok(lines.length <= SCREEN_ROWS, `${lines.length} lines:\n${lines.join('\n')}`);
   assert.ok(lines.includes('  next        Write the rules for your agents (AGENTS.md)'), 'the next step always shows');
-  assert.ok(lines.some((line) => /^ {2}to do {7}\d+ more steps, listed by `yokoten doctor --all`$/.test(line)), 'the rest are counted');
+  assert.ok(lines.some((line) => /^ {2}to do {8}\d+ more steps, listed by `yokoten doctor --all`$/.test(line)), 'the rest are counted');
   assert.ok(lines.some((line) => line.includes("desk fence can't start")), 'a kept note is never folded for steps');
   assert.equal(lines.filter((line) => line.includes('Fix: `yokoten')).length, 2, 'every problem keeps its Fix');
   // With the room, the screen shows the next step and four more.

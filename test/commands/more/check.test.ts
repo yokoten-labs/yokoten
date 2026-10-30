@@ -60,7 +60,7 @@ test('check --pr: reads the CI event, lists the changed files from git, notes lo
   assert.equal(result.status, 1, 'src/a.ts changed with no changelog line');
   assert.match(result.stderr, /changelog: 1 changed file/);
   // The notes are rows of the one screen, under the problems (#1115).
-  assert.match(result.stderr, /^ {2}note {8}README\.md:2: a sentence of 30 words$/m);
+  assert.match(result.stderr, /^ {2}note {9}README\.md:2: a sentence of 30 words$/m);
   result = sandbox.run(['check', '--pr', '--all'], { extra: event(body.replace('Made with worker', 'No changelog: a test\n\nMade with worker')) });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /check --pr · (PR #\d+, )?no problems/);
@@ -99,7 +99,7 @@ test('check --pr: a long sentence is noted only on a line the pull request adds 
   // A second long sentence on the line this commit adds is noted, and the old one still is not.
   result = await sandbox.call(['check', '--pr', '--all'], { extra: event(head('Shorter.', newSentence)) });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}note {8}README\.md:3: a sentence of 30 words$/m);
+  assert.match(result.stdout, /^ {2}note {9}README\.md:3: a sentence of 30 words$/m);
 });
 
 test('check --pr: a change file counts as the changelog entry, and its form is checked (#132)', async () => {
@@ -204,8 +204,8 @@ test('check --pr: each ignore the pull request adds is a notice on the page, nev
   writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
   const r = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: file, GITHUB_ACTIONS: 'true' } });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ {2}note {8}src\/a\.ts:2: /m);
-  assert.match(r.stdout, /^ {2}note {8}\.yokotenignore:1: /m);
+  assert.match(r.stdout, /^ {2}note {9}src\/a\.ts:2: /m);
+  assert.match(r.stdout, /^ {2}note {9}\.yokotenignore:1: /m);
   assert.match(r.stdout, /::notice file=src\/a\.ts,line=2,title=yokoten ignore-added::src\/a\.ts:2: this pull request lets a secret hit through on this line \[ignored: a test fixture\]/);
   assert.match(r.stdout, /::notice file=\.yokotenignore,line=1,title=yokoten ignore-added::\.yokotenignore:1: this pull request lets ip hits through in the whole repo \[ignored: documentation examples\]/);
   assert.doesNotMatch(r.stdout, /an old one/, 'an ignore already on the base branch is not new');
@@ -459,8 +459,8 @@ test('check --pr: a Dependabot pull request passes with notes; the same body fro
   let result = await sandbox.call(['check', '--pr', '--all'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]') } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(flat(result.stdout), /note body: the first line is not a tier .*Dependabot opened this pull request, so it is a note\./);
-  assert.match(result.stdout, /^ {2}note {8}milestone: none set$/m);
-  assert.equal(result.stdout.match(/^ {2}note {8}/gm)?.length, 9, 'the nine rules Dependabot does not meet, each a note');
+  assert.match(result.stdout, /^ {2}note {9}milestone: none set$/m);
+  assert.equal(result.stdout.match(/^ {2}note {9}/gm)?.length, 9, 'the nine rules Dependabot does not meet, each a note');
   assert.match(result.stdout, /^yokoten check --pr · (PR #\d+, )?no problems[^\n]*\n\n/);
   result = await sandbox.call(['check', '--pr', '--all', '--json'], { extra: { GITHUB_EVENT_PATH: event('dependabot[bot]'), GITHUB_ACTIONS: 'true', GITHUB_STEP_SUMMARY: summary } });
   assert.equal(result.status, 0, result.stderr);
@@ -1196,7 +1196,7 @@ test('ci-health --dry-run: shows the report as a screen and touches no issue (#1
   const result = await sandbox.call(['ci-health', '--dry-run'], { extra: { ...extra, GITHUB_REPOSITORY: 'octo/demo' } });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten ci-health · octo\/demo, the last 1 run: 1 problem\n/);
-  assert.match(result.stdout, /^On main:\n {2}MISSING {5}yokoten: failure at /m);
+  assert.match(result.stdout, /^On main:\n {2}MISSING {6}yokoten: failure at /m);
   assert.doesNotMatch(result.stdout, /^Next: /m, 'a dry run names no next step');
   assert.deepEqual(healthCalls(sandbox), [
     'repo view octo/demo --json defaultBranchRef --jq .defaultBranchRef.name',
@@ -1219,7 +1219,7 @@ test('ci-health with no flag prints the report, writes no issue and names --writ
   });
   const result = await sandbox.call(['ci-health', '--repo', 'octo/demo'], { extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^ {2}MISSING {5}yokoten: failure at /m);
+  assert.match(result.stdout, /^ {2}MISSING {6}yokoten: failure at /m);
   assert.match(result.stdout, /\nNext: `yokoten ci-health --write` puts it in the pinned issue "CI health"\.\n$/);
   assert.ok(!healthCalls(sandbox).some((call) => call.startsWith('issue')), `no issue call without --write: ${healthCalls(sandbox).join(', ')}`);
 });
@@ -1276,7 +1276,7 @@ test('ci-health: opens and pins the one report issue, then edits it in place', a
   assert.match(result.stdout, /opened issue #12 in octo\/demo/);
   assert.match(result.stdout, /0 problems/);
   // #1027: one screen: the title says where the report is, then one row says what it found.
-  assert.match(result.stdout, /^yokoten ci-health · opened issue #12 in octo\/demo\n\n {2}ok {10}1 run: 0 problems\n$/);
+  assert.match(result.stdout, /^yokoten ci-health · opened issue #12 in octo\/demo\n\n {2}ok {11}1 run: 0 problems\n$/);
   for (const line of result.stdout.split('\n')) assert.ok(line.length <= 80, `over 80: ${line}`);
   assert.ok(healthCalls(sandbox).some((call) => call.startsWith('issue create')), 'an issue was made');
   assert.ok(healthCalls(sandbox).some((call) => call.startsWith('issue pin 12')), 'and pinned');
@@ -1496,7 +1496,7 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   const lines = found.stderr.split('\n');
   assert.equal(lines[0], 'yokoten check · 1 problem');
   assert.equal(lines[1], '');
-  assert.match(lines[2] ?? "", /^ {2}MISSING {5}a\.md:1$/);
+  assert.match(lines[2] ?? "", /^ {2}MISSING {6}a\.md:1$/);
   assert.match(lines[3] ?? "", /^ {14}an email address$/);
   assert.match(lines[4] ?? "", /^ {14}An email address points at a person/);
   assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`.');
@@ -1609,7 +1609,7 @@ test('test: the files are the ones git lists by the runner\'s own names; a build
   assert.deepEqual(broken(shown.stdout.split('\n')), []);
   const ran = await sandbox.call(['test', '--heavy']);
   assert.equal(ran.status, 0, ran.output);
-  assert.match(ran.stdout, /^ {2}done {8}tests passed$/m);
+  assert.match(ran.stdout, /^ {2}done {9}tests passed$/m);
 });
 
 test('test: the plan and the end are screens of their own (#461, #1115)', () => {
