@@ -170,14 +170,14 @@ test/setup/init.test.ts :: trust (#661): a hook edited after trust stays off unt
 test/setup/init.test.ts :: trust (#661): init without a terminal writes nothing and names the command; trust writes only yokoten entries
 test/setup/init.test.ts :: trust (#984): a yokoten hook the user turned off in Codex stays off
 test/setup/init.test.ts :: trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code
-test/setup/install.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)
-test/setup/install.test.ts :: install: adds the git name as a mark of its own, never prints it, and not twice (#434)
-test/setup/install.test.ts :: install: adds the machine's marks and a git mailmap, and never prints a value (#390)
-test/setup/install.test.ts :: install: run from the installed copy, it keeps that copy, and the next run works (#204)
-test/setup/install.test.ts :: install: skills, agents and hooks once, the user's own files untouched
-test/setup/install.test.ts :: install: the session doctor and the command guard for Codex and Gemini CLI, safe twice (#211)
-test/setup/install.test.ts :: install: the user-level command guard for Antigravity CLI and Copilot CLI, safe twice (#342)
-test/setup/install.test.ts :: install: writes the launcher, and with no terminal prints the PATH line and edits no profile (#433)
-test/setup/install.test.ts :: launcher: runs the installed runtime with each argument kept whole (#433)
-test/setup/install.test.ts :: uninstall: removes the launcher and the marked PATH line, and keeps the rest of the profile (#433)
-test/setup/install.test.ts :: uninstall: takes back what install wrote, keeps the user's own files and settings (#300)
+test/setup/install/hooks.test.ts :: install: the session doctor and the command guard for Codex and Gemini CLI, safe twice (#211)
+test/setup/install/hooks.test.ts :: install: the user-level command guard for Antigravity CLI and Copilot CLI, safe twice (#342)
+test/setup/install/marks.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)
+test/setup/install/marks.test.ts :: install: adds the git name as a mark of its own, never prints it, and not twice (#434)
+test/setup/install/marks.test.ts :: install: adds the machine's marks and a git mailmap, and never prints a value (#390)
+test/setup/install/plugin.test.ts :: install: run from the installed copy, it keeps that copy, and the next run works (#204)
+test/setup/install/runtime.test.ts :: install: writes the launcher, and with no terminal prints the PATH line and edits no profile (#433)
+test/setup/install/runtime.test.ts :: launcher: runs the installed runtime with each argument kept whole (#433)
+test/setup/install/runtime.test.ts :: uninstall: removes the launcher and the marked PATH line, and keeps the rest of the profile (#433)
+test/setup/install/skills.test.ts :: install: skills, agents and hooks once, the user's own files untouched
+test/setup/install/skills.test.ts :: uninstall: takes back what install wrote, keeps the user's own files and settings (#300)

@@ -27,6 +27,9 @@
 // two slowest files took 174 to 208 s against a flat 240 s, and a slow runner passed it on
 // 2026-10-26 with no test failing. A file that timed out ran none of its listed tests, so
 // none of them is called fixed.
+// A file whose last time is over 75% of the cap fails the job before any test runs, and the
+// message names it: split it by area (issue #1243: install.test.ts took 241 s of 240 s and
+// timed out at random). SLOW_WAIVERS lists the files that wait for their split.
 //
 // Speed (owner 2026-10-25: a fast answer is worth more, even a failing one): the job runs on
 // several machines at once, each with a share of the files by the seconds they took last time
@@ -393,6 +396,40 @@ export function capOf(file: string, times: Map<string, number>, cap: number): nu
   return Math.max(cap, CAP_FACTOR * (times.get(file.replace(/\\/g, '/')) ?? 0));
 }
 
+/** The seconds a file may take per test file on the Windows job, unless --cap says another. */
+export const DEFAULT_CAP = 240;
+
+/** The share of the cap that a file's last time may reach; over it, the file is split before it times out. */
+export const SLOW_RATIO = 0.75;
+
+/** A waiver for a slow file: why, the issue that splits it, and the last day (UTC) it holds; a date that can't be read has expired. */
+export type SlowWaiver = { reason: string; issue: number; expires: string };
+
+/** Files over SLOW_RATIO that wait for a split. A waiver may only go: it fails once its file is under the limit, or after its expiry. */
+export const SLOW_WAIVERS: Record<string, SlowWaiver> = {
+  'test/setup/init.test.ts': { reason: 'recorded at the cap; it still has to be split by area, like test/setup/install/', issue: 1249, expires: '2026-11-15' },
+};
+
+/**
+ * The problems with a times table: a file whose last time is over SLOW_RATIO of the cap, named
+ * with its time and the limit, and a waiver whose file is not over it (any more), is not listed,
+ * or whose expiry has passed.
+ */
+export function slowProblems(times: Map<string, number>, cap: number, waivers: Record<string, SlowWaiver> = SLOW_WAIVERS, ratio = SLOW_RATIO, now = Date.now()): string[] {
+  const limit = cap * ratio;
+  const problems: string[] = [];
+  for (const [file, seconds] of times) {
+    if (seconds > limit && !(file in waivers)) problems.push(`${file} took ${seconds} s on Windows, over ${Math.round(ratio * 100)}% of the ${cap} s cap (${limit} s): split it by area, as test/setup/install/ is, before it times out at random`);
+  }
+  for (const file of Object.keys(waivers)) {
+    const seconds = times.get(file);
+    if (seconds === undefined) problems.push(`SLOW_WAIVERS names ${file}, which has no time in windows-times.txt: take it off`);
+    else if (seconds <= limit) problems.push(`${file} took ${seconds} s, under ${limit} s: take it off SLOW_WAIVERS`);
+    else if (!(now <= Date.parse(`${waivers[file].expires}T23:59:59Z`))) problems.push(`${file}: its waiver expired on ${waivers[file].expires}; split it (issue #${waivers[file].issue}), or renew the waiver with a reason`);
+  }
+  return problems;
+}
+
 /** Each file's weight: its last time, or the median of the known times for a new file (1 with none). */
 export function weightsOf(files: string[], times: Map<string, number>): { name: string; weight: number }[] {
   const known = [...times.values()].sort((a, b) => a - b);
@@ -462,7 +499,7 @@ it is named as flaky.
 async function main(): Promise<number> {
   const options = {
     out: { type: 'string' },
-    cap: { type: 'string', default: '240' },
+    cap: { type: 'string', default: String(DEFAULT_CAP) },
     jobs: { type: 'string', default: '4' },
     shard: { type: 'string', default: '1/1' },
     times: { type: 'string' },
@@ -483,6 +520,11 @@ async function main(): Promise<number> {
     times = readTimes(readFileSync(TIMES_FILE, 'utf8'));
   } catch {
     // No times yet: every file weighs the same, and the shards still cover every file once.
+  }
+  const slow = slowProblems(times, Number(values.cap));
+  if (slow.length) {
+    process.stderr.write(`${slow.join('\n')}\n`);
+    return 1;
   }
   const scope = scopeFor(testFiles(), platform);
   const skippedHead = skippedHeading(platform, scope.skipped);

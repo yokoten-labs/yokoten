@@ -1,5 +1,6 @@
 # Seconds each test file took on the Windows job (scripts/time/windows-known.ts --times), from GitHub's runners.
 # The shards are dealt by these times; a file not listed counts as the median.
+# test/setup/install/*.test.ts: estimates (the old install.test.ts took 241 s, issue #1243); the next --times run replaces them.
 8 test/agents/copilot.test.ts
 1 test/agents/desk/agent-env.test.ts
 4 test/agents/desk/desk.test.ts
@@ -133,7 +134,12 @@
 131 test/setup/doctor/report.test.ts
 1 test/setup/doctor/self-test.test.ts
 240 test/setup/init.test.ts
-83 test/setup/install.test.ts
+6 test/setup/install/files.test.ts
+60 test/setup/install/hooks.test.ts
+20 test/setup/install/marks.test.ts
+55 test/setup/install/plugin.test.ts
+45 test/setup/install/runtime.test.ts
+60 test/setup/install/skills.test.ts
 1 test/setup/kit-habits.test.ts
 1 test/setup/plan.test.ts
 25 test/setup/road.test.ts
