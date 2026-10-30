@@ -431,7 +431,7 @@ function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { 
       if (!dryRun && followsTags(pushDirectory, env)) return release('git push carries tags, because push.followTags is set');
     }
     const force = args.find((a) => isGitLongOption(a, '--force') || /^-[a-z]*f[a-z]*$/i.test(a) || a.startsWith('+'));
-    if (force) return finding('force-push', `git push ${force} overwrites the remote branch`, 'use --force-with-lease, which stops when the remote has work you have not seen');
+    if (force) return finding('force-push', `git push ${force} can overwrite the remote`, 'use --force-with-lease, which stops when the remote has work you have not seen');
     // A worker commits in its worktree; the lead reviews and pushes (#555).
     if (env.YOKOTEN_ROLE === 'worker') return sends('a worker does not push');
     const pushed = findPushedDeletes(withoutShellRedirects(words, argsAt));

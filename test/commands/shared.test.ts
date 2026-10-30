@@ -163,7 +163,7 @@ test('--json: check, doctor, hook and explain print pure JSON with what, why and
   const call = { cwd: sandbox.repo, tool_input: { command: 'git push --force' } };
   result = await sandbox.call(['hook', '--json'], { input: JSON.stringify(call) });
   assert.equal(result.status, 2);
-  assert.match(result.stderr, /^yokoten stopped this: git push --force overwrites the remote branch \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   .*Use --force-with-lease/);
+  assert.match(result.stderr, /^yokoten stopped this: git push --force can overwrite the remote \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   .*Use --force-with-lease/);
   const blocked = JSON.parse(result.stdout);
   assert.equal(blocked.blocked, true);
   shaped(blocked.finding);

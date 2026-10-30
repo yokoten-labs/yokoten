@@ -8,8 +8,8 @@
   "guard, force push": {
     "typed": "git push -f origin main",
     "exit": 2,
-    "text": "yokoten stopped this: git push -f overwrites the remote branch [force-push]\n\n  Why       A plain force push can throw away work that someone else pushed.\n\n  Instead   Use --force-with-lease, which stops when the remote has work you\n            have not seen.\n\n  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules",
-    "ansi": "\u001b[1;31myokoten stopped this: git push -f overwrites the remote branch [force-push]\u001b[0m\n\n  Why       A plain force push can throw away work that someone else pushed.\n\n  Instead   Use --force-with-lease, which stops when the remote has work you\n            have not seen.\n\n  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules"
+    "text": "yokoten stopped this: git push -f can overwrite the remote [force-push]\n\n  Why       A plain force push can throw away work that someone else pushed.\n\n  Instead   Use --force-with-lease, which stops when the remote has work you\n            have not seen.\n\n  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules",
+    "ansi": "\u001b[1;31myokoten stopped this: git push -f can overwrite the remote [force-push]\u001b[0m\n\n  Why       A plain force push can throw away work that someone else pushed.\n\n  Instead   Use --force-with-lease, which stops when the remote has work you\n            have not seen.\n\n  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#the-core-rules"
   },
   "guard, wipe home": {
     "typed": "rm -rf ~",
