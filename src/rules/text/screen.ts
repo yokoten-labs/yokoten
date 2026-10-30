@@ -30,7 +30,7 @@ export const KEPT_NAMES = [
 ] as const;
 
 // Stands for a space inside a kept name while a text is cut into words: a private-use character, never whitespace.
-const NAME_JOINER = '';
+const NAME_JOINER = '\uE000';
 const escapeForPattern = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // The longest name first, so `GitHub Copilot CLI` is kept whole before `Copilot CLI` is tried.
 const KEPT_NAME_PATTERN = new RegExp(
