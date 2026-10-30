@@ -245,7 +245,7 @@ const sampleVersion = (text: string) => /^yokoten (\S+) · set up;/m.exec(text)?
 const statusVersion = (text: string) => /^(?:Version|バージョン|版本) (\d+\.\d+)。?\.?/m.exec(text)?.[1] ?? null;
 
 test('versions: the first-run sample and the guide status line follow package.json; a release updates them (#1282)', () => {
-  for (const path of ['README.md', 'docs/i18n/ja/README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md']) {
+  for (const path of FILES) {
     assert.equal(sampleVersion(read(path)), VERSION, `${path}: the first-run sample names another version`);
   }
   for (const path of ['docs/guide.md', 'docs/i18n/ja/guide.md', 'docs/i18n/zh-CN/guide.md']) {
@@ -261,15 +261,17 @@ test('control: a sample or a status line with another version is read as that ve
 });
 
 // #1282: "until v0.1.3" outlived the version. A plan with a date lives in an issue, not in the text.
-/** The lines of `text` that promise something up to a named version. */
-const versionPromises = (text: string) => text.split('\n').filter((line) => /\b(?:until|by) v\d+\.\d+/i.test(line));
+/** The lines of `text` that promise something up to a named version, in English, Japanese or Chinese. */
+const versionPromises = (text: string) => text.split('\n').filter((line) => /\b(?:until|by) v\d|v\d+(?:\.\d+)* ?まで|(?:留到|直到|保留到|留至) ?v\d/i.test(line));
 
 test('versions: no doc or source promises something until a named version (#1282)', () => {
   const sources = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[]).filter((path) => path.endsWith('.ts')).map((path) => join('src', path));
-  const found = ['README.md', 'docs/guide.md', 'docs/standard.md', 'docs/server.md', ...sources].flatMap((path) => versionPromises(read(path)).map((line) => `${path}: ${line.trim()}`));
+  const translated = (readdirSync(join(ROOT, 'docs/i18n'), { recursive: true }) as string[]).filter((path) => path.endsWith('.md')).map((path) => join('docs/i18n', path));
+  const found = ['README.md', 'docs/guide.md', 'docs/standard.md', 'docs/server.md', ...translated, ...sources].flatMap((path) => versionPromises(read(path)).map((line) => `${path}: ${line.trim()}`));
   assert.deepEqual(found, []);
 });
 
 test('control: a promise up to a version is caught, a past fact is not (#1282)', () => {
-  assert.equal(versionPromises('uses the old fence until v9.9.\nRemove all by v9.9.9.\nBefore v9.9 it was called board.').length, 2);
+  assert.equal(versionPromises('uses the old fence until v9.9.\nRemove all by v9.\nBefore v9.9 it was called board.').length, 2);
+  assert.equal(versionPromises('v9.9.9 まで古い囲い\n旧的围栏，留到 v9.9\nv9.9 で追加').length, 2);
 });
