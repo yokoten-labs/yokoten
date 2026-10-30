@@ -134,6 +134,8 @@ export const underRow = (text: string, hasLabel = true): string[] => wrap(' '.re
 
 /** One row with no mark: a label, then the text, wrapped under itself (#1027). A screen that mixes it with marked rows passes MARK_COLUMN, so every text starts in one column. */
 export function field(label: string, text: string, column = LABEL_COLUMN): string[] {
+  // A label that fills its column takes its own line, as in `row`, so it never runs into the text.
+  if (label.length > column - 1) return [`${' '.repeat(ROW_INDENT)}${label}`, ...wrap(' '.repeat(ROW_INDENT + column), text)];
   return wrap(`${' '.repeat(ROW_INDENT)}${label.padEnd(column)}`, text);
 }
 

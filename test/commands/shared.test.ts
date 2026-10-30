@@ -19,7 +19,7 @@ import {
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
 import { askOnTerminal, canColour, fail, isColourTerminal, MARK_COLUMN, MARKS, paint, problemRows, row, type RowMark, say, show, styleLine, styleText, terminalOf, type Invocation } from '../../src/commands/shared.ts';
-import { ROW_INDENT } from '../../src/rules/text/screen.ts';
+import { field, ROW_INDENT } from '../../src/rules/text/screen.ts';
 import { askOnTerminal as setupAskOnTerminal } from '../../src/commands/more/setup/ask.ts';
 import type { Env } from '../../src/rules/config.ts';
 import { finding, fixCommand, formatNote, formatRefusal, leadingCommand } from '../../src/rules/text/message.ts';
@@ -515,4 +515,11 @@ test('row: the widest mark keeps two spaces before its text (#1267)', () => {
   const widest = Math.max(...MARKS.map((mark) => mark.length));
   assert.ok(MARK_COLUMN >= widest + 2, `MARK_COLUMN ${MARK_COLUMN} leaves under two spaces after a ${widest}-character mark`);
   assert.match(row("can't check", '9 steps')[0] ?? '', /can't check {2}9 steps/);
+});
+
+// From review: a field label that fills its column ran into its text, as `can't check` did.
+test('field: a label that fills its column takes its own line (#1267)', () => {
+  assert.deepEqual(field('short', 'the text', 12), ['  short       the text'], 'positive control: a short label shares its line');
+  assert.deepEqual(field('a-long-desk-name', 'the text', 12), ['  a-long-desk-name', '              the text']);
+  assert.deepEqual(field('exactly-12ch', 'the text', 12), ['  exactly-12ch', '              the text'], 'a label as wide as the column leaves no space, so it moves too');
 });
