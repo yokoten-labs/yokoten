@@ -1679,7 +1679,7 @@ git diff main refs/desks/42
   `node --test test/agents/desk/start.test.ts`，检查这套规矩。
 - **原生 Windows**：没有工位。`yokoten desk` 什么都不启动，只提示改用 WSL。原生 Windows 上只有守卫在把关。
 
-`YOKOTEN_FENCE=own` 会用旧的围栏，留到 v0.1.3：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
+`YOKOTEN_FENCE=own` 暂时会用旧的围栏：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
 
 ### agent 之间发消息
 
@@ -2079,7 +2079,7 @@ hook 不可能认得所有命令。输出里露出了你的信息，就开一个
 
 ## 现状
 
-版本 0.1。背后的决定记录在 [`docs/records/`](../../records/)。工作用 issue 跟踪；参与开发
+版本 0.2。背后的决定记录在 [`docs/records/`](../../records/)。工作用 issue 跟踪；参与开发
 yokoten 本身的规则在 [`AGENTS.md`](../../../AGENTS.md)。
 
 ### 往哪里去

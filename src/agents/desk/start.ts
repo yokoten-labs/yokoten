@@ -16,7 +16,7 @@ import { findSrt, srtBackend, srtProblem } from './fence/srt.ts';
 
 /**
  * The backend for a system, or the plain reason there is none. sandbox-runtime (srt.ts) by
- * default; `YOKOTEN_FENCE=own` picks the old ones (bwrap, sandbox-exec) until v0.1.3. When the
+ * default; `YOKOTEN_FENCE=own` picks the old ones (bwrap, sandbox-exec) for now. When the
  * fence can't start, the desk refuses: it never runs an agent with no fence. `projects` are
  * the folders srt must never come from: the lead's folder and the desk.
  */

@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import { GUIDE_AGENTS, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
 import { checkCommand } from '../../../src/rules/guards/commands/check.ts';
 import { formatRefusal } from '../../../src/rules/text/message.ts';
+import { VERSION } from '../../../src/setup/files.ts';
 import { ROOT } from '../helpers.ts';
 
 const FILES = ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md'];
@@ -235,4 +236,26 @@ test('site: every home-page brand finds its agent in the released and the curren
     assert.ok(current.includes(agentName(name)), `${name}: not in the README's Works with table`);
   }
   assert.equal(agentName('Antigravity CLI (agy)'), 'Antigravity CLI', 'positive control: the note goes');
+});
+
+// #1282: PR #1245 wrote a planned version into the sample, and the release carried it to npm.
+/** The version the first-run sample of a README shows; null with no sample. */
+const sampleVersion = (text: string) => /^yokoten (\S+) · set up;/m.exec(text)?.[1] ?? null;
+/** The major and minor the status line of a guide shows; null with none. */
+const statusVersion = (text: string) => /^(?:Version|バージョン|版本) (\d+\.\d+)。?\.?/m.exec(text)?.[1] ?? null;
+
+test('versions: the first-run sample and the guide status line follow package.json; a release updates them (#1282)', () => {
+  for (const path of ['README.md', 'docs/i18n/ja/README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md']) {
+    assert.equal(sampleVersion(read(path)), VERSION, `${path}: the first-run sample names another version`);
+  }
+  for (const path of ['docs/guide.md', 'docs/i18n/ja/guide.md', 'docs/i18n/zh-CN/guide.md']) {
+    assert.equal(statusVersion(read(path)), VERSION.split('.').slice(0, 2).join('.'), `${path}: the status line names another version`);
+  }
+});
+
+test('control: a sample or a status line with another version is read as that version (#1282)', () => {
+  assert.equal(sampleVersion('text\nyokoten 9.9.9 · set up; stage 1 of 5, safety net\n'), '9.9.9');
+  assert.equal(sampleVersion('no sample here\n'), null);
+  assert.equal(statusVersion('Version 9.9. The decisions\n'), '9.9');
+  assert.equal(statusVersion('版本 9.9。背后的决定\n'), '9.9');
 });

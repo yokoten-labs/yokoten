@@ -1357,7 +1357,7 @@ npm のキャッシュに保ちます。yokoten の依存ではありません�
 - **ネイティブの Windows**: デスクはありません。`yokoten desk` は何も始めず、WSL を使うよう言います。
   ネイティブの Windows では、番人だけがルールを保ちます。
 
-`YOKOTEN_FENCE=own` は v0.1.3 まで古い囲いを使います。Linux では `bwrap`、macOS では `sandbox-exec` です。
+`YOKOTEN_FENCE=own` は当面、古い囲いを使います。Linux では `bwrap`、macOS では `sandbox-exec` です。
 ### エージェント同士のメッセージ
 
 どのベンダーのエージェントも、互いにメッセージを送れます（#674）。このマシンのファイルです。サーバーもネットワークもありません。
@@ -1567,4 +1567,4 @@ IP のチェックは IPv4 だけを覆い、IPv6 はチェックしません。
 
 ## 現状
 
-バージョン 0.1。背後の決断は [`docs/records/`](../../records/) にあります。作業は issue で追跡され、yokoten に取り組むルールは [`AGENTS.md`](../../../AGENTS.md) にあります。
+バージョン 0.2。背後の決断は [`docs/records/`](../../records/) にあります。作業は issue で追跡され、yokoten に取り組むルールは [`AGENTS.md`](../../../AGENTS.md) にあります。

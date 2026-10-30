@@ -2245,7 +2245,7 @@ of yokoten. When the sandbox can't start, the desk says why in one line and star
 - **Native Windows**: no desk. `yokoten desk` starts nothing and says to use WSL. On
   native Windows, the guard alone holds the rules.
 
-`YOKOTEN_FENCE=own` uses the old fence until v0.1.3: `bwrap` on Linux, `sandbox-exec` on
+`YOKOTEN_FENCE=own` uses the old fence for now: `bwrap` on Linux, `sandbox-exec` on
 macOS.
 
 ### Messages between agents
@@ -2720,5 +2720,5 @@ Honest limits:
 
 ## Status
 
-Version 0.1. The decisions behind it are in [`docs/records/`](records/). Work is
+Version 0.2. The decisions behind it are in [`docs/records/`](records/). Work is
 tracked in issues; the rules for working on yokoten are in [`AGENTS.md`](../AGENTS.md).
