@@ -193,7 +193,7 @@ agent 离开以后，它的列表也丢掉。
 `paths` 是这次编辑会碰到的文件。
 事件里写了目录时，`cwd` 就是那个目录。
 调用来自 worker 时，`worker` 为真。
-shell 调用要求在 agent 的沙箱外运行时，`leavesSandbox` 为真；lead 会先问主人，worker 直接被拒。
+shell 调用要求在 agent 的沙箱外运行时，`leavesSandbox` 为真；lead 会先问主人様，worker 直接被拒。
 曾经有人要一份所有厂商共用的会话记录。
 代码里还没有那个映射。
 适配器今天共用的就是 `Action`。
@@ -403,7 +403,7 @@ Made-with 行是来源记录的第一种样子。
 | --- | --- |
 | 写的人 | `writers`，来自 `worker` 再加上 `vendor` 和 `model` |
 | 审的人 | `reviewers`，最多两个，来自 `reviewed by` |
-| 批准的人 | 主人在代码宿主上最新的 Approve。不在这一行上。 |
+| 批准的人 | 主人様在代码宿主上最新的 Approve。不在这一行上。 |
 | lead | `leads`，来自 `lead` 再加上厂商和模型。lead 不是批准的人。 |
 | 没写角色的 | `others`，一对没有角色词的名字 |
 
@@ -425,9 +425,9 @@ Made-with 行是来源记录的第一种样子。
 gh 读不到时，批准的人写成 unknown，命令仍然以 0 退出。
 `--json` 把同样的记录作为数据打印。
 
-谁来写。PR 作者写这一行。主人在代码宿主上写 Approve。
+谁来写。PR 作者写这一行。主人様在代码宿主上写 Approve。
 谁来读。PR 检查、`yokoten provenance`，还有读正文的人。
-怎么检查。Made-with 检查给出写的人和审的人。`provenanceFindings` 拿它们和分支的 desk 状态文件对照。tier A 时，`checkApprovalFreshness` 要求主人的 Approve 落在 head 上，或者之后只有基础分支的合并，而且这个 PR 自己的 diff 没变。这条检查的 id 是 `pr-approve`。tier B 和 tier C 不走这道门。
+怎么检查。Made-with 检查给出写的人和审的人。`provenanceFindings` 拿它们和分支的 desk 状态文件对照。tier A 时，`checkApprovalFreshness` 要求主人様的 Approve 落在 head 上，或者之后只有基础分支的合并，而且这个 PR 自己的 diff 没变。这条检查的 id 是 `pr-approve`。tier B 和 tier C 不走这道门。
 版本 1。这是第一种样子，自己没有版本字段。
 
 - [src/rules/pr.ts](../../../src/rules/pr.ts) 和 [test/rules/pr.test.ts](../../../test/rules/pr.test.ts)。
