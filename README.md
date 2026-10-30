@@ -140,6 +140,6 @@ npx yokoten doctor      # where you are, and the one next step
 
 ## Learn more
 
-[The guide](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md) · [The standard](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md) · [Decisions](https://github.com/yokoten-labs/yokoten/tree/main/docs/records) · [Changelog](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [Milestones](https://github.com/yokoten-labs/yokoten/milestones) · [Contributing](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [Security](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)
+[The guide](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md) · [The standard](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md) · [Decisions](https://github.com/yokoten-labs/yokoten/tree/main/docs/records) · [Changelog](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [Milestones](https://github.com/yokoten-labs/yokoten/milestones) · [Contributing](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [Security](https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md)
 
 MIT license. Built by [coolwhite](https://coolwhite.us/) and a team of AI agents.

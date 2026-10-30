@@ -252,7 +252,7 @@ function llmsTxt(lang) {
     ...guideOf(lang).chapters.map((c) => `  - [${c.title}](${ORIGIN + mdOf('guide', lang, c.slug)})`),
     '- [Decisions](https://github.com/yokoten-labs/yokoten/tree/main/docs/records): why it is built this way.',
     '- [Repository](https://github.com/yokoten-labs/yokoten): the source code, issues, pull requests and releases (MIT).',
-    '- [Security policy](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md): how to report a security problem.',
+    '- [Security policy](https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md): how to report a security problem.',
     '',
     '## Optional',
     '',
@@ -321,7 +321,7 @@ export default function markdown() {
           [
             'Contact: https://github.com/yokoten-labs/yokoten/security/advisories/new',
             `Expires: ${expires.toISOString().replace(/\.\d{3}Z$/, 'Z')}`,
-            'Policy: https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md',
+            'Policy: https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md',
             'Preferred-Languages: en, zh, ja',
             `Canonical: ${ORIGIN}/.well-known/security.txt`,
             '',

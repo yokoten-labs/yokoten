@@ -130,7 +130,7 @@ yokoten: ~/.config/yokoten/private-marks is missing or has no marks
 | **2 · issue とプルリクエスト** | すべての変更は issue として始まり、CI が通ったときだけマージされる。ラベル、マイルストーン、ボードがそれを保つ | [issue](https://github.com/yokoten-labs/yokoten/issues?q=is%3Aissue)、[プルリクエスト](https://github.com/yokoten-labs/yokoten/pulls?q=is%3Apr)、[ボード](https://github.com/orgs/yokoten-labs/projects/1) |
 | **3 · リリース** | 何がなぜ変わったかを言うコミットメッセージ、変更履歴、リリースごとのバージョン番号 | [CHANGELOG.md](../../../CHANGELOG.md) |
 | **4 · エージェントのチーム** | ボットがプルリクエストを開き、ワーカーがタスクを受け、レビュアーが確認する。マージするのはあなただけ | [エージェントをチームのように動かす](#エージェントをチームのように動かす) |
-| **5 · 公開** | 過去のすべてのコミットを個人情報について調べ、セキュリティ設定を入れ、`main` を守る | [セキュリティポリシー](../../../.github/SECURITY.md) |
+| **5 · 公開** | 過去のすべてのコミットを個人情報について調べ、セキュリティ設定を入れ、`main` を守る | [セキュリティポリシー](../../../SECURITY.md) |
 
 そして、エージェントがリリースのタグを push しようとすると、こう出ます。
 
