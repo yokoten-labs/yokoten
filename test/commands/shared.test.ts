@@ -509,3 +509,10 @@ test("styleLine: every row's text starts in one column, plain, in colour and in 
   const labelled = row("can't check", 'gh could not reach GitHub', '#12')[0] ?? '';
   assert.equal(strip(styleLine(labelled, true)).indexOf('gh could not'), labelled.indexOf('gh could not'), 'a labelled row keeps its column too');
 });
+
+// #1267: `can't check` left one space before its text and read as "can't check 9 steps".
+test('row: the widest mark keeps two spaces before its text (#1267)', () => {
+  const widest = Math.max(...MARKS.map((mark) => mark.length));
+  assert.ok(MARK_COLUMN >= widest + 2, `MARK_COLUMN ${MARK_COLUMN} leaves under two spaces after a ${widest}-character mark`);
+  assert.match(row("can't check", '9 steps')[0] ?? '', /can't check {2}9 steps/);
+});

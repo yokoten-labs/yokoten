@@ -110,8 +110,8 @@ export const isDoneMark = (mark: Mark): boolean => mark === 'ok' || mark === 'do
 
 /** Where a row starts: two spaces in from the left edge. */
 export const ROW_INDENT = 2;
-/** The mark's field: the widest mark, `can't check`, and one space. */
-export const MARK_COLUMN = 12;
+/** The mark's field: the widest mark, `can't check`, and two spaces, so it never reads into its text (#1267). */
+export const MARK_COLUMN = 13;
 /** A label's field, after the mark or alone in a `field` row. */
 export const LABEL_COLUMN = 12;
 /** Where a labelled row's text starts, so every text of one screen starts in one column. */
