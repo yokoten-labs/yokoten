@@ -5,7 +5,7 @@
 
 import '../home.ts';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { GUIDE_AGENTS, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
@@ -132,31 +132,41 @@ const GUIDES = ['docs/guide.md', 'docs/i18n/zh-CN/guide.md', 'docs/i18n/ja/guide
 /** The multi-word agent names a table may open a row with: the guide's labels, and Copilot's short name. */
 const AGENT_NAMES = [...GUIDE_AGENTS.map((entry) => entry.label), 'Copilot CLI'].filter((name) => name.includes(' '));
 
-/** Each table row of `text` whose first cell is an agent name written with a plain space. */
+/** Each table row of `text` whose first cell starts with an agent name written with a plain space (`Claude Code (…)` too). */
 function brokenNameRows(text: string): string[] {
   return text
     .split('\n')
     .filter((line) => line.startsWith('|'))
     .map((line) => cellsOf(line)[0] ?? '')
-    .filter((cell) => AGENT_NAMES.includes(cell.replace(/&nbsp;/g, ' ')) && cell.includes(' '));
+    .filter((cell) => AGENT_NAMES.some((name) => cell.startsWith(name)));
 }
+
+/** Every Markdown file under docs/ but the records, which are history and never rewritten. */
+const DOCS = (function walk(dir: string): string[] {
+  return readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) return path === 'docs/records' ? [] : walk(path);
+    return path.endsWith('.md') ? [path] : [];
+  });
+})('docs');
 
 test('tables: an agent name never breaks inside itself (#1268)', () => {
   assert.ok(AGENT_NAMES.includes('GitHub Copilot CLI') && AGENT_NAMES.length >= 8, 'the agent names are not read from the guide');
   assert.match(worksWithTable(), /^\| GitHub&nbsp;Copilot&nbsp;CLI \|/m, 'the generated table keeps the name whole');
-  const names = [...FILES, ...GUIDES].flatMap((file) => brokenNameRows(read(file)).map((cell) => `${file}: ${cell}`));
+  const names = [...new Set([...FILES, ...GUIDES, ...DOCS])].flatMap((file) => brokenNameRows(read(file)).map((cell) => `${file}: ${cell}`));
   assert.deepEqual(names, [], 'write the name with &nbsp; between its words');
 });
 
 // Known-bad input: a plain space in a name is caught.
 test('control: a name with a plain space is caught (#1268)', () => {
-  assert.deepEqual(brokenNameRows('| Agent | Note |\n|---|---|\n| GitHub Copilot CLI | x |\n| Codex&nbsp;CLI | y |\n| Any other agent | z |'), ['GitHub Copilot CLI']);
+  assert.deepEqual(brokenNameRows('| Agent | Note |\n|---|---|\n| GitHub Copilot CLI | x |\n| Codex&nbsp;CLI | y |\n| Any other agent | z |\n| Claude Code (cloud) | w |'), ['GitHub Copilot CLI', 'Claude Code (cloud)']);
 });
 
 // The site shows the same tables: a code span in a cell stays on one line, and the table scrolls.
 test('site: a code span in a docs table cell does not wrap (#1268)', () => {
   const shell = read('web/site/site/src/components/frame/DocsShell.astro');
   assert.match(shell, /\.prose td code\) \{ white-space: nowrap; \}/, 'DocsShell.astro: keep `white-space: nowrap` on `.prose td code`');
+  assert.match(shell, /\.prose table\) \{[^}]*display: block;[^}]*max-width: 100%;[^}]*overflow-x: auto;/, 'DocsShell.astro: a wide table must scroll in its own box, or a nowrap cell overflows a phone');
 });
 
 /** The refusal sample of a README: the fenced block that starts with the refusal title. */
@@ -211,7 +221,7 @@ test('plugin: plugin.json says the README opening (#1223)', () => {
 });
 
 // The site's facts come from the newest release tag, so its brand list must name each agent as
-// either README does: v0.1.2 wrote `Antigravity CLI (agy)`, later ones `Antigravity CLI` (#1268).
+// either README does: an older one wrote `Antigravity CLI (agy)`, later ones `Antigravity CLI` (#1268).
 test('site: every home-page brand finds its agent in the released and the current README', () => {
   const brands = read('web/site/site/src/lib/page/brands.ts');
   const agentName = (name: string): string => name.replace(/\s*\([^)]*\)$/, '').trim();

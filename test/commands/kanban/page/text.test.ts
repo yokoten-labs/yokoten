@@ -115,4 +115,7 @@ test('screen rules: a label alone on its line starts no column, but a second tex
   assert.deepEqual(screenProblems({ text: alone }), []);
   const mixed = ['Working:', '  note         Claude      a task', '  note         GitHub Copilot CLI a task', '               more of it'].join('\n');
   assert.ok(screenProblems({ text: mixed }).some((problem) => problem.includes('[label-columns]')), 'a second text column is caught');
+  // From review: a row with its own text is not exempt just because a deeper line follows it.
+  const deeper = ['Working:', '  note         Claude      a task', '  trash       empty', '                    and more'].join('\n');
+  assert.ok(screenProblems({ text: deeper }).some((problem) => problem.includes('[label-columns]')), 'a label with text and a deeper line is still a second column');
 });
