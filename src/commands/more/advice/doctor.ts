@@ -54,6 +54,9 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   if (!Object.hasOwn(READERS, agent)) return usage(invocation, `unknown --agent ${agent}; use one of: ${Object.keys(READERS).join(', ')}`);
   const session = options.flags.has('--session');
   const isJson = options.flags.has('--json');
+  // Only the files in the checkout (#1256): no code host, no gh, no network, no machine notes.
+  const files = options.flags.has('--files');
+  if (files && session) return usage(invocation, '--files and --session do not go together; use one');
   const root = rootOf(cwd, invocation.env);
   const config = root ? loadConfig(root) : DEFAULTS;
   // The host decides who reads the server settings: GitHub through gh, Gitea through its API (#505).
@@ -61,17 +64,17 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   // One note while the slow reads run, naming what is read and how long it may take (#561,
   // #1039). A session never reads the server, and --json keeps stdout to the report, so the
   // note goes to a person at a terminal only, in full doctor.
-  const isPerson = Boolean(root) && !session && !isJson && terminalOf(invocation).isPerson;
+  const isPerson = Boolean(root) && !session && !files && !isJson && terminalOf(invocation).isPerson;
   if (isPerson) print(invocation, noteLine(`reading ${hostName(host)} settings, ${SERVER_TIMEOUT_MS / 1000} seconds at most...`), invocation.stderr);
   // The server reads wait for the network, so they happen here, all at once (#505, #1039).
-  const gitea = root && host?.kind === 'gitea' && !session ? await readGiteaServer(host, env) : undefined;
-  const github = root && !session ? await readGitHub(host, root, env) : undefined;
+  const gitea = root && host?.kind === 'gitea' && !session && !files ? await readGiteaServer(host, env) : undefined;
+  const github = root && !session && !files ? await readGitHub(host, root, env) : undefined;
   if (isPerson && github?.slow) print(invocation, noteLine(`${count(github.slow, 'GitHub read')} took over ${SERVER_TIMEOUT_MS / 1000} seconds, so ${github.slow === 1 ? 'its settings show' : 'their settings show'} as can't check; run \`yokoten doctor\` again later`), invocation.stderr);
   const server = gitea ?? github?.result;
   // A plugin user updates with `claude plugin update`, which never runs install: the start
   // takes back what v0.1.0 left, with install's own rules (#935).
   const cleanup = session ? cleanOlderInstall(env, { platform }) : null;
-  const { ok, report } = doctor(root, { env, config, session, host, ...(server ? { server } : {}), gh: root ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, platform });
+  const { ok, report } = doctor(root, { env, config, session, files, host, ...(server ? { server } : {}), gh: root && !files ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, platform });
   // Full doctor outside a repo says so (#205). A session there stays quiet: no noise in a non-repo folder.
   if (!root && !session) {
     const missing = noRootFinding(cwd, invocation.env);

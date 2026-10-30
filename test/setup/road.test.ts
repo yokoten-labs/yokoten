@@ -26,6 +26,7 @@ import {
   runsTests,
   securityLacking,
   STAGES,
+  stepSource,
   type Step,
   uncheckedHooks,
   walk,
@@ -37,6 +38,22 @@ import { assertLinearEach } from '../../scripts/linear.ts';
 const step = (stage: number, key: string): Step => ({ stage, key, check: () => false, what: () => key, fix: () => key, why: key, how: key });
 
 const steps = [step(1, 'a'), step(1, 'b'), step(2, 'c'), step(3, 'd')];
+
+// #1256: `doctor --files` keeps the steps judged from files. A step's own `source` says it, and
+// these checks hold it honest: a host step can't judge anything with no host read, a files
+// step judges an empty repo with none, and a step whose whole check is files is a files step.
+test('stepSource: host steps need a host read, files steps judge a repo without one (#1256)', () => {
+  assert.equal(stepSource({}), 'files', 'a step with no source is judged from files');
+  assert.equal(stepSource({ source: 'host' }), 'host');
+  const sandbox = makeSandbox();
+  const bySource = (source: string) => ROAD.filter((one) => stepSource(one) === source);
+  for (const one of bySource('host')) assert.equal(one.check(sandbox.repo, sandbox.env, undefined, DEFAULTS), null, `${one.key} is judged with no host read`);
+  for (const one of bySource('files')) assert.notEqual(one.check(sandbox.repo, sandbox.env, undefined, DEFAULTS), null, `${one.key} needs more than the files`);
+  for (const one of ROAD.filter((each) => each.paths)) assert.equal(stepSource(one), 'files', `${one.key} checks paths, so it is judged from files`);
+  // A host step says what it asks in plain words, for a host yokoten can't read (#504).
+  for (const one of bySource('host')) assert.equal(typeof one.byHand, 'string', `${one.key} has byHand`);
+  assert.deepEqual(bySource('machine').map((one) => one.key), ['commit-check', 'remote', 'bot', 'skills']);
+});
 
 const at = (found: Found[], notNow: Record<string, string> = {}) => walk(steps.map((s, i) => ({ step: s, found: found[i] })), notNow);
 
