@@ -337,6 +337,11 @@ test('road: a workflow check that throws a RangeError is "can\'t check", and oth
   for (const key of ['tests', 'ci', 'titles']) assert.match(ROAD.find((s) => s.key === key)?.unchecked?.(undefined) ?? '', /too long to read/, key);
 });
 
+/** #1274: a code span never breaks on the screen, so each one fits the fix column of doctor. */
+const assertShortSpans = (text: string) => {
+  for (const span of text.match(/`[^`]*`/g) ?? []) assert.ok(span.length <= 50, span);
+};
+
 test('road: the tests step stays next with only a lint step, and says what is missing by project type (#257)', () => {
   const lint = testsStep({ 'package.json': JSON.stringify({ scripts: { lint: 'eslint .' } }), ...workflow('npm run lint') });
   assert.deepEqual(lint, { done: false, what: 'no test command: no "test" script in package.json, and no workflow runs a test runner' });
@@ -352,7 +357,15 @@ test('road: the tests step stays next with only a lint step, and says what is mi
   const dir = makeTempDir('yokoten-tests-fix-');
   try {
     writeFileSync(join(dir, 'package.json'), NPM_WS['package.json']);
-    assert.match(tests?.fix(dir, {}, undefined) ?? '', /a step that runs `npm test --workspaces`\. Then add `tests` to the `needs` list of the `ci` job/);
+    assert.match(tests?.fix(dir, {}, undefined) ?? '', /a step `run: npm test --workspaces`\. Last, add `tests` to the `needs` list of the `ci` job/);
+    assertShortSpans(tests?.fix(dir, {}, undefined) ?? '');
+    // With a lockfile: two steps, the install and the tests.
+    writeFileSync(join(dir, 'package-lock.json'), '{}');
+    assert.match(tests?.fix(dir, {}, undefined) ?? '', /a step `run: npm ci` and a step `run: npm test --workspaces`/);
+    assertShortSpans(tests?.fix(dir, {}, undefined) ?? '');
+    rmSync(join(dir, 'package-lock.json'));
+    writeFileSync(join(dir, 'pnpm-workspace.yaml'), 'packages: ["*"]\n');
+    assertShortSpans(tests?.fix(dir, {}, undefined) ?? '');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -679,9 +692,8 @@ test('road: the tests step names the workflow file, the job to add and the needs
   try {
     const fix = () => tests?.fix(dir, {}, undefined) ?? '';
     // No workflow file yet: init adds it first. No package.json: a placeholder command.
-    assert.equal(fix(), 'run `yokoten init` to add .github/workflows/yokoten.yml, then in it, add a `tests` job under `jobs:` with `runs-on: ubuntu-latest`. Its steps: the checkout step of the other jobs, with their pinned `uses:` lines, then a step that runs `<your test command>`. Then add `tests` to the `needs` list of the `ci` job, so a failing test blocks the merge');
-    // #1274: a code span never breaks on the screen, so each one fits the fix column of doctor.
-    for (const span of fix().match(/`[^`]*`/g) ?? []) assert.ok(span.length <= 50, span);
+    assert.equal(fix(), 'run `yokoten init` to add .github/workflows/yokoten.yml, then in it, add a `tests` job under `jobs:` with `runs-on: ubuntu-latest` and `steps:`. First the checkout step of the other jobs, with its pinned `uses:` lines, then a step `run: <your test command>`. Last, add `tests` to the `needs` list of the `ci` job, so a failing test blocks the merge');
+    assertShortSpans(fix());
     // A test script and a pinned checkout: one line of real YAML a beginner can paste.
     const pin = '3d3c42e5aac5ba805825da76410c181273ba90b1';
     const setup = 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1';
