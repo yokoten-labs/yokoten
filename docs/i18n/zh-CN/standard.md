@@ -155,7 +155,7 @@ OpenTelemetry 没有这份工作的名字，所以 `eventName` 以 `yokoten.agen
 看板给每个 agent 留一份刚做了什么的短列表。
 这不是厂商自己的会话记录。
 厂商不写这份列表，也不把自家的流映射进来。
-`yokoten board` 开着的时候，看板在内存里生成它。
+`yokoten kanban` 开着的时候，看板在内存里生成它。
 看板一重启，列表就是空的。
 
 每条记录有 `kind`、`text` 和 `time`。
@@ -174,8 +174,8 @@ agent 离开以后，它的列表也丢掉。
 | `wait` | `Waiting for you` | 点变成 `waiting`，而且这个 agent 本来就在看板上 |
 | `done` | `Finished` | 点变成 `done`，而且这个 agent 本来就在看板上 |
 
-谁来写。看板进程，在 `yokoten board` 运行的时候写。
-谁来读。看板的旧页面，通过 `feedsJson`，直到新页面换掉它。
+谁来写。看板进程，在 `yokoten kanban` 运行的时候写。
+谁来读。看板页面，通过 `feedsJson`。
 怎么检查。`recordFeed` 拿上一份视图和这一份比。
 版本 1。这条记录没有版本字段。
 
@@ -189,6 +189,7 @@ agent 离开以后，它的列表也丢掉。
 没有一份大家共用的工具名清单。
 `Action` 有 `command`、`commands`、`paths`、`cwd`、`worker` 和 `leavesSandbox`。
 是 shell 时，`command` 就是那条命令。
+一次调用带不止一条命令时，`commands` 放这几条；守卫对每一条单独检查。
 `paths` 是这次编辑会碰到的文件。
 事件里写了目录时，`cwd` 就是那个目录。
 调用来自 worker 时，`worker` 为真。
@@ -196,6 +197,7 @@ shell 调用要求在 agent 的沙箱外运行时，`leavesSandbox` 为真；lea
 曾经有人要一份所有厂商共用的会话记录。
 代码里还没有那个映射。
 适配器今天共用的就是 `Action`。
+没有适配器的工具，改用守卫协议：[守卫协议](../../records/0039-the-guard-protocol.md)（英文）。
 
 | 运行时 | hook 盯着的名字 | 怎么收成 Action | 读取的字段 |
 | --- | --- | --- | --- |
@@ -414,7 +416,7 @@ Made-with 行是来源记录的第一种样子。
 同一个厂商可以有两种写法，比如 `Claude Code` 和 `claude-code`。
 这一行完全没写的 desk 会跳过，所以旧的行不会变成问题。
 没有状态文件时没有东西可对照，就不报 desk 的问题。
-审的人和写的人同属一个厂商，也是问题（record 0021）。
+审的人全都用写的人自己的模型，就是问题；只要有一个审的人用的是别的模型，就算通过（record 0045）。
 这条检查的 id 是 `pr-provenance`。
 
 `yokoten provenance <ref>` 给一个提交打印一条记录，给一个范围就每个提交一条。
