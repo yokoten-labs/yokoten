@@ -15,7 +15,7 @@
 - **提交检查**：每次 git 提交前运行的检查（`.githooks/pre-commit`）。
 - **CI**：GitHub 在每个 PR 上自动跑的检查。
 - **规则集（ruleset）**：GitHub 上保护分支或 tag 的设置，比如「没有审查不能合并」。
-- **主人、lead、worker**：主人就是你；lead 是跟你对话的那个 AI 会话；worker 是 lead 为某一个
+- **主人様、lead、worker**：主人様就是你；lead 是跟你对话的那个 AI 会话；worker 是 lead 为某一个
   任务另开的会话。详见[像带团队一样管 agent](#像带团队一样管-agent)。
 - **退出码**：命令结束时交回的一个数字。0 表示一切正常。脚本和 AI 靠它判断结果。
   详见[退出码](#退出码)。
@@ -63,7 +63,7 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 同样的五条保护，从第一天起就对每个人、每个 agent 生效。不需要 `yokoten init`，也不需要改任何设置。
 
 1. **别丢工作**：不许 force push，不许 hard reset，不许删 `.git` 或历史。不许清空主目录或系统文件夹，
-   不许用磁盘命令（`mkfs`，把 `dd` 写到磁盘上），也不许用 root（`sudo`、`su`）：要 root 的事由主人来做。
+   不许用磁盘命令（`mkfs`，把 `dd` 写到磁盘上），也不许用 root（`sudo`、`su`）：要 root 的事由主人様来做。
 2. **别泄密**：提交或发帖里不许有密钥、令牌、邮箱地址或主目录路径。
 3. **别替你发布**：不许打 tag、发 release、发布软件包，也不许把仓库改成公开。
 4. **别运行没读过的网上代码**：不许把下载内容直接管道给 shell。
@@ -84,7 +84,7 @@ yokoten stopped this: creating the tag v1.2.0 [release]
 
 第一行点名被拦下的 tag、文件或分支，以及规则。`Why` 说明可能出什么问题。`Instead`
 给出安全的做法，不会读代码的人也能照着说。`More` 链接到规则全文。第五条保护里的改动
-只有主人能做；agent 要请主人来改。
+只有主人様能做；agent 要请主人様来改。
 
 ## 三道检查，一把锁
 
@@ -215,10 +215,10 @@ yokoten stopped this: git push --tags pushes tags [release]
   More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
 ```
 
-每条提示都一样：让 agent 停下来，请主人发版。发版批准的办法、以及启动每个 agent 的命令，
+每条提示都一样：让 agent 停下来，请主人様发版。发版批准的办法、以及启动每个 agent 的命令，
 都在英文指南的[How to release](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release)里。
-Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人要在它们外面发版。Gemini CLI 如果开了严格的
-环境变量清理，这个变量会被删掉，主人就要到 Gemini CLI 外面去发。
+Muse Code 和 OpenCode 没见到会把变量传给钩子，所以主人様要在它们外面发版。Gemini CLI 如果开了严格的
+环境变量清理，这个变量会被删掉，主人様就要到 Gemini CLI 外面去发。
 
 （提示用英文写，因为 AI 读英文最不容易出错。）
 
@@ -292,7 +292,7 @@ worktree 放在这里，只有里面有会丢的东西时才提，而且就写�
 |----|--------|--------|
 | **机器** | 技能、agent 定义、两个用户级 hook，每台电脑都一样 | `yokoten install`，或者 Claude Code 插件 |
 | **项目** | 规则、提交检查、工具调用 hook、CI、issue 和 PR 模板、Dependabot（每月一个 PR）、安全说明 | `yokoten init`；老项目再用 `yokoten` 技能 |
-| **服务器** | 分支和 tag 规则集、squash 合并、代码负责人、权限受限的 bot、几个安全开关 | 由仓库主人设置一次；`doctor` 会列出步骤 |
+| **服务器** | 分支和 tag 规则集、squash 合并、代码负责人、权限受限的 bot、几个安全开关 | 由仓库主人様设置一次；`doctor` 会列出步骤 |
 | **规则** | `AGENTS.md`：12 条核心规则，加上项目自己的规则 | 每条规则都写明由哪项检查守着 |
 
 老项目不是一张白纸，有些习惯比 yokoten 的还好。所以 `yokoten` 技能会跟你一条一条过，每条
@@ -395,7 +395,7 @@ worker 靠 `YOKOTEN_ROLE=worker` 认出来。在 Codex 里，子 agent 的 `agen
 
 取消或删除一次 Actions 运行，lead 和 worker 都会被拦住。
 守卫会拦 `gh run cancel` 和 `gh run delete`。用 `gh api` 或 `yokoten bot` 做同样的事，也会被拦住。
-`gh run rerun`、`view`、`list` 和 `watch` 仍然放行。请仓库主人在 Actions 页面上取消或删除。
+`gh run rerun`、`view`、`list` 和 `watch` 仍然放行。请仓库主人様在 Actions 页面上取消或删除。
 `repositories/<id>` 和 `repos/<owner>/<repo>` 是同一种路径。
 路径里的 `.` 和 `..` 会先化简，再拿来比对。
 路径里的词不分大小写，所以 `Actions` 和 `Cancel` 也算同一次调用。
@@ -406,7 +406,7 @@ worker 靠 `YOKOTEN_ROLE=worker` 认出来。在 Codex 里，子 agent 的 `agen
 `gh` 必须写出它自己的命令名。`gh extension install`、`upgrade`、`exec` 和 `browse` 会被拦住。
 `exec` 会运行已经装好的扩展。`browse` 可以装上一个扩展。
 `gh config set aliases` 会被拦住。`gh alias list` 和 `gh extension list` 仍然放行。
-`gh alias set` 和 `gh alias import` 对 lead 和 worker 都拦住。别名要仓库主人自己加上。
+`gh alias set` 和 `gh alias import` 对 lead 和 worker 都拦住。别名要仓库主人様自己加上。
 
 worker 用 shell 写只有 lead 能改的文件，守卫也会拦，跟拦编辑一样（#402）。它看这些写法：
 重定向（`>`、`>>`、`>|`、`&>`），`sed -i`、`perl -i`、`tee`、`cp`、`mv`、`install`、`ln`、
@@ -601,10 +601,10 @@ npm 上的包跑的是编译好的 JavaScript，因为 Node 不处理 `node_modu
 仓库本身还是不用编译，只有 `npm pack` 打包的时候才生成 `dist/`
 （见[记录 0008](../../records/0008-npm-package.md)，英文）。
 
-发布到 npm 是主人的事，跟打发版 tag 一样。tag 一推上去，发布 workflow 就开始跑：先跑检查，
-然后发布那一步停下来，等主人在 `release` 环境里点批准，批准了才发到 npm。整个过程不存任何
+发布到 npm 是主人様的事，跟打发版 tag 一样。tag 一推上去，发布 workflow 就开始跑：先跑检查，
+然后发布那一步停下来，等主人様在 `release` 环境里点批准，批准了才发到 npm。整个过程不存任何
 npm token（见[记录 0009](../../records/0009-release-environment.md)，英文）。只有第一个版本例外，
-由主人手动发布：npm 上还没有这个包的时候，没法设置信任哪个 workflow。第一个版本发布之前，先
+由主人様手动发布：npm 上还没有这个包的时候，没法设置信任哪个 workflow。第一个版本发布之前，先
 [从 clone 下来的仓库装](#从-clone-下来的仓库装)。
 
 ### 从 clone 下来的仓库装
@@ -1034,7 +1034,7 @@ AGENTS.md 里，它就只是个愿望。把这些程序写进 `yokoten.json`，�
 守卫自己的拒绝是固定的，不是设置：清空主目录或系统、磁盘命令，还有 root。其中两条可能让你意外。
 
 - 目标守卫读不出来的清空命令会被拒绝，比如 `$OUT_DIR` 或 `$(pwd)`。请改写成一条普通路径。
-- 磁盘工具即使只是读也会被拒绝：`fdisk -l`、`parted -l`、`diskutil list` 和 `gpt -r show disk0`。请主人来跑。
+- 磁盘工具即使只是读也会被拒绝：`fdisk -l`、`parted -l`、`diskutil list` 和 `gpt -r show disk0`。请主人様来跑。
 
 命令所在的文件夹算作项目，所以在那里 `rm -rf dist` 可以通过。
 
@@ -1401,7 +1401,7 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 | `YOKOTEN_ROLE=worker` | 这个会话是 worker，不能改只有 lead 能改的文件 |
 | `YOKOTEN_LEAD_ONLY_OK` | lead 允许这个 worker 改的那几个文件，从仓库根目录写起，用逗号隔开。见[支持哪些 agent](#支持哪些-agent) |
 | `YOKOTEN_FIX_TASK=1` | 这个会话是修复任务，不能改测试文件 |
-| `YOKOTEN_RELEASE_APPROVAL=1` | 主人允许这个会话发版。没见过 Muse Code 把它传给钩子 |
+| `YOKOTEN_RELEASE_APPROVAL=1` | 主人様允许这个会话发版。没见过 Muse Code 把它传给钩子 |
 | `YOKOTEN_PRIVATE_MARKS` | 再加一个私有词表文件。里面的词跟 `~/.config/yokoten/private-marks` 里的合在一起用，不会顶替它。见「隐私」 |
 | `YOKOTEN_MIN_FREE_GB` | 盘上剩的空间少于这么多 GB 时，`doctor` 提醒；`0` 就不提醒。见[本机提示](#本机提示) |
 | `YOKOTEN_BOT_APP_ID`、`YOKOTEN_BOT_KEY`、`YOKOTEN_BOT_INSTALLATION` | bot 的设置，也可以写成 `~/.config/yokoten/keys.env` 里的几行。见 [server.md](../../server.md#3-the-bot-a-github-app) |
@@ -1416,7 +1416,7 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 
 1. 所有工作从 issue 开始，不用 todo 文件。
 2. 没有 PR、CI 没过，什么都进不了 `main`。
-3. 只有仓库主人能打 tag、发版。主人随口说一句「合吧」「ship it」，不算同意发版。
+3. 只有仓库主人様能打 tag、发版。主人様随口说一句「合吧」「ship it」，不算同意发版。
 4. 修复任务只改代码，不改测试（`YOKOTEN_FIX_TASK=1`）。
 5. worker 不改只有 lead 能改的文件：规则、agent 配置、hook、CI。
 6. 不许跳过提交检查。查看 core.hooksPath 没问题。换成别的 hooks 文件夹也行，前提是那里的 pre-commit 是能直接执行的 shell 脚本，单独一行跑 `yokoten check`，检查没过就停下提交（用 husky 的项目，`yokoten init` 会帮你加上）。改设置要写出设置名，不能用 `git config --edit`，也不能新加 include 去读别的配置文件。用 shell 去写 `.git/config`、`.git/commondir`、`.git/hooks` 或 `.githooks` 也不行：重定向、`cp`、`mv`、`tee`、`sed -i`、`rm`、`chmod`、`ln`、`install`、`truncate`、`patch`、`awk -i inplace`、`ed`、`vim`、`tar -x -C`、`unzip -d`、`find -delete` 都算。路径里有通配符、可能对上这些文件的（比如 `.git/conf*`）也算。给 git 或 shell 设 `GIT_CONFIG_GLOBAL`、`GIT_CONFIG_SYSTEM`、`GIT_CONFIG_COUNT`、`GIT_CONFIG_KEY_n`、`GIT_CONFIG_VALUE_n` 也不行，在整行里设也不行。只是读这些文件没问题；`mkdir .githooks`、别的仓库里的文件（比如 `/tmp/x/.git`），还有 lead 用 `git checkout` 或 `git restore` 拿回提交过的 hook，也都可以。一条命令临时改一个设置，用 `git -c <名字>=<值>`；改 hook 用编辑工具或者 `yokoten init`。
@@ -1468,7 +1468,7 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
 
 这套做法把 AI 当成产线上的员工：每个人分工清楚，权限也有限。
 
-- **主人**（你）决定做什么、什么时候发布。只有你能批准硬线、打发版 tag、改仓库设置。另一个模型的
+- **主人様**（你）决定做什么、什么时候发布。只有你能批准硬线、打发版 tag、改仓库设置。另一个模型的
   区域 lead 可以批准自己区域里的 PR（记录 0026 和 0047）。
 - **lead** 是和你对话的那个会话。它做计划、拆任务、做审查，通过 **bot** 开 PR，从不用你的
   账号。
@@ -1490,23 +1490,23 @@ worker 在守卫之下运行命令，所以任务书要照这些规则写：
 
 这套方法靠七个技能来做。`dispatch` 给 worker 派活。`inspect` 分三轮审查某一个具体提交。
 `rca` 找根因，加检查，再推广到其他项目。`record` 把决定写下来。`release` 定下一个版本号，并准备更新日志。
-tag 由主人来打。`merge` 只通过 bot 合并，新提交不是 UTC 就停下。`yokoten` 采用这套做法。
+tag 由主人様来打。`merge` 只通过 bot 合并，新提交不是 UTC 就停下。`yokoten` 采用这套做法。
 三个 agent 干活：`worker`、`reviewer`（只读）、`verifier`（只跑不修）。
 
 ### 谁来审什么
 
-风险越大，越要主人来看。PR 第一行的 tier 说的是：改错了有多难收回（记录 0004）。
+风险越大，越要主人様来看。PR 第一行的 tier 说的是：改错了有多难收回（记录 0004）。
 
 | tier | 什么样的改动 | 谁来审 |
 |------|--------------|--------|
 | C | 日常小改：文档、措辞、样式 | lead 审 |
 | B | 普通改动：其他代码，带测试 | 另一个模型的 agent 审，lead 批准 |
-| A | 改错了很难收回：CODEOWNERS 里的文件，或让规则变松的改动 | 主人审；既不是硬线、也没让规则变松的路径，另一个模型的区域 lead 可以批准 |
+| A | 改错了很难收回：CODEOWNERS 里的文件，或让规则变松的改动 | 主人様审；既不是硬线、也没让规则变松的路径，另一个模型的区域 lead 可以批准 |
 
 在 yokoten 自己的仓库里，`.github/CODEOWNERS` 只列出改错了很难收回的文件：核心规则、CODEOWNERS、
 会发版或用到密钥的 CI、bot 的令牌、能关掉保护的配置和 `package.json`（记录 0037）。
 不是每个文件都列。新项目跑 `init` 时，会按只许 lead 改的路径写好一份。仓库打开「需要 code owner 审查」以后，PR 一改到这些文件，GitHub
-就会请主人来审。
+就会请主人様来审。
 
 `check --pr` 把这两件事接起来。PR 改到 CODEOWNERS 里的文件，第一行却不是 `tier: A`，
 检查就不通过。改了哪些路径，决定 tier 最低是多少。作者可以把 tier 往高了写，不能往低了写。
@@ -1547,7 +1547,7 @@ Claude Sonnet 可以批准 Claude Opus 写的代码，别家厂商的 lead 也�
 
 `yokoten doctor` 现在仍期望 code owner 审查。在它学会新锁之前，这一步会提醒你。合并被拒时，
 提示会说明原因和下一步：换一个模型的 lead、请人在 head 上重新审查，或者硬线、放松规则的改动
-去找主人。
+去找主人様。
 
 审的人靠标签找 tier，所以 `check --pr` 也看标签。一个 PR 要有一个类型标签和一个 tier 标签。
 类型标签可以直接用标题里的类型（`feat`、`fix`、`docs`、`refactor`、`ci` 等），也可以用常见的叫法：
