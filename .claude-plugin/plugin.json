@@ -1,6 +1,6 @@
 {
   "name": "yokoten",
-  "description": "Rules, guards and skills for AI coding agents: the tool-call guard, doctor at the start of each session, and the yokoten skills and agents.",
+  "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup.",
   "author": {
     "name": "coo1white",
     "url": "https://github.com/coo1white"
