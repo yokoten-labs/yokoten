@@ -10,7 +10,7 @@ so is this guide.
 2. Open a new issue and pick a form:
    - **Bug report**: yokoten did something wrong, or stopped a command it should allow.
    - **Task**: a change you want made.
-3. A security problem never goes in an issue. Follow [SECURITY.md](.github/SECURITY.md).
+3. A security problem never goes in an issue. Follow [SECURITY.md](SECURITY.md).
 
 Before you paste output, remove anything private: names, emails, paths with your user
 name, tokens.

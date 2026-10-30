@@ -142,6 +142,6 @@ npx yokoten doctor      # いまどこにいて、次に何をするか
 
 ## もっと知る
 
-[ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md) · [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)（英語） · [決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)（英語） · [変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)（英語） · [マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) · [貢献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)（英語） · [セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)（英語）
+[ガイド](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/guide.md) · [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md)（英語） · [決定記録](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)（英語） · [変更履歴](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md)（英語） · [マイルストーン](https://github.com/yokoten-labs/yokoten/milestones) · [貢献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md)（英語） · [セキュリティ](https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md)（英語）
 
 MIT ライセンス。[coolwhite](https://coolwhite.us/) と AI エージェントのチームが作っています。

@@ -146,6 +146,6 @@ npx yokoten doctor      # 走到了第几关，下一步做什么
 
 ## 了解更多
 
-[指南](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/guide.md) · [标准](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/standard.md) · [决定记录](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)（英文） · [更新日志](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [里程碑](https://github.com/yokoten-labs/yokoten/milestones) · [参与贡献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [安全](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)
+[指南](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/guide.md) · [标准](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/standard.md) · [决定记录](https://github.com/yokoten-labs/yokoten/tree/main/docs/records)（英文） · [更新日志](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [里程碑](https://github.com/yokoten-labs/yokoten/milestones) · [参与贡献](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [安全](https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md)
 
 MIT 许可。由 [coolwhite](https://coolwhite.us/) 和一支 AI agent 团队打造。

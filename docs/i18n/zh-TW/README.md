@@ -142,6 +142,6 @@ npx yokoten doctor      # 走到了第幾關，下一步做什麼
 
 ## 延伸閱讀
 
-[指南](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md)（英文） · [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md) · [決策紀錄](https://github.com/yokoten-labs/yokoten/tree/main/docs/records) · [更新日誌](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [里程碑](https://github.com/yokoten-labs/yokoten/milestones) · [參與貢獻](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [安全](https://github.com/yokoten-labs/yokoten/blob/main/.github/SECURITY.md)（皆為英文）
+[指南](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md)（英文） · [標準](https://github.com/yokoten-labs/yokoten/blob/main/docs/standard.md) · [決策紀錄](https://github.com/yokoten-labs/yokoten/tree/main/docs/records) · [更新日誌](https://github.com/yokoten-labs/yokoten/blob/main/CHANGELOG.md) · [里程碑](https://github.com/yokoten-labs/yokoten/milestones) · [參與貢獻](https://github.com/yokoten-labs/yokoten/blob/main/CONTRIBUTING.md) · [安全](https://github.com/yokoten-labs/yokoten/blob/main/SECURITY.md)（皆為英文）
 
 MIT 授權。由 [coolwhite](https://coolwhite.us/) 和一支 AI agent 團隊打造。
