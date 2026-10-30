@@ -2,8 +2,8 @@
 title: "yokoten · 橫展"
 doc: start
 lang: tw
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/i18n/zh-TW/README.md"
-ref: "v0.1.2"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/zh-TW/README.md"
+ref: "v0.2.0"
 ---
 
 [![npm](https://img.shields.io/npm/v/yokoten?logo=npm)](https://www.npmjs.com/package/yokoten)
@@ -11,9 +11,9 @@ ref: "v0.1.2"
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-給 AI 寫程式工具用的安全守衛。
+yokoten 攔下 AI 程式 agent 犯下收不回來的錯誤。
 
-AI agent 一秒鐘就能犯大錯。yokoten 在它動手之前攔下。
+一個指令，不用設定。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · 繁體中文 · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -30,26 +30,26 @@ npx yokoten
 
 第一次執行只有一屏：裝好了什麼、你走到哪一步、下一條要輸入的指令。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.2; regenerate it when the screen changes. -->
+<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.2 · set up; stage 1 of 5, safety net
+yokoten 0.1.3 · set up; stage 1 of 5, safety net
 
-  ok          guard on for Claude Code on this computer
-  ok          37 files written in this project, none of yours changed
+  ok           guard on for Claude Code on this computer
+  ok           37 files written in this project, none of yours changed
 
-  MISSING     ~/.config/yokoten/private-marks is missing or has no marks
-              Type your name, your city or a domain; it is not shown.
-              Fix: `npx yokoten marks add`
+  MISSING      ~/.config/yokoten/private-marks is missing or has no marks
+               Type your name, your city or a domain; it is not shown.
+               Fix: `npx yokoten marks add`
 
-  done        12 of 26 steps
-  next        Run your tests on every push
-  to do       Put the project on GitHub or Gitea
-  to do       Name the owner (CODEOWNERS)
-  to do       Set up the bot account
-  to do       Add a license and a security policy
-  can't check 9 steps read the code host; doctor checks them after a push
+  done         12 of 26 steps
+  next         Run your tests on every push
+  to do        Put the project on GitHub or Gitea
+  to do        Name the owner (CODEOWNERS)
+  to do        Set up the bot account
+  to do        Add a license and a security policy
+  can't check  9 steps: they read the code host; doctor checks them after a push
 
-  note        16 uncommitted files, the oldest changed 1 minute ago
+  note         16 uncommitted files, the oldest changed 1 minute ago
 
 Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `npx yokoten doctor --all` shows every check and 5 notes
@@ -91,11 +91,11 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 | 指令 | 它做什麼 |
 |---|---|
-| `npx yokoten` | 補上缺的東西，再給出一屏：你在哪裡，下一步做什麼 |
-| `yokoten check` | 提交之前找出密鑰和被破壞的規則；提交檢查也會執行它 |
-| `yokoten desk` | 把一個任務交給一個 AI，在它自己的圍欄工位裡做 |
-| `yokoten kanban` | 一眼看到整個團隊，即時，唯讀（預覽版） |
-| `yokoten tidy` | 列出舊分支、worktree 和工位；加 `--local` 先存一份，再移進 yokoten 的回收資料夾 |
+| `npx yokoten` | 補上缺的東西，再給出下一步 |
+| `yokoten check` | 提交之前找出密鑰和被破壞的規則 |
+| `yokoten desk` | 把一個任務交給一個 AI，在它自己的工位裡做 |
+| `yokoten kanban` | 一眼看到整個團隊（預覽版） |
+| `yokoten tidy` | 列出舊分支、worktree 和工位 |
 
 `yokoten help --all` 按用途分組列出其餘的指令：開始、工作、守衛、合併與 CI、維護。
 
@@ -103,18 +103,19 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 任何 AI 模型都可以。守衛檢查的是 agent 要跑的指令，不是模型。
 
-- **Agent**：守衛和下面每一個 agent 一起工作。每一行的證據（日期、執行方式、先要知道什麼）見[指南裡的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **Agent**：守衛能搭配下面每一個 agent 使用。每一行的證據（日期、執行方式、先要知道什麼）見[指南裡的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **先信任**：寫 `yes` 的，要先在資料夾裡跑一次 `npx yokoten trust`，agent 才會執行守衛。
 
-| Agent | 已做端到端驗證 | 要先跑 `npx yokoten trust` | 測試過的模型 |
+| Agent | 已做端到端驗證 | 先信任 | 測試過的模型 |
 |---|---|---|---|
-| Claude Code | ✅ yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI (`agy`) | ✅ yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | ✅ yes | yes | `deepseek-flash` |
-| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness (`dsh`) | ✅ yes | no | the default DeepSeek model |
-| Grok CLI (`grok`) | ✅ yes | yes | the default model |
-| Gemini CLI | not yet | no | — |
+| Claude&nbsp;Code | ✅ yes | no | `deepseek-flash` |
+| GitHub&nbsp;Copilot&nbsp;CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity&nbsp;CLI | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex&nbsp;CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse&nbsp;Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek&nbsp;Harness | ✅ yes | no | the default DeepSeek model |
+| Grok&nbsp;CLI | ✅ yes | yes | the default model |
+| Gemini&nbsp;CLI | not yet | no | — |
 | OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **語言**：什麼語言都可以。`doctor` 能找到 JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart 和 `make test` 的測試指令。
@@ -138,8 +139,8 @@ npx yokoten doctor      # 走到了第幾關，下一步做什麼
 
 ## 路線圖
 
-- **已完成，v0.1.1**：五項保護對所有人開啟；一個儲存庫裡多個 AI 工作階段。
-- **現在，v0.1.2**：前台五條指令，`yokoten`、`check`、`desk`、`kanban` 和 `tidy`；每個變更由和作者不同的模型來審。
+- **已完成，v0.1.2**：前台五條指令，`yokoten`、`check`、`desk`、`kanban` 和 `tidy`；每個變更由和作者不同的模型來審。
+- **現在，v0.2.0**：`doctor --files` 只讀專案裡的檔案，網頁也能顯示這條路；一次審查最多三輪。
 - **以後**：一個專案學到的教訓，變成每個專案的檢查。
 
 *橫展*（yokoten）是豐田工廠裡的說法：一條產線發現的問題，改到每條產線。

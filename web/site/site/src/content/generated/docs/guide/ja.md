@@ -2,13 +2,26 @@
 title: "yokoten 使用ガイド"
 doc: guide
 lang: ja
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/i18n/ja/guide.md"
-ref: "v0.1.2"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/ja/guide.md"
+ref: "v0.2.0"
 ---
 
-[README](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/i18n/ja/README.md) は短い版です。ここには残りすべてがあります。yokoten がなぜあるのか、どう動くのか、ルール、コマンド、そしてできないことです。
+[README](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/ja/README.md) は短い版です。ここには残りすべてがあります。yokoten がなぜあるのか、どう動くのか、ルール、コマンド、そしてできないことです。
 
 <sub>このページは英語版からの翻訳です。不自然な表現や誤りに気づいたら、issue や pull request で教えてください。</sub>
+
+## ここから始める
+
+初めての人に必要なコマンドは五つだけです。出会う順に並べます。
+
+1. `npx yokoten` は、足りないものを整え、いまの位置と次の一歩を見せます。
+2. `yokoten check` は、秘密情報や破られたルールを探します。コミットチェックが自動で走らせます。
+3. `yokoten desk 123` は、issue 123 を一つの AI に渡し、その AI 専用の囲われたデスクで進めます。`yokoten desk "fix the login test"` のようにタスクを渡すこともできます。
+4. `yokoten kanban` は、チームを一目で見せます。読み取り専用です。
+5. `yokoten tidy` は、古いブランチ、worktree、デスクを一覧にします。`--local` を付けると、先に保存してから、ごみ箱のフォルダーへ移します。
+
+残りのコマンドは[コマンド](#コマンド)の表にあります。`yokoten help --all` のグループの順に並んでいます。
+はじめる、進める、守る、マージと CI、保守です。
 
 ## サーキット
 
@@ -52,7 +65,32 @@ yokoten は、その教訓を、自分でチェックするものに変えます
 | プルリクエストを開く | あなたとして、すべての権限で開く | ボットとして開く。あなたなしでは何もマージされない |
 | 別のプロジェクトで働く | ゼロから始める | そのプロジェクトに足りないものを見て、設定を申し出る |
 
-これはすべて、最初から全員に対して有効です。安全のために質問に答えたり、ファイルを編集したりする必要はありません。これを変える設定には、どれも既定に戻る道があります。[記録 0014](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0014-safe-by-default.md) が、yokoten が何を自分で行い、何を先に聞き、何を決してしないかを、どう決めるかを書いています。
+これはすべて、最初から全員に対して有効です。安全のために質問に答えたり、ファイルを編集したりする必要はありません。これを変える設定には、どれも既定に戻る道があります。[記録 0014](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0014-safe-by-default.md) が、yokoten が何を自分で行い、何を先に聞き、何を決してしないかを、どう決めるかを書いています。
+
+## セーフガード
+
+同じ五つの保護が、最初から、すべての人とすべてのエージェントに対して有効です。`yokoten init` も設定も要りません。
+
+1. **作業を失う**: force push、hard reset、`.git` やその履歴の削除をしません。ホームフォルダやシステムフォルダの消去、ディスクのコマンド（`mkfs`、ディスクへの `dd`）、root（`sudo`、`su`）もしません。root が要ることはオーナーが行います。
+2. **秘密を漏らす**: 鍵、トークン、メールアドレス、ホームのパスを、コミットや投稿に入れません。
+3. **あなたの代わりに公開する**: タグ、リリース、パッケージの公開、リポジトリの公開をしません。
+4. **インターネットのコードを読まずに走らせる**: ダウンロードをそのままシェルに渡しません。
+5. **セーフガードを外す**: チェックやフックを切りません。ワーカーは CI やルールを編集できず、リードによるその変更はあなたがレビューします。
+
+何かを止めるときは、いつも同じ四つの部分を出します。
+
+```
+yokoten stopped this: creating the tag v1.2.0 [release]
+
+  Why       Only the owner decides when to release.
+
+  Instead   Stop and tell the owner: only the owner creates the tag, with the
+            steps in How to release; do not look for another way.
+
+  More      https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#how-to-release
+```
+
+最初の行は、タグ、ファイル、ブランチの正確な名前と、ルールを示します。`Why` は何がまずいかを言います。`Instead` は、コードを読まなくても初心者が使える言葉で、安全なやり方を言います。`More` はルールへのリンクです。五つ目の保護にある変更を行うのはオーナーだけで、エージェントはオーナーに頼みます。
 
 ## 三つのチェックと一つの錠
 
@@ -66,7 +104,7 @@ flowchart LR
 
 | | 走る時 | 止めるもの |
 |-|------|-------|
-| **1** | 各ツール呼び出しの前 | タグの push、force push、チェックの省略、修正タスクでのテスト編集、ルールを編集するワーカー、プロジェクトが止めるプログラム、タイトルのルールを破る issue やプルリクエストのタイトル、エージェントが `gh` で投稿する issue、プルリクエスト、コメント、リリースノートの中の個人情報や秘密情報、Actions の実行の取り消しや削除 |
+| **1** | 各ツール呼び出しの前 | タグの push、force push、チェックの省略、root のコマンド、ホームやシステムフォルダの消去、ディスクのコマンド、修正タスクでのテスト編集、ルールを編集するワーカー、プロジェクトが止めるプログラム、タイトルのルールを破る issue やプルリクエストのタイトル、エージェントが `gh` で投稿する issue、プルリクエスト、コメント、リリースノートの中の個人情報や秘密情報、Actions の実行の取り消しや削除 |
 | **1b** | Claude Code のエージェントがターンを終えるとき | コミットチェックと同じ個人情報、秘密情報、ファイルのルールを、変更されたファイルに対して。指摘とともに、エージェントを一度だけ送り返す |
 | **2** | 各コミット | フックに見えないもの。`sed` やスクリプトが変えたファイル、個人情報、上限を超えたフォルダ |
 | **3** | 各プルリクエスト | フックを切って作られたコミット |
@@ -125,17 +163,17 @@ yokoten: ~/.config/yokoten/private-marks is missing or has no marks
 
 ステップのあと、`yokoten doctor` は、あれば満たしている外部標準を名指しします。たとえば `ci (Scorecard: CI-Tests)` です。セッションのメッセージには出しません。
 
-[記録 0004](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0004-the-road.md) が、なぜ道がこうなっているかを書いています。
+[記録 0004](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0004-the-road.md) が、なぜ道がこうなっているかを書いています。
 
 このリポジトリも同じ道を歩いているので、各関所が動くのを見られます。
 
 | 関所 | 学べること | ここで見る |
 |---|---|---|
-| **1 · 安全網** | エージェントが読むルールと、ルールで足りないときに止めるチェック | [AGENTS.md](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/AGENTS.md) |
+| **1 · 安全網** | エージェントが読むルールと、ルールで足りないときに止めるチェック | [AGENTS.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/AGENTS.md) |
 | **2 · issue とプルリクエスト** | すべての変更は issue として始まり、CI が通ったときだけマージされる。ラベル、マイルストーン、ボードがそれを保つ | [issue](https://github.com/yokoten-labs/yokoten/issues?q=is%3Aissue)、[プルリクエスト](https://github.com/yokoten-labs/yokoten/pulls?q=is%3Apr)、[ボード](https://github.com/orgs/yokoten-labs/projects/1) |
-| **3 · リリース** | 何がなぜ変わったかを言うコミットメッセージ、変更履歴、リリースごとのバージョン番号 | [CHANGELOG.md](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/CHANGELOG.md) |
+| **3 · リリース** | 何がなぜ変わったかを言うコミットメッセージ、変更履歴、リリースごとのバージョン番号 | [CHANGELOG.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/CHANGELOG.md) |
 | **4 · エージェントのチーム** | ボットがプルリクエストを開き、ワーカーがタスクを受け、レビュアーが確認する。マージするのはあなただけ | [エージェントをチームのように動かす](#エージェントをチームのように動かす) |
-| **5 · 公開** | 過去のすべてのコミットを個人情報について調べ、セキュリティ設定を入れ、`main` を守る | [セキュリティポリシー](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/.github/SECURITY.md) |
+| **5 · 公開** | 過去のすべてのコミットを個人情報について調べ、セキュリティ設定を入れ、`main` を守る | [セキュリティポリシー](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/SECURITY.md) |
 
 そして、エージェントがリリースのタグを push しようとすると、こう出ます。
 
@@ -222,42 +260,42 @@ squash マージはブランチの履歴に印を残しません。だから上�
 モデルは Meta のモデル API で、OpenAI 互換のエンドポイント（`https://api.meta.ai/v1`、モデル `muse-spark-1.3`）を通して走ります。`LLAMA_API_KEY` か `MODEL_API_KEY` にあなたの鍵を設定します。`LLAMA_API_BASE` と `LLAMA_MODEL` は、ほかの OpenAI 互換のエンドポイントとモデルに向けます。
 ## 対応しているもの
 
-yokoten は九つの AI コーディングエージェントを、同じルールで守ります。この表が、その一覧と、それぞれをどこまで覆えているかの唯一の一覧です。下の「yes」はどれも実際の実行です。使い捨てのリポジトリでエージェントが `git push --tags` を試み、番人が止めました。「端から端までは未実行」は、エージェントが一覧にはあるが、番人がまだ端から端まで確かめられていないという意味です。文書は証拠ではありません。
+yokoten は九つの AI コーディングエージェントを、同じルールで守ります。この表が、その一覧と、それぞれをどこまで覆えているかの唯一の一覧です。下の「yes」はどれも実際の実行です。使い捨てのリポジトリでエージェントが `git push --tags` を試み、番人が止めました。「端から端までは未実行」は、エージェントが一覧にはあるが、番人がまだ端から端まで確かめられていないという意味です。文書は証拠ではありません。この表は、`src/agents/runtimes/runtime.ts` の実行環境の契約と、日付つきの実行から作られます。二つが食い違うと、テストが失敗します。
 
-| エージェント | フックのファイル（`init` が書く） | どう止めるか | 確認済み | 注意点 |
-|---|---|---|---|---|
-| Claude Code | `.claude/settings.json`: PreToolUse、Stop、SubagentStop | 終了コード 2、理由は stderr へ | yes、2026-10-19: ヘッドレス、DeepSeek `deepseek-flash` 上 | なし |
-| GitHub Copilot CLI | 同じ `.claude/settings.json`: Copilot が読む | 終了コード 2、理由は JSON で stdout へ | yes、2026-10-19: Copilot CLI 1.0.98、`copilot -p`、モデル `gpt-6-luna`（Auto） | リポジトリのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `copilot` を実行し、「Yes, and remember this folder for future sessions」を選ぶ。そうしないと、何も言わずに飛ばす。タイムアウトしたフックは、呼び出しを通す |
-| Antigravity CLI（`agy`） | `.agents/hooks.json`: `yokoten` の項目、PreToolUse | `{"decision": "deny"}` を stdout へ | yes、2026-10-19: agy 1.4.2、`agy -p`、モデル `gemini-3.8-flash-high` | 停止チェックはまだない。`.yokoten/` がないと、すべての呼び出しが拒否される。agy は安全側に倒れる。ワーカーの done-when チェックはリードが走らせる |
-| Codex CLI | `.codex/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | yes、2026-10-19: Codex 0.163.0、`codex exec`、DeepSeek `deepseek-flash` 上 | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走り、そのあと `/hooks` で各フックを承認する。`codex exec` は信頼していないフックを何も言わずに飛ばす |
-| Muse Code | `.muse/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | yes、2026-10-19: Muse Code 1.4.10、`muse exec --trust-workspace`、モデル `muse-spark-1.3-contributor` | フックは、あなたがフォルダを信頼したあとだけ走る。そこで `muse` を実行し、「Trust and continue」を選ぶ。Muse はフックに `YOKOTEN_ROLE` を渡さないので、ワーカーのワークツリーは `yokoten worker mark <dir>` で印を付ける。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse の外でリリースする。失敗したフックやタイムアウトしたフックは、呼び出しを通す |
-| DeepSeek Harness（`dsh`） | `.dsh/hooks.json`: PreToolUse、そして読み込むための `.dsh/yokoten.patch.yml` | 終了コード 2、理由は stderr へ | yes、2026-10-20: dsh 0.2.1-rc.2、`dsh headless --patch .dsh/yokoten.patch.yml`、既定の DeepSeek モデル | フックは、各プロファイルにあなたが足すブリッジを通してだけ走る。[DeepSeek Harness](#deepseek-harness)を見てください。それがなく、パッチもないと、dsh はフックを走らせず、何も言わない。Windows ではまだ守られていない（#332）。停止チェックはない。ワーカーの done-when チェックはリードが走らせる |
-| Grok CLI（`grok`） | `.grok/hooks/yokoten.json`: PreToolUse と Stop | `permissionDecision: "deny"` を stdout へ、そして終了コード 2 | yes、2026-10-20: Grok CLI 1.0.52、`grok -p --trust --always-approve`、既定のモデル | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `grok` を実行し、`/hooks-trust` と入力する。そうしないと、何も言わずに飛ばす。`.claude/settings.json` のフックも走らせるので、一つの呼び出しで番人が二回走ることがある。意図的だ |
-| Gemini CLI | `.gemini/settings.json`: BeforeTool と AfterAgent | 終了コード 2、理由は stderr へ | 端から端までは未実行: 個人のサインインは 2026-06-18 に終わった。有料の API 鍵か組織のライセンスが要る | 個人向けの Google のエージェントは、いま Antigravity CLI だ |
-| OpenCode | `.opencode/plugins/yokoten.ts`: OpenCode 2 のパーミッション `evaluate` と OpenCode 1 の `tool.execute.before` | OpenCode 2 は `effect` を deny にする。OpenCode 1 は理由を投げる | 端から端までは未実行 | 停止チェックはない。失敗した番人やタイムアウトした番人は、呼び出しを拒否する。読み取り専用でない呼び出しで、コマンドもパスも読めないときも拒否する |
-| ほかのエージェント | なし | `AGENTS.md` のルールと、コミットチェック。誰が作った悪いコミットでも止める | | |
+| エージェント | フックのファイル（`init` が書く） | どう止めるか | 機能（rewrite · stop · trust · fails · role） | 確認済み | 注意点 |
+|---|---|---|---|---|---|
+| Claude&nbsp;Code | `.claude/settings.json`: PreToolUse、Stop、SubagentStop | 終了コード 2、理由は stderr へ | yes · yes · yes · closed · yes | yes、2026-10-19: ヘッドレス、DeepSeek `deepseek-flash` 上 | なし |
+| GitHub&nbsp;Copilot&nbsp;CLI | 同じ `.claude/settings.json`: Copilot が読む | 終了コード 2、理由は JSON で stdout へ | no · yes · yes · open · yes | yes、2026-10-19: Copilot CLI 1.0.98、`copilot -p`、モデル `gpt-6-luna`（Auto） | リポジトリのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。タイムアウトしたフックは、呼び出しを通す |
+| Antigravity&nbsp;CLI | `.agents/hooks.json`: `yokoten` の項目、PreToolUse | `{"decision": "deny"}` を stdout へ | no · no · no · closed · yes | yes、2026-10-19: agy 1.4.2、`agy -p`、モデル `gemini-3.8-flash-high` | 停止チェックはまだない。`.yokoten/` がないと、すべての呼び出しが拒否される。agy は安全側に倒れる。ワーカーの done-when チェックはリードが走らせる |
+| Codex&nbsp;CLI | `.codex/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · closed · yes | yes、2026-10-19: Codex 0.163.0、`codex exec`、DeepSeek `deepseek-flash` 上 | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走り、そのあと各フックも信頼が要る。そこで `yokoten trust` を実行する。`codex exec` は信頼していないフックを何も言わずに飛ばす |
+| Muse&nbsp;Code | `.muse/hooks.json`: PreToolUse と Stop | 終了コード 2、理由は stderr へ | no · yes · yes · open · no | yes、2026-10-19: Muse Code 1.4.10、`muse exec --trust-workspace`、モデル `muse-spark-1.3-contributor` | フックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。Muse はフックに `YOKOTEN_ROLE` を渡さないので、ワーカーのワークツリーは `yokoten worker mark <dir>` で印を付ける。`YOKOTEN_RELEASE_APPROVAL` も渡すかは分かっていないので、Muse の外でリリースする。失敗したフックやタイムアウトしたフックは、呼び出しを通す |
+| DeepSeek&nbsp;Harness | `.dsh/hooks.json`: PreToolUse、そして読み込むための `.dsh/yokoten.patch.yml` | 終了コード 2、理由は stderr へ | no · no · no · open · yes | yes、2026-10-20: dsh 0.2.1-rc.2、`dsh headless --patch .dsh/yokoten.patch.yml`、既定の DeepSeek モデル | フックは、各プロファイルにあなたが足すブリッジを通してだけ走る。[DeepSeek Harness](#deepseek-harness)を見てください。それがなく、パッチもないと、dsh はフックを走らせず、何も言わない。Windows ではまだ守られていない（#332）。停止チェックはない。ワーカーの done-when チェックはリードが走らせる |
+| Grok&nbsp;CLI | `.grok/hooks/yokoten.json`: PreToolUse と Stop | `permissionDecision: "deny"` を stdout へ、そして終了コード 2 | yes · yes · yes · closed · yes | yes、2026-10-20: Grok CLI 1.0.52、`grok -p --trust --always-approve`、既定のモデル | プロジェクトのフックは、あなたがフォルダを信頼したあとだけ走る。そこで `yokoten trust` を実行する。そうしないと、何も言わずに飛ばす。`.claude/settings.json` のフックも走らせるので、一つの呼び出しで番人が二回走ることがある。意図的だ |
+| Gemini&nbsp;CLI | `.gemini/settings.json`: BeforeTool と AfterAgent | 終了コード 2、理由は stderr へ | no · yes · yes · closed · no | 端から端までは未実行: 個人のサインインは 2026-06-18 に終わった。有料の API 鍵か組織のライセンスが要る | 個人向けの Google のエージェントは、いま Antigravity CLI だ |
+| OpenCode | `.opencode/plugins/yokoten.ts`: OpenCode 2 のパーミッション `evaluate` と OpenCode 1 の `tool.execute.before` | OpenCode 2 は `effect` を deny にする。OpenCode 1 は理由を投げる | no · no · no · closed · no | yes、2026-10-23: OpenCode 2.1.4、`opencode-go/deepseek-v4.1-flash`、`init` が書くとおりのプラグイン。2026-10-25: 番人が `opencode-go/glm-5.3-flash`（Z.ai の GLM-5.3 Flash）のコマンドを止めた | 停止チェックはない。失敗した番人やタイムアウトした番人は、呼び出しを拒否する。読み取り専用でない呼び出しで、コマンドもパスも読めないときも拒否する。サブエージェントの呼び出しは、その実行に含まれていない |
+| ほかのエージェント | なし | `AGENTS.md` のルールと、コミットチェック。誰が作った悪いコミットでも止める | — | | |
 
-`install` はユーザーのフックを書きます。各セッションの始めのガイドと、コマンドの番人です。それらは `~/.claude/settings.json` に入り、`~/.codex/hooks.json` と `~/.gemini/settings.json` にも、そのフォルダがあるときに入ります。Muse Code は両方を `~/.config/muse/settings.json` に（設定されているときは `$XDG_CONFIG_HOME/muse/settings.json`）、その設定フォルダがあるときだけ受け取ります。Grok CLI はコマンドの番人だけを、`~/.grok` があるとき `~/.grok/hooks/yokoten.json` に受け取ります。セッション開始フックの出力は、エージェントではなくあなたに見せるからです。OpenCode はコマンドの番人を、`~/.config/opencode` があるとき `~/.config/opencode/plugins/yokoten.ts` に受け取ります。Grok の信頼の関門が切れているとき（`GROK_FOLDER_TRUST=0`、または `~/.grok/config.toml` の `[folder_trust] enabled = false`）、`doctor` はすべてのフォルダを信頼済みと数えます。Codex では、番人は `apply_patch` のファイルを確かめ、シェルを通した実行も確かめます。`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`XDG_CONFIG_HOME` がフルパスのとき、`install` はそのフォルダに書きます。ツールもそこを読むからです。
+`install` はユーザーのフックを書きます。各セッションの始めのガイドと、コマンドの番人です。それらは `~/.claude/settings.json` に入り、`~/.codex/hooks.json` と `~/.gemini/settings.json` にも、そのフォルダがあるときに入ります。Muse Code は両方を `~/.config/muse/settings.json` に（設定されているときは `$XDG_CONFIG_HOME/muse/settings.json`）、その設定フォルダがあるときだけ受け取ります。Grok CLI はコマンドの番人だけを、`~/.grok` があるとき `~/.grok/hooks/yokoten.json` に受け取ります。セッション開始フックの出力は、エージェントではなくあなたに見せるからです。Antigravity CLI はコマンドの番人だけを、`~/.gemini/config` があるとき `~/.gemini/config/hooks.json` に受け取ります。Copilot CLI は `~/.copilot` があるとき `~/.copilot/hooks/yokoten.json` に受け取ります。どちらもまだ停止チェックはありません。agy の Stop イベントには再入の合図がなく、Copilot はタイムアウトしたフックを通すからです。OpenCode はコマンドの番人を、`~/.config/opencode` があるとき `~/.config/opencode/plugins/yokoten.ts` に受け取ります。Grok の信頼の関門が切れているとき（`GROK_FOLDER_TRUST=0`、または `~/.grok/config.toml` の `[folder_trust] enabled = false`）、`doctor` はすべてのフォルダを信頼済みと数えます。Codex では、番人は `apply_patch` のファイルを確かめ、シェルを通した実行も確かめます。`CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`XDG_CONFIG_HOME` がフルパスのとき、`install` はそのフォルダに書きます。ツールもそこを読むからです。
 
 どのエージェントも、あなたが信頼したあとだけプロジェクトのフックを走らせます。
 
 - **Claude Code** は、信頼したフォルダでプロジェクトのフックを走らせます。
 - **Copilot CLI** は、信頼したフォルダで走らせます。`copilot -p` では `COPILOT_ALLOW_ALL=true` を設定します。その正確な値がフォルダを信頼します。`--allow-all-tools` だけでは信頼せず、フックは走りません。
 - **Antigravity CLI** は、信頼一覧にないフォルダでも、`agy -p` で `.agents/hooks.json` を走らせました。フックは `.agents` フォルダを作業フォルダとして走ります。ガイドには、`--dangerously-skip-permissions` がフックを飛ばすと書いてあります。agy 1.4.2 では、それを付けてもフックは走りました。どちらも当てにしないでください。
-- **Codex** は、信頼したプロジェクトでだけプロジェクトのフックを走らせます。そのあと `/hooks` で各フックを承認します。Codex はコマンドを覚えるので、コマンドが変わったらまた承認が必要です。
+- **Codex** は、信頼したプロジェクトでだけプロジェクトのフックを走らせます。そのあと `/hooks` で各フックを承認するか、そのフォルダで `yokoten trust` を実行します。Codex はコマンドを覚えるので、コマンドが変わったらまた承認が必要です。`yokoten trust` が新しいハッシュを書きます。
 - **Muse Code** は、信頼したワークスペースでだけ `.muse/hooks.json` を走らせ、そうでなければ何も言わずに飛ばします。`muse exec` では、`--trust-workspace` がその実行でフォルダを信頼します。そのときだけ、`.agents/skills` のプロジェクトのスキルも読みます。デスクの外では、Muse Code は ~/.claude/CLAUDE.md を読み、そのファイルを Muse のモデルに送ることがあります。ホームフォルダを隠すには、デスクで Muse を走らせてください。そのファイルがあるときは `doctor` がそう言います。デスクからまだそのファイルが見えるときは、`doctor` はホームフォルダが見えることと、デスクに手当てが要ることを言います。
-- **Grok CLI** は、信頼したフォルダでだけ `.grok/hooks/` を走らせ、そうでなければ何も言わずに飛ばします。そこでセッション中に `/hooks-trust` と入力するか、一度 `grok --trust` で始めます。yokoten があなたの代わりにフォルダを信頼することは決してありません。Grok は `.claude/settings.json` のフックも走らせるので、一つの呼び出しが二回チェックされることがあります。意図的です。Grok は自分のフックを飛ばせます。信頼していないフォルダのとき、またはリポジトリが空のフックファイルをコミットしたときです。そのときも Claude Code のフックが呼び出しを守ります。二回目のチェックは約 0.1 秒かかります。
+- **Grok CLI** は、信頼したフォルダでだけ `.grok/hooks/` を走らせ、そうでなければ何も言わずに飛ばします。そのフォルダで `yokoten trust` を実行するか、そこでセッション中に `/hooks-trust` と入力します。`yokoten trust` は Grok 自身の信頼ファイルに、このフォルダだけを書きます。Grok は `.claude/settings.json` のフックも走らせるので、一つの呼び出しが二回チェックされることがあります。意図的です。Grok は自分のフックを飛ばせます。信頼していないフォルダのとき、またはリポジトリが空のフックファイルをコミットしたときです。そのときも Claude Code のフックが呼び出しを守ります。二回目のチェックは約 0.1 秒かかります。
 - **Gemini CLI** は、信頼したフォルダでだけプロジェクトのフックを走らせます。リポジトリのルートで Gemini を始めてください。`.gemini/settings.json` は、始めたフォルダからだけ読み、ほかでは読みません。新しいフックや変わったフックを走らせる前に、一度警告します。
-- **OpenCode** は、始まるときに `.opencode/plugins/` のプラグインを読みます。OpenCode 2 はパーミッションのフックで拒否します。OpenCode 1 はまだ例外で止めます。この道は端から端までは未実行です。
+- **OpenCode** は、始まるときに `.opencode/plugins/` のプラグインを読みます。OpenCode 2 はパーミッションのフックで拒否します。OpenCode 1 はまだ例外で止めます。リードは 2026-10-23 に、使い捨てのリポジトリで OpenCode 2.1.4 と `opencode-go/deepseek-v4.1-flash` を使い、これを端から端まで実行しました。サブエージェントの呼び出しは、その実行に含まれていません。
 
 `init` は、フォルダを信頼するステップが一つあるエージェントごとに、その一つのステップを出力します。そのあと `doctor` は、各エージェント自身の信頼の記録を読み取り専用で読み、まだ信頼していないフォルダに注意します。
 
 | エージェント | 信頼の記録 | 信頼済みと数える条件 |
 |---|---|---|
-| Copilot CLI | `~/.copilot/config.json`（または `$COPILOT_HOME`）の `trustedFolders` | そのフォルダ、またはその上のフォルダ |
+| Copilot&nbsp;CLI | `~/.copilot/config.json`（または `$COPILOT_HOME`）の `trustedFolders` | そのフォルダ、またはその上のフォルダ |
 | Codex | `~/.codex/config.toml`（または `$CODEX_HOME`）: `[projects]` と `[hooks.state]` | リポジトリのフォルダと正確に一致し、各フックが今のままであること |
-| Muse Code | `~/.config/muse/trust.json`（または `$XDG_CONFIG_HOME/muse/trust.json`） | リポジトリのフォルダと正確に一致すること |
-| Grok CLI | `~/.grok/trusted_folders.toml`（または `$GROK_HOME`）: `[folders."<folder>"]` で `trusted = true` | リポジトリのフォルダと正確に一致すること |
+| Muse&nbsp;Code | `~/.config/muse/trust.json`（または `$XDG_CONFIG_HOME/muse/trust.json`） | リポジトリのフォルダと正確に一致すること |
+| Grok&nbsp;CLI | `~/.grok/trusted_folders.toml`（または `$GROK_HOME`）: `[folders."<folder>"]` で `trusted = true` | リポジトリのフォルダと正確に一致すること |
 
 Doctor は、そのホームフォルダがあるときだけエージェントを調べます（`~/.copilot`、`~/.codex`、`~/.config/muse`、`~/.grok`）。そのフォルダに記録がないとき、または doctor が読めない記録のときは、「can't check」と言い、決して ok とは言いません。
 
@@ -291,7 +329,7 @@ Actions の実行の取り消しと削除は、リードにもワーカーにも
 
 | エージェント | `init` が書くもの | なぜ |
 |---|---|---|
-| Claude Code | `.claude/settings.json`: `sandbox.enabled` が `true` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く |
+| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` が `true` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く |
 | Codex | `.codex/config.toml`: `sandbox_mode` が `workspace-write`、`approval_policy` が `on-request`、`network_access` が `false` | 書き込みはワークツリーにとどまる。ネットワークは切ったまま。その外へ出る前に Codex が聞く |
 | Gemini | `.gemini/settings.json`: `security.disableYoloMode` が `true` | すべてを承認する YOLO モードは切ったまま |
 | Grok | `.grok/sandbox.toml`: `[profiles.yokoten]` が `workspace` の上に作られる | `yokoten` プロファイルが書き込みをワークツリーに保つ。ワーカーは `grok --sandbox yokoten` で走る |
@@ -356,10 +394,34 @@ Codex 0.163.0 は `wire_api = "chat"` を拒否します。`deepseek-flash` の�
 
 Node 22.23.4 以降（Node 24 は 24.22.1 以降、Node 26 は 26.12.1 以降）が要ります。TypeScript をそのまま走らせるからです。22.18 から 22.23.3 のリリースも TypeScript を走らせますが、使わないでください。Node が 2026-10-21 に直したセキュリティの穴があります（[advisory](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases)）。だから npm はそれらに警告し、完全な `doctor` は `machine:` の下に注意します。依存はありません。インストールの方法は二つです。Claude Code のプラグインか、npm またはクローンからの `install` コマンドです。片方だけ使ってください。yokoten が書くフックのコマンドには POSIX シェルが要ります。Windows では Git Bash を使ってください。
 
+スキルだけを持って来る人もいます。`npx skills add yokoten-labs/yokoten` はスキルだけをコピーします。
+スキルはエージェントへの助言で、コマンドを止めるのは番人です。だからスキルだけでは何も守れません。
+番人を有効にするには、`npx yokoten install` も実行するか、プラグインを使ってください。
+
 ほとんどの人に必要なのは一つのコマンド、`npx yokoten` だけです。`install`、`init`、`doctor` の
-仕事をまとめて行い、足りないものを整えてから、いまの位置と次の一歩を見せます。そのほかに、`yokoten help` が並べるコマンドは
-`desk`、`kanban`、`check`、`tidy` の四つです（[記録 0043](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0043-v012-three-commands.md)）。古いコマンドも動き、移動先を教えてくれます。
-`yokoten help --all` で全部を一覧にでき、下の「コマンド」の表で一つずつ説明します。
+仕事をまとめて行い、足りないものを整えてから、いまの位置と次の一歩を見せます。`trust` と `update` は
+それぞれ別のステップのままです。`yokoten help` が並べるコマンドは
+`desk`、`kanban`、`check`、`tidy` の四つと、引数なしの `yokoten` です
+（[ここから始める](#ここから始める)、[記録 0043](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0043-v012-three-commands.md)）。古いコマンドも動き、移動先を教えてくれます。
+`yokoten help --all` で残りをグループごとに一覧でき、[コマンド](#コマンド)の表で一つずつ説明します。
+
+### どのバージョンを入れるか
+
+リリースのチャンネルは三つあります。Stable が安全な既定です。
+
+| チャンネル | プラグイン | npm | 手に入るもの | 向く人 |
+|---|---|---|---|---|
+| Stable | `yokoten` | `latest` | 最新のリリースタグ（たとえば v0.1.0）と、その変更履歴 | だれでも |
+| Beta | `yokoten-beta` | `next` | 最新のプレリリースタグ（たとえば v0.2.0-beta.1） | 新しい機能を早く使い、問題を報告できる人 |
+| Dev | `yokoten-dev` | なし | 既定ブランチ。マージされたすべてのプルリクエスト | コントリビューターと、私たち自身のテスト |
+
+`/plugin install yokoten@yokoten` で Stable が入ります。Beta なら `yokoten-beta@yokoten`、Dev なら
+`yokoten-dev@yokoten` を使ってください。入れるチャンネルは一つにして、複数は入れません。切り替えるには、
+`/plugin uninstall yokoten@yokoten` を実行してから、もう一方の名前を入れます。シェルからなら
+`claude plugin uninstall` と `claude plugin install` でも同じです。`doctor` は出力の一番上に、
+チャンネルとバージョンを書きます。
+
+プレリリースは、安定版が出る前に壊れることがあります。Dev はマージのたびに変わり、変更履歴もありません。
 
 ### Claude Code のプラグイン
 
@@ -383,7 +445,10 @@ Claude Code のセッションで、こうします。
 
 コマンドの番人はどのフォルダでも走るので、コマンドのルールに従います。例外が一つあります。yokoten のリポジトリ（`yokoten.json` があるもの）の中のファイルへの編集には、セッションをどこで始めても、そのリポジトリのファイルのルールが付きます。セッションのフォルダの外のワークツリーにいるワーカーも、リード専用ファイルを変えられません。
 
-Claude Code は、プラグインの `.ts` ファイルを `node` で走らせます。プラグインのフォルダが `node_modules` の下にないので、Node はそれができます。新しい yokoten にするには、`/plugin` を開き、**Installed** タブで yokoten を選び、**Update now** を選びます。第三者のマーケットプレイスは、あなたが自動更新をオンにするまで、自分では更新しません。シェルからなら `claude plugin update yokoten@yokoten` でも同じです。そのあと Claude Code を再起動してください。プラグインが `doctor` を走らせる yokoten より古いときは、`doctor` が注意でそう言います。
+Claude Code は、プラグインの `.ts` ファイルを `node` で走らせます。プラグインのフォルダが `node_modules` の下にないので、Node はそれができます。新しい yokoten にするには、`/plugin` を開き、**Installed** タブで yokoten を選び、**Update now** を選びます。第三者のマーケットプレイスは、あなたが自動更新をオンにするまで、自分では更新しません。シェルからなら `claude plugin update yokoten@yokoten` でも同じです。Beta や Dev なら
+`yokoten-beta@yokoten` か `yokoten-dev@yokoten` を使います。次のツール呼び出しから、更新した番人が走ります。
+古いフックのコマンドを持ったままのセッションは、一度の再起動が要ります。セッションが走っている間に Claude Code が
+古いプラグインのフォルダを消すと、ツール呼び出しは拒否され、再起動を求めます。プラグインが `doctor` を走らせる yokoten より古いときは、`doctor` が注意でそう言います。
 
 プラグインは Claude Code でだけ動きます。非公開の印のファイルは作りません。`doctor` がそのファイルを名指しし、あなたが作ります。ユーザー設定でプラグインがオンのときは、`doctor` はそのフックとスキルをインストール済みと数えます。
 
@@ -396,17 +461,23 @@ Claude Code は、プラグインの `.ts` ファイルを `node` で走らせ�
 Codex CLI と Gemini CLI のため、またはプラグインなしで、こうします。
 
 ```sh
-npx yokoten install      # このマシン: スキル、エージェント、フック
 cd your-project
+npx yokoten             # 一度だけ: 足りないものを入れてから、道を見せる
+```
+
+どのプロジェクトでももう一度実行すると、まだ足りないものだけを行います。一歩ずつ行うなら、こうします。
+
+```sh
+npx yokoten install      # このマシン: スキル、エージェント、フック
 npx yokoten init         # このプロジェクト: ファイルを足し、決して上書きしない
 npx yokoten doctor       # 道: どこにいて、次は何か
 ```
 
 `npx` はパッケージをダウンロードして走らせます。パッケージに依存はありません。`install` と `init` は、yokoten の実行時ファイルをパッケージからコピーします。`~/.local/share/yokoten` と `.yokoten/` へです。フックはそのコピーを走らせるので、ネットワークも `npx` も要りません。
 
-パッケージはビルド済みの JavaScript を走らせます。Node は `node_modules` の下の TypeScript を走らせないからです。リポジトリにビルドはなく、`npm pack` がパッケージの `dist/` を作ります（[記録 0008](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0008-npm-package.md)）。
+パッケージはビルド済みの JavaScript を走らせます。Node は `node_modules` の下の TypeScript を走らせないからです。リポジトリにビルドはなく、`npm pack` がパッケージの `dist/` を作ります（[記録 0008](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0008-npm-package.md)）。
 
-パッケージを公開するのはオーナーです。オーナーがリリースのタグを作るのと同じです。タグがリリースのワークフローを始めます。チェックが走ったあと、公開のジョブが `release` 環境でオーナーの承認を待ちます。そのときだけ npm に公開し、npm のトークンはどこにも保存しません（[記録 0009](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0009-release-environment.md)）。最初のリリースだけは例外です。オーナーが手で公開します。npm は、まだ持っていないパッケージのワークフローを信頼できないからです。最初のリリースが npm に載るまでは、[クローンからインストール](#クローンからインストールする)してください。
+パッケージを公開するのはオーナーです。オーナーがリリースのタグを作るのと同じです。タグがリリースのワークフローを始めます。チェックが走ったあと、公開のジョブが `release` 環境でオーナーの承認を待ちます。そのときだけ npm に公開し、npm のトークンはどこにも保存しません（[記録 0009](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0009-release-environment.md)）。最初のリリースだけは例外です。オーナーが手で公開します。npm は、まだ持っていないパッケージのワークフローを信頼できないからです。最初のリリースが npm に載るまでは、[クローンからインストール](#クローンからインストールする)してください。
 
 ### クローンからインストールする
 
@@ -430,7 +501,7 @@ export PATH="$HOME/.local/bin:$PATH" # added by yokoten
 
 yokoten がシェルの設定を編集するのは、その「はい」のあとだけです。ターミナルに誰もいないとき（パイプ、フック、CI）は、決して聞かず、決して編集しません。yokoten が書いていない `~/.local/bin/yokoten` はそのまま残り、`install` がそれを名指しします。`uninstall` は起動役と印を付けた行を消します。PATH の `yokoten` がインストール済みのコピーを走らせないときは、`doctor` が注意します。
 
-これらのコマンドと npx のコマンドは、ウェブサイトが読む [docs/facts.json](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/facts.json) にもあります。だから変更は両方に入れます。
+これらのコマンドと npx のコマンドは、ウェブサイトが読む [docs/facts.json](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/facts.json) にもあります。だから変更は両方に入れます。
 
 ### GitHub Action として使う
 GitHub のどのリポジトリでも、ワークフローのファイル一つで yokoten のチェックを CI で走らせられます。リポジトリには何もインストールせず、何もジョブの外へ出ません。トークンも、外部のサービスもありません。
@@ -517,9 +588,11 @@ yokoten check --pr 12
 `init` はプロジェクト自身の設定を動き続けさせます。`## This project` のない `AGENTS.md` には、核心ルールが上に付きます。自分のテキストは `## This project` の下に移り、その見出しは一段下がります。ほかは何も変わりません。`init` は移した各見出しを出力します。git が古いファイルをそのまま持っているときは、`init` はそれを戻すコマンドを出力します。そうでなければ `AGENTS.md.before-yokoten` に複製を保ちます。YAML のフロントマターは一番上にとどまります。リンクである `AGENTS.md` はそのまま残ります。`CLAUDE.md` があると、末尾に `@AGENTS.md` の行を足します。Claude Code はその取り込みを通してだけ `AGENTS.md` を読むからです。`.claude/CLAUDE.md` も数え、ルートにないときは `@../AGENTS.md` を受け取ります。husky などの `core.hooksPath` があると、そのフォルダを保ち、コミットチェックをそこに足します。
 クローンは `.git/hooks` に自分のフックを持つこともあります。lefthook、pre-commit フレームワーク、または手書きのものです。git を `.githooks` に向けるとそれらがすべて切れるので、`init` は `.githooks/pre-commit` と `.githooks/pre-merge-commit` を書き、先にチェックを走らせてから古いフックを走らせます。ほかの実行可能なフック（`commit-msg` や `pre-push` など）には、古いものだけを走らせる `.githooks` のファイルを書きます。どれも同じ引数と stdin を受け取ります。古いフックは `.git/hooks` に残り、`init` は残したものを一つずつ名指しします。実行可能でないフックは今日の git が飛ばすので、`init` は先に進み、どう残すかを言います。渡せないとき（コミットフックがグローバルの `core.hooksPath` から来る、プロジェクト自身の `.githooks` ファイルがチェックを `if` の中に持つ、古いフックのように stdin を読む）は、`init` は `core.hooksPath` を設定せずに残し、何をすべきかを出力します。グローバルの `core.hooksPath` があると `.git/hooks` のファイルは決して走らなかったので、`init` はそれらを省きます。そのようなフックが落とされる間は、`doctor` はコミットチェックを done と数えません。`init` が残すプロジェクト自身のワークフローには、`doctor` が足すべきステップを与えます。
 
-`init` は三つのワークフローを `.github/workflows/` にも書きます。`yokoten.yml`（コミットチェック、actionlint と zizmor の lint ジョブ、必須チェックを作る `ci` ジョブ一つ）、`pr.yml`、`issue.yml` です。各アクションはコミットに固定され、各ジョブに時間制限があり、チェックアウトはトークンを保たず、`yokoten.yml` では同じプルリクエストへの新しい push が古い実行を取り消します。`main` への push は何も取り消しません。どのコミットも単独でテストされます。`pr.yml` は何も取り消しません。その実行はどの順でも始められるので、各実行はジョブのトークンで、プルリクエストのタイトル、本文、ラベル、マイルストーンを今のまま読み、再実行はまた読みます。あなたのテストは `yokoten.yml` のジョブとして足し、`ci` の `needs` 一覧にも足してください。非公開リポジトリは CI を切っておけます。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください。
+`init` は四つのワークフローを `.github/workflows/` にも書きます。`yokoten.yml`（コミットチェック、actionlint と zizmor の lint ジョブ、必須チェックを作る `ci` ジョブ一つ）、`pr.yml`、`issue.yml`、`actions-health.yml` です。各アクションはコミットに固定され、各ジョブに時間制限があり、チェックアウトはトークンを保たず、`yokoten.yml` では同じプルリクエストへの新しい push が古い実行を取り消します。`main` への push は何も取り消しません。どのコミットも単独でテストされます。`pr.yml` は何も取り消しません。その実行はどの順でも始められるので、各実行はジョブのトークンで、プルリクエストのタイトル、本文、ラベル、マイルストーンを今のまま読み、再実行はまた読みます。あなたのテストは `yokoten.yml` のジョブとして足し、`ci` の `needs` 一覧にも足してください。非公開リポジトリは CI を切っておけます。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください。
 
 `yokoten.yml` と `pr.yml` は `merge_group` でも走るので、マージキューはプルリクエストと同じ必須チェックを走らせます。マージグループの実行にはプルリクエストがありません。`yokoten.yml` はすべてのジョブを完全に走らせ、`pr` ジョブは飛ばします。キューには緑と数えます。キューはリポジトリの設定でオンにします。`issue.yml` はそこで決して走りません。issue はマージのチェックではないからです。
+
+`actions-health.yml` は 30 分ごとに走ります。Actions の直近 200 回の実行と、開いているプルリクエストのチェックを読み、固定された issue `CI health` を一つ更新します。その issue には、既定ブランチで失敗または取り消された実行、開いているプルリクエストで失敗または取り消されたチェック、遅いワークフロー、キューの待ち、通ったことも失敗したこともあるブランチが並びます。書くのはその issue だけです。止めるにはファイルを消すか、`yokoten init --no-ci` を実行します。`yokoten ci-health` は同じ報告を出力し、何も書きません。ワークフローは `--write` を付けて走らせます。
 
 ワークフローがすでにあるとき、`init` はあなたが変えたかを確かめます。キットは書いたすべての版の一覧を保ちます。そのどれかと一致するファイルは、Windows の行末でもそうでなくても、あなたが変えていない複製です。`init` はそれを最新版に更新し、そう言います。`init` は決してコミットしないので、`git restore <file>` で古いものを戻せます。あなたの変更があるファイルはそのまま残ります。`init` と完全な `doctor` は、キットの最新の複製と比べるコマンドを示します。`doctor` はキットの版ごとに一度そう言います。シンボリックリンクもそのまま残ります。`init` は決してリンクを通して書きません。
 
@@ -531,45 +604,60 @@ yokoten check --pr 12
 - `SECURITY.md` は、脆弱性を公開の issue ではなく非公開で報告するよう求めます。そのために非公開の脆弱性報告をオンにしてください。`doctor` がそれをほかのセキュリティのスイッチと一緒に一覧します。
 - `CODEOWNERS` は、既定でリード専用のすべてのパスにオーナーを名指しします。`AGENTS.md`、`yokoten.json`、`.yokoten/`、フック、エージェントの設定、`.github/` です。番人はマシン上でワーカーを止め、このファイルは同じ変更をサーバー上で止めます。オーナーは GitHub の `origin` リモートのアカウントです。それがなければ、ファイルには仮の値が入ります。リポジトリを作り、リモートを足して push すると、`doctor` があなたの GitHub のハンドルを入れるよう頼みます。GitHub は組織をオーナーに取らないので、`gh` がアカウントを組織と言うときもファイルには仮の値が入り、`init` は人か `@org/team` を求めます。完全な `doctor` は、オーナーが組織だけのファイルに印を付けます。それが効くのは、ブランチ保護で「Require review from Code Owners」がオンのときだけです。プロジェクトがすでに持つ CODEOWNERS ファイル（`.github/`、ルート、`docs/` のどれか）はそのまま残ります。
 
-| コマンド | すること |
-|---------|--------------|
-| `install` | 入口のスキル `yokoten` 一つを `~/.claude/skills` と `~/.agents/skills` に、エージェントを `~/.claude/agents` に、SessionStart の `doctor` フックとユーザーレベルのコマンドの番人と空の非公開の印のファイルを入れます。書く前に、書くファイルと設定キーを表示します。二つのフックは Claude Code に入り、`~/.codex` や `~/.gemini` がすでにあるときは Codex と Gemini CLI にも入ります。Claude Code のプラグインがオンのときは、グローバルのスキル、エージェント、フックを書かず、古い `install` が書いたものを取り戻します。このマシンで見つけた印を足し、git の mailmap のファイルを書きます。git のグローバルの `mailmap.file` を設定する前には尋ねます。[プライバシー](#プライバシー)を見てください |
-| `init [dir]` | 実践をプロジェクトに入れます。ファイルを足し、すでにあるものは残してそう言います。あなたが変えていないキットのワークフローは最新版になります。GitHub も `gh` を通して読み、足す標準のラベルとマイルストーンを言います。GitHub は決して変えません。`gh`、サインイン、GitHub のリモートがないときは、飛ばしたものを言います |
-| `init --github --yes [--remove-default-labels] [--board]` | 足りない標準のラベルと、開いているマイルストーンがないときは「First release」を足します。閉じたマイルストーンがすでにそのタイトルを持つときは、新しいものは「Next release」です。閉じたマイルストーンは決して開き直しません。すでにある標準のラベルは標準の色と説明になります。`yokoten.json` の領域が 8 つ以下なら、領域ごとに灰色のラベルを一つ足します。二回目の実行は何も変えません。その集合の外の GitHub の既定のラベル（`question`、`wontfix` など）は `--remove-default-labels` のときだけ消します。`--board` はリポジトリにリンクしたボードも作ります。gh トークンの `project` スコープが要ります |
-| `init --no-ci` | CI を切っておきます。`yokoten.json` の `"notNow"` に `"ci"` を足し、ワークフローも Dependabot の設定も書かず、それらがまだキットの複製なら消します。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
-| `update [dir] [--write] [--all]` | 既定では変わったルールごとに1行、`--all` は変わった行をすべて示します。この yokoten がプロジェクトの `AGENTS.md` の核心ルールに何を変えるかを示します。`--write` はそれを置き換え、「This project」の部分はそのまま保ちます。[ルールを更新する](#ルールを更新する)を見てください |
-| `doctor [--session] [--json]` | 道: すべての関所とステップ、そしてこのマシンに足りないもの。`--session` はセッションの始めのために次のステップだけを出力します。`--agent gemini` を付けると、Gemini CLI が読む JSON としてステップを出力します |
-| `adopt [--json]` | 古いプロジェクトの導入の表の下書き: 今日どうしているかと、各ステップへの提案された決断。`--json` は行を出力します。何も書きません |
-| `check [--staged] [--all] [--json]` | 1画面：問題はすべて示し、注意は件数にまとめます。`--all` は注意を1つずつ示します。ツリーまたは次のコミットの、レイアウト、プライバシー、リード専用ファイル。コミットはビルドの出力やバイナリを足せません。各変更ファイルは `changelog` が読むように読むので、間違ったものはコミットで失敗します。何もステージしていないとき、`--staged` はそう注意し、問題なしとします。ツリーでは、英語の元より遅れた翻訳は注意です。[翻訳](#翻訳)を見てください |
-| `check --pr` | CI で: プルリクエストのタイトル、`tier:` の行、節、リンクした issue、変更ファイル、マイルストーン、ラベル。最後の行は各 AI とモデルを名指しします。`🤖 Made with <agent> (<model>)` で、一つ以上のカンマ区切りの組です。レビュアーを足せます。`🤖 Made with worker <X> (<model>), reviewed by <Y> (<model>) and <Z> (<model>), lead Claude Code (<model>)`（レビュアーは一人か二人、決してそれ以上ではない）。CODEOWNERS が持つファイルには `tier: A` が要ります。変更された Markdown の長い文、変更されたコードの読みにくい名前、400 行を超える差分は注意です |
-| `check --pr <number>` | CI のないリポジトリのために、`gh` を通して一つのプルリクエストに同じチェックをします。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
-| `check --issue` | CI で: issue のタイトルとラベル。[issue のタイトル](#issue-のタイトル)を見てください |
-| `redact` | stdin のテキストを読み、あなたの詳細を隠して書きます。`<owner>`、`<email>`、`<host>`、`<mark>` です。ツール呼び出しの番人は危険なコマンドをこれに通します。[プライバシー](#プライバシー)を見てください |
-| `marks allow <mark> --here` | あなたの非公開の印の一つを、このリポジトリでだけ通します。`yokoten.json` は要りません。許可はこのマシンに保ち、リポジトリには決して入れません。`--remove` で取り消します。[プライバシー](#プライバシー)を見てください |
-| `changelog [--write]`、`changelog --notes <バージョン>` | `changes/` のファイルが `[Unreleased]` の下に足す項目を示します。`--write` はそれらを `CHANGELOG.md` に入れてファイルを消します。`--notes` はそのバージョンのリリースノートを `CHANGELOG.md` の節から作るので、二度書く必要がありません。リリースの前に走らせてください。[変更履歴](#変更履歴)を見てください |
-| `learn <issue> [--write]` | インシデントの issue からチェックを下書きし、人がレビューします。`--write` は `lessons/` にファイルを足します。[インシデントから学ぶ](#インシデントから学ぶ)を見てください |
-| `learn --ship <id>` | yokoten で: レビュー済みの教訓を `kit/lessons/` のグループに移し、そこから走る yokoten の `doctor` がすべてのプロジェクトでそれを走らせます。`TODO(reviewer)` が残っていたり、そのテストが失敗したりする間は拒否されます |
-| `learn --upstream "<what happened>" [--area <name>] [--fix <idea>]` | yokoten 自身の隙間についての注意を、プロジェクトとあなたを隠して保ちます。`--list` は注意を一覧し、`--done <id>` は一つを消します。[yokoten 自身のための教訓](#yokoten-自身のための教訓)を見てください |
-| `check --history` | すべてのブランチのすべてのコミットへのプライバシーチェック。非公開リポジトリを公開する前に走らせてください。浅いクローンは古いコミットを見られないので、スキャンせずに失敗します。CI では履歴全体をチェックアウトしてください（`fetch-depth: 0`）。ファイルの当たりは、それを足したコミットと、そのコミットでのパスを名指しします。`file @ <commit>` です。`git replace` より先のコミットも読み、grafts のファイルがコミットを隠しうるときも同じように失敗します。 |
-| `hook [--agent <name>] [--commands-only] [--json]` | ツール呼び出しの番人。stdin で一つのツール呼び出しを読みます。既定は Claude Code の PreToolUse 呼び出し、`--agent codex` で Codex の PreToolUse 呼び出し、`--agent gemini` で Gemini CLI の BeforeTool 呼び出し、`--agent antigravity` で Antigravity CLI の PreToolUse 呼び出し、`--agent muse` で Muse Code の PreToolUse 呼び出し、`--agent deepseek-harness` で DeepSeek Harness の PreToolUse 呼び出し、`--agent grok` で Grok CLI の PreToolUse 呼び出し、`--agent opencode` で OpenCode のツール呼び出し |
-| `hook --stop [--agent <name>]` | 停止チェック。stdin でターン終了のイベントを読み、変更されたファイルをチェックします。既定は Claude Code の Stop か SubagentStop のイベント、`--agent codex` で Codex の Stop イベント、`--agent muse` で Muse Code の Stop イベント、`--agent gemini` で Gemini CLI の AfterAgent イベント、`--agent grok` で Grok CLI の Stop イベント。ワーカーはタスクの done-when のコマンドも走らせます。[停止チェック](#停止チェック)を見てください |
-| `explain [<id>] [--json]` | ルールか道のステップ: 何か、なぜか、yokoten がどうチェックするか |
-| `worker mark <dir>` | `<dir>` のワークツリーをワーカーのものとして印を付けます。すると番人はそこにいるすべてのエージェントをワーカーとして扱います。`YOKOTEN_ROLE` を落とす実行環境（Muse Code）のエージェントもです。番人はワーカーが印を消す素朴な方法を拒否し、読めない `.git` のリンクは印ありと数えます。本当の錠はサーバーとワーカーから保たれる資格情報です。`git worktree remove <dir>` が印を消します。サブフォルダを渡すと、ワークツリーの一番上のフォルダに印を付け、どれかを言います。デスクのような普通のクローンにも印を付けます。印はその `.git` に入ります（#672）。リードは自分のチェックアウトからクローンに印を付けます。メインのチェックアウト（リードが走るクローン、またはワークツリーを持つもの）とサブモジュールには決して印を付けません。ワーカーは印を付けられず、外せません。[対応しているもの](#対応しているもの)を見てください |
-| `worker env [runtime]` | yokoten のエージェント環境がこのシェルから保つ名前を一覧し、落とす名前を数えます。実行環境を渡すと、そのログイン名も数えます。値は決して見せません。`desk` はこれを使ってエージェントを始めます。[エージェントの環境が持つもの](#エージェントの環境が持つもの)を見てください |
-| `msg send <to> [<text>]`、`msg inbox`、`msg who`、`msg log` | どのベンダーのエージェントも、このマシンのファイルを通して互いにメッセージを送ります。`log` はリードだけが走らせます。[エージェント同士のメッセージ](#エージェント同士のメッセージ)を見てください |
-| `desk [<issue> \| "<task>"] [--agent <name>] [--pr] [--no-install]` | 引数なしなら、デスクを一覧し、何も書きません。issue 番号かタスクを渡すと、デスク `../<repo>-desks/<n>/`（自分のクローン、ブランチ `desk/<n>`）を作り、ブリーフを書き、囲いの中で AI（まず Claude Code）を始めます。AI が終わると、囲いの中でチェックとテストを走らせ、一画面で証拠を見せます。push はしません。`--pr` でブランチを push し、プルリクエストを開きます（bot があれば bot で）。途中で止まったデスクは次の起動で見え、`desk <n>` で最後のコミットから続けます。ネイティブの Windows では WSL で走らせてください |
-| `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
-| `uninstall` | `install` が書いたものを取り消します。yokoten が管理すると印を付けた入口スキルとエージェント、Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code の設定にあるフック、OpenCode のプラグイン、`~/.local/share/yokoten` です。非公開の印と mailmap のファイルは、`install` の見出しだけのときに消します。`install` が作ったフォルダと git の設定ファイルは、空のときに消します。`install` の前からあったフォルダは残ります。あなた自身のファイル、編集、設定は残ります。止めた記録は消えます。二回目の実行は何も変えません |
-| `bot -- <command>` | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。`gh pr edit` も、新しいタイトルや本文について同じことをし、本文が新しいティアを設定したときは古いティアのラベルを外します。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/server.md#3-the-bot-a-github-app) |
-| `kanban [--text] [--json] [--no-open]` | 古い名前の `board` も、`kanban` を名指す一行のあとで同じように走ります。このマシンでだけ動く読み取り専用のページを出します。セッション、あなたを待つプルリクエスト、Actions です。ページから仕事を始めたり止めたり変えたりはできません。ブラウザーでページをサインイン済みで開き、あなたが止めるまで走ります（`--no-open` はアドレスを出力するだけ）。サインインの鍵はブラウザーにだけ渡ります。`--text` は同じスナップショットを素のテキストで、`--json` はデータとして出力します。[チームのボード](#カンバン)を見てください |
-| `tidy [--local \| --empty [--yes]]` | 引数なしでは古いものを、できることごとに並べます。マージ済みかリモートで消えたブランチ、作業の残っていないワークツリーとデスク、消えたデスクのログです。各行に理由と大きさを書き、何も変えません。`--local` はまず一つずつ保存し（ブランチは bundle、未コミットの変更は patch、それに `index.json`）、そのあと `~/.local/state/yokoten/trash` の日時つきフォルダーへ移します。保存が一つでも失敗したら何も移しません。使用中のデスクやワークツリーには触れません。GitHub 上のブランチは一覧に出すだけです。`--empty` は一度たずねてから、7 日を過ぎたごみ箱のフォルダーを消します。端末がないときは `--yes` が要ります |
+| コマンド | グループ | すること |
+|---------|-------|--------------|
+| `install [--yes] [--list]` | はじめる | 入口のスキル `yokoten` 一つを `~/.claude/skills` と `~/.agents/skills` に、エージェントを `~/.claude/agents` に、SessionStart の `doctor` フックとユーザーレベルのコマンドの番人と空の非公開の印のファイルを入れます。端末では、変わることを一画面で見せ、一度だけ尋ねてから書きます。`--yes` は尋ねるのを飛ばします。書く前に、書くファイルと設定キーを表示します。二つのフックは Claude Code に入り、`~/.codex` や `~/.gemini` がすでにあるときは Codex と Gemini CLI にも入ります。Claude Code のプラグインがオンのときは、グローバルのスキル、エージェント、フックを書かず、古い `install` が書いたものを取り戻します。このマシンで見つけた印を足し、git の mailmap のファイルを書きます。git のグローバルの `mailmap.file` を設定する前には尋ねます。`--list` は、書くファイルと残すファイルをすべて挙げます。[プライバシー](#プライバシー)を見てください |
+| `init [dir] [--list]` | はじめる | 実践をプロジェクトに入れます。`--list` は書いたか残したファイルをすべて示し、既定では一画面にまとめます。ファイルを足し、すでにあるものは残してそう言います。あなたが変えていないキットのワークフローは最新版になります。GitHub も `gh` を通して読み、足す標準のラベルとマイルストーンを言います。GitHub は決して変えません。`gh`、サインイン、GitHub のリモートがないときは、飛ばしたものを言います |
+| `init --github --yes [--remove-default-labels] [--board]` | はじめる | 足りない標準のラベルと、開いているマイルストーンがないときは「First release」を足します。閉じたマイルストーンがすでにそのタイトルを持つときは、新しいものは「Next release」です。閉じたマイルストーンは決して開き直しません。すでにある標準のラベルは標準の色と説明になります。`yokoten.json` の領域が 8 つ以下なら、領域ごとに灰色のラベルを一つ足します。二回目の実行は何も変えません。その集合の外の GitHub の既定のラベル（`question`、`wontfix` など）は `--remove-default-labels` のときだけ消します。`--board` はリポジトリにリンクしたボードも作ります。gh トークンの `project` スコープが要ります |
+| `init --no-ci` | はじめる | CI を切っておきます。`yokoten.json` の `"notNow"` に `"ci"` を足し、ワークフローも Dependabot の設定も書かず、それらがまだキットの複製なら消します。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
+| `trust [dir] [--undo]` | はじめる | ここにインストールされたエージェントで yokoten の番人を有効にします。エージェント自身の信頼の記録に、yokoten のフックを信頼するよう書きます。対象は Codex、Grok CLI、Copilot CLI、Muse Code です。人が端末で実行します。パイプからは何も書きません。フォルダを信頼するのは、yokoten 自身のフックがあり、プロジェクトの Codex のサンドボックスが安全なときだけです。フォルダを信頼すると、そのサンドボックスが効くようになるからです。`init` は端末で一度尋ねます。端末がなければ何も書かず、このコマンドを名指しします。`--undo` は yokoten が書いた項目だけを消し、そのあと変えられたものは残します。[安全が既定](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0014-safe-by-default.md)を見てください |
+| `doctor [--all] [--files] [--session] [--json]` | はじめる | プロジェクトが道のどこにいるかを一画面で示します。終わったこと、足りないこと、次のステップです。`--all` はすべての関所とステップ、そしてこのマシンに足りないものを示します。`--files` はリポジトリのファイルだけで判断します。コードホストを読まず、`gh` を走らせず、ネットワークを使わず、マシンの注意も出しません。だから、どのマシンでも同じ答えになります。`--session` はセッションの始めのために次のステップだけを出力します。完全な `doctor` は、簡単なコマンドに番人を一度走らせ、`guard: 90 ms per command (60 ms CPU)` と報告します。一回の呼び出しの実時間と CPU 時間（user と system の合計）です。セッションはこれを飛ばします。`--agent gemini` を付けると、Gemini CLI が読む JSON としてステップを出力します |
+| `adopt [--all] [--json]` | はじめる | 既定では一画面で、`--all` は表全体を、すべての行の理由つきで示します。古いプロジェクトの導入の表の下書き: 今日どうしているかと、各ステップへの提案された決断。`--json` は行を出力します。何も書きません |
+| `explain [<id>] [--json]` | はじめる | ルールか道のステップ: 何か、なぜか、yokoten がどうチェックするか |
+| `worker mark <dir>` | 進める | `<dir>` のワークツリーをワーカーのものとして印を付けます。すると番人はそこにいるすべてのエージェントをワーカーとして扱います。`YOKOTEN_ROLE` を落とす実行環境（Muse Code）のエージェントもです。番人はワーカーが印を消す素朴な方法を拒否し、読めない `.git` のリンクは印ありと数えます。本当の錠はサーバーとワーカーから保たれる資格情報です。`git worktree remove <dir>` が印を消します。サブフォルダを渡すと、ワークツリーの一番上のフォルダに印を付け、どれかを言います。デスクのような普通のクローンにも印を付けます。印はその `.git` に入ります（#672）。リードは自分のチェックアウトからクローンに印を付けます。メインのチェックアウト（リードが走るクローン、またはワークツリーを持つもの）とサブモジュールには決して印を付けません。ワーカーは印を付けられず、外せません。[対応しているもの](#対応しているもの)を見てください |
+| `worker env [runtime]` | 進める | yokoten のエージェント環境がこのシェルから保つ名前を一覧し、落とす名前を数えます。実行環境を渡すと、そのログイン名も数えます。値は決して見せません。`desk` はこれを使ってエージェントを始めます。[エージェントの環境が持つもの](#エージェントの環境が持つもの)を見てください |
+| `msg send <to> [<text>]`、`msg inbox`、`msg who`、`msg log` | 進める | どのベンダーのエージェントも、このマシンのファイルを通して互いにメッセージを送ります。`log` はリードだけが走らせます。[エージェント同士のメッセージ](#エージェント同士のメッセージ)を見てください |
+| `desk [<issue> \| "<task>"] [--agent <name>] [--pr] [--no-install] [--json]` | 進める | 引数なしなら、デスクを一覧し、何も書きません（`--json` はその一覧をデータとして出力します）。issue 番号かタスクを渡すと、デスク `../<repo>-desks/<n>/`（自分のクローン、ブランチ `desk/<n>`）を作り、ブリーフを書き、囲いの中で AI（まず Claude Code）を始めます。AI が終わると、囲いの中でチェックとテストを走らせ、一画面で証拠を見せます。push はしません。`--pr` でブランチを push し、プルリクエストを開きます（bot があれば bot で）。途中で止まったデスクは次の起動で見え、`desk <n>` で最後のコミットから続けます。ネイティブの Windows では WSL で走らせてください |
+| `desk <agent> <folder> [--name <name>] [--read <paths>] [--host <hosts>] [--marks] -- <command>` | 進める | ワーカーのエージェントを囲われたデスクで始めます。自分のクローン、自分の状態フォルダ、そして自分のモデルの API 以外のネットワークなしです。走らせるのはリードだけです。[デスク](#デスク)を見てください |
+| `kanban [--text] [--json] [--no-open]` | 進める | 古い名前の `board` も、`kanban` を名指す一行のあとで同じように走ります。このマシンでだけ動く読み取り専用のページを出します。セッション、あなたを待つプルリクエスト、Actions です。ページから仕事を始めたり止めたり変えたりはできません。ブラウザーでページをサインイン済みで開き、あなたが止めるまで走ります（`--no-open` はアドレスを出力するだけ）。サインインの鍵はブラウザーにだけ渡ります。`--text` は同じスナップショットを素のテキストで、`--json` はデータとして出力します。[チームのボード](#カンバン)を見てください |
+| `check [--staged] [--all] [--json]` | 守る | 1画面：問題はすべて示し、注意は件数にまとめます。`--all` は注意を1つずつ示します。ツリーまたは次のコミットの、レイアウト、プライバシー、リード専用ファイル。コミットはビルドの出力やバイナリを足せません。各変更ファイルは `changelog` が読むように読むので、間違ったものはコミットで失敗します。何もステージしていないとき、`--staged` はそう注意し、問題なしとします。ツリーでは、英語の元より遅れた翻訳は注意です。[翻訳](#翻訳)を見てください |
+| `check --pr` | 守る | CI で: プルリクエストのタイトル、`tier:` の行、節、リンクした issue、変更ファイル、マイルストーン、ラベル。最後の行は各 AI とモデルを名指しします。`🤖 Made with <agent> (<model>)` で、一つ以上のカンマ区切りの組です。レビュアーを足せます。`🤖 Made with worker <X> (<model>), reviewed by <Y> (<model>) and <Z> (<model>), lead Claude Code (<model>)`（レビュアーは一人か二人、決してそれ以上ではない）。CODEOWNERS が持つファイルには `tier: A` が要ります。その行は、ブランチにあるデスクの状態ファイルと照らされます。行が名指ししないデスク、またはレビュアー全員が書いた側と同じモデルである場合は、指摘になります。別のモデルのレビュアーが一人いれば十分です（記録 0045）。Claude Sonnet が Claude Opus をレビューすれば通り、別のベンダーでも通ります。`Made with` のモデルがワーカーの状態ファイルと食い違うときは、そのデスクのあるマシンで注意になります。CI はそのファイルを見られないので、CI では決して注意になりません。プルリクエストが Markdown に足す行の長い文、コードに足す行の読みにくい名前、400 行を超える差分は注意です |
+| `check --pr <number>` | 守る | CI のないリポジトリのために、`gh` を通して一つのプルリクエストに同じチェックをします。[CI なしの非公開リポジトリ](#ci-なしの非公開リポジトリ)を見てください |
+| `check --issue` | 守る | CI で: issue のタイトルとラベル。[issue のタイトル](#issue-のタイトル)を見てください |
+| `check --anchor [--repo <owner/name>]` | 守る | イベントログの過去の UTC の日ごとに、Sigstore Rekor にある日のハッシュと照らし、ログがもう一致しないときはその日を名指しします。Rekor に送るのはその日の 64 文字の 16 進数だけで、行、パス、名前はマシンから出ません。`--repo` は、アンカーのワークフローが項目に署名したリポジトリを名指しします |
+| `provenance <ref> [--json]` | 守る | コミット一つ、または範囲の各コミットについて、書いた人、レビュアー、承認した人、ティア、issue を、squash したメッセージとホストの最新の Approve から示します。`--json` は記録を出力します。[来歴](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/standard.md#provenance)を見てください |
+| `borrowed [--dry-run] [--json]` | 守る | `src/borrowed/` の各ファイルを、`gh` を通して上流の既定ブランチと比べ、変わった元ごとに issue を一つ開きます。セキュリティの修正はタイトルで知らせます。`--dry-run` は報告を示し、何も開きません。`--json` は報告をデータとして出力します。[借りたコード](#借りたコード)を見てください |
+| `redact` | 守る | stdin のテキストを読み、あなたの詳細を隠して書きます。`<owner>`、`<email>`、`<host>`、`<mark>` です。ツール呼び出しの番人は危険なコマンドをこれに通します。[プライバシー](#プライバシー)を見てください |
+| `marks allow <mark> --here` | 守る | あなたの非公開の印の一つを、このリポジトリでだけ通します。`yokoten.json` は要りません。許可はこのマシンに保ち、リポジトリには決して入れません。`--remove` で取り消します。[プライバシー](#プライバシー)を見てください |
+| `anchor [--json]` | 守る | このチェックアウトに記録されたアンカーを、新しい順に一覧します。ワーカーは、チェックが通り、ツリーがきれいなときに一つ記録します。アンカーはコミットです。`git switch -c try-2 <commit>` で戻れて、何もリセットも削除もされません。[停止チェック](#停止チェック)を見てください |
+| `mcp [dir] [--command "<command>"] [--json]` | 守る | `.mcp.json`、`.vscode/mcp.json`、`mcp.json` の各 stdio サーバーを始め、そのツールをすべてのクライアント向けにチェックします。スキーマ、名前、アノテーション、数、結果の形、迷い込んだ stdout です。`--command` は設定に項目のないサーバーをチェックし、`--json` は指摘を出力します。Windows の警告は失敗にしません。[どのエージェントでも動く MCP サーバーを出荷する](#どのエージェントでも動く-mcp-サーバーを出荷する)を見てください |
+| `check --history` | 守る | すべてのブランチのすべてのコミットへのプライバシーチェック。非公開リポジトリを公開する前に走らせてください。浅いクローンは古いコミットを見られないので、スキャンせずに失敗します。CI では履歴全体をチェックアウトしてください（`fetch-depth: 0`）。ファイルの当たりは、それを足したコミットと、そのコミットでのパスを名指しします。`file @ <commit>` です。`git replace` より先のコミットも読み、grafts のファイルがコミットを隠しうるときも同じように失敗します。 |
+| `hook [--agent <name>] [--commands-only] [--denial <mode>] [--json] [--protocol]` | 守る | ツール呼び出しの番人。stdin で一つのツール呼び出しを読みます。既定は Claude Code の PreToolUse 呼び出し、`--agent codex` で Codex の PreToolUse 呼び出し、`--agent gemini` で Gemini CLI の BeforeTool 呼び出し、`--agent antigravity` で Antigravity CLI の PreToolUse 呼び出し、`--agent muse` で Muse Code の PreToolUse 呼び出し、`--agent deepseek-harness` で DeepSeek Harness の PreToolUse 呼び出し、`--agent grok` で Grok CLI の PreToolUse 呼び出し、`--agent opencode` で OpenCode のツール呼び出し。`--denial exit2` を付けると、拒否は終了コード 2 と stderr の理由のままになります。終了コードだけを読むホストのためです。`--protocol` を付けると、どのツールも番人のプロトコルを送って答えを読めます。[番人のプロトコル](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0039-the-guard-protocol.md)を見てください |
+| `hook --stop [--agent <name>]` | 守る | 停止チェック。stdin でターン終了のイベントを読み、変更されたファイルをチェックします。既定は Claude Code の Stop か SubagentStop のイベント、`--agent codex` で Codex の Stop イベント、`--agent muse` で Muse Code の Stop イベント、`--agent gemini` で Gemini CLI の AfterAgent イベント、`--agent grok` で Grok CLI の Stop イベント。ワーカーはタスクの done-when のコマンドも走らせます。[停止チェック](#停止チェック)を見てください |
+| `test [--heavy] [--print] [-- <runner words>]` | 守る | 他の作業と共有するマシンのために、テストを軽く走らせます（#461）。`node --test` を `nice -n 10`（Windows ではなし）の下で、`--test-concurrency` はコア数の半分以下かつ空きメモリ 1 GB につき 1 まで、最低 1 で走らせます。`--` のあとの語はランナーに渡ります。テストのファイルかそのオプションです。既定でオンです。`YOKOTEN_LIGHT_TESTS=0` はすべての呼び出しで、`--heavy` は一回だけ切ります。`--print` はコマンドと理由を示し、何も走らせません |
+| `stops [off \| on]` | 守る | `~/.config/yokoten/stops.jsonl` の停止ログと、yokoten がそれを書くかどうかを示します。`off` は書くのをやめてログを消し、`on` はまた始めます。ログはこのコンピューターに残ります。[停止チェック](#停止チェック)を見てください |
+| `ci-health [--repo <owner/name>] [--write] [--dry-run]` | マージと CI | Actions の直近 200 回の実行と、開いているプルリクエストのチェックを読み、報告を出力します。何も書きません。`--write` は固定された issue `CI health` を一つ更新し、`--dry-run` は報告だけを出力します |
+| `pr sync` | マージと CI | マージのあと、開いているプルリクエストをそれぞれ基底ブランチに追いつかせます。基底を取り込み、機械的な衝突を二つだけ解決します（両側が同じ場所にブロックを丸ごと足した、または両側が同じ import の一覧を変えた）。きれいに取り込めても解決しても、そのたびに型チェックと、触れたファイルのテストを走らせ、そのあとボットとして push します。それ以外は、ファイル、差分、ディスパッチのブリーフを添えて止まります。報告の各行は、取り込んだ基底を名指しします。開いている一覧は 100 件で止まり、止まったときは報告がそう言います。force push も rebase も GitHub 上での解決も決してしません。マージのたびに走らせてください。[エージェントをチームのように動かす](#エージェントをチームのように動かす)を見てください |
+| `bot -- <command>` | マージと CI | 一つのコマンド（`gh`、`git push`）を、決して出力しない一時間のトークンでボットとして走らせます。`gh issue` や `gh pr` の `create` か `edit` にタイトルがあるときは、CI のルールでタイトルをチェックします。悪いタイトルは拒否され、何も送られません。issue やプルリクエストのパスへの `gh api` も同じようにチェックします。`--body` か `--body-file` があると、`gh pr create` と `gh pr edit` は、`check --pr` の本文のルールで本文もチェックします。プルリクエストのブランチと、基底ブランチの CODEOWNERS に対してです。悪い本文も拒否され、何も送られません。最後の行が `🤖 Made with <agent> (<model>)`（一つ以上のカンマ区切りの組）でない本文も拒否されます。各プルリクエストは、それを作った各 AI とモデルを名指しするからです。その行には `reviewed by <agent> (<model>)` を一つ、または `and` でつないだレビュアー二人まで足せます。決して三人以上ではありません。コメント（`gh pr comment`、`gh issue comment`）、本文のあるレビュー（`gh pr review --body`）、新しい issue（`gh issue create --body`）も同じ行を持ちます。最後の行が `Made with` の行でない本文は拒否されます。`--attach` のある注意は拒否されます。アップロードが `Made with` の行より後ろに着くからです。編集（`gh pr edit --body`、`gh issue edit --body`）はそのままです。タイプかティアのラベルのない `gh pr create` にはそれらを足します。タイプはタイトルから（`fix` なら `bug`）、ティアは本文の `tier:` の行からです。`gh pr edit` も、新しいタイトルや本文について同じことをし、本文が新しいティアを設定したときは古いティアのラベルを外します。あなたが渡したラベルは残ります。本文と一致しないティアのラベルは、`check --pr` のメッセージとともに拒否されます。リポジトリが持たないラベルは注意で名指しされ、省かれます。ボットは決してラベルを作りません。`--milestone` のない `gh pr create` は、最初のリンクした issue（`Closes #N`、`Part of #N`）のマイルストーンを受け取ります。リンクした issue がどれも持たないときは拒否され、何も送られません。`--milestone` を足してください。gh が issue を読めないときは、プルリクエストは注意つきでマイルストーンなしに送られます。走らせるのは `gh` と `git` だけなので、`env gh …` や `sh -c …` は拒否されます。gh のエイリアスは読まないので、それを通して設定したタイトルはチェックされません。設定: [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md#3-the-bot-a-github-app) |
+| `train [<pr>...] [--wait <seconds>] [--next]` | マージと CI | 承認済みで緑のキューを、与えた順にボットとしてマージし、人が要る最初のプルリクエストで止まります。番号がなければ、衝突の地図の順に計画を出力するだけで、何もマージしません。マージするには番号を渡します。順番は、パスを動かす変更を最初に単独で、次に何ともぶつからない変更、次に多くとぶつかるもの、古い順です。最初のマージの前にすべての基底を記録するので、squash マージされたブランチの上に積んだプルリクエストは、そのブランチと本当に共有する基底からマージされます。import の行だけの衝突は和集合を取ります。本物の衝突、失敗するテスト、失敗する `check`、足りない承認は、列車を止めます。マージした各ツリーは push の前にテストされ、push したマージで CI が通らなければなりません。`--wait` は待つ長さ（既定は 1800 秒）を決めます。`--next` は次のプルリクエストとその理由を言い、何もマージしません。走らせるのはリードだけです |
+| `conflicts [--json] [--rebuild <id>]` | マージと CI | 開いているすべてのプルリクエストを、ホストがなければすべてのローカルブランチを読みます。どの変更が main と、また互いにぶつかるかを、やさしい言葉で言います。同じファイルに触れる組と、そのうちどちらを先にマージするかを名指しします。何もチェックアウトせず、何もマージしません。答えは git フォルダに保つので、番人は git を走らせずに読めます。`--json` は地図全体を、`--rebuild` は一つの変更を今の main の上に作り直すプロンプトを出力します |
+| `update [dir] [--write] [--all]` | 保守 | 既定では変わったルールごとに1行、`--all` は変わった行をすべて示します。この yokoten がプロジェクトの `AGENTS.md` の核心ルールに何を変えるかを示します。`--write` はそれを置き換え、「This project」の部分はそのまま保ちます。[ルールを更新する](#ルールを更新する)を見てください |
+| `upgrade` | 保守 | yokoten 自身を最新の版にします。Claude Code のプラグインがオンのときは、マーケットプレイス、続いてプラグインを HTTPS で更新するので、SSH 鍵は要りません。足すことも消すこともしません。プラグインがないときは `npx yokoten@latest` を名指しします |
+| `changelog [--write]`、`changelog --notes <バージョン>` | 保守 | `changes/` のファイルが `[Unreleased]` の下に足す項目を示します。`--write` はそれらを `CHANGELOG.md` に入れてファイルを消します。`--notes` はそのバージョンのリリースノートを `CHANGELOG.md` の節から作るので、二度書く必要がありません。リリースの前に走らせてください。[変更履歴](#変更履歴)を見てください |
+| `learn <issue> [--write] [--all]` | 保守 | 既定では一画面で、`--all` は issue が空けたままのフィールドと、下書きが書くファイルをすべて示します。インシデントの issue からチェックを下書きし、人がレビューします。`--write` は `lessons/` にファイルを足します。[インシデントから学ぶ](#インシデントから学ぶ)を見てください |
+| `learn --ship <id>` | 保守 | yokoten で: レビュー済みの教訓を `kit/lessons/` のグループに移し、そこから走る yokoten の `doctor` がすべてのプロジェクトでそれを走らせます。`TODO(reviewer)` が残っていたり、そのテストが失敗したりする間は拒否されます |
+| `learn --export <id> [--out <file>]` | 保守 | レビュー済みの教訓を、インシデントと陽性の対照つきの小さな JSON ファイル一つとして、非公開の詳細なしで書きます。`--out` は出力せずにファイルへ書きます |
+| `learn --import <file> [--write]` | 保守 | 別のプロジェクトの教訓ファイルを示します。`--write` はレビューのために `lessons/` に足します。`learn --ship` までは何も走りません |
+| `learn --upstream "<what happened>" [--area <name>] [--fix <idea>]` | 保守 | yokoten 自身の隙間についての注意を、プロジェクトとあなたを隠して保ちます。`--list` は注意を一覧し、`--done <id>` は一つを消します。[yokoten 自身のための教訓](#yokoten-自身のための教訓)を見てください |
+| `uninstall [--list]` | 保守 | `install` が書いたものを取り消します。yokoten が管理すると印を付けた入口スキルとエージェント、Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code の設定にあるフック、OpenCode のプラグイン、`~/.local/share/yokoten` です。非公開の印と mailmap のファイルは、`install` の見出しだけのときに消します。`install` が作ったフォルダと git の設定ファイルは、空のときに消します。`install` の前からあったフォルダは残ります。あなた自身のファイル、編集、設定は残ります。止めた記録は消えます。二回目の実行は何も変えません。`--list` は、消すファイルと残すファイルをすべて挙げます |
+| `tidy [--local \| --empty [--yes]] [--json]` | 保守 | 引数なしでは古いものを、できることごとに並べます。マージ済みかリモートで消えたブランチ、作業の残っていないワークツリーとデスク、消えたデスクのログです。各行に理由と大きさを書き、何も変えません（`--json` は一覧をデータとして出力します）。`--local` はまず一つずつ保存し（ブランチは bundle、未コミットの変更は patch、それに `index.json`）、そのあと `~/.local/state/yokoten/trash` の日時つきフォルダーへ移します。保存が一つでも失敗したら何も移しません。使用中のデスクやワークツリーには触れません。GitHub 上のブランチは一覧に出すだけです。`--empty` は一度たずねてから、7 日を過ぎたごみ箱のフォルダーを消します。端末がないときは `--yes` が要ります |
 
 各コマンドは `--help` か `-h` で自分のヘルプを出力します。何をするか、オプション、例一つです。`yokoten help <command>` も同じものを出力します。`yokoten help` は最初に使う四つのコマンド `desk`、`kanban`、`check`、`tidy` を一覧し、`help --all` はすべてのコマンドを一覧します。移ったコマンドも走り、まず stderr に移った先を一行で言います。`yokoten version`（または `--version`、`-v`）はバージョンを出力します。ヘルプは何も変えず、0 で終わります。打ち間違いには、yokoten が一番近いコマンドかオプションを名指しします。`yokoten docter` は `unknown command docter` と言い、続けて `Next: \`yokoten doctor\`, if you meant it; \`yokoten help\` lists every command` と出します。`bot --` のあとは、すべての語がそれが走らせるコマンドのものです。だから `yokoten bot -- gh --help` は `gh --help` を走らせます。
 
 `check`、`doctor`、`hook`、`explain`、`adopt` は `--json` を受け取ります。すると stdout は JSON だけを持ち、エージェントやスクリプトのためのものになります。エラーも JSON です。使用法のエラーやクラッシュは `{ command, ok: false, error }` を出力して終了コード 1 になり、メッセージはまだ stderr へ行きます。各指摘は同じフィールドを持ちます。`id`、`what`、`why`、`fix`、`docs`（ガイドがルールを説明しているときのリンク）、そしてファイルの中なら `file` と `line` です。`yokoten explain <id>` はその `id` を取ります。どのフィールドも非公開の値を持ちません。
 
 - `check --json`: `{ check, ok, findings, notes }`。`check` は `tree`、`staged`、`history`、`pr`、`issue` のどれかです。注意がチェックを失敗させることは決してありません。CI の実行にプルリクエストも issue もないとき、`check --pr` と `check --issue` は ok で、`skipped` に理由を足します。
-- `doctor --json`: `{ version, ok, selfTest, repo, stage, stages, next, findings, steps, notes, server, lessons }`。教訓の指摘は `notes` にあります。新しい教訓は `isNew: true` を持ちます。`--session` では、次のステップ、非公開の印の指摘、そしてルールが遅れているときの `core-rules` だけです。そのとき `notes` は、このマシンだけで作業する件と、セッションが今聞いた教訓の指摘（あれば）を持ちます。
+- `doctor --json`: `{ version, ok, selfTest, repo, stage, stages, next, findings, steps, notes, server, lessons }`。`selfTest` は `{ ok, failed, ran, skipped, reason? }` です。`ok` はチェックが一つも失敗しなかったことを意味します。コントロールが一時フォルダを作れず走らなかったときは、`ran` が false になり、`skipped` と `reason` が付きます。教訓の指摘は `notes` にあります。新しい教訓は `isNew: true` を持ちます。各ステップは `source`（`files`、`host`、`machine` のどれか。何から判断するか）と `title`（ステップを普通のタスクとして書いたもの）を持ちます。`--files` も同じキーを持ち、`files` のステップだけを含みます。`--session` では、次のステップ、非公開の印の指摘、そしてルールが遅れているときの `core-rules` だけです。そのとき `notes` は、このマシンだけで作業する件と、セッションが今聞いた教訓の指摘（あれば）を持ちます。
 - `hook --json`: 止めるとき `{ blocked: true, finding }`、通すとき `{ blocked: false, toolCall: true }`、stdin がツール呼び出しでないとき `{ blocked: false, toolCall: false }`。実行環境はこれを使いません。フックのプロトコルが言うとおり、終了コードと stderr の理由を読みます。
 - `hook --stop --json`: `{ blocked, stop, findings }`。リードでは、`stop_hook_active` が `skipped` に理由を足します。ワーカーはそのフィールドがあってもチェックされます。チェック自体が失敗したときも `skipped` がそう名指しします。ワーカーの done-when チェックが失敗したときは `doneWhen` もです。試行の上限のあと、`skipped` は `stopped with failing checks` です。その停止は、リンクしたワークツリーの `.yokoten-agent.json` に `checks` を `failing` として書きます。そこの通過は `checks` を `passing` にします。stdin が Stop イベントでないときは `{ blocked: false, stop: false }`。
 - `explain --json`: `{ found, id, kind, what, why, check, docs, stage, standard }`。知らない id では `{ id, found: false, ids }` で終了コード 1。id なしでは `{ ids }` で終了コード 0。
@@ -594,17 +682,14 @@ CI では、何が失敗したかを見るのにログを開く必要はあり�
 
 ### マシンについての注意
 
-マシン上のいくつかの問題は、すべてのエージェントのセッションを止め、エージェントには見えません。完全な `doctor` はそれらを `machine:` の下に注意として一覧します。注意が終了コードを変えることは決してありません。[記録 0012](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0012-machine-checks.md) が、doctor がどの問題を探すかと、なぜかを書いています。
+マシン上のいくつかの問題は、すべてのエージェントのセッションを止め、エージェントには見えません。完全な `doctor` はそれらを `machine:` の下に注意として一覧します。注意が終了コードを変えることは決してありません。[記録 0012](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0012-machine-checks.md) が、doctor がどの問題を探すかと、なぜかを書いています。
 
 - **disk-space**: リポジトリのあるディスクの空きが少ない。満杯のディスクはすべてのセッションを止めます。doctor は 20 GB を下回り、かつディスクの 10% を下回るときに警告します。`YOKOTEN_MIN_FREE_GB` で別の上限にし、`0` で警告を切れます。セッションもこの注意を聞きます。
-- **host-disk**、WSL 2 でだけ: Linux のディスクファイルのある Windows のドライブ。WSL の中では、`df` はディスクファイルの大きさを見せ、そのドライブの空きは見せません。完全な `doctor` は `reg.exe` を通してドライブを読み、多くても 3 秒待ちます。読み取りは `~/.config/yokoten/machine.json` に保ちます。セッションはプログラムを走らせません。最後の読み取りが低く、それが 7 日以内なら、それを繰り返します。ドライブをもう一度読むには `yokoten doctor` を走らせてください。`WSL_DISTRO_NAME` がないと（`sudo` の下など）、doctor はドライブを見つけられず、何も言いません。VM のディスクファイルは大きくなるだけです。VM の中でファイルを消しても、Windows のドライブは空きません。だから注意はこう言います。まず作業を別のドライブにバックアップしてください。そのあと Windows のドライブを空けるか、[Microsoft のガイド](https://learn.microsoft.com/windows/wsl/disk-space)でディスクファイルを縮めるか移してください。yokoten は WSL の疎なモードを勧めません。WSL が安全でないと印を付けるからです。
+- **host-disk**、WSL 2 でだけ: Linux のディスクファイルのある Windows のドライブ。WSL の中では、`df` はディスクファイルの大きさを見せ、そのドライブの空きは見せません。完全な `doctor` は `reg.exe` を通してドライブを読み、多くても 3 秒待ちます。読み取りは `~/.config/yokoten/machine.json` に保ちます。セッションはプログラムを走らせません。最後の読み取りが低く、それが 7 日以内なら、それを繰り返します。ドライブをもう一度読むには `yokoten doctor` を走らせてください。`WSL_DISTRO_NAME` がないと（`sudo` の下など）、doctor はドライブを見つけられず、何も言いません。VM のディスクファイルは大きくなるだけです。VM の中でファイルを消しても、Windows のドライブは空きません。だから注意はこう言います。まず作業を別のドライブにバックアップしてください。そのあと Windows のドライブを空けるか、[Microsoft のガイド](https://learn.microsoft.com/windows/wsl/disk-space)でディスクファイルを縮めるか移してください。yokoten は WSL の疎なモードを勧めません。WSL が安全でないと印を付けるからです。保った読み取りが低いときは、ビルド、テストスイート、パッケージのインストール、コンテナのビルドが始まる前に、ツール呼び出しの番人が尋ねます。Claude Code は質問を見せ、ほかのエージェントは同じ言葉を注意として受け取ります。番人がこれを拒否することは決してなく、読むのは保った読み取りだけです。
 - **agent-temp-dir**: Claude Code の一時フォルダ `claude-<uid>` を別のユーザーが所有している。フォルダは `CLAUDE_CODE_TMPDIR`、なければ `TMPDIR`、既定では `/tmp` にあります。root のプロセスが先にフォルダを作ったとき（再起動のあとなど）に起こります。すると Claude Code は始まりません。注意は引用符つきで `sudo rm -rf '<folder>'` を出力します。あなた自身で走らせてください。doctor は決して何も消しません。
 - **leftover-temp-folders**: 一時フォルダにある一日より古い `yokoten-*` のフォルダ。テストの実行がそれらを残し、何千もたまるとディスクが満杯になります。完全な `doctor` がそれらを数えます。大きさは足し上げないので、速いままです。注意は古いものだけを消す `find ... -exec rm -rf` のコマンドを出力します。あなた自身で走らせてください。doctor は決して何も消しません。
 - **node-security**: yokoten を走らせる Node に、2026-10-21 のセキュリティ修正がない。その系統の修正（22.23.4、24.22.1、26.12.1）より古いリリースには知られた穴があります。修正が来なくなった系統（23、25、22 より下など）はサポートされません。注意は入れるべきバージョンを名指しします。完全な `doctor` でだけ、そして決して失敗にはしません。
 
-### トラブルシューティング
-
-**エージェントが始まらない。** そのときは理由を言えません。プロジェクトのターミナルを開き、`npx yokoten doctor` を走らせてください。`machine:` の下の行を読んでください。満杯のディスクと、root が所有する一時フォルダがよくある原因です。各注意が、直すコマンドを出力します。
 ### 停止チェック
 
 ツール呼び出しのフックはコマンドを読みます。`sed` やスクリプトが変えたファイルは見えません。コミットチェックはそれを見ますが、コミットのときだけです。停止チェックはもっと早く走ります。エージェントがターンを終えようとするときです。Claude Code、Codex、Muse Code、Grok CLI では Stop イベント、Claude Code では SubagentStop、Gemini CLI では AfterAgent です。
@@ -634,7 +719,9 @@ flowchart LR
 - サブエージェントは、その種別がワーカーのときだけチェックされます。親セッションの役割は数えません。ワーカーが始めたレビュアーはチェックされません。その停止は 0 で終わります。種別がワーカーなのは、`worker` のとき、または `:worker` で終わるときだけです。`coworker` と `code-worker` はワーカーではありません。そのようなエージェントには `worker` と印を付けるか、`:worker` で終わる名前を使ってください。レビュアー、Explore エージェント、検証役はチェックされません。
 - リードでは、エージェントを一度だけ送り返します。エージェントはそのあと `stop_hook_active` を設定し、次の停止は必ずターンを終えます。ループはありません。
 - ワーカーでは、タスクの done-when のコマンドも走らせます。コマンドは `YOKOTEN_DONE_WHEN`、またはワークツリーの git フォルダの `yokoten-done-when` から来ます。両方あるときは環境変数が勝ちます。ブリーフにないときは、変更されたファイルのチェックがプロジェクトのチェックです。
-- コマンドはその環境のシェルを使います。Linux と macOS では `sh`、Windows では `cmd.exe` です。二分会走ることがあります。タイムアウトでは、yokoten はコマンドと、それが始めたすべてのプログラムを止めます。Windows では、シェルがまだ走っている間にその木を止めます。
+- コマンドはその環境のシェルを使います。Linux と macOS では `sh`、Windows では `cmd.exe` です。二分会走ることがあります。終わったとき、または時間が尽きたとき、yokoten はコマンドと、それが始めたプログラムを止めます。
+- Windows では、Windows PowerShell があれば `cmd.exe` をジョブの中で走らせます。ジョブを閉じると、`cmd.exe` が終わったあとでもそれらのプログラムが止まります。コマンドは `-EncodedCommand` でホストに届くので、チェック自身のテキストと引用符はそのままです。マシンのセキュリティポリシーが、短いジョブのスクリプトをコンパイルする `Add-Type` を止めることはありえます。PowerShell がない、止められている、チェックを始める前に止まる、またはジョブを作れないときは、チェックは `cmd.exe` だけで走り、stderr に理由を言います。そのとき、取り残されたプログラムは走り続けることがあります。チェックを始めたあとで止まったホストは検出されず、その終了コードがチェック自身のものと読まれます。二分の持ち時間には、そのホストの起動も含まれます。
+- 自分のセッションをすでに始めたプログラムは止まりません。`setsid` が始めます。同じセッションの新しいプロセスグループは、Linux では止まります。macOS では `ps` がセッションの id を返さないので、チェック自身のプロセスグループだけが止まります。
 - 失敗したチェックはワーカーを送り返し、出力を短く、何を直すかとともに渡します。ワーカーには三回の試行があります。三回目で、フックは次の停止を通すと言います。ワーカーのリードへの最後のメッセージは `NOT DONE: checks failing` で始まらなければなりません。失敗した出力を引用しなければなりません。タスクは done ではありません。
 - 許された停止は、リンクしたワークツリーのルートに `.yokoten-agent.json` を書きます。メインのチェックアウトではそのファイルを書きません。`checks` を `failing` に、`updated` を UTC の時刻にします。通過は `checks` を `passing` にします。ほかのフィールドは残ります。リードがそのファイルを読みます。カンバンは `checks` をコミットチェックとして示します。許された停止の stderr は誰にも届きません。yokoten が読めない状態ファイルは変えずに残し、停止チェックが理由を言います。
 - 試行回数を保存できないときは、一度の拒否が次の停止を通すと言います。同じワーカーは、過去 5 分に拒否されていても通されます。実行環境が `stop_hook_active` を決して設定しないときもです。ワーカーが罠にかかることは決してありません。回数はチェックが通ったとき消え、ワーカーが通されたときにもまた消えます。再開したワーカーは試行 1 からチェックされます。一日より古い回数のファイルは、新しい回数を書くときに消します。
@@ -644,6 +731,8 @@ flowchart LR
 - 履歴を読まず、ネットワークを使いません。
 - yokoten のエラーでは、ターンが終わり、stderr に一行が出ます。
 - チェックから外したい新しいファイルは `.gitignore` か、`yokoten.json` の `privacy.skip` に入れます。
+
+停止はそれぞれ、このコンピューターのログにも書かれます。番人がツール呼び出しを止めたとき、または停止チェックがエージェントを送り返したとき、yokoten は `~/.config/yokoten/stops.jsonl` に一行を書きます。行には、UTC の時刻、エージェントの実行環境、役割、ルール、そして答えがあります。答えは `refused`、`allowed once`（試行のあとワーカーが通された）、`no answer`（番人が呼び出しを読めなかった）のどれかです。コマンドはプライバシーフィルターで隠してからだけ、しかも最初の行だけを書きます。編集はパスもファイルのテキストも書きません。ファイルはこのコンピューターに残り、yokoten はどこにも送りません。5 MB を超えると古い行から消えます。`yokoten stops off` は書くのをやめてログを消し、`yokoten stops on` はまた始めます。`yokoten uninstall` もログを消します。
 
 `init` はフックを `.claude/settings.json`（Stop と SubagentStop）、`.codex/hooks.json`（Stop）、`.muse/hooks.json`（Stop）、`.gemini/settings.json`（AfterAgent）、`.grok/hooks/yokoten.json`（Stop）に足します。Claude Code、Codex、Muse Code、Grok CLI は 600 秒待ちます。Gemini CLI は 600000 ミリ秒待ちます。`install` はユーザーレベルでは足しません。ファイルを読むので、ツール呼び出しのフックのファイルのルールと同じく、各プロジェクトがオンにします。
 
@@ -672,6 +761,13 @@ flowchart LR
 
 番人はコマンドのテキストを読みます。スクリプト、`make` のターゲット、npm のスクリプト、シェル関数が走らせるプログラムは見えません。止めたい各版を名指ししてください。`python3.12` は `python3` ではありません。
 
+セーフガード自身の拒否は設定ではなく、固定です。ホームやシステムの消去、ディスクのコマンド、root です。そのうち二つは意外かもしれません。
+
+- 番人が読めない対象の消去は拒否されます。`$OUT_DIR` や `$(pwd)` などです。代わりに、素のパスでフォルダを名指ししてください。
+- ディスクのツールは、読むだけでも拒否されます。`fdisk -l`、`parted -l`、`diskutil list`、`gpt -r show disk0` です。オーナーに走らせてもらってください。
+
+コマンドが走るフォルダはプロジェクトと数えるので、そこでは `rm -rf dist` が通ります。
+
 ### yokoten.json
 
 リポジトリのルートの `yokoten.json` がプロジェクトの設定を持ちます。どのキーも任意です。キーがない、キーが `null`、ファイルがない、のどれでも既定になります。
@@ -687,6 +783,7 @@ flowchart LR
 | `areas` | 語の一覧 | 小文字の任意の語 |
 | `translations` | `{ "fail": true }` | `false` |
 | `commands` | `{ "block": { "<program>": "<reason>" } }` | 止めるプログラムなし |
+| `worker` | `{ "timeLimitMinutes": 180, "settings": ["SCREENS_OUT"] }`: 0 より大きい整数と、設定名の一覧 | 180 分、追加の設定なし |
 
 yokoten は各キーをこの表と、一か所で照らします。
 
@@ -750,6 +847,54 @@ Fixed
 1 行目の古い形は英語の blob を足します。`<!-- source: docs/guide.md blob 3b18e512dba79e4c8300dd08aeb37f8e728b8dad -->` です。`check` はまだそれを読みます。英語のテキストと同じ blob なら現在です。そうでなければコミットが決めます。blob はいつでも落とせます。
 
 浅いクローンは新しいコミットだけを持ちます。それで分かるなら、`check` はいつもどおり答えます。見える英語だけのコミットは「少なくとも」その数だけ遅れています。分からないときは、`check` は実行全体に一つの注意を出します。注意はチェックされなかった翻訳の数を言い、ファイルごとの注意はありません。その注意は `"fail": true` でも決して失敗しません。`check` は決してフェッチしません。CI では `fetch-depth: 0` を使います。キットの `yokoten.yml` はそうしています。
+
+### 借りたコード
+
+記録 0024 は、yokoten が別のプロジェクトからコードをコピーしてよい場合を決めています。コピーした一片を**ホイール**と呼びます。ホイールは `src/borrowed/` に置き、依存としては決して持ちません。小さく、必要な部分だけにします。その下のコードはプロジェクト自身のものではないので、読む人は出どころを見られなければなりません。
+
+コピーしてよいのは、寛容なライセンスのものだけです。MIT、BSD-2-Clause、BSD-3-Clause、ISC、Apache-2.0 です。ほかのライセンスには、クリーンルームの道を使います。一つのエージェントがコードのすることを書き、そのソースを見ていない別のエージェントがコードを書きます。
+
+どのホイールも、コードより前に、コメントのヘッダーで始まります。
+
+```ts
+// source: https://github.com/example/upstream/blob/3f2a1c9d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f/src/thing.ts
+// commit: 3f2a1c9d0e8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f
+// license: MIT
+// copyright: Copyright (c) 2026 Example Authors
+// changes: renamed readThing to parseThing
+```
+
+| フィールド | 必要 | 持つもの |
+|-------|--------|---------------|
+| `source` | 常に | 上流のファイルの URL。`github.com/<owner>/<repo>/blob/...` のリンク |
+| `commit` | 常に | コードを取った 40 文字の完全なコミット sha |
+| `license` | 常に | SPDX の名前: `MIT`、`BSD-2-Clause`、`BSD-3-Clause`、`ISC`、`Apache-2.0` |
+| `copyright` | 常に | 上流の著作権表示を、一語も変えずに |
+| `notice` | Apache-2.0 | 上流の NOTICE のテキスト |
+| `changes` | いいえ | 私たちが変えたこと。読む人が、私たちの編集と上流のものを見分けられるように |
+
+各フィールドは一行です。`// field: value` の形です。ヘッダーはコードより前に置きます。数えるのは最初のコメントブロックだけです。フィールドが二度書かれたときは、最初のものが勝ちます。
+
+`yokoten check` は、`src/borrowed/` のすべてのファイルのヘッダーを、ツリー全体と、これから作るコミットの中で読みます。足りないフィールドごとに、ファイルと足す行を報告します。ヘッダーが悪いコミットは通りません。GitHub のファイルへのリンクでないソース、完全な sha でないコミットも拒否します。監視が読むのは `github.com/<owner>/<repo>/blob/...` だけなので、チェックはほかのホストを直し方つきで拒否します。
+
+上の五つの外のライセンスは、ヘッダーが完全でも拒否します。直し方は `use the clean-room road in record 0024` です。チェックが知らないライセンス名も同じです。
+
+`borrowed` ワークフローは、毎週月曜に `yokoten borrowed` を走らせます。ホイールごとに、コマンドは GitHub に、上流の既定ブランチでそのソースファイルに触れたコミットを尋ねます。私たちが取ったコミットより新しいコミットがあれば、上流は動いたことになります。
+
+コマンドが開く issue は、ファイルごとではなく**ソースごとに一つ**です。そのソースをすでに名指しする開いた issue を探すので、あとの実行は何も足しません。ホストが開いている issue を一覧できないときは、実行はエラーで止まり、二つ目の issue は決して開きません。issue には、ローカルのファイル、私たちが取ったコミット、上流の新しいコミットが並びます。コミットメッセージがセキュリティの修正を名指しするものには、タイトル `check: take a borrowed security fix` が付きます。ほかの変更は `check: review borrowed code upstream` です。
+
+ソースを共有するファイルが別のコミットを取っているときは、コマンドが一つずつ比べます。取ったコミットがホストの返す一覧にないときは、一覧のコミットをすべて新しいと見なさず、日付を比べます。そのファイルに触れたことのないスナップショットのコミットは、issue を開きません。ホストが一覧も日付も返せないときは、そのソースは隙間です。
+
+ホストが答えられないソースは、通過ではなく隙間です。ジョブはどのソースかを言って失敗するので、沈黙が「上流は変わらなかった」と読まれることはありません。issue を開かずに報告を見るには、`yokoten borrowed --dry-run` を走らせます。
+
+上流がバグを直したら、新しいコミットを取ります。`source` と `commit` を更新し、私たちの `changes` をもう一度当て、テストを通します。変更が使っている部分に触れないときは、issue にそう書いて閉じます。ホイールを使うのをやめるには、ファイルを消します。戻る道は出る道でもあります。コードは小さく、テストが何をしなければならないかを示します（記録 0014）。
+
+コマンドによっては、`git` や `gh` のように、別のプロジェクトのプログラムを走らせます。yokoten はそのコードを一切コピーせず、依存として一覧もしません。バージョンはコードに固定されています。
+
+| プログラム | 使う人 | バージョン | ライセンス | 入手先 |
+|---------|---------|---------|---------|---------------------|
+| [sandbox-runtime](https://github.com/anthropics/sandbox-runtime)（`srt`）、Anthropic | `yokoten desk`、囲い | 0.0.81、`src/agents/desk/fence/srt.ts` にある | Apache-2.0 | そのバージョンの PATH の `srt`、なければ `npx` |
+
 ### ルールを更新する
 
 yokoten が教訓を学ぶと、核心ルールが変わります。`yokoten install` はあなたのマシンのスキルとエージェントを更新します。あなたのプロジェクトの `AGENTS.md` はあなたのファイルなので、あなたが頼んだときだけ変わります。`## This project` が一度できると、`init` は決してそれに触れません。
@@ -814,10 +959,13 @@ issue にその節がないフィールドは `TODO(reviewer)` になり、決�
 
 ```
 Project:
-  note        lesson incident-138: test/api.test.ts: a test calls a server on this machine and does not set NO_PROXY; set NO_PROXY and no_proxy to 127.0.0.1,localhost while the test runs, then put the old values back
+  note        lesson incident-138: test/api.test.ts: a test calls a server on
+              this machine and does not set NO_PROXY; set NO_PROXY and no_proxy
+              to 127.0.0.1,localhost while the test runs, then put the old
+              values back
 ```
 
-プロジェクトの完全な `doctor` が新しい教訓を初めて走らせたときは、一度だけそう言います。何も見つけない教訓は `note    a new check ran: ok (incident-138); doctor now runs it in this project` と言います。問題を見つけたものは `note    new lesson: incident-138 (<what>); doctor now runs it in this project` と言い、そのあと問題を出します。見た教訓は `.git/yokoten/state.json` に保つので、そのファイルがコミットされることは決してありません。
+プロジェクトの完全な `doctor` が新しい教訓を初めて走らせたときは、一度だけそう言います。何も見つけない教訓は `note        a new check ran: ok (incident-138); doctor now runs it in this project` と言います。問題を見つけたものは `note        new lesson: incident-138 (<what>); doctor now runs it in this project` と言い、そのあと問題を出します。見た教訓は `.git/yokoten/state.json` に保つので、そのファイルがコミットされることは決してありません。
 
 セッションの開始も、ここで問題を見つけたときは、新しい教訓を一度だけ聞きます。一行で、どこを見るかのコマンドを名指しします。``yokoten: a new lesson learned in another project found a problem here: <what>. Run `yokoten doctor` to see where.`` あとのセッション、または圧縮のあとの同じセッションは、もうそれを聞きません。セッションは各新しい教訓を一つの開始でだけ走らせ、どれを走らせたかを同じファイルに保つので、あとの開始はそれに時間を使いません。あとで出てくる問題は、完全な `doctor` が報告します。
 
@@ -863,10 +1011,12 @@ yokoten のリポジトリでは、セッションの開始と `doctor` が、�
 | `allowBuild` | なし | コミットチェックが通すビルドの出力とバイナリ |
 | `areas` | 任意 | タイトルが名指ししてよい領域。[issue のタイトル](#issue-のタイトル)を見てください |
 | `translations.fail` | `false` | 元より遅れた翻訳がチェックを失敗させる |
+| `worker.timeLimitMinutes` | `180` | ランナーやデスクが始めたワーカーは、この分数がたつと止まる |
+| `worker.settings` | なし | ワーカーがコマンドの前に付けてよい環境の設定。テストの出力ファイルなどです。`["SCREENS_OUT"]` のように書きます。フォルダを動かしたり別のコードを走らせたりする名前（`PATH`、`HOME`、`GIT_*`、`LD_*`、`NODE_OPTIONS` など）は設定のエラーになり、その一覧は追加の名前を与えません |
 
 #### 大きくなってよいフォルダ
 
-核心ルール 10 は、各フォルダを 7 項目以下に保ちます。二種類のフォルダはそれを超えて育ってよく、`changes/` と `.worktrees/` は常に育ってよいです。
+核心ルール 10 は、各フォルダを 7 項目以下に保ちます。上限はリポジトリが yokoten.json の `layout` キーで選びます。`yokoten init` が一つ書きます。キーがないと、`check` は幅の広いフォルダを一つの注意に並べ、失敗にはしません。二種類のフォルダはそれを超えて育ってよく、`changes/` と `.worktrees/` は常に育ってよいです。
 
 - **記録**、たとえば `docs/records`。各項目は一度足され、保たれます。
 - **第三者のフィクスチャの一式**で、テストが読むもの。上流の名前のまま、`NOTICE` をそばに置いて保ちます。テスト、`NOTICE`、上流のバグ報告は、ファイルをその名前で見つけます。フォルダにすると、各検索と上流からの更新が難しくなります。
@@ -890,15 +1040,98 @@ yokoten のリポジトリでは、セッションの開始と `doctor` が、�
 | `YOKOTEN_RELEASE_APPROVAL=1` | オーナーがこのセッションからのリリースを許す。Muse Code がフックに渡すかは分かっていない |
 | `YOKOTEN_PRIVATE_MARKS` | 二つ目の非公開の印のファイル。印は `~/.config/yokoten/private-marks` のものに足され、そのファイルを置き換えることは決してない。[プライバシー](#プライバシー)を見てください |
 | `YOKOTEN_MIN_FREE_GB` | 空きがこれより少ないディスクに `doctor` が注意する。GB 単位。`0` で注意を切る。[マシンについての注意](#マシンについての注意)を見てください |
-| `YOKOTEN_BOT_APP_ID`、`YOKOTEN_BOT_KEY`、`YOKOTEN_BOT_INSTALLATION` | ボット。`~/.config/yokoten/keys.env` の行にもできる。[server.md](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/server.md#3-the-bot-a-github-app)を見てください |
+| `YOKOTEN_BOT_APP_ID`、`YOKOTEN_BOT_KEY`、`YOKOTEN_BOT_INSTALLATION` | ボット。`~/.config/yokoten/keys.env` の行にもできる。[server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md#3-the-bot-a-github-app)を見てください |
 | `YOKOTEN_GITHUB_API` | 別の GitHub API のアドレス。GitHub Enterprise Server など |
 | `YOKOTEN_PR_LIVE=1` | `check --pr` が、イベントのファイルではなく、`GITHUB_TOKEN` でプルリクエストのタイトル、本文、ラベル、マイルストーンを今のまま読む。読めないときは失敗する。キットの `pr.yml` が設定する |
 | `LLAMA_API_KEY` か `MODEL_API_KEY`、`LLAMA_API_BASE`、`LLAMA_MODEL` | `adopt` のモデル。[表の最初の下書き](#表の最初の下書き)を見てください |
 
 
+## どのエージェントでも動く MCP サーバーを出荷する
+
+MCP サーバーは、多くのエージェントが始める一つのプログラムです。エージェントごとにツールの一覧の読み方が少しずつ違います。あるエージェントが受け入れるスキーマで、別のエージェントはユーザーに何も言わずにツールを落とすことがあります。
+
+`yokoten mcp` はあなたのサーバーを stdio で始め、ツールの一覧を読みます。落とし穴ごとに、何が、なぜ、どう直すかを報告します。リリースの前と、CI のテストのそばで走らせてください。
+
+```sh
+yokoten mcp
+yokoten mcp --json
+yokoten mcp --command "node src/server.ts"
+```
+
+プロジェクトのルートの `.mcp.json`、`.vscode/mcp.json`、`mcp.json` を読みます。各 stdio サーバーを始め、`initialize`、続けて `tools/list` を呼びます。終わると各サーバーを止めます。HTTP のサーバーは名指しして飛ばします。このチェックが始めるのは stdio のサーバーだけです。
+
+### チェックするもの
+
+| 落とし穴 | チェックが探すもの | 直し方 |
+|---|---|---|
+| Claude が拒否するスキーマ | ルートの `anyOf`、`oneOf`、`allOf` | ルートのオブジェクトの一つのプロパティの下に、枝を置く |
+| Gemini が拒否するスキーマ | `$ref` か `$defs`、型の一覧、`items` のない配列 | スキーマをその場に書き、型は一つにして、`items` を足す |
+| OpenAI の strict モード | `required` にないプロパティ | すべてのプロパティを `required` に足す |
+| 落とされるプロパティ | `[A-Za-z0-9_.-]` の外のプロパティ名、または 64 文字より長い名前 | 名前を変える |
+| 落とされるツール | 64 文字より長いツール名 | 短くする |
+| クライアントが決して見せないツール | 40 個以上のツール | ツールをまとめるか、39 個以下にする |
+| クライアントが制御できないツール | `readOnlyHint`、`destructiveHint`、`idempotentHint`、`openWorldHint` のどれかがない | 四つすべてを `true` か `false` で設定する |
+| Cursor での空の答え | `outputSchema` があり、`structuredContent` だけを返すツール | テキストの content 項目も返す |
+| 壊れるセッション | JSON-RPC でない、UTF-8 でない、または CRLF で終わる stdout の行 | ログは stderr に書き、UTF-8 で書き、各行を LF で終える |
+| Windows で決して始まらないサーバー | `npx` や `bar.cmd` のような設定のコマンド | `cmd /c` を通して始める |
+| 答えないサーバー | `initialize` や `tools/list` に返事がない | 手で走らせ、stderr が言うことを直す |
+
+チェックはツールの数、ツール定義の合計の大きさ、一番長い説明を報告します。大きなツールの一覧は、毎ターン、すべてのクライアントのコンテキストを使います。各ツールを小さく、説明を短くしてください。
+
+### outputSchema のルール
+
+ツールは `outputSchema` を宣言できます。それを理解するクライアントは `structuredContent` を読みます。ほかのクライアントはテキストの content だけを読みます。片方だけの結果は、どこかで空に見えます。
+
+両方を返してください。
+
+```json
+{
+  "structuredContent": { "reply": "ok" },
+  "content": [{ "type": "text", "text": "ok" }]
+}
+```
+
+`yokoten mcp` がツールを呼ぶのは、試しても安全なときだけです。ツールが `readOnlyHint: true` を設定し、`outputSchema` を宣言し、引数が要らないときです。ほかのツールには触れません。チェックは、いくつ読んだかを言います。
+
+### Windows
+
+Windows は、Unix のシェルのようには `npx` や `.cmd` ファイルを始められません。それを名指しする設定の項目には `cmd` が要ります。
+
+```json
+{
+  "mcpServers": {
+    "demo": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "demo-mcp"]
+    }
+  }
+}
+```
+
+チェックはそのような項目を警告します。警告がチェックを失敗させることはありません。同じプロジェクトが、Windows でないマシンで動くこともあるからです。
+
+### stdout は JSON-RPC だけのもの
+
+クライアントは stdout を、JSON-RPC メッセージの流れとして読みます。ログの一行、進捗バーの一つ、復帰文字の一つが、すべてのクライアントのセッションを壊します。
+
+- ログは stderr に書く。
+- 一行に JSON-RPC のメッセージを一つ書く。
+- 各行は CRLF ではなく、改行（LF）で終える。
+- 書くのは UTF-8 だけ。cp1252 のような Windows のコードページは名前を壊す。
+
+### CI で
+
+テストのあとに、このチェックを足します。
+
+```sh
+yokoten mcp --json
+```
+
+ツールがルールを破ると、終了コード 1 になります。サーバーがきれいなとき、またはプロジェクトに MCP の設定がないときは、終了コード 0 です。Windows の警告は報告されますが、終了コードを変えません。
+
 ## 核心ルール
 
-理由つきの完全な表は、[`kit/project/AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/kit/project/AGENTS.md) にあります。
+理由つきの完全な表は、[`kit/project/AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/kit/project/AGENTS.md) にあります。
 
 1. すべての作業は issue として始まる。todo ファイルはない。
 2. プルリクエストと緑の CI なしで `main` に届くものはない。
@@ -913,11 +1146,26 @@ yokoten のリポジトリでは、セッションの開始と `doctor` が、�
 11. リポジトリの中にも、yokoten が出力するものにも、人を指すものや秘密情報はない。
 12. 決断は一度書いて保つ。事実は置き換える。時刻は UTC。
 
+### リリースのしかた
+
+リリースするのはオーナーだけです（ルール 3）。リリースを止められたエージェントはオーナーに伝え、オーナーが次の手順を行います。
+
+1. エージェントに、リリースのプルリクエストを用意してもらう。`release` スキルが変更履歴とバージョンを書きます。
+2. プルリクエストを読み、承認し、マージする。
+3. タグを自分で作る: `git tag vX.Y.Z && git push origin vX.Y.Z`。
+4. プロジェクトが CI から公開するなら、実行のページで公開を承認する（**Review deployments**）。
+
+エージェントがタグを push できるのは、オーナーが承認つきで始めたセッションだけです。
+`YOKOTEN_RELEASE_APPROVAL=1 claude` です。ほかのエージェントでは、同じ変数をコマンドの前に付けます。
+`codex`、`gemini`、`agy`、または `dsh tui --patch .dsh/yokoten.patch.yml` です。Copilot CLI は Claude Code のコマンドを使います。
+Muse Code と OpenCode は変数をフックに渡すか分かっていないので、オーナーはその外でリリースします。
+Gemini CLI の厳しい環境の消毒がオンのときは変数が落ち、オーナーは Gemini CLI の外でリリースします。
+
 ## 命名
 
 名前は、読者がコードで最初に出会うものであり、最も多く読むものです。良い名前は何が入っているかを伝えるので、読者は確かめるためにさかのぼりません。ある研究では、名前が完全な語のとき、72 人の開発者が欠陥を約 19% 速く見つけました。
 
-yokoten 自身のコードは五つのルールに従います。理由と出典は[記録 0006](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0006-names.md)にあります。
+yokoten 自身のコードは五つのルールに従います。理由と出典は[記録 0006](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0006-names.md)にあります。
 
 1. 完全な英語の語を使う。みんなが知る短い形だけを使う。`id`、`url`、`pr`、`ci`、`env`、`config`、`repo`、`dir`、`json`、`html` である。語の中の文字を削らない。
 2. 多くても 4 語。文字数の制限はない。制限があると、人が語を短く切るからである。
@@ -951,7 +1199,7 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
 
 この仕組みは、エージェントをラインの作業者として扱います。それぞれに明確な役割と、限られた権限があります。
 
-- **オーナー**（あなた）が、何を作り、いつ出すかを決めます。プルリクエストを承認し、リリースのタグを作り、リポジトリの設定を変えるのはあなただけです。
+- **オーナー**（あなた）が、何を作り、いつ出すかを決めます。ハードラインを承認し、リリースのタグを作り、リポジトリの設定を変えるのはあなただけです。別のモデルのエリアリードは、自分の領域を承認できます（記録 0026 と 0047）。
 - **リード**は、あなたが話すセッションです。計画を立て、作業を分け、レビューし、**ボット**を通してプルリクエストを開きます。あなたのアカウントでは決して開きません。
 - **ワーカー**は、リードがタスク一つずつために始めるセッションです。`.worktrees/` の下の自分のワークツリーで、`YOKOTEN_ROLE=worker` を持ちます。コードを変え、報告します。決して push しません。修正タスクは `YOKOTEN_FIX_TASK=1` も受け取ります。すると番人とコミットチェックが、テストのファイルへの変更を止めます。停止フックがブリーフの done-when のコマンドを走らせます。三回拒否されたあと、ワーカーは止まってよいことになります。リードへのメッセージは「NOT DONE: checks failing」で始まります。リンクしたワークツリーでは、`.yokoten-agent.json` が `checks` を記録します。リードがそのファイルを読みます。カンバンの `/api/state` は `checks` をコミットチェックとして示します。
 - **ボット**は、リポジトリにインストールした GitHub App です。プルリクエストを開きます。Workflows の権限があっても、CODEOWNERS がすべての CI の変更をあなたに送り、リリースは保護された `release` 環境であなたを待ちます。ルールセットがあなたのレビューを求めるので、それが開くものがあなたなしでマージされることはありません。
@@ -972,18 +1220,66 @@ src/rules/guards.ts:195: "i" is used for 101 lines. A reader must scroll back to
 | ティア | 変更の種類 | レビューする人 |
 |------|----------------|-------------|
 | C | 標準: 文書、言葉、スタイル | リード |
-| B | 普通: テストのあるほかのコード | リード |
-| A | 取り消しにくい: 秘密情報、データ、インストール、リリース、所有するファイル | オーナー。ハードラインでもルールを緩める変更でもないパスは、別のモデルのエリアリードも承認できます（記録 0047） |
+| B | 普通: テストのあるほかのコード | 別のモデルのエージェントがレビューし、リードが承認する |
+| A | 取り消しにくい: 所有するファイル、またはルールを緩める変更 | オーナー。ハードラインでもルールを緩める変更でもないパスは、別のモデルのエリアリードも承認できる |
 
-`.github/CODEOWNERS` は所有するファイルを並べます。ルール、キット、エージェントの設定、CI、記録です。すべてのファイルを並べるのではありません。新しいプロジェクトでは、`init` がリード専用のパスのために一つ書きます。「require review from code owners」がオンのとき、ホストはそれらの一つを変えるプルリクエストをオーナーにレビューさせます。
+yokoten 自身のリポジトリでは、`.github/CODEOWNERS` が所有するファイルを並べます。核心ルール、CODEOWNERS、公開や秘密情報を持つ CI、ボットのトークン、番人の設定、`package.json` です（記録 0037）。新しいプロジェクトでは、`init` がリード専用のパスのために一つ書きます。「require review from code owners」がオンのとき、ホストはそれらの一つを変えるプルリクエストをオーナーにレビューさせます。
 
 `check --pr` は二つを結びます。所有するファイルを変えるプルリクエストは、1 行目が `tier: A` でないと失敗します。パスが一番低いティアを決めます。著者はティアを上げられますが、決して下げられません。チェックは基底ブランチから CODEOWNERS を読むので、プルリクエストがファイルを編集して自分のティアを下げることはできません。基底のコミットがないローカルの実行では、作業ツリーを読みます。メッセージはどちらを読んだかを言います。CODEOWNERS のファイルがなければ、チェックもありません。
 
 承認は一つのコミットに対するもので、プルリクエストの変更ファイルのコードオーナーから来なければなりません。オーナーのログインはコラボレーターとして承認するので、アカウントは決して数えず、CODEOWNERS の所属だけが数えます。変更ファイルがオーナーを名指ししないときは、CODEOWNERS のどこかで名指しされたオーナーなら誰でも数えます。`yokoten bot` は、最新のコードオーナーのレビューが head への Approve でないティア A のプルリクエストの `gh pr merge` を拒否します。より新しい changes-requested や dismissed のレビューも拒否し、ほかのレビューは決して数えません。head が新しいときは、基底ブランチのきれいなマージのときだけマージが進みます。プルリクエスト自身の差分が Approve のときと同じでなければなりません。そうでなければ拒否します。the Approve is on <old commit>; <n> commits with changes came after it; ask the owner to approve again です。ボットを通した `gh pr status` は、ティア A のプルリクエストに同じチェックを示します。GitHub の古い承認を dismissed にする設定もオンのままにしてください。ただし yokoten は、プロジェクトが持たないかもしれないホストの設定に決して依存しません。
 
+### エリアリードは自分の領域を承認する
+
+記録 [0026](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0026-the-owner-is-the-board.md) は、ハードラインでないパスの錠を、あなたのコードオーナーレビューから yokoten のマージチェックに移します。エリアリードは GitHub のレビューで承認します。レビュー本文の最後の行に、リード、そのベンダー、そのモデルを書きます。
+
+```text
+Approved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)
+```
+
+GitHub は、レビューが付いたコミットを記録します。あとのコミットには新しいレビューが要ります。リードは、`Made with` の行にあるすべての書いた側とは別のモデルでなければなりません（記録 [0047](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0047-tier-a-by-another-model.md)）。Claude Sonnet は Claude Opus の作業を承認でき、別のベンダーのリードも承認できます。チェックが比べるのは名前で、つづりではありません。`claude-opus-5-5` と `Claude Opus 5.5` は同じモデルです。`Made with` の行が書いた側を一人も名指ししないときは、チェックは拒否します。`.github/CODEOWNERS` が所有するファイルと、緩める変更は、まだあなたの承認が要ります。リリースのプルリクエストは `package.json` を変えるので、いつもあなたが要ります。差分のティアチェック（#697）が入るまでは、すでにあるテストへの変更は緩める変更と数え、新しいテストは数えません。
+
+ここのどれも、あなたのリポジトリの設定を変えません。準備ができたら、次の手順に従ってください。
+
+1. **`.github/CODEOWNERS` がハードラインだけを並べていることを確かめる。** このリポジトリではすでにそうなっています（記録 0037）。核心ルール、`.github/CODEOWNERS` 自身、公開や秘密情報を持つ CI、ボットのトークン、番人の設定、`package.json` です。そこにハードラインでないパスがあれば、消してください。消したパスは、リードが承認できるようになります。
+2. **必須の承認は一つのままにする。** リードのレビューは本物の GitHub のレビューなので、「Required approvals」は 1 のままにします。GitHub Actions にプルリクエストを承認させないでください。
+3. **CI のチェックを必須のままにする。** ブランチのルールセットは、`yokoten check --pr` を走らせる CI のチェックを、引き続き必須にしてください。ボットのマージチェックが二つ目の錠で、`gh pr merge` の前にリードの承認を読みます。
+4. **ハードラインが安全になったら、「Require review from Code Owners」をオフにする。** 手順 1 のあとは、この設定が名指しするのはハードラインだけなので、オンのままでも、あなたに求めるのはそれらだけです。オフにすると、残りはボットのチェックが決めます。
+
+`yokoten doctor` は今もコードオーナーのレビューを求めます。新しい錠を学ぶまでは、その一つのステップがこの変更を注意として示すと思ってください。マージが拒否されたときは、メッセージが理由と次の一歩を言います。別のモデルのリード、head への新しいレビュー、またはハードラインか緩める変更ならオーナーです。
+
 レビュアーはラベルを通してティアを見つけるので、`check --pr` もラベルを読みます。プルリクエストにはタイプのラベル一つとティアのラベル一つが要ります。タイプのラベルはタイトルのタイプ（`feat`、`fix`、`docs`、`refactor`、`ci` など）か、その一般的な名前です。`fix` には `bug`、`hotfix`、`incident`、`feat` には `feature`、`enhancement`、`docs` には `documentation` です。ティアのラベルは `tier A`、`tier B`、`tier C` です（`tier: B` も数えます）。本文の `tier:` の行と一致しなければなりません。足りないラベルや間違ったラベルは、それぞれ自分のメッセージを受け取ります。
 
-サーバーの設定を、一歩ずつ: [`docs/server.md`](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/server.md)。
+サーバーの設定を、一歩ずつ: [`docs/server.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md)。
+
+### プルリクエストに付くレビューボット
+
+レビューボットは、プルリクエストを開いたあとに読みます。プルリクエストのページにコメントを投稿します。変更の概要、リスクの度合い、マージ前チェックの一覧、修正の提案が出ることがあります。その修正を push できるボットもあります。
+
+種類は二つあります。
+
+- **商用。** ボットはクローズドソースです。会社が動かし、あなたのコードは会社のサーバーへ行きます。公開リポジトリは無料で、非公開は有料のものが多いです。
+- **オープンソース。** ボットは自分で動かし、自分のモデルの API 鍵を使います。使ったトークンの分をモデルのベンダーに払い、コードはあなたのマシンに残ります。
+
+価格、ライセンス、データの扱いは変わります。このガイドは、どのボットも推薦して名指しすることはしません。オンにする前に、ボット自身のページを読んでください。ボットのコメントには、たいていそこへのリンクがあります。
+
+yokoten が働くのは、プルリクエストの前で、あなたのマシンの上です。
+
+- 番人が、危険なコマンド、秘密情報、個人の詳細を止める。
+- `inspect` スキルが、追加の費用なしで、エージェントのセッションの中で変更をレビューする。
+- チェックとマージのルールが、あなたが承認していないマージやリリースを止める。
+
+レビューボットはプルリクエストのあとで働きます。二つは組み合わせられます。ボットが見るのはプルリクエストで、yokoten が見るのはそれを書いたセッションです。
+
+始めるのにレビューボットは要りません。yokoten 自身のレビューで足ります。プルリクエストのページで二人目の読み手がほしくなったら、ボットを足してください。`doctor` がボットを足すよう頼むことは決してありません。名指しするのは yokoten 自身の次のステップです。
+
+プルリクエストのページに出る yokoten の指摘は、yokoten 自身のチェックだけから来ます。ほかのボットの指摘を繰り返したり、コードを二度レビューしたりはしません（#91）。
+
+### プルリクエストを最新に保つ
+
+マージのたびに、開いているほかのプルリクエストが遅れます。衝突は誰も待ってくれないので、リードはマージのたびに `yokoten pr sync` を走らせます。各ブランチの基底ブランチを取り込み、型チェックと、触れたファイルのテストを走らせ、ボットとして push します。きれいに取り込めても解決しても、マージのたびに走らせます。マージコミットも UTC になるよう、UTC で走らせます。解決するのは、機械的な衝突二つだけです。同じ場所に足された二つのブロックと、変えられた二つの import の一覧です。それ以外はファイルと差分を添えて止まり、リードはディスパッチのブリーフでそれをワーカーに渡します。報告の各行は、取り込んだ基底を名指しします。一覧は開いているプルリクエスト 100 件で止まり、止まったときは報告がそう言います。
+
+オーナーは GitHub 上で衝突を解決しません。ウェブのエディターはオーナーとしてコミットしてしまい、push するのはボットでなければならないからです。関連: issue #320、マージの列車。
 
 ### デスク
 
@@ -1022,14 +1318,16 @@ yokoten desk claude-code ../desks/42 -- claude -p "$(cat brief.md)"
 
 デスクは自分の `git clone` でなければなりません。ワークツリーの git フォルダは別のチェックアウトにあり、デスクはそれを隠すので、ワークツリーは拒否されます。
 
+**エージェントが誰か。** デスクは、モデルとプロバイダーをエージェント自身の設定から読みます。Codex なら `config.toml` の `model` と `model_provider` です。カンバンはそのモデルを見せます。ベンダーがハーネス自身のものと違うときは、セッションの最初に一行が入り、エージェントが誰であるか、ハーネスはそのツールであることを言います。DeepSeek のモデルは Codex を通して動き、Codex のプロンプトは OpenAI を名指しします。その一行がないと、ワーカーは自分の作業に OpenAI と署名します。
+
 **デスクの状態フォルダ。** 各デスクは、エージェントのための自分の状態フォルダを、すぐ横に持ちます。`<desk>.state/<agent>` です。デスクはエージェント自身の変数で、エージェントをそこに向けます。あなたのものからコピーするのはログインのファイルだけです。あなたの新しいログインは、次の開始でまたコピーされます。状態フォルダはデスクと一緒に消してください。
 
 | エージェント | `<agent>` | 状態を指すもの | コピーするログインのファイル | API のホスト | デスクの中のコマンド |
 |---|---|---|---|---|---|
-| Claude Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`、ログインの更新には `platform.claude.com` | `claude -p "<brief>"` |
+| Claude&nbsp;Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`、ログインの更新には `platform.claude.com` | `claude -p "<brief>"` |
 | Codex、および Codex を通した DeepSeek | `codex` | `CODEX_HOME` | `auth.json` | `api.openai.com`、`api.deepseek.com` | `codex exec --sandbox danger-full-access "<brief>"` |
 | Grok | `grok` | `GROK_HOME` | `auth.json` | `api.x.ai` | `grok -p "<brief>"` |
-| Muse Code | `muse` | `XDG_CONFIG_HOME`、`XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
+| Muse&nbsp;Code | `muse` | `XDG_CONFIG_HOME`、`XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
 
 - **Claude Code** は `platform.claude.com` でログインを更新します。`claude setup-token` のトークンを `CLAUDE_CODE_OAUTH_TOKEN` に入れるか、API 鍵なら更新は要らず、ログインとして通ります。
 - **Codex** はデスクの中で `--sandbox danger-full-access` で走ります。Codex 自身の `workspace-write` のサンドボックスは `.git` を読み取り専用にし、テストが使うパイプを止めるからです。代わりにデスクが囲いです。あなたの `config.toml` は入りません。プロバイダーはコマンドの `-c` で与えてください。ChatGPT のログインには `--host chatgpt.com,auth.openai.com` も要ります。
@@ -1052,9 +1350,19 @@ git diff main refs/desks/42
 
 **システム。**
 
-- **Linux と WSL2**: `bwrap`（bubblewrap）。`sudo apt install bubblewrap` で入れます。デスクは自分の空のネットワークを持ちます。中の小さなブリッジが、エージェントのプロキシの接続を外のプロキシへ渡します。
-- **macOS**: 組み込みの `sandbox-exec` に、デスクごとに書いたプロファイルを使います。プロファイルは「すべてを拒否」から始まり、デスクが必要とする読み取り、書き込み、Mach サービス、プロキシのポートだけを許します。`open`、`osascript`、Launch Services、Apple のイベントを止めます。Mac ではまだ走らせていません。そこで一度 `node --test test/agents/desk/start.test.ts` を走らせ、契約を確かめてください。
-- **ネイティブの Windows**: 実験的で、まだ準備できていません（#669）。制限付きトークンの補助プログラム、デスクの ACL、ファイアウォールのルールが要ります。本物の Windows 11 で #637 の契約のテストが通るまで、ワーカーを始めません。それまでは WSL2 で yokoten を走らせてください。Linux のデスクがそこでは動きます。ネイティブの Windows では、番人だけがルールを保ちます。
+囲いは Anthropic の [sandbox-runtime](https://github.com/anthropics/sandbox-runtime)（`srt`）で、Claude Code が使うサンドボックスです。
+yokoten は、PATH の `srt` が固定されたバージョン 0.0.81 のときはそれを走らせます。そうでなければ `npx` がそのバージョンを一度取得し、
+npm のキャッシュに保ちます。yokoten の依存ではありません。サンドボックスが始まらないときは、デスクが一行で理由を言い、何も始めません。
+
+- **Linux と WSL2**: `bubblewrap`、`socat`、`ripgrep` を入れます。Debian と Ubuntu なら、
+  `sudo apt install bubblewrap socat ripgrep` です。デスクは自分の空のネットワークを持ち、
+  エージェントの API ホストだけが srt のプロキシを通ります。
+- **macOS**: 組み込みの `sandbox-exec`。Mac ではまだ走らせていません。そこで一度
+  `node --test test/agents/desk/start.test.ts` を走らせ、契約を確かめてください。
+- **ネイティブの Windows**: デスクはありません。`yokoten desk` は何も始めず、WSL を使うよう言います。
+  ネイティブの Windows では、番人だけがルールを保ちます。
+
+`YOKOTEN_FENCE=own` は v0.1.3 まで古い囲いを使います。Linux では `bwrap`、macOS では `sandbox-exec` です。
 ### エージェント同士のメッセージ
 
 どのベンダーのエージェントも、互いにメッセージを送れます（#674）。このマシンのファイルです。サーバーもネットワークもありません。
@@ -1181,7 +1489,9 @@ yokoten は、投稿や push がどこへ行くか確かめられないときは
 
 あなたのアカウントを名指ししなければならないファイルがあります。だから yokoten が印に足したフォージのログインは、CODEOWNERS のオーナー、`.github/` の `@` の言及、`package.json` やプラグインの manifest の作者かオーナーのフィールド、LICENSE の著作権の行では構いません。ほかのどこでも見つかります。あなた自身が書いた印はどこでも見つかります。
 
-IP のチェックは IPv4 だけを覆い、`10.x` や `192.168.x` のような非公開の範囲も含みます。IPv6 はチェックしません。localhost と文書用の範囲（`192.0.2.0/24` とその二つの兄弟）は構いません。`Chrome/120.0.0.0` のようなブラウザーの版の文字列はアドレスではなく、`logo@2x.png` のような retina の画像の名前もそうです。`http://` のあとのアドレスや、`api/` のようなパスの中のアドレスはまだ捕まります。
+意図的に公開されているメールアドレスもあります。`SECURITY.md`（ルート、`.github/`、`docs/` のどれか）にあるアドレスは、失敗ではなく注意です。パッケージの manifest の人のフィールドにあるものも同じです。`package.json` の `author`、`contributors`、`maintainers`、`bugs`、`composer.json` の `authors` と `support`、`Cargo.toml` の `authors`、`pyproject.toml` の `authors` と `maintainers` です。ほかの場所の個人のアドレスは、まだ失敗です。
+
+IP のチェックは IPv4 だけを覆い、IPv6 はチェックしません。ループバック（`127.x`）、RFC 1918 の三つの非公開の範囲（`10.x`、`172.16.x` から `172.31.x`、`192.168.x`）、文書用の範囲（`192.0.2.0/24` とその二つの兄弟）は、ファイルの中では構いません。コードがローカルの既定として使うからです。エージェントが投稿するものでは、ループバックと文書用の範囲だけが構いません。そこでの非公開のアドレスは、あなたの家のネットワークや WSL のホストのような、あなた自身のネットワークを表すので、投稿は止まります。ほかのアドレスは、どこでも捕まります。`Chrome/120.0.0.0` のようなブラウザーの版の文字列はアドレスではなく、`logo@2x.png` のような retina の画像の名前もそうです。`http://` のあとのアドレスや、`api/` のようなパスの中のアドレスはまだ捕まります。
 
 同じチェックが秘密情報も捕まえます。GitHub、npm、Slack、Stripe、Google、OpenAI、Anthropic のトークン、AWS のアクセスキー ID、PEM の秘密鍵です。あなたの環境の秘密情報らしい変数の本当の値にも一致します。当たりはそれぞれ等級を言います。`sure` は失敗し、`likely` と `unknown` は警告します。当たりは秘密情報の種類を名指しし、秘密情報は決して言いません。消すだけでは足りません。git がそれを保つからです。取り替えてください。
 
@@ -1254,30 +1564,12 @@ IP のチェックは IPv4 だけを覆い、`10.x` や `192.168.x` のような
 正直な限界:
 
 - **番人はコマンドのテキストを読みます。** bash の構文（引用符、ヒアドキュメント、`bash -c`、代入）を読み、何が走るか分からないときは止めます。部品に分けて組み立てたコマンドはまだ通り抜けます。ミスとずれを捕まえるもので、錠ではありません。錠はサーバーにあります。ブランチ保護、コードオーナー、リリースや CI の変更の権限を持たないボットです。ワーカーのシェルによるリード専用ファイルへの書き込みは、番人がコマンドの中にそのファイルを見たときだけ止まります。変数や stdin からのパス（`xargs rm`、`find -exec`、`git apply < x.patch`）、またはそれを書くスクリプトは通り抜けます。`.git/config` や `.githooks` へのシェルの書き込みにも同じ隙間があり、番人が読めないフォルダへの `cd` のあとの書き込み（`cd "$x" && echo >> config`）も同じです。git、gh、yokoten、シェル以外のプログラムが、与えられたホームフォルダで git を走らせることがあります。npm のスクリプト、`make` のターゲット、シェル関数です（`HOME=/tmp/x npm run commit`）。間接的な名前（`export $name=x`）も通り抜けます。
+- **ワーカーの設定は、コマンドラインでだけ読まれます。** フォルダを動かす設定や、プログラムに別のコードを走らせる設定（`PATH`、`GIT_DIR`、`LD_PRELOAD`、`NODE_OPTIONS`）は、コマンドに書かれたときに番人が止めます。ワーカーが書いてから走らせるスクリプトは、どれでも設定できます。それは番人の手が届かず、ワーカーのプロセスにとっての境界はデスクの囲いです。プロジェクトは、自分のテストの設定をワーカーに `worker.settings` で許せます。
 - **gh のトークンは素のコマンドからだけ隠されます。** ファイルに書いてから走らせるスクリプトは読まれません。gh 自身のファイルやシステムのキーリングを読むスクリプト、部品で組み立てた変数名は、まだトークンを得ます。環境全体を出力するプログラム（`env`、`printenv`、`set`、`/proc/self/environ`）も同じです。それらを拒否すると、あまりに多くが壊れます。あなたが前に作ったエイリアスも読まれません。するとエージェントは番人を回って GitHub を呼べます。本当の直し方は、トークンがエージェントの環境にないことです。ワーカーでは、トークンのまったくないデスクです（#637）。リードでは、錠はまたサーバーです。ブランチ保護と、マージやリリースの権限のないトークンです。
 - **サーバーの設定は GitHub でだけ読みます。** 別のホストは、ホストだけが判断できるステップを **can't check** として示し、それぞれ何を尋ねるかを添えます（[セッションに見えるもの](#セッションに見えるもの)）。`doctor` はまだボットの権限をチェックしません。
 - **Claude Code が先。** エージェントは Claude Code の形式に従います。スキルは開かれた SKILL.md の形式なので、`install` はそれらを `~/.agents/skills` にも置き、Codex、Gemini CLI、Copilot、Cursor などのエージェントがそこに見つけます。ツール呼び出しの番人は Copilot CLI、Antigravity CLI、Codex、Muse Code、DeepSeek Harness、Gemini CLI、OpenCode でも走ります。どの実行が止めるのを見たかは[対応しているもの](#対応しているもの)を見てください（#30）。`doctor` はほかのエージェントのフックを報告し、`~/.codex` や `~/.gemini` ができたあとはユーザーのフックも報告しますが、足りないとは数えません。プロジェクトがこれらのエージェントを一つも使わないことがあるからです。ルールは素の `AGENTS.md` で、プロジェクトに `CLAUDE.md` がないとき Claude Code が読み、ほかのほとんどのエージェントも読みます。Muse Code も `AGENTS.md` を読みます。
 - **DeepSeek Harness は Windows ではまだ守られていません。** dsh はそこでフックを PowerShell で走らせ、番人は POSIX シェルのコマンドです（#332）。番人が見るのも `bash`、`pwsh`、`edit`、`write` だけです。dsh の任意の `str_replace_editor` や実験的な `terminal_send` を載せるプロファイルは、チェックされずにファイルを編集したり、シェルに入力したりできます。
 
-## 意図的に省いたもの
-
-これらは同じプロジェクトから来て、そこで動きましたが、一般的なキットには節約する以上の費用がかかりました。すべてのコミットのタイプが触るファイルと一致するかのチェック、キューでのマージのバイト単位の再生、todo ファイルのフォルダ分類、978 行のルールファイル、リポジトリにコミットする署名済みのリリース判定、ハードルールとしての管理された英語のスタイル標準（軽い版は、柔らかいチェックつきの指針として戻りました。[記録 0005](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/0005-plain-english.md)）。実践は、一つ以上のプロジェクトで自分を償って初めて場所を得ます。
-
-
 ## 現状
 
-バージョン 0.1。背後の決断は [`docs/records/`](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/docs/records/) にあります。作業は issue で追跡され、yokoten に取り組むルールは [`AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.1.2/AGENTS.md) にあります。
-
-### これからの道
-
-夢: 誰でも、良いチームのやり方でソフトウェアを作れること。サイクル全体は SDLC です。計画、開発、テスト、レビュー、リリース、保守です。自分のプロジェクトで、一関所ずつ実際にやることで学びます。
-
-| 関所 | 名前 | 意味 | 今 |
-|---|---|---|---|
-| 1 | **番人** | AI エージェントが危険な操作の前に止まる。force push、通すために編集されたテスト、漏れた個人情報 | ✅ 完了 |
-| 2 | **ガイド** | 初心者が `doctor` と五つの関所を、一度に一つずつ歩く。エージェントが古いプロジェクトを読み、yokoten の導入方法を下書きする | 🚧 いま |
-| 3 | **どのツールでも、どのホストでも** | Claude Code、Codex、Gemini CLI、Muse Code が同じルールを保つ。GitHub、Gitea、GitLab がどれも動く | 次 |
-| 4 | **サイクル全体** | 短い仕様から開発、テスト、レビュー、リリース、保守まで、SDLC 全体にガイドがある | あとで |
-| 5 | **横展** | 一つのプロジェクトの教訓がチェックになり、そのチェックがすべてのプロジェクトに広がる。一人が学んだことを、みんなが得る | 目標 |
-
-近いステップは [M0](https://github.com/yokoten-labs/yokoten/milestone/1) と [M1](https://github.com/yokoten-labs/yokoten/milestone/2) にあります。[ボード](https://github.com/orgs/yokoten-labs/projects/1)は今日作られているものを示します。
+バージョン 0.1。背後の決断は [`docs/records/`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/) にあります。作業は issue で追跡され、yokoten に取り組むルールは [`AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/AGENTS.md) にあります。
