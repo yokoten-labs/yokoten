@@ -120,7 +120,7 @@ test('unsaved: a commit that carries .yokoten/ says what the copy is, and the co
   const [note] = clone.notes();
   assert.equal(note.fix, 'commit them: `git add -A && git commit -m "chore: add yokoten"`; .yokoten/ is a copy of yokoten (about 90 files), and committing it is the point, then push');
   // Positive control: a change with no .yokoten/ gets the generic message, and no copy note.
-  writeFileSync(join(clone.repo, '.yokoten', 'VERSION'), '0.2.0\n');
+  writeFileSync(join(clone.repo, '.yokoten', 'VERSION'), '0.8.0\n');
   rmSync(join(clone.repo, '.yokoten'), { recursive: true });
   writeFileSync(join(clone.repo, 'a.txt'), 'b\n');
   assert.equal(clone.notes()[0].fix, 'commit them: `git add -A && git commit -m "chore: save work"`, then push');

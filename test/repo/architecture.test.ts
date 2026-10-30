@@ -2885,21 +2885,36 @@ test('the release workflow publishes the tarball as a file, not a GitHub repo na
 
 // A test that names the current version breaks at every release bump (10-25: three update
 // tests said 0.1.0 and failed a release pull request). Read VERSION from src/setup/files.ts.
-/** The lines of `text` that name `version` as it is, or escaped for a regular expression. */
-function versionLines(text: string, version: string): number[] {
+/**
+ * The lines of `text` that name `version` as it is, or escaped for a regular expression.
+ * With `isNext`, a pre-release tail (`0.2.1-rc.2`) is another tool's version, not ours.
+ */
+function versionLines(text: string, version: string, isNext = false): number[] {
   const dotted = version.replaceAll('.', '\\.');
   const escaped = version.replaceAll('.', '\\\\\\.');
-  const named = new RegExp(`(^|[^0-9.])(${dotted}|${escaped})($|[^0-9])`);
+  const named = new RegExp(`(^|[^0-9.])(${dotted}|${escaped})($|[^0-9${isNext ? '\\-' : ''}])`);
   return text.split('\n').flatMap((line, index) => (named.test(line) ? [index + 1] : []));
 }
 
-test('tests: none names the current version; they read VERSION, so a release needs no test edits', () => {
+/** The next patch and the next minor of `version`: the versions a sample may meet at the next release. */
+function nextVersions(version: string): string[] {
+  const [major, minor, patch] = version.split('-')[0].split('.').map(Number);
+  return [`${major}.${minor}.${patch + 1}`, `${major}.${minor + 1}.0`];
+}
+
+// 2026-10-30: samples written as the new version broke the release pull request. The next
+// patch and minor are held too, so a sample meets this test on its own pull request.
+test('tests: none names the current or the next version; they read VERSION, so a release needs no test edits', () => {
   assert.deepEqual(versionLines("assert.match(out, /yokoten 1\\.2\\.3's/);\nconst x = 'yokoten 1.2.3';\nconst y = '1.2.30';", '1.2.3'), [1, 2], 'a written version, plain or escaped, was not caught');
+  assert.deepEqual(nextVersions('4.5.0'), ['4.5.1', '4.6.0']);
+  assert.deepEqual(versionLines("const a = '4.5.1';\nconst b = 'dsh 4.5.1-rc.2';", '4.5.1', true), [1], 'a next version was not caught, or another tool\'s pre-release was');
   const found: string[] = [];
   for (const path of filesUnder(join(ROOT, 'test')).filter((file) => file.endsWith('.ts'))) {
-    for (const line of versionLines(readFileSync(join(ROOT, 'test', path), 'utf8'), VERSION)) found.push(`test/${path}:${line}`);
+    const text = readFileSync(join(ROOT, 'test', path), 'utf8');
+    for (const line of versionLines(text, VERSION)) found.push(`test/${path}:${line}`);
+    for (const next of nextVersions(VERSION)) for (const line of versionLines(text, next, true)) found.push(`test/${path}:${line} (${next})`);
   }
-  assert.deepEqual(found, [], `use VERSION from src/setup/files.ts instead of ${VERSION} at: ${found.join(', ')}`);
+  assert.deepEqual(found, [], `use VERSION from src/setup/files.ts, or a sample far from it, instead of ${VERSION} or the next version at: ${found.join(', ')}`);
 });
 
 // The Mac runner (issue #1241): a worker may run it, so it sends only test commands, quotes

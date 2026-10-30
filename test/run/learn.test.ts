@@ -376,17 +376,17 @@ test('learn: --write adds the draft\'s files and keeps a file that is there', ()
 });
 
 test('lessons: the table gives each row\'s id, folder, incident and version; other lines are left out', () => {
-  const text = ['# Lessons', '', 'Text with | a pipe.', '', '| Lesson | Folder | Incident | Added in |', '|---|---|---|---|', formatLessonRow({ id: 'incident-138', folder: '1/incident-138', url: 'https://example.com/issues/138', version: '0.1.0' }), '| incident-8 | 2/1/incident-8 | https://example.com/issues/8 | 0.2.0 |', ''].join('\n');
+  const text = ['# Lessons', '', 'Text with | a pipe.', '', '| Lesson | Folder | Incident | Added in |', '|---|---|---|---|', formatLessonRow({ id: 'incident-138', folder: '1/incident-138', url: 'https://example.com/issues/138', version: '0.1.0' }), '| incident-8 | 2/1/incident-8 | https://example.com/issues/8 | 0.8.0 |', ''].join('\n');
   assert.deepEqual(readLessonTable(text), [
     { id: 'incident-138', folder: '1/incident-138', url: 'https://example.com/issues/138', version: '0.1.0' },
-    { id: 'incident-8', folder: '2/1/incident-8', url: 'https://example.com/issues/8', version: '0.2.0' },
+    { id: 'incident-8', folder: '2/1/incident-8', url: 'https://example.com/issues/8', version: '0.8.0' },
   ]);
   // A row from before groups (#171): its folder is its id. A folder out of the groups, or not ending in the id, is no row.
-  const old = ['| Lesson | Incident | Added in |', '|---|---|---|', '| incident-7 | https://example.com/issues/7 | 0.2.0 |', '| incident-9 | ../incident-9 | https://example.com/issues/9 | 0.2.0 |', '| incident-6 | 1/incident-5 | https://example.com/issues/6 | 0.2.0 |', '| 12 | 1/12 | https://example.com/issues/12 | 0.2.0 |'].join('\n');
-  assert.deepEqual(readLessonTable(old), [{ id: 'incident-7', folder: 'incident-7', url: 'https://example.com/issues/7', version: '0.2.0' }]);
+  const old = ['| Lesson | Incident | Added in |', '|---|---|---|', '| incident-7 | https://example.com/issues/7 | 0.8.0 |', '| incident-9 | ../incident-9 | https://example.com/issues/9 | 0.8.0 |', '| incident-6 | 1/incident-5 | https://example.com/issues/6 | 0.8.0 |', '| 12 | 1/12 | https://example.com/issues/12 | 0.8.0 |'].join('\n');
+  assert.deepEqual(readLessonTable(old), [{ id: 'incident-7', folder: 'incident-7', url: 'https://example.com/issues/7', version: '0.8.0' }]);
   // Written again, the table gets the folder column; the text around it stays.
   const rewritten = formatLessonTable(`# Lessons\n\nIntro.\n\n${old}\n\nAfter.\n`, readLessonTable(old));
-  assert.equal(rewritten, '# Lessons\n\nIntro.\n\n| Lesson | Folder | Incident | Added in |\n|---|---|---|---|\n| incident-7 | incident-7 | https://example.com/issues/7 | 0.2.0 |\n\nAfter.\n');
+  assert.equal(rewritten, '# Lessons\n\nIntro.\n\n| Lesson | Folder | Incident | Added in |\n|---|---|---|---|\n| incident-7 | incident-7 | https://example.com/issues/7 | 0.8.0 |\n\nAfter.\n');
   assert.match(formatLessonTable(null, []), /^# Lessons\n[^]*\n\n\| Lesson \| Folder \| Incident \| Added in \|\n\|---\|---\|---\|---\|\n$/);
 });
 
