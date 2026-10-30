@@ -26,7 +26,7 @@ test('init screen: a fresh project names each group it wrote, the file count, an
   const text = checked(initScreen(done, LINUX));
   assert.match(text, /^yokoten init · this project is set up$/m);
   for (const group of ['rules: AGENTS.md, the commit check', 'CI: 4 workflows, Dependabot', 'GitHub: issue and PR templates, CODEOWNERS, a security policy', 'agents: guard for Claude Code (7 more ready)']) {
-    assert.match(text, new RegExp(`^ {2}done {9}${group.replace(/[()]/g, '\\$&')}$`, 'm'), group);
+    assert.match(text, new RegExp(`^ {2}done {9}${group.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'm'), group);
   }
   assert.match(text, /^\d+ files written, none of yours changed$/m);
   assert.equal(text.match(/^Next: /gm)?.length, 1);
