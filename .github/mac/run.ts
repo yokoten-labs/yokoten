@@ -37,7 +37,7 @@ export function quote(word: string): string {
 /** Output with the Mac's address, its home folder and any user@address hidden. */
 export function mask(text: string, host: string): string {
   const escaped = host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(/[A-Za-z0-9._-]+@[0-9.]+/g, 'USER@HOST').replace(new RegExp(escaped, 'g'), 'MAC').replace(/\/Users\/[^/\s]+/g, '~');
+  return text.replace(/[A-Za-z0-9._-]+@\d{1,3}(?:\.\d{1,3}){3}/g, 'USER@HOST').replace(new RegExp(escaped, 'g'), 'MAC').replace(/\/Users\/[^/\s]+/g, '~');
 }
 
 /** Whether a command is one of the test commands this runner sends. */

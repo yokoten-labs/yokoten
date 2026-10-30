@@ -2874,4 +2874,5 @@ test('mac runner: only test commands go, quoted, and the address never shows (#1
   const host = '192.0.2.10';
   assert.equal(mask('ssh 192.0.2.10 at /Users/someone/work, me@192.0.2.10', host), 'ssh MAC at ~/work, USER@HOST');
   assert.equal(mask('192a0b2c10', host), '192a0b2c10', 'the dots in the address are not wildcards');
+  assert.equal(mask('> yokoten@0.1.3 typecheck', host), '> yokoten@0.1.3 typecheck', 'a package version is not an address');
 });
