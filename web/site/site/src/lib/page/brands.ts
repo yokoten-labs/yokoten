@@ -46,11 +46,11 @@ const WORKS: Record<string, Brand & { readme: string }> = {
   'Claude Code': { readme: 'Claude Code', ...mark(claudecode), url: 'https://github.com/anthropics/claude-code' },
   Codex: { readme: 'Codex CLI', ...mark(codex), url: 'https://github.com/openai/codex' },
   Copilot: { readme: 'GitHub Copilot CLI', ...mark(githubcopilot), url: 'https://github.com/github/copilot-cli' },
-  Antigravity: { readme: 'Antigravity CLI (agy)', ...mark(antigravity), url: 'https://antigravity.google/docs/cli' },
+  Antigravity: { readme: 'Antigravity CLI', ...mark(antigravity), url: 'https://antigravity.google/docs/cli' },
   'Muse Code': { readme: 'Muse Code', ...mark(muse), url: 'https://dev.meta.ai/docs/muse-code' },
   OpenCode: { readme: 'OpenCode', ...mark(opencode), url: 'https://github.com/anomalyco/opencode' },
-  Grok: { readme: 'Grok CLI (grok)', ...mark(grok), url: 'https://docs.x.ai/build/overview' },
-  DeepSeek: { readme: 'DeepSeek Harness (dsh)', ...mark(deepseek), url: 'https://github.com/deepseek-ai/deepseek-harness' },
+  Grok: { readme: 'Grok CLI', ...mark(grok), url: 'https://docs.x.ai/build/overview' },
+  DeepSeek: { readme: 'DeepSeek Harness', ...mark(deepseek), url: 'https://github.com/deepseek-ai/deepseek-harness' },
 };
 
 const PLATFORMS: Brand[] = [
