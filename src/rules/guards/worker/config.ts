@@ -36,18 +36,21 @@ export function stopsOffFile(env: Env): string | null {
 const CONFIG_FIX = "leave yokoten's config folder (~/.config/yokoten) as it is: only the lead changes the worker list and the bot's keys; if your task needs a change there, stop and tell the lead";
 export const configFinding = (what: string) => finding('worker-mark', what, CONFIG_FIX);
 
-// Text that names yokoten's config folder or the worker list.
-const NAMES_CONFIG = /\.config[\\/]+yokoten|yokoten[\\/]+workers/i;
+// Text that names yokoten's config folder or the worker list. `yokoten` ends the folder's name
+// unless a plain name character follows (`yokoten-mac`, `yokoten.bak`, #1241). Anything else
+// after it may still be the folder: an end, a separator, a quote, a glob, a brace, `$`, a
+// shell character, `:` (a Windows stream), or dots alone (Windows drops trailing dots).
+const NAMES_CONFIG = /\.config[\\/]+yokoten(?!\.*[A-Za-z0-9_+@-])|yokoten[\\/]+workers/i;
 
 /**
  * Whether a command names yokoten's config folder or the worker list, in text or by a glob
  * that can match `.config/yokoten` or `yokoten/workers`. A pair of bare globs (`*` `/` `*`)
- * names nothing.
+ * names nothing. A part's trailing dots are dropped, as Windows does.
  */
 export function namesConfigFolder(command: string): boolean {
   if (NAMES_CONFIG.test(command)) return true;
   for (const word of command.split(/[\s'"`;|&<>()=:]+/)) {
-    const parts = word.split(/[\\/]+/);
+    const parts = word.split(/[\\/]+/).map((part) => part.replace(/(?<=[^.])\.+$/, ''));
     for (let at = 0; at + 1 < parts.length; at++) {
       const pair = [parts[at], parts[at + 1]];
       if (!pair.some((part) => /[a-z]/i.test(part))) continue;
