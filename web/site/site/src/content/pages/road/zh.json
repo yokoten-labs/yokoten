@@ -25,7 +25,7 @@
   "kanban": {
     "label": "看板",
     "title": "整条线放在一块板上",
-    "body": "v0.1.2 先出预览：`yokoten kanban --text` 列出每个会话在干什么、哪些 pull request 在等你、Actions 是否正常。它只读不改，浏览器里的页面下一步做。",
+    "body": "先出预览：`yokoten kanban --text` 列出每个会话在干什么、哪些 pull request 在等你、Actions 是否正常。它只读不改，浏览器里的页面下一步做。",
     "more": "看板怎么用",
     "tag": "预览"
   }

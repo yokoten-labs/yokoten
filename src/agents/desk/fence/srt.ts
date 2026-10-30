@@ -8,7 +8,7 @@
 // - The plan becomes srt's settings file in a pure function, `srtSettings`.
 // - Fail closed (record 0040): when srt can't start a sandbox here, the desk does not
 //   start, and says why in one line. It never falls back to "no fence".
-// - Native Windows has no system fence in v0.1.2: the guard alone holds the rules, and the
+// - Native Windows has no system fence: the guard alone holds the rules, and the
 //   desk says to use WSL.
 // - `YOKOTEN_FENCE=own` picks the old backends (bwrap.ts, seatbelt.ts) for a while, in start.ts.
 

@@ -24,9 +24,9 @@ That's it: one command, nothing to set. Run it again any time; it does only what
 
 The first run shows one screen: what it set up, where you are, and the next command.
 
-<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
+<!-- The first run in a new repo; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.3 · set up; stage 1 of 5, safety net
+yokoten 0.2.0 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
   ok           37 files written in this project, none of yours changed

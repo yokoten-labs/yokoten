@@ -510,7 +510,7 @@ CI 里从基础分支读 CODEOWNERS。
 符号链接在 `.git`、`.git/config`、`.git/hooks`、`.git/yokoten-worker` 和工位状态文件夹上会被拒绝。
 在团队里，团队文件夹只读，只有这个 agent 自己的发件箱可以写。
 栅栏是 sandbox-runtime `0.0.81`，`hosts` 由它自己的代理放行。
-`YOKOTEN_FENCE` 设为 `own` 时会用旧的栅栏，留到 v0.1.3：bwrap 或 sandbox-exec，配合下面 `hosts` 里说的代理。
+`YOKOTEN_FENCE` 设为 `own` 时暂时会用旧的栅栏：bwrap 或 sandbox-exec，配合下面 `hosts` 里说的代理。
 
 | 字段 | agent 得到什么 |
 | --- | --- |

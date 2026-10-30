@@ -508,7 +508,7 @@ No settings file changes.
 A symlink is refused on `.git`, `.git/config`, `.git/hooks`, `.git/yokoten-worker` and the state folders.
 On a team, the team folder is read-only, and only that agent's outbox is writable.
 The fence is sandbox-runtime `0.0.81`, which runs its own proxy for `hosts`.
-`YOKOTEN_FENCE` set to `own` picks the old fence until v0.1.3: bwrap or sandbox-exec, with the proxy in `hosts` below.
+`YOKOTEN_FENCE` set to `own` picks the old fence for now: bwrap or sandbox-exec, with the proxy in `hosts` below.
 
 | Field | What the agent gets |
 | --- | --- |

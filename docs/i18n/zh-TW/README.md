@@ -25,9 +25,9 @@ npx yokoten
 
 第一次執行只有一屏：裝好了什麼、你走到哪一步、下一條要輸入的指令。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
+<!-- The first run in a new repo; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.3 · set up; stage 1 of 5, safety net
+yokoten 0.2.0 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
   ok           37 files written in this project, none of yours changed

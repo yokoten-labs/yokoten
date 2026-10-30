@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import { GUIDE_AGENTS, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
 import { checkCommand } from '../../../src/rules/guards/commands/check.ts';
 import { formatRefusal } from '../../../src/rules/text/message.ts';
+import { VERSION } from '../../../src/setup/files.ts';
 import { ROOT } from '../helpers.ts';
 
 const FILES = ['README.md', 'docs/i18n/zh-CN/README.md', 'docs/i18n/zh-TW/README.md', 'docs/i18n/ja/README.md'];
@@ -235,4 +236,42 @@ test('site: every home-page brand finds its agent in the released and the curren
     assert.ok(current.includes(agentName(name)), `${name}: not in the README's Works with table`);
   }
   assert.equal(agentName('Antigravity CLI (agy)'), 'Antigravity CLI', 'positive control: the note goes');
+});
+
+// #1282: PR #1245 wrote a planned version into the sample, and the release carried it to npm.
+/** The version the first-run sample of a README shows; null with no sample. */
+const sampleVersion = (text: string) => /^yokoten (\S+) · set up;/m.exec(text)?.[1] ?? null;
+/** The major and minor the status line of a guide shows; null with none. */
+const statusVersion = (text: string) => /^(?:Version|バージョン|版本) (\d+\.\d+)。?\.?/m.exec(text)?.[1] ?? null;
+
+test('versions: the first-run sample and the guide status line follow package.json; a release updates them (#1282)', () => {
+  for (const path of FILES) {
+    assert.equal(sampleVersion(read(path)), VERSION, `${path}: the first-run sample names another version`);
+  }
+  for (const path of ['docs/guide.md', 'docs/i18n/ja/guide.md', 'docs/i18n/zh-CN/guide.md']) {
+    assert.equal(statusVersion(read(path)), VERSION.split('.').slice(0, 2).join('.'), `${path}: the status line names another version`);
+  }
+});
+
+test('control: a sample or a status line with another version is read as that version (#1282)', () => {
+  assert.equal(sampleVersion('text\nyokoten 9.9.9 · set up; stage 1 of 5, safety net\n'), '9.9.9');
+  assert.equal(sampleVersion('no sample here\n'), null);
+  assert.equal(statusVersion('Version 9.9. The decisions\n'), '9.9');
+  assert.equal(statusVersion('版本 9.9。背后的决定\n'), '9.9');
+});
+
+// #1282: "until v0.1.3" outlived the version. A plan with a date lives in an issue, not in the text.
+/** The lines of `text` that promise something up to a named version, in English, Japanese or Chinese. */
+const versionPromises = (text: string) => text.split('\n').filter((line) => /\b(?:until|by) v\d|v\d+(?:\.\d+)* ?まで|(?:留到|直到|保留到|留至) ?v\d/i.test(line));
+
+test('versions: no doc or source promises something until a named version (#1282)', () => {
+  const sources = (readdirSync(join(ROOT, 'src'), { recursive: true }) as string[]).filter((path) => path.endsWith('.ts')).map((path) => join('src', path));
+  const translated = (readdirSync(join(ROOT, 'docs/i18n'), { recursive: true }) as string[]).filter((path) => path.endsWith('.md')).map((path) => join('docs/i18n', path));
+  const found = ['README.md', 'docs/guide.md', 'docs/standard.md', 'docs/server.md', ...translated, ...sources].flatMap((path) => versionPromises(read(path)).map((line) => `${path}: ${line.trim()}`));
+  assert.deepEqual(found, []);
+});
+
+test('control: a promise up to a version is caught, a past fact is not (#1282)', () => {
+  assert.equal(versionPromises('uses the old fence until v9.9.\nRemove all by v9.\nBefore v9.9 it was called board.').length, 2);
+  assert.equal(versionPromises('v9.9.9 まで古い囲い\n旧的围栏，留到 v9.9\nv9.9 で追加').length, 2);
 });
