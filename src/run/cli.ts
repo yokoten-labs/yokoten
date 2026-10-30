@@ -352,7 +352,7 @@ export const COMMANDS: Command[] = [
     group: 'Start',
     shown: 'all',
     summary: 'the road: where this project is and its next step',
-    usage: '[--all] [--session] [--json] [--agent <name>]',
+    usage: '[--all] [--files] [--session] [--json] [--agent <name>]',
     help: {
       summary: 'Shows where the project is, what is left to do, and the next command, on one screen.',
       examples: [
@@ -373,6 +373,7 @@ export const COMMANDS: Command[] = [
     },
     options: [
       { name: '--all', text: 'every check: the whole road, the project, unsaved work, this machine and the server' },
+      { name: '--files', text: "only the repo's files: the same on every machine" },
       { name: '--session', text: 'only the next step, for the start of a session' },
       { name: '--json', text: 'the report as JSON on stdout' },
       { name: '--agent', value: 'name', text: 'with --session: claude-code (the default), codex, muse, or gemini for Gemini CLI JSON' },

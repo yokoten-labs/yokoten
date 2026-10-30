@@ -15,16 +15,19 @@ import {
 import {
   chmodSync,
   copyFileSync,
+  existsSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
+  delimiter,
   dirname,
   join,
   posix,
@@ -253,6 +256,22 @@ const copySandboxRepo = makeRepoTemplate((repo) => {
 export const rowsText = (text: string): string => text.replace(/\n\n(?= {2}\S)/g, '\n').replace(/\n {3,}(?=\S)/g, ' ');
 
 export const sessionRoad = (stdout: string): string => stdout.replace(/\n {12}/g, ' ').split('\n').filter((line) => line !== '').slice(0, 2).join('\n');
+
+/**
+ * A PATH with git and node and no gh (#1167, #1256): the folders that hold git and node, or,
+ * when gh lives in one of them, a folder in `home` with links to git and node alone.
+ */
+export function pathWithoutGh(home: string): string {
+  const named = (dir: string, names: string[]) => names.map((name) => join(dir, name)).find((path) => existsSync(path));
+  const gitPath = (process.env.PATH ?? '').split(delimiter).map((dir) => named(dir, ['git', 'git.exe'])).find(Boolean) ?? 'git';
+  const bin = [...new Set([dirname(process.execPath), dirname(gitPath)])].join(delimiter);
+  if (!bin.split(delimiter).some((dir) => named(dir, ['gh', 'gh.exe', 'gh.cmd']))) return bin;
+  const links = join(home, 'bin');
+  mkdirSync(links, { recursive: true });
+  symlinkSync(gitPath, join(links, 'git'));
+  symlinkSync(process.execPath, join(links, 'node'));
+  return links;
+}
 
 export function makeSandbox() {
   const base = makeTempDir();

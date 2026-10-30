@@ -15,7 +15,7 @@ import { VERSION } from '../files.ts';
 import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
-import { type Mark, missingPaths, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, stepText, uncheckedText, walk } from '../road.ts';
+import { type DefaultBranchFiles, type Mark, missingPaths, filesSteps, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, type StepSource, stepSource, stepText, uncheckedText, walk } from '../road.ts';
 import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
 import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, deskFenceCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, type LessonCheck, lessonChecks, lessonRows, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
@@ -223,6 +223,10 @@ export interface StepState {
   why?: string;
   standard?: string;
   reason?: string;
+  /** What the step is judged from: files, host or machine (#1256). Set by doctor, as `how`. */
+  source?: StepSource;
+  /** The step as a plain task, from STEP_TITLES (#1256). Set by doctor, as `how`. */
+  title?: string;
 }
 
 /**
@@ -396,6 +400,8 @@ export interface DoctorView {
   session?: SessionNote[];
   /** The full map, for full doctor. */
   full?: FullView;
+  /** True for `doctor --files` (#1256): the screen says what it leaves out. */
+  files?: boolean;
 }
 
 /** A yokoten command as this machine runs it: `yokoten <words>`, or `npx yokoten <words>` (#500). */
@@ -634,7 +640,9 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
   const heading = parts.title ?? title('doctor', report.stage === null && !problems.length ? `${doctorSummary(report)}, nothing to do` : doctorSummary(report));
   if (report.stage === null && !problems.length && !parts.lead?.length && parts.next === undefined) return screen(...lead, heading);
   const done = steps.filter((s) => s.mark === 'done' || s.mark === 'not now').length;
-  const all = commandOf(report, 'doctor --all');
+  // `--files` (#1256) lists its own map, and leaves out what reads the host or this machine.
+  const isFiles = report.view?.files === true;
+  const all = commandOf(report, isFiles ? 'doctor --files --all' : 'doctor --all');
   const unchecked = steps.filter((s) => s.mark === "can't check").length;
   const notes = (report.notes ?? []).length;
   const next = parts.next ?? (report.next ? nextCommand(report.next) : null);
@@ -653,7 +661,7 @@ export function shortLines(report: DoctorReport, parts: ShortScreenParts = {}): 
       spaced(problemRows(problems)),
       spaced(road),
       spaced(keptNoteRows(report.notes ?? [], all)),
-      [...(next ? nextLine(next) : []), ...moreLine(`\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
+      [...(next ? nextLine(next) : []), ...moreLine(isFiles ? `files only; \`${commandOf(report, 'doctor')}\` also reads the code host and this machine` : `\`${all}\` shows every check${notes ? ` and ${count(notes, 'note')}` : ''}`)],
     );
   };
   // The next step and up to four more, fewer when problems and notes take the room, so the
@@ -728,7 +736,7 @@ export async function readAtOnce<T>(read: (gh: Gh) => T, gh: GhLater, budgetMs =
  */
 function doctorRun(
   root: string | null,
-  { env, config, session = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir, platform = hostPathPlace().platform, isFile }: { env: Env; config: Config; session?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp; platform?: NodeJS.Platform; isFile?: (path: string) => boolean },
+  { env, config, session = false, files = false, gh, host: givenHost, server: givenServer, fillMarks: isFilling = false, machine: probe = REAL_MACHINE, makeTemp = makeTempDir, platform = hostPathPlace().platform, isFile }: { env: Env; config: Config; session?: boolean; files?: boolean; gh?: Gh; host?: Host; server?: ServerRead; fillMarks?: boolean; machine?: MachineProbe; makeTemp?: MakeTemp; platform?: NodeJS.Platform; isFile?: (path: string) => boolean },
 ): { ok: boolean; report: DoctorReport } {
   const lead: string[] = [];
   const { failed, unset } = SELF_TEST.run(makeTemp);
@@ -744,6 +752,8 @@ function doctorRun(
   }
   const base = { version: VERSION, channel: releaseChannel(root, env), selfTest: { ok: !failed.length, failed, ran: !unset.length, skipped: unset, ...(unset.length ? { reason: 'no temp folder to test in' } : {}) }, stages: STAGES };
   if (!root) return { ok: !failed.length, report: { ...base, ok: !failed.length, repo: false, stage: null, next: null, findings, view: { lead } } };
+  // The files alone (#1256): before any host or machine read, so none of them runs.
+  if (files) return filesRun(root, { env, config, base, findings, lead });
 
   // Read only, and only in full doctor: a session never calls the network (record 0004).
   // A host with no adapter needs no network, so a session knows it too (#504).
@@ -856,47 +866,9 @@ function doctorRun(
       jumps.push(`stage ${stage} ${isDone ? 'is done too' : 'counts as done'}: ${stageJumpText(marks)}`);
     }
   }
-  const steps: StepState[] = [];
   // With no origin remote, the server settings list leaves out server-settings (#502).
   const noRemote = server !== undefined && 'unread' in server && server.unread === NO_REMOTE;
-  const stageRows = STAGES.map((_, i): CheckRow[] => {
-    const rows: CheckRow[] = [];
-    const walked = where.steps.filter((w) => w.step.stage === i + 1);
-    const nameOf = (step: (typeof walked)[number]['step']) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`;
-    // The done steps of every stage except the one holding the next step share one row:
-    // that stage is the reader's checklist, and a step named alone there still answers
-    // "is this done?" at a glance (#946).
-    const isCurrent = where.stage === i + 1;
-    const doneNames = isCurrent ? [] : walked.filter(({ mark }) => mark === 'done').map(({ step }) => nameOf(step));
-    if (doneNames.length) rows.push({ mark: 'done', name: doneNames.join(', ') });
-    // The "can't check" steps of a stage that share one reason share one row too.
-    const unchecked = new Map<string, string[]>();
-    for (const { step, mark } of walked) {
-      const stepState: StepState = { id: step.key, stage: step.stage, mark, how: step.how, why: step.why };
-      if (step.standard) stepState.standard = step.standard;
-      steps.push(stepState);
-      if (mark === 'done') {
-        if (isCurrent) rows.push({ mark: 'done', name: nameOf(step) });
-        continue;
-      }
-      if (mark === 'not now') {
-        // A step that needs CI waits with "notNow" `ci` (#377): its reason, then what covers it meanwhile.
-        stepState.reason = Object.hasOwn(config.notNow, step.key) ? config.notNow[step.key] : `${config.notNow.ci} (notNow ci); ${step.withoutCi}`;
-        rows.push({ mark: 'skipped', name: nameOf(step), what: `not now, ${stepState.reason}` });
-      } else if (mark === 'next' || mark === 'to do') {
-        const f = stepFinding(step, root, env, { server, config, elsewhere });
-        findings.push(f);
-        rows.push({ mark, name: nameOf(step), what: f.what, fix: f.fix });
-      } else {
-        let note = uncheckedText(step, server);
-        // Keep the old words for no origin remote (#502): the server is where these live.
-        if (noRemote && note.startsWith(`${NO_REMOTE};`)) note = `${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`;
-        unchecked.set(note, [...(unchecked.get(note) ?? []), nameOf(step)]);
-      }
-    }
-    for (const [note, names] of unchecked) rows.push({ mark: "can't check", name: names.join(', '), ...splitFix(note) });
-    return rows;
-  });
+  const { stageRows, steps } = roadRows(where, root, env, { server, config, elsewhere, findings });
   const project: CheckRow[] = [];
   const notes: Finding[] = [];
   /** A practice as a row: ok with its detail, or a note with its finding. */
@@ -1039,6 +1011,86 @@ function doctorRun(
       view: { lead, full },
     },
   };
+}
+
+/** Where the road walk ended: its stage, next step and each step's mark (`walk` in road.ts). */
+type Walk = ReturnType<typeof walk>;
+
+/**
+ * The rows of each stage and each step's JSON state, from a road walk. A step left to do
+ * adds its finding to `findings`. Each step names what it is judged from and its plain
+ * task title (#1256), so a reader shows yokoten's own words.
+ */
+function roadRows(where: Walk, root: string, env: Env, { server, config, elsewhere, findings }: { server: ServerRead; config: Config; elsewhere: DefaultBranchFiles | null; findings: Finding[] }): { stageRows: CheckRow[][]; steps: StepState[] } {
+  const steps: StepState[] = [];
+  const noRemote = server !== undefined && 'unread' in server && server.unread === NO_REMOTE;
+  const stageRows = STAGES.map((_, i): CheckRow[] => {
+    const rows: CheckRow[] = [];
+    const walked = where.steps.filter((w) => w.step.stage === i + 1);
+    const nameOf = (step: (typeof walked)[number]['step']) => `${step.key}${step.standard ? ` (${step.standard})` : ''}`;
+    // The done steps of every stage except the one holding the next step share one row:
+    // that stage is the reader's checklist, and a step named alone there still answers
+    // "is this done?" at a glance (#946).
+    const isCurrent = where.stage === i + 1;
+    const doneNames = isCurrent ? [] : walked.filter(({ mark }) => mark === 'done').map(({ step }) => nameOf(step));
+    if (doneNames.length) rows.push({ mark: 'done', name: doneNames.join(', ') });
+    // The "can't check" steps of a stage that share one reason share one row too.
+    const unchecked = new Map<string, string[]>();
+    for (const { step, mark } of walked) {
+      const stepState: StepState = { id: step.key, stage: step.stage, mark, how: step.how, why: step.why, source: stepSource(step), title: STEP_TITLES[step.key] ?? step.key };
+      if (step.standard) stepState.standard = step.standard;
+      steps.push(stepState);
+      if (mark === 'done') {
+        if (isCurrent) rows.push({ mark: 'done', name: nameOf(step) });
+        continue;
+      }
+      if (mark === 'not now') {
+        // A step that needs CI waits with "notNow" `ci` (#377): its reason, then what covers it meanwhile.
+        stepState.reason = Object.hasOwn(config.notNow, step.key) ? config.notNow[step.key] : `${config.notNow.ci} (notNow ci); ${step.withoutCi}`;
+        rows.push({ mark: 'skipped', name: nameOf(step), what: `not now, ${stepState.reason}` });
+      } else if (mark === 'next' || mark === 'to do') {
+        const f = stepFinding(step, root, env, { server, config, elsewhere });
+        findings.push(f);
+        rows.push({ mark, name: nameOf(step), what: f.what, fix: f.fix });
+      } else {
+        let note = uncheckedText(step, server);
+        // Keep the old words for no origin remote (#502): the server is where these live.
+        if (noRemote && note.startsWith(`${NO_REMOTE};`)) note = `${NO_REMOTE}, so doctor can't read the server; ${NO_REMOTE_FIX}`;
+        unchecked.set(note, [...(unchecked.get(note) ?? []), nameOf(step)]);
+      }
+    }
+    for (const [note, names] of unchecked) rows.push({ mark: "can't check", name: names.join(', '), ...splitFix(note) });
+    return rows;
+  });
+  return { stageRows, steps };
+}
+
+/**
+ * `doctor --files` (#1256): the road judged only from the files in the checkout, so it gives
+ * the same answer on every machine. It reads no code host, starts no gh, uses no network and
+ * says nothing about this machine: a step judged from the host or the machine is left out,
+ * not shown as "can't check". The report keeps every key of full doctor's, so one reader
+ * reads both. It fails only as full doctor does for files: a failed self-test or core rules
+ * that are behind. The tree check (`yokoten check`) reads the machine's private marks, so
+ * it is not run here.
+ */
+function filesRun(root: string, { env, config, base, findings, lead }: { env: Env; config: Config; base: Omit<DoctorReport, 'ok' | 'repo' | 'stage' | 'next' | 'findings'>; findings: Finding[]; lead: string[] }): { ok: boolean; report: DoctorReport } {
+  const where = walk(road(root, env, filesSteps(ROAD), undefined, config), config.notNow);
+  const left = where.steps.filter((w) => w.mark === 'next' || w.mark === 'to do').map((w) => w.step);
+  const missing = missingPaths(root, left, config);
+  const elsewhere = missing.length ? readDefaultBranchFiles(root, missing, env) : null;
+  const next = where.next ? stepFinding(where.next, root, env, { config, elsewhere }) : null;
+  const { stageRows, steps } = roadRows(where, root, env, { server: undefined, config, elsewhere, findings });
+  const core = coreRulesCheck(root);
+  const isCoreBehind = core?.mark === 'MISSING';
+  const notes: Finding[] = [];
+  if (core && isCoreBehind) findings.push(core.finding);
+  else if (core?.mark === 'note') notes.push(core.finding);
+  const project: CheckRow[] = core ? [core.mark === 'ok' ? { mark: 'ok', name: 'core-rules' } : { mark: core.mark, name: 'core-rules', what: core.finding.what, fix: core.finding.fix }] : [];
+  const ok = base.selfTest.ok && !isCoreBehind;
+  const version: CheckRow = { mark: base.selfTest.ok ? 'ok' : 'MISSING', name: `yokoten ${VERSION} (${base.channel})`, what: `self-test ${base.selfTest.ok ? 'ok' : 'FAILED'}` };
+  const full: FullView = { version, jumps: [], stages: stageRows, project, unsaved: [], machine: [], server: [] };
+  return { ok, report: { ...base, ok, repo: true, stage: where.stage, next, findings, steps, notes, server: [], lessons: [], view: { lead, full, files: true } } };
 }
 
 /** A sentence and its fix, split at the first `; `: the fix goes on a Fix line when it starts with a command. */

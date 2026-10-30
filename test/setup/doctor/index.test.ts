@@ -2,10 +2,13 @@
 
 import '../../repo/home.ts';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
-import { makeSandbox, rowsText } from '../../repo/helpers.ts';
+import { makeSandbox, pathWithoutGh, rowsText } from '../../repo/helpers.ts';
+import { DEFAULTS, type Env } from '../../../src/rules/config.ts';
+import { doctor, type DoctorReport, reportJson, STEP_TITLES } from '../../../src/setup/doctor/index.ts';
+import { VERSION } from '../../../src/setup/files.ts';
 
 test('doctor: a marks file it can not read is named as unreadable, not missing (#656)', async () => {
   const sandbox = makeSandbox();
@@ -26,6 +29,8 @@ test('doctor: a marks file it can not read is named as unreadable, not missing (
 // `check --json` on a public repo and shows the result as-is. Keys may be added; these keys,
 // their types and the mark strings stay, or the page breaks.
 const MARKS = ['done', 'to do', 'next', "can't check", 'not now'];
+/** What a step is judged from (#1256): `doctor --files` keeps only `files`. */
+const SOURCES = ['files', 'host', 'machine'];
 
 test('doctor: --all --json keeps the shape that other tools read (#1167, #1202, #1203)', async () => {
   const sandbox = makeSandbox();
@@ -42,7 +47,11 @@ test('doctor: --all --json keeps the shape that other tools read (#1167, #1202, 
     for (const key of ['id', 'how', 'why']) assert.equal(typeof step[key], 'string', `${String(step.id)}.${key}`);
     assert.equal(typeof step.stage, 'number');
     assert.ok(MARKS.includes(step.mark as string), `${String(step.id)}: mark ${String(step.mark)}`);
+    // What the step is judged from, and its plain task title, so the page writes no words of its own (#1256).
+    assert.ok(SOURCES.includes(step.source as string), `${String(step.id)}: source ${String(step.source)}`);
+    assert.equal(step.title, STEP_TITLES[step.id as string], `${String(step.id)}.title`);
   }
+  for (const source of SOURCES) assert.ok(steps.some((step) => step.source === source), `--all has a step judged from ${source}`);
   for (const mark of ['done', 'next', 'to do']) assert.ok(steps.some((step) => step.mark === mark), `a fresh repo has a step marked ${mark}`);
   assert.equal(steps.filter((step) => step.mark === 'next').length, 1, 'one next step');
   assert.ok(Array.isArray(findings) && findings.length > 0);
@@ -50,6 +59,84 @@ test('doctor: --all --json keeps the shape that other tools read (#1167, #1202, 
     for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof found[key], 'string', `${String(found.id)}.${key}`);
     assert.ok(found.docs === undefined || typeof found.docs === 'string');
   }
+});
+
+// doctor.yokoten.app asks anyone to re-run `doctor --files --json` (#1256): one parser reads it
+// and `--all --json`, so the keys are the same, with fewer steps, and the exit code is 0 or 1.
+test('doctor: --files --json has the keys of --all --json, and only the steps judged from files (#1256)', async () => {
+  const sandbox = makeSandbox();
+  // The function the command calls, as `--json` prints it; doctor.test.ts runs the whole command.
+  const env = { ...sandbox.env, YOKOTEN_TEMP_DIRS: '' };
+  const noHost = () => { throw new Error('no network in this test'); };
+  type Report = Record<string, unknown> & { steps: Record<string, unknown>[]; findings: Record<string, unknown>[]; next: Record<string, unknown> | null };
+  const asJson = (report: DoctorReport) => JSON.parse(JSON.stringify(reportJson(report))) as Report;
+  const allJson = asJson(doctor(sandbox.repo, { env, config: DEFAULTS, gh: noHost }).report);
+  const filesJson = asJson(doctor(sandbox.repo, { env, config: DEFAULTS, gh: noHost, files: true }).report);
+  assert.deepEqual(Object.keys(filesJson).sort(), Object.keys(allJson).sort(), 'the same top keys');
+  assert.equal(typeof filesJson.version, 'string');
+  assert.equal(typeof filesJson.stage, 'number');
+  assert.equal(typeof filesJson.next?.id, 'string');
+  const filesIds = allJson.steps.filter((step) => step.source === 'files').map((step) => step.id);
+  assert.deepEqual(filesJson.steps.map((step) => step.id), filesIds, 'the steps --all judges from files, in road order');
+  const keysOf = (step: Record<string, unknown>) => Object.keys(step).filter((key) => key !== 'standard' && key !== 'reason').sort();
+  for (const step of filesJson.steps) {
+    const twin = allJson.steps.find((other) => other.id === step.id) as Record<string, unknown>;
+    assert.deepEqual(keysOf(step), keysOf(twin), `${String(step.id)}: the same step keys`);
+    // A machine step may be next in --all; then the first files step left is next here.
+    const left = (mark: unknown) => (mark === 'next' ? 'to do' : mark);
+    assert.deepEqual([left(step.mark), step.source, step.title], [left(twin.mark), 'files', twin.title], `${String(step.id)}: as --all judges it`);
+  }
+  for (const found of filesJson.findings) for (const key of ['id', 'what', 'why', 'fix']) assert.equal(typeof found[key], 'string', `${String(found.id)}.${key}`);
+});
+
+/** A repo whose stage 1 files steps are done, so the first step left on the whole road is commit-check, a machine step. */
+function stageOneFilesDone() {
+  const sandbox = makeSandbox();
+  sandbox.write('AGENTS.md', '# Rules\n');
+  sandbox.write('.claude/settings.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'npx yokoten hook' }] }] } }));
+  sandbox.write('.yokoten/VERSION', `${VERSION}\n`);
+  sandbox.withTests();
+  return sandbox;
+}
+
+const noNetwork = () => { throw new Error('no network in this test'); };
+/** The report doctor gives in `repo`, with --files or without. */
+const reportIn = (repo: string, env: Env, files: boolean) => doctor(repo, { env: { ...env, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noNetwork, files }).report;
+
+// The page shows `stage` and `next` (#1256): under --files both come from the files steps
+// alone, so `next` never names a step the page can't show.
+test('doctor --files: stage and next come from the files steps only, never a host or machine step (#1256)', () => {
+  const sandbox = stageOneFilesDone();
+  const plain = reportIn(sandbox.repo, sandbox.env, false);
+  // Positive control: on the whole road, the first step left is a machine step.
+  assert.equal(plain.next?.id, 'commit-check', JSON.stringify(plain.steps?.filter((step) => step.mark !== 'done')));
+  assert.equal(plain.steps?.find((step) => step.id === 'commit-check')?.source, 'machine');
+  const files = reportIn(sandbox.repo, sandbox.env, true);
+  const firstLeft = files.steps?.find((step) => step.mark === 'next' || step.mark === 'to do');
+  assert.ok(firstLeft, 'a files step is left');
+  assert.equal(files.next?.id, firstLeft.id, 'next is the first files step left');
+  assert.equal(firstLeft.mark, 'next');
+  assert.equal(files.stage, firstLeft.stage);
+  assert.equal(files.steps?.find((step) => step.id === files.next?.id)?.source, 'files');
+});
+
+// Muse's trust store is this machine's (#1256): under --files, tool-hook reads the project's
+// files only, so a home whose store does not trust the folder gives the mark an empty home gives.
+test('doctor --files: tool-hook reads no Muse trust store; plain doctor still does (#1256)', () => {
+  const sandbox = stageOneFilesDone();
+  sandbox.write('.muse/hooks.json', JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'npx yokoten hook' }] }] } }));
+  const untrusting = join(sandbox.home, 'untrusting');
+  const store = join(untrusting, '.config', 'muse', 'trust.json');
+  mkdirSync(join(store, '..'), { recursive: true });
+  writeFileSync(store, JSON.stringify({ schema_version: 1, projects: { '/somewhere/else': { decision: 'trusted' } } }));
+  const empty = join(sandbox.home, 'empty');
+  mkdirSync(empty);
+  const markIn = (home: string, files: boolean) => reportIn(sandbox.repo, { ...sandbox.env, HOME: home }, files).steps?.find((step) => step.id === 'tool-hook')?.mark;
+  assert.equal(markIn(untrusting, true), markIn(empty, true), 'the same mark with any home');
+  assert.equal(markIn(untrusting, true), 'done', 'the project hook is in place');
+  // Positive control: plain doctor reads the store, and the guard is off in Muse there.
+  assert.equal(markIn(empty, false), 'done');
+  assert.notEqual(markIn(untrusting, false), 'done');
 });
 
 test('check: --json keeps its shape and never prints the value it found (#1202)', async () => {
@@ -73,17 +160,7 @@ test('check: --json keeps its shape and never prints the value it found (#1202)'
 // A folder with a GitHub origin, but no gh on the PATH, no login and no network: doctor skips the server steps at once.
 test("doctor: with no gh on the PATH, the server steps are can't check, and doctor answers fast (#1167)", async () => {
   const sandbox = makeSandbox();
-  // A PATH of the folders that hold git and node. If gh lives in one of them, a folder of links to git and node alone.
-  const named = (dir: string, names: string[]) => names.map((name) => join(dir, name)).find((path) => existsSync(path));
-  const gitPath = (process.env.PATH ?? '').split(delimiter).map((dir) => named(dir, ['git', 'git.exe'])).find(Boolean) ?? 'git';
-  let bin = [...new Set([dirname(process.execPath), dirname(gitPath)])].join(delimiter);
-  if (bin.split(delimiter).some((dir) => named(dir, ['gh', 'gh.exe', 'gh.cmd']))) {
-    const links = join(sandbox.home, 'bin');
-    mkdirSync(links);
-    symlinkSync(gitPath, join(links, 'git'));
-    symlinkSync(process.execPath, join(links, 'node'));
-    bin = links;
-  }
+  const bin = pathWithoutGh(sandbox.home);
   sandbox.git('remote', 'add', 'origin', 'https://github.com/someone/repo.git');
   const started = Date.now();
   const result = await sandbox.call(['doctor', '--all', '--json'], { extra: { PATH: bin } });
