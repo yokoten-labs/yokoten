@@ -116,7 +116,8 @@ function agents() {
   const rows = section.split('\n').filter((l) => l.startsWith('|')).map((l) => l.split('|').slice(1, -1).map((c) => c.trim()));
   const [head, , ...body] = rows;
   if (!head || head[0] !== 'Agent') throw new Error('the "Works with" table no longer starts with an Agent column');
-  return body.map(([agent, verified, trust]) => ({ agent: agent.replace(/`/g, ''), verified: /yes/.test(verified), trustFirst: /^yes/.test(trust) }));
+  // A name keeps its words on one line with &nbsp; in the table (#1268); the facts hold the plain name.
+  return body.map(([agent, verified, trust]) => ({ agent: agent.replace(/`/g, '').replace(/&nbsp;/g, ' '), verified: /yes/.test(verified), trustFirst: /^yes/.test(trust) }));
 }
 
 /** What the agent typed for each guard screen: GUARD_CALLS in the screen test. */

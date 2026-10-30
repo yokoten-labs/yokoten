@@ -376,14 +376,14 @@ and the dated runs. A test fails when the two differ.
 
 | Agent | Hook file (`init` writes it) | How it blocks | Capabilities (rewrite · stop · trust · fails · role) | Verified | Caveats |
 |---|---|---|---|---|---|
-| Claude Code | `.claude/settings.json`: PreToolUse, Stop and SubagentStop | exit 2, the reason on stderr | yes · yes · yes · closed · yes | yes, 2026-10-19: headless, on DeepSeek `deepseek-flash` | none |
-| GitHub Copilot CLI | the same `.claude/settings.json`: Copilot reads it | exit 2, and the reason as JSON on stdout | no · yes · yes · open · yes | yes, 2026-10-19: Copilot CLI 1.0.98, `copilot -p`, model `gpt-6-luna` (Auto) | Runs repo hooks only after you trust the folder: run `yokoten trust` there. Skips them without a word otherwise. A hook that times out lets the call go on |
-| Antigravity CLI | `.agents/hooks.json`: the `yokoten` entry, PreToolUse | `{"decision": "deny"}` on stdout | no · no · no · closed · yes | yes, 2026-10-19: agy 1.4.2, `agy -p`, model `gemini-3.8-flash-high` | No stop check yet. Without `.yokoten/`, every call is refused: agy fails closed. The lead runs a worker's done-when check |
-| Codex CLI | `.codex/hooks.json`: PreToolUse and Stop | exit 2, the reason on stderr | no · yes · yes · closed · yes | yes, 2026-10-19: Codex 0.163.0, `codex exec`, on DeepSeek `deepseek-flash` | Runs the hooks only after you trust the folder, and then both hooks: run `yokoten trust` there. `codex exec` skips an untrusted hook without a word |
-| Muse Code | `.muse/hooks.json`: PreToolUse and Stop | exit 2, the reason on stderr | no · yes · yes · open · no | yes, 2026-10-19: Muse Code 1.4.10, `muse exec --trust-workspace`, model `muse-spark-1.3-contributor` | Runs the hooks only after you trust the folder: run `yokoten trust`. Muse passes no `YOKOTEN_ROLE` to a hook, so mark a worker's worktree with `yokoten worker mark <dir>`. It is not known to pass `YOKOTEN_RELEASE_APPROVAL` either, so release outside Muse. A hook that fails or times out lets the call go on |
-| DeepSeek Harness | `.dsh/hooks.json`: PreToolUse, and `.dsh/yokoten.patch.yml` to load it | exit 2, the reason on stderr | no · no · no · open · yes | yes, 2026-10-20: dsh 0.2.1-rc.2, `dsh headless --patch .dsh/yokoten.patch.yml`, default DeepSeek model | Runs hooks only through a bridge you add to each profile: see [DeepSeek Harness](#deepseek-harness). Without it, or without the patch, dsh runs no hooks and says nothing. Not guarded on Windows yet (#332). No stop check: the lead runs a worker's done-when check |
-| Grok CLI | `.grok/hooks/yokoten.json`: PreToolUse and Stop | `permissionDecision: "deny"` on stdout, and exit 2 | yes · yes · yes · closed · yes | yes, 2026-10-20: Grok CLI 1.0.52, `grok -p --trust --always-approve`, default model | Runs project hooks only after you trust the folder: run `yokoten trust` there. Skips them without a word otherwise. Also runs the hooks in `.claude/settings.json`, so the guard may run twice for one call, on purpose |
-| Gemini CLI | `.gemini/settings.json`: BeforeTool and AfterAgent | exit 2, the reason on stderr | no · yes · yes · closed · no | not run end to end: personal sign-in retired 2026-06-18; needs a paid API key or an org license | Google's agent for individuals is now Antigravity CLI |
+| Claude&nbsp;Code | `.claude/settings.json`: PreToolUse, Stop and SubagentStop | exit 2, the reason on stderr | yes · yes · yes · closed · yes | yes, 2026-10-19: headless, on DeepSeek `deepseek-flash` | none |
+| GitHub&nbsp;Copilot&nbsp;CLI | the same `.claude/settings.json`: Copilot reads it | exit 2, and the reason as JSON on stdout | no · yes · yes · open · yes | yes, 2026-10-19: Copilot CLI 1.0.98, `copilot -p`, model `gpt-6-luna` (Auto) | Runs repo hooks only after you trust the folder: run `yokoten trust` there. Skips them without a word otherwise. A hook that times out lets the call go on |
+| Antigravity&nbsp;CLI | `.agents/hooks.json`: the `yokoten` entry, PreToolUse | `{"decision": "deny"}` on stdout | no · no · no · closed · yes | yes, 2026-10-19: agy 1.4.2, `agy -p`, model `gemini-3.8-flash-high` | No stop check yet. Without `.yokoten/`, every call is refused: agy fails closed. The lead runs a worker's done-when check |
+| Codex&nbsp;CLI | `.codex/hooks.json`: PreToolUse and Stop | exit 2, the reason on stderr | no · yes · yes · closed · yes | yes, 2026-10-19: Codex 0.163.0, `codex exec`, on DeepSeek `deepseek-flash` | Runs the hooks only after you trust the folder, and then both hooks: run `yokoten trust` there. `codex exec` skips an untrusted hook without a word |
+| Muse&nbsp;Code | `.muse/hooks.json`: PreToolUse and Stop | exit 2, the reason on stderr | no · yes · yes · open · no | yes, 2026-10-19: Muse Code 1.4.10, `muse exec --trust-workspace`, model `muse-spark-1.3-contributor` | Runs the hooks only after you trust the folder: run `yokoten trust`. Muse passes no `YOKOTEN_ROLE` to a hook, so mark a worker's worktree with `yokoten worker mark <dir>`. It is not known to pass `YOKOTEN_RELEASE_APPROVAL` either, so release outside Muse. A hook that fails or times out lets the call go on |
+| DeepSeek&nbsp;Harness | `.dsh/hooks.json`: PreToolUse, and `.dsh/yokoten.patch.yml` to load it | exit 2, the reason on stderr | no · no · no · open · yes | yes, 2026-10-20: dsh 0.2.1-rc.2, `dsh headless --patch .dsh/yokoten.patch.yml`, default DeepSeek model | Runs hooks only through a bridge you add to each profile: see [DeepSeek Harness](#deepseek-harness). Without it, or without the patch, dsh runs no hooks and says nothing. Not guarded on Windows yet (#332). No stop check: the lead runs a worker's done-when check |
+| Grok&nbsp;CLI | `.grok/hooks/yokoten.json`: PreToolUse and Stop | `permissionDecision: "deny"` on stdout, and exit 2 | yes · yes · yes · closed · yes | yes, 2026-10-20: Grok CLI 1.0.52, `grok -p --trust --always-approve`, default model | Runs project hooks only after you trust the folder: run `yokoten trust` there. Skips them without a word otherwise. Also runs the hooks in `.claude/settings.json`, so the guard may run twice for one call, on purpose |
+| Gemini&nbsp;CLI | `.gemini/settings.json`: BeforeTool and AfterAgent | exit 2, the reason on stderr | no · yes · yes · closed · no | not run end to end: personal sign-in retired 2026-06-18; needs a paid API key or an org license | Google's agent for individuals is now Antigravity CLI |
 | OpenCode | `.opencode/plugins/yokoten.ts`: OpenCode 2 permission `evaluate`, and OpenCode 1 `tool.execute.before` | OpenCode 2 sets `effect` to deny; OpenCode 1 throws the reason | no · no · no · closed · no | yes, 2026-10-23: OpenCode 2.1.4, `opencode-go/deepseek-v4.1-flash`, the plugin as `init` writes it; 2026-10-25: the guard stopped a command from `opencode-go/glm-5.3-flash` (GLM-5.3 Flash, by Z.ai) | No stop check. A guard that fails or times out refuses the call. So does a call that is not read-only, when no command or path can be read. A subagent call was not part of that run |
 | Any other agent | none | the rules in `AGENTS.md`, and the commit check, which stops a bad commit whoever made it | — | | |
 
@@ -440,10 +440,10 @@ each agent's own trust store, read-only, and notes a folder it does not trust ye
 
 | Agent | Trust store | Counts as trusted |
 |---|---|---|
-| Copilot CLI | `trustedFolders` in `~/.copilot/config.json` (or `$COPILOT_HOME`) | the folder, or a folder above it |
+| Copilot&nbsp;CLI | `trustedFolders` in `~/.copilot/config.json` (or `$COPILOT_HOME`) | the folder, or a folder above it |
 | Codex | `~/.codex/config.toml` (or `$CODEX_HOME`): `[projects]` and `[hooks.state]` | the repo folder exactly, and each hook as it is now |
-| Muse Code | `~/.config/muse/trust.json` (or `$XDG_CONFIG_HOME/muse/trust.json`) | the repo folder exactly |
-| Grok CLI | `~/.grok/trusted_folders.toml` (or `$GROK_HOME`): `[folders."<folder>"]` with `trusted = true` | the repo folder exactly |
+| Muse&nbsp;Code | `~/.config/muse/trust.json` (or `$XDG_CONFIG_HOME/muse/trust.json`) | the repo folder exactly |
+| Grok&nbsp;CLI | `~/.grok/trusted_folders.toml` (or `$GROK_HOME`): `[folders."<folder>"]` with `trusted = true` | the repo folder exactly |
 
 Doctor checks an agent only when its home folder is there (`~/.copilot`, `~/.codex`, `~/.config/muse`, `~/.grok`).
 When that folder has no store, or one doctor can't read, it says "can't check", never ok.
@@ -550,7 +550,7 @@ set. A subagent starts no session, so it hears nothing.
 
 | Agent | What `init` writes | Why |
 |---|---|---|
-| Claude Code | `.claude/settings.json`: `sandbox.enabled` is `true` | Shell commands stay in the worktree. New network hosts ask first |
+| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` is `true` | Shell commands stay in the worktree. New network hosts ask first |
 | Codex | `.codex/config.toml`: `sandbox_mode` is `workspace-write`, `approval_policy` is `on-request`, `network_access` is `false` | Writes stay in the worktree. Network stays off. Codex asks before it goes beyond |
 | Gemini | `.gemini/settings.json`: `security.disableYoloMode` is `true` | YOLO mode, which approves everything, stays off |
 | Grok | `.grok/sandbox.toml`: `[profiles.yokoten]` builds on `workspace` | The `yokoten` profile keeps writes in the worktree. Workers run with `grok --sandbox yokoten` |
@@ -2186,10 +2186,10 @@ next start. Remove the state folder with the desk.
 
 | Agent | `<agent>` | Points the agent at its state with | Login file copied | API hosts | Command inside the desk |
 |---|---|---|---|---|---|
-| Claude Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`, and `platform.claude.com` to renew a login | `claude -p "<brief>"` |
+| Claude&nbsp;Code | `claude-code` | `CLAUDE_CONFIG_DIR` | `.credentials.json` | `api.anthropic.com`, and `platform.claude.com` to renew a login | `claude -p "<brief>"` |
 | Codex, and DeepSeek through Codex | `codex` | `CODEX_HOME` | `auth.json` | `api.openai.com`, `api.deepseek.com` | `codex exec --sandbox danger-full-access "<brief>"` |
 | Grok | `grok` | `GROK_HOME` | `auth.json` | `api.x.ai` | `grok -p "<brief>"` |
-| Muse Code | `muse` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
+| Muse&nbsp;Code | `muse` | `XDG_CONFIG_HOME`, `XDG_DATA_HOME` | `muse/auth.json` | `api.meta.ai` | `muse exec "<brief>"` |
 
 - **Claude Code** renews a login at `platform.claude.com`. A token from `claude setup-token`
   in `CLAUDE_CODE_OAUTH_TOKEN`, or an API key, needs no renewal and passes in as a login.

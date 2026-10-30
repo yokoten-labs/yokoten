@@ -102,15 +102,15 @@ Any AI model works. The guard checks the commands the agent runs, not the model.
 
 | Agent | Verified end to end | Trust first | Models tested |
 |---|---|---|---|
-| Claude Code | ✅ yes | no | `deepseek-flash` |
-| GitHub Copilot CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
-| Antigravity CLI | ✅ yes | no | `gemini-3.8-flash-high` |
-| Codex CLI | ✅ yes | yes | `deepseek-flash` |
-| Muse Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
-| DeepSeek Harness | ✅ yes | no | the default DeepSeek model |
-| Grok CLI | ✅ yes | yes | the default model |
-| Gemini CLI | not yet | no | — |
-| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
+| Claude&nbsp;Code | ✅ yes | no | `deepseek-flash` |
+| GitHub&nbsp;Copilot&nbsp;CLI | ✅ yes | yes | `gpt-6-luna` (Auto) |
+| Antigravity&nbsp;CLI | ✅ yes | no | `gemini-3.8-flash-high` |
+| Codex&nbsp;CLI | ✅ yes | yes | `deepseek-flash` |
+| Muse&nbsp;Code | ✅ yes | yes | `muse-spark-1.3-contributor` |
+| DeepSeek&nbsp;Harness | ✅ yes | no | the default DeepSeek model |
+| Grok&nbsp;CLI | ✅ yes | yes | the default model |
+| Gemini&nbsp;CLI | not yet | no | — |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`<br>`opencode-go/glm-5.3-flash` |
 
 - **Programming languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
 - **Platforms**: Linux, macOS and WSL. Native Windows is in beta, in Git Bash and PowerShell 7.

@@ -221,6 +221,12 @@ const OTHER_AGENT_ROW = '| Any other agent | none | the rules in `AGENTS.md`, an
 
 const flag = (on: boolean): string => (on ? 'yes' : 'no');
 
+/**
+ * An agent's name as a table cell shows it: non-breaking spaces between its words, so a narrow
+ * column never puts `GitHub Copilot` on one line and `CLI` on the next (#1268).
+ */
+export const nameCell = (label: string): string => label.replace(/ /g, '&nbsp;');
+
 /** The "Works with" table, generated from the adapters and the dated run notes. */
 export function worksWithTable(entries: readonly GuideEntry[] = GUIDE_AGENTS): string {
   const rows = entries.map((entry) => {
@@ -228,7 +234,7 @@ export function worksWithTable(entries: readonly GuideEntry[] = GUIDE_AGENTS): s
     if (!adapter) throw new Error(`the guide names the adapter ${entry.adapter}, which is not in ADAPTERS`);
     const capabilities = { ...adapter.capabilities, ...entry.changes };
     const cell = [flag(capabilities.canRewrite), flag(capabilities.hasStopHook), flag(capabilities.needsTrust), capabilities.failsOpen ? 'open' : 'closed', flag(capabilities.passesRole)].join(' · ');
-    return `| ${entry.label} | ${entry.projectHook ?? adapter.projectHook} | ${entry.blocking ?? adapter.blocking} | ${cell} | ${entry.verified} | ${entry.caveats} |`;
+    return `| ${nameCell(entry.label)} | ${entry.projectHook ?? adapter.projectHook} | ${entry.blocking ?? adapter.blocking} | ${cell} | ${entry.verified} | ${entry.caveats} |`;
   });
   return [
     '| Agent | Hook file (`init` writes it) | How it blocks | Capabilities (rewrite · stop · trust · fails · role) | Verified | Caveats |',

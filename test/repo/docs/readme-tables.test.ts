@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { GUIDE_AGENTS, worksWithTable } from '../../../src/agents/runtimes/runtime.ts';
 import { checkCommand } from '../../../src/rules/guards/commands/check.ts';
 import { formatRefusal } from '../../../src/rules/text/message.ts';
 import { ROOT } from '../helpers.ts';
@@ -118,10 +119,56 @@ test('the READMEs copy the guide agents table, row for row', () => {
 // one model renamed here.
 test('control: a README agents row that differs from the guide is caught', () => {
   const guide = guideFacts(read('docs/guide.md'));
-  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
+  const doctored = read('README.md').replace('`deepseek-flash`', '`other-model`').replace('| Codex&nbsp;CLI | ✅ yes | yes |', '| Codex&nbsp;CLI | ✅ yes | no |');
   assert.ok(tableProblems(readmeFacts(doctored, '## Works with'), guide).some((one) => one.includes('other-model')), 'a changed model in a README row was not caught');
-  const drifted = read('README.md').replace('| Codex CLI | ✅ yes | yes |', '| Codex CLI | ✅ yes | no |');
-  assert.ok(tableProblems(readmeFacts(drifted, '## Works with'), guide).some((one) => one.startsWith('Codex CLI')), 'a changed trust value in a README row was not caught');
+  const drifted = read('README.md').replace('| Codex&nbsp;CLI | ✅ yes | yes |', '| Codex&nbsp;CLI | ✅ yes | no |');
+  assert.ok(tableProblems(readmeFacts(drifted, '## Works with'), guide).some((one) => one.startsWith('Codex&nbsp;CLI')), 'a changed trust value in a README row was not caught');
+});
+
+// #1268: on GitHub a narrow column broke "GitHub Copilot / CLI" and split a model ID at its
+// hyphen. An agent's name opens a row with &nbsp; between its words, and a models cell holds
+// one code span per line (`<br>` between them), so text wraps only between whole names.
+const GUIDES = ['docs/guide.md', 'docs/i18n/zh-CN/guide.md', 'docs/i18n/ja/guide.md'];
+/** The multi-word agent names a table may open a row with: the guide's labels, and Copilot's short name. */
+const AGENT_NAMES = [...GUIDE_AGENTS.map((entry) => entry.label), 'Copilot CLI'].filter((name) => name.includes(' '));
+
+/** Each table row of `text` whose first cell is an agent name written with a plain space. */
+function brokenNameRows(text: string): string[] {
+  return text
+    .split('\n')
+    .filter((line) => line.startsWith('|'))
+    .map((line) => cellsOf(line)[0] ?? '')
+    .filter((cell) => AGENT_NAMES.includes(cell.replace(/&nbsp;/g, ' ')) && cell.includes(' '));
+}
+
+/** Each models cell of a README's agents table that puts two code spans on one line. */
+function crowdedModelCells(readme: string, heading: string): string[] {
+  return tableAfterHeading(readme, heading)
+    .filter((cells) => !isHeaderRow(cells))
+    .filter((cells) => (cells[3] ?? '').split('<br>').some((line) => (line.match(/`[^`]+`/g) ?? []).length > 1))
+    .map((cells) => cells[0] ?? '');
+}
+
+test('tables: an agent name never breaks inside itself, and a models cell holds one model per line (#1268)', () => {
+  assert.ok(AGENT_NAMES.includes('GitHub Copilot CLI') && AGENT_NAMES.length >= 8, 'the agent names are not read from the guide');
+  assert.match(worksWithTable(), /^\| GitHub&nbsp;Copilot&nbsp;CLI \|/m, 'the generated table keeps the name whole');
+  const names = [...FILES, ...GUIDES].flatMap((file) => brokenNameRows(read(file)).map((cell) => `${file}: ${cell}`));
+  assert.deepEqual(names, [], 'write the name with &nbsp; between its words');
+  const crowded = FILES.flatMap((file) => crowdedModelCells(read(file), HEADINGS.get(file) ?? '').map((agent) => `${file}: ${agent}`));
+  assert.deepEqual(crowded, [], 'put each model on its own line, with <br> between them');
+});
+
+// Known-bad input: a plain space in a name, and two models on one line, are caught.
+test('control: a name with a plain space and two models on one line are caught (#1268)', () => {
+  assert.deepEqual(brokenNameRows('| Agent | Note |\n|---|---|\n| GitHub Copilot CLI | x |\n| Codex&nbsp;CLI | y |\n| Any other agent | z |'), ['GitHub Copilot CLI']);
+  const crowded = read('README.md').replace('`opencode-go/deepseek-v4.1-flash`<br>`opencode-go/glm-5.3-flash`', '`opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash`');
+  assert.deepEqual(crowdedModelCells(crowded, '## Works with'), ['OpenCode']);
+});
+
+// The site shows the same tables: a code span in a cell stays on one line, and the table scrolls.
+test('site: a code span in a docs table cell does not wrap (#1268)', () => {
+  const shell = read('web/site/site/src/components/frame/DocsShell.astro');
+  assert.match(shell, /\.prose td code\) \{ white-space: nowrap; \}/, 'DocsShell.astro: keep `white-space: nowrap` on `.prose td code`');
 });
 
 /** The refusal sample of a README: the fenced block that starts with the refusal title. */
