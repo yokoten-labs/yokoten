@@ -16,7 +16,7 @@ import { assertLinear, assertLinearEach, assertWallSmoke } from '../../scripts/l
 import fileTimes, { fileBlock, fileProgress, judgeFiles, judgeSuite, limitOf, readReport, SUITE_BUDGET, tapLines, TEST_LIMITS, verdictOf } from '../../scripts/time/suite.ts';
 import { capOf, CRASHED, crashLines, entriesOf, type FileRun, isCrash, judgeKnown, knownFor, knownText, listLines, maskReason, platformOf, scopeFor, skippedLines, TEST_AREAS, readFailures, readKnown, readReasons, reasonCounts, fileLine, progressLine, slowLine, slowestFiles, reportLines, summaryTable, readTimes, runWithRetry, shardOf, staleKnown, testFiles, TIMED_OUT, weightsOf } from '../../scripts/time/windows-known.ts';
 import { clearYokotenEnv, TEST_HOME } from './home.ts';
-import { isTestCommand, mask, quote, remoteLine } from '../../.github/mac/run.ts';
+import { BRANCH_CHARS, HOST_CHARS, isTestCommand, mask, quote, remoteLine, SETUP_FAILED } from '../../.github/mac/run.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SRC = join(ROOT, 'src');
@@ -2859,10 +2859,10 @@ test('tests: none names the current version; they read VERSION, so a release nee
 // The Mac runner (issue #1241): a worker may run it, so it sends only test commands, quotes
 // what reaches the Mac's shell, tells its own setup failure apart, and never prints the address.
 test('mac runner: only test commands go, quoted, and the address never shows (#1241)', () => {
-  for (const command of [['npm', 'test'], ['npm', 'run', 'typecheck'], ['npx', 'tsc'], ['node', '--test'], ['node', '--test', 'test/repo/architecture.test.ts', '--test-name-pattern=mac']]) {
+  for (const command of [['npm', 'test'], ['npm', 'run', 'typecheck'], ['npx', 'tsc'], ['node', '--test'], ['node', '--test', 'test/repo/architecture.test.ts', '--test-name-pattern=mac runner']]) {
     assert.ok(isTestCommand(command), command.join(' '));
   }
-  for (const command of [[], ['sh', '-c', 'id'], ['bash'], ['npm', 'test', '--', 'x'], ['npm', 'run', 'a;b'], ['npm', 'exec', 'x'], ['npx', 'cowsay'], ['node', '-e', 'x'], ['node', '--test', 'a;id'], ['node', '--test', '$(id)']]) {
+  for (const command of [[], ['sh', '-c', 'id'], ['bash'], ['npm', 'test', '--', 'x'], ['npm', 'run', 'a;b'], ['npm', 'exec', 'x'], ['npx', 'cowsay'], ['node', '-e', 'x'], ['node', '--test', 'a;id'], ['node', '--test', '$(id)'], ['node', '--test', '--require=./x.js'], ['node', '--test', '--import', 'x.js'], ['node', '--test', '-r', 'x']]) {
     assert.ok(!isTestCommand(command), command.join(' '));
   }
   assert.equal(quote('plain/path-1.ts'), 'plain/path-1.ts');
@@ -2870,7 +2870,12 @@ test('mac runner: only test commands go, quoted, and the address never shows (#1
   assert.equal(quote('$(id)'), `'$(id)'`);
   const line = remoteLine('fix/a.b', ['npm', 'test']);
   assert.match(line, /D='wt-fix-a\.b'|D=wt-fix-a\.b/);
-  assert.match(line, /\|\| exit 97; nice npm test$/, 'the setup fails apart from the command');
+  assert.ok(line.endsWith(`|| { echo '${SETUP_FAILED}' >&2; exit 2; }; nice npm test`), 'the setup says it failed, apart from the exit code of the command');
+  for (const branch of ['fix/a.b', 'main']) assert.ok(BRANCH_CHARS.test(branch), branch);
+  for (const branch of ['a;id', 'a b', "a'b", '$(id)', 'a`b', '']) assert.ok(!BRANCH_CHARS.test(branch), branch);
+  for (const host of ['192.0.2.10', 'me@192.0.2.10', 'mac.local']) assert.ok(HOST_CHARS.test(host), host);
+  for (const host of ['-oProxyCommand', '-x', 'a;id', 'a b', '$(id)', 'a=b', '']) assert.ok(!HOST_CHARS.test(host), host);
+  assert.ok(!BRANCH_CHARS.test('-x'), 'a branch never starts with -');
   const host = '192.0.2.10';
   assert.equal(mask('ssh 192.0.2.10 at /Users/someone/work, me@192.0.2.10', host), 'ssh MAC at ~/work, USER@HOST');
   assert.equal(mask('192a0b2c10', host), '192a0b2c10', 'the dots in the address are not wildcards');

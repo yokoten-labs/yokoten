@@ -23,11 +23,12 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HOST_FILE = join(homedir(), '.config', 'yokoten-mac', 'host');
-// Branch and host go into a shell on the Mac, so they may hold only these characters.
-export const BRANCH_CHARS = /^[A-Za-z0-9._/-]+$/;
-export const HOST_CHARS = /^[A-Za-z0-9._@:-]+$/;
-// The remote setup's own exit code, told apart from the command's.
-const SETUP_FAILED = 97;
+// Branch and host go into a shell on the Mac and onto ssh's command line, so they may hold only
+// these characters, and never start with `-`, which ssh and git would read as an option.
+export const BRANCH_CHARS = /^[A-Za-z0-9][A-Za-z0-9._/-]*$/;
+export const HOST_CHARS = /^[A-Za-z0-9][A-Za-z0-9._@:-]*$/;
+// What the remote setup prints when it fails, told apart from the command's own exit code.
+export const SETUP_FAILED = 'yokoten-mac-run: setup failed';
 
 /** A word quoted for a POSIX shell. */
 export function quote(word: string): string {
@@ -45,7 +46,7 @@ export function isTestCommand(command: string[]): boolean {
   const [first, second, third] = command;
   if (first === 'npm') return (second === 'test' && command.length === 2) || (second === 'run' && command.length === 3 && /^[a-z][a-z0-9:-]*$/.test(third ?? ''));
   if (first === 'npx') return second === 'tsc' && command.length === 2;
-  if (first === 'node') return second === '--test' && command.slice(2).every((word) => /^[A-Za-z0-9._/=*-]+$/.test(word));
+  if (first === 'node') return second === '--test' && command.slice(2).every((word) => /^[A-Za-z0-9_*][A-Za-z0-9._/*-]*$/.test(word) || /^--test-name-pattern=[A-Za-z0-9 ._*-]+$/.test(word));
   return false;
 }
 
@@ -60,7 +61,7 @@ export function remoteLine(branch: string, command: string[]): string {
     `git checkout -q -B ${quote(branch)} ${quote(`origin/${branch}`)}`,
     '{ [ -e node_modules ] || ln -s ../yokoten-cap/node_modules node_modules; }',
   ];
-  return `{ ${setup.join(' && ')}; } || exit ${SETUP_FAILED}; nice ${command.map(quote).join(' ')}`;
+  return `{ ${setup.join(' && ')}; } || { echo ${quote(SETUP_FAILED)} >&2; exit 2; }; nice ${command.map(quote).join(' ')}`;
 }
 
 function fail(message: string): never {
@@ -97,6 +98,7 @@ function main(): void {
   const push = spawnSync('git', ['-C', top, 'push', '-q', '-f', `ssh://${host}/~/work/yokoten.git`, `${branch}:${branch}`], { env, stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
   if (push.status !== 0) fail(`the push to the Mac failed (exit ${push.status})`);
 
+  let setupFailed = false;
   const ssh = spawn('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=15', host, remoteLine(branch, command)], { stdio: ['ignore', 'pipe', 'pipe'] });
   for (const [from, to] of [[ssh.stdout, process.stdout], [ssh.stderr, process.stderr]] as const) {
     let rest = '';
@@ -104,16 +106,18 @@ function main(): void {
     from.on('data', (chunk: string) => {
       const lines = (rest + chunk).split('\n');
       rest = lines.pop() ?? '';
+      if (lines.some((line) => line === SETUP_FAILED)) setupFailed = true;
       if (lines.length) to.write(`${lines.map((line) => mask(line, host)).join('\n')}\n`);
     });
     from.on('end', () => {
       if (rest) to.write(mask(rest, host));
     });
   }
+  // exitCode, not exit: the streams flush what they still hold.
   ssh.on('close', (code) => {
-    if (code === SETUP_FAILED) fail('the setup on the Mac failed (fetch, worktree or checkout); nothing ran');
-    if (code === 255 || code === null) fail('ssh to the Mac failed; nothing ran, or the run was cut off');
-    process.exit(code);
+    if (setupFailed) process.stderr.write('run.ts: the setup on the Mac failed (fetch, worktree or checkout); nothing ran\n');
+    else if (code === 255 || code === null) process.stderr.write('run.ts: ssh to the Mac failed; nothing ran, or the run was cut off\n');
+    process.exitCode = setupFailed || code === 255 || code === null ? 2 : code;
   });
 }
 
