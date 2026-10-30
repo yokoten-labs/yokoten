@@ -103,10 +103,10 @@ test('board stream page: a refusal shows its title, why and do instead (#707)', 
   const stream = { ...emptyStream('~/w'), source: 'claude' as const };
   stream.node = newStreamNode(state);
   state.stream = stream;
-  const text = formatRefusal(finding('force-push', 'git push --force forces the push', 'pull first, then push'));
-  addStream(state, stream, [{ kind: 'stop', text, refusal: { id: 'force-push', title: 'yokoten stopped this: git push --force forces the push [force-push]', why: 'A plain force push can throw away work that someone else pushed.', fix: 'Pull first, then push.', docs: 'https://example.com/docs#force' }, time: '' }]);
+  const text = formatRefusal(finding('force-push', 'git push --force can overwrite the remote', 'pull first, then push'));
+  addStream(state, stream, [{ kind: 'stop', text, refusal: { id: 'force-push', title: 'yokoten stopped this: git push --force can overwrite the remote [force-push]', why: 'A plain force push can throw away work that someone else pushed.', fix: 'Pull first, then push.', docs: 'https://example.com/docs#force' }, time: '' }]);
   const stop = (stream.node as unknown as FakeNode).find('gstop')[0];
-  assert.match(stop.textContent, /^yokoten stopped this: git push --force forces the push \[force-push\]/, 'the title');
+  assert.match(stop.textContent, /^yokoten stopped this: git push --force can overwrite the remote \[force-push\]/, 'the title');
   assert.match(stop.textContent, /Why: A plain force push can throw away work/, 'the why');
   assert.match(stop.textContent, /Do instead: Pull first, then push\./, 'the safe way');
   assert.match(stop.textContent, /More: https:\/\/example\.com\/docs#force/, 'the link');

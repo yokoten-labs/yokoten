@@ -98,7 +98,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 
 任何 AI 模型都可以。守衛檢查的是 agent 要跑的指令，不是模型。
 
-- **Agent**：守衛和下面每一個 agent 一起工作。每一行的證據（日期、執行方式、先要知道什麼）見[指南裡的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
+- **Agent**：守衛能搭配下面每一個 agent 使用。每一行的證據（日期、執行方式、先要知道什麼）見[指南裡的 agent 表](https://github.com/yokoten-labs/yokoten/blob/main/docs/guide.md#works-with)（英文）。
 - **先信任**：寫 `yes` 的，要先在資料夾裡跑一次 `npx yokoten trust`，agent 才會執行守衛。
 
 | Agent | 已做端到端驗證 | 先信任 | 測試過的模型 |
