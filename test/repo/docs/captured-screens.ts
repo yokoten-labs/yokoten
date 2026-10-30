@@ -133,7 +133,7 @@ export const CAPTURED_SCREENS: CapturedScreen[] = [
     isOk: false,
     verdict: 'too much text, no structure',
     lines: [
-      'yokoten stopped this: git push -f forces the push [force-push]',
+      'yokoten stopped this: git push -f overwrites the remote branch [force-push]',
       '',
       '  Why       A plain force push can throw away work that someone else pushed.',
       '  Instead   Use --force-with-lease, which stops when the remote has work you have not seen.',

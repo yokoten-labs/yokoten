@@ -372,7 +372,7 @@ test('hook: a refusal is the four parts, as JSON for a named Claude Code hook an
   assert.equal(answer.hookSpecificOutput.hookEventName, 'PreToolUse');
   assert.equal(answer.hookSpecificOutput.permissionDecision, 'deny');
   const reason = answer.hookSpecificOutput.permissionDecisionReason as string;
-  assert.match(reason, /^yokoten stopped this: git push --force forces the push \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+$/);
+  assert.match(reason, /^yokoten stopped this: git push --force overwrites the remote branch \[force-push\]\n\n  Why       [\s\S]+?\n  Instead   [\s\S]+?\n  More      https:\/\/\S+$/);
   assert.ok(claude.stderr.includes(reason), 'stderr keeps the reason too');
   // The installed project hook names no agent: Copilot CLI reads it, and it needs exit 2,
   // even when the process inherited Claude Code's variables.
