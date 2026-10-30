@@ -209,3 +209,20 @@ test('plugin: plugin.json says the README opening (#1223)', () => {
   const plugin = JSON.parse(read('.claude-plugin/plugin.json')) as { description: string };
   assert.equal(plugin.description, readmeOpening(read('README.md')), 'copy the opening of README.md into .claude-plugin/plugin.json "description"');
 });
+
+// The site's facts come from the newest release tag, so its brand list must name each agent as
+// either README does: v0.1.2 wrote `Antigravity CLI (agy)`, later ones `Antigravity CLI` (#1268).
+test('site: every home-page brand finds its agent in the released and the current README', () => {
+  const brands = read('web/site/site/src/lib/page/brands.ts');
+  const agentName = (name: string): string => name.replace(/\s*\([^)]*\)$/, '').trim();
+  assert.match(brands, /agentName\(a\.agent\) === agentName\(brand\.readme\)/, 'brandsFor compares names without a bracketed note');
+  const names = [...brands.matchAll(/readme: '([^']+)'/g)].map((match) => match[1]);
+  assert.ok(names.length >= 8, 'the brand list is read');
+  const released = (JSON.parse(read('web/site/site/src/content/generated/facts/agents.json')) as { agent: string }[]).map((entry) => agentName(entry.agent));
+  const current = tableAfterHeading(read('README.md'), '## Works with').map((cells) => agentName(cells[0].replace(/&nbsp;/g, ' ')));
+  for (const name of names) {
+    assert.ok(released.includes(agentName(name)), `${name}: not in the released agents.json`);
+    assert.ok(current.includes(agentName(name)), `${name}: not in the README's Works with table`);
+  }
+  assert.equal(agentName('Antigravity CLI (agy)'), 'Antigravity CLI', 'positive control: the note goes');
+});

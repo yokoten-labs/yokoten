@@ -61,6 +61,13 @@ const PLATFORMS: Brand[] = [
 ];
 
 /** The brands of a row, one per name. A name with no icon, or an agent the README does not verify, fails the build. */
+/**
+ * An agent's name without a trailing note in brackets: the README of one release says
+ * `Antigravity CLI (agy)`, a later one `Antigravity CLI`, and the site's facts come from the
+ * newest release tag, so the brand list must match either.
+ */
+export const agentName = (name: string): string => name.replace(/\s*\([^)]*\)$/, '').trim();
+
 export function brandsFor(row: 'works' | 'platforms', names: readonly string[]): Brand[] {
   if (row === 'platforms') {
     if (names.length !== PLATFORMS.length) throw new Error(`the home page lists ${names.length} platforms, lib/page/brands.ts has ${PLATFORMS.length}: give each one its icon`);
@@ -69,7 +76,7 @@ export function brandsFor(row: 'works' | 'platforms', names: readonly string[]):
   return names.map((name) => {
     const brand = WORKS[name];
     if (!brand) throw new Error(`the home page lists "${name}" under works, which has no icon in lib/page/brands.ts`);
-    const entry = agents.find((a) => a.agent === brand.readme);
+    const entry = agents.find((a) => agentName(a.agent) === agentName(brand.readme));
     if (!entry?.verified) throw new Error(`the home page lists "${name}", but the README's Works with table does not mark ${brand.readme} verified: take it off the home page or verify it first`);
     return brand;
   });
