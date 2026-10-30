@@ -465,11 +465,41 @@ export function requestBody(model: string, messages: ReturnType<typeof buildMess
   return JSON.stringify({ model, messages, response_format: { type: 'json_object' }, reasoning_effort: REASONING_EFFORT, max_tokens: MAX_ANSWER_TOKENS, stream: false });
 }
 
-/** Sends the messages to DeepSeek and returns the answer text. Errors name the status only. */
-export async function askDeepSeek(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>): Promise<string> {
+/** How long to wait before the one retry of a failed DeepSeek call (ms). */
+export const RETRY_WAIT_MS = 15_000;
+
+/** A failed DeepSeek call that a second call may not repeat: a body that is not JSON, or a busy API (429, 5xx). */
+export class RetryableError extends Error {}
+
+/** What the reviewer needs to call DeepSeek; a test hands in its own. */
+export type ModelCall = { fetch: typeof fetch; now: () => number; wait: (ms: number) => Promise<void> };
+const realCall: ModelCall = { fetch: (...args) => fetch(...args), now: () => Date.now(), wait: (ms) => new Promise((done) => setTimeout(done, ms)) };
+
+/**
+ * Sends the messages to DeepSeek and returns the answer text. Errors name the status and
+ * the kind of body, never the body. A retryable failure is tried once more, after
+ * RETRY_WAIT_MS, but only when the failed call took under half of MODEL_TIMEOUT_MS, so two
+ * calls stay inside the job (#1263).
+ */
+export async function askDeepSeek(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall = realCall): Promise<string> {
+  const started = call.now();
+  try {
+    return await askOnce(apiKey, model, messages, call);
+  } catch (error) {
+    if (!(error instanceof RetryableError) || call.now() - started >= MODEL_TIMEOUT_MS / 2) throw error;
+    await call.wait(RETRY_WAIT_MS);
+    try {
+      return await askOnce(apiKey, model, messages, call);
+    } catch (again) {
+      throw new Error(`${(again as Error).message}, twice (one retry)`);
+    }
+  }
+}
+
+async function askOnce(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall): Promise<string> {
   let response: Response;
   try {
-    response = await fetch(DEEPSEEK_URL, {
+    response = await call.fetch(DEEPSEEK_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
       body: requestBody(model, messages),
@@ -478,15 +508,33 @@ export async function askDeepSeek(apiKey: string, model: string, messages: Retur
   } catch {
     throw new Error('the DeepSeek API did not answer in time');
   }
-  let data: unknown;
+  let text: string;
   try {
-    data = await response.json();
+    text = await response.text();
+  } catch {
+    throw new RetryableError(`the DeepSeek API answer broke off (HTTP ${response.status})`);
+  }
+  let data: unknown = null;
+  try {
+    data = JSON.parse(text);
   } catch {
     data = null;
   }
-  if (!response.ok) throw new Error(`the DeepSeek API answered HTTP ${response.status}${apiErrorOf(data)}`);
-  if (data === null) throw new Error('the DeepSeek API answer was not JSON');
+  if (!response.ok) {
+    const message = `the DeepSeek API answered HTTP ${response.status}${apiErrorOf(data)}`;
+    throw response.status === 429 || response.status >= 500 ? new RetryableError(message) : new Error(message);
+  }
+  if (data === null) throw new RetryableError(`the DeepSeek API answer was not JSON (${bodyKind(text)})`);
   return answerOf(data);
+}
+
+/** What a body that is not JSON looked like, in a few words, never its text. */
+export function bodyKind(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed === '') return 'empty';
+  if (trimmed.startsWith('<')) return `an HTML page, ${text.length} characters`;
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return `cut off after ${text.length} characters`;
+  return `${text.length} characters of other text`;
 }
 
 /** A short, plain reason from an API error body, or nothing. Only letters, digits and simple punctuation pass. */
