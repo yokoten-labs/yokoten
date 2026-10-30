@@ -111,7 +111,7 @@ yokoten stopped this: git push origin v1.2.0 pushes a release tag [release]
 | DeepSeek&nbsp;Harness | ✅ yes | no | the default DeepSeek model |
 | Grok&nbsp;CLI | ✅ yes | yes | the default model |
 | Gemini&nbsp;CLI | not yet | no | — |
-| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`<br>`opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **言語**：どの言語でもかまいません。`doctor` は JavaScript、TypeScript、Python、Go、Rust、Java、.NET、Ruby、PHP、Swift、Elixir、Dart、`make test` のテストコマンドを見つけます。
 - **プラットフォーム**：Linux、macOS、WSL。ネイティブ Windows はベータ版で、Git Bash と PowerShell 7 に対応しています。

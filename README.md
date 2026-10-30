@@ -110,7 +110,7 @@ Any AI model works. The guard checks the commands the agent runs, not the model.
 | DeepSeek&nbsp;Harness | ✅ yes | no | the default DeepSeek model |
 | Grok&nbsp;CLI | ✅ yes | yes | the default model |
 | Gemini&nbsp;CLI | not yet | no | — |
-| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`<br>`opencode-go/glm-5.3-flash` |
+| OpenCode | ✅ yes | no | `opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash` |
 
 - **Programming languages**: any. `doctor` finds the test command for JavaScript, TypeScript, Python, Go, Rust, Java, .NET, Ruby, PHP, Swift, Elixir, Dart and `make test`.
 - **Platforms**: Linux, macOS and WSL. Native Windows is in beta, in Git Bash and PowerShell 7.

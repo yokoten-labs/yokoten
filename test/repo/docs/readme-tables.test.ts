@@ -126,8 +126,8 @@ test('control: a README agents row that differs from the guide is caught', () =>
 });
 
 // #1268: on GitHub a narrow column broke "GitHub Copilot / CLI" and split a model ID at its
-// hyphen. An agent's name opens a row with &nbsp; between its words, and a models cell holds
-// one code span per line (`<br>` between them), so text wraps only between whole names.
+// hyphen. An agent's name opens a row with &nbsp; between its words, so a narrow column wraps
+// only between whole names. (A README may not use `<br>`, #832, so a models cell keeps its commas.)
 const GUIDES = ['docs/guide.md', 'docs/i18n/zh-CN/guide.md', 'docs/i18n/ja/guide.md'];
 /** The multi-word agent names a table may open a row with: the guide's labels, and Copilot's short name. */
 const AGENT_NAMES = [...GUIDE_AGENTS.map((entry) => entry.label), 'Copilot CLI'].filter((name) => name.includes(' '));
@@ -141,28 +141,16 @@ function brokenNameRows(text: string): string[] {
     .filter((cell) => AGENT_NAMES.includes(cell.replace(/&nbsp;/g, ' ')) && cell.includes(' '));
 }
 
-/** Each models cell of a README's agents table that puts two code spans on one line. */
-function crowdedModelCells(readme: string, heading: string): string[] {
-  return tableAfterHeading(readme, heading)
-    .filter((cells) => !isHeaderRow(cells))
-    .filter((cells) => (cells[3] ?? '').split('<br>').some((line) => (line.match(/`[^`]+`/g) ?? []).length > 1))
-    .map((cells) => cells[0] ?? '');
-}
-
-test('tables: an agent name never breaks inside itself, and a models cell holds one model per line (#1268)', () => {
+test('tables: an agent name never breaks inside itself (#1268)', () => {
   assert.ok(AGENT_NAMES.includes('GitHub Copilot CLI') && AGENT_NAMES.length >= 8, 'the agent names are not read from the guide');
   assert.match(worksWithTable(), /^\| GitHub&nbsp;Copilot&nbsp;CLI \|/m, 'the generated table keeps the name whole');
   const names = [...FILES, ...GUIDES].flatMap((file) => brokenNameRows(read(file)).map((cell) => `${file}: ${cell}`));
   assert.deepEqual(names, [], 'write the name with &nbsp; between its words');
-  const crowded = FILES.flatMap((file) => crowdedModelCells(read(file), HEADINGS.get(file) ?? '').map((agent) => `${file}: ${agent}`));
-  assert.deepEqual(crowded, [], 'put each model on its own line, with <br> between them');
 });
 
-// Known-bad input: a plain space in a name, and two models on one line, are caught.
-test('control: a name with a plain space and two models on one line are caught (#1268)', () => {
+// Known-bad input: a plain space in a name is caught.
+test('control: a name with a plain space is caught (#1268)', () => {
   assert.deepEqual(brokenNameRows('| Agent | Note |\n|---|---|\n| GitHub Copilot CLI | x |\n| Codex&nbsp;CLI | y |\n| Any other agent | z |'), ['GitHub Copilot CLI']);
-  const crowded = read('README.md').replace('`opencode-go/deepseek-v4.1-flash`<br>`opencode-go/glm-5.3-flash`', '`opencode-go/deepseek-v4.1-flash`, `opencode-go/glm-5.3-flash`');
-  assert.deepEqual(crowdedModelCells(crowded, '## Works with'), ['OpenCode']);
 });
 
 // The site shows the same tables: a code span in a cell stays on one line, and the table scrolls.
