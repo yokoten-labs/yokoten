@@ -21,7 +21,7 @@ test('board stream: a call reads in a few words, and the whole call opens on cli
   const [stop] = claudeItems({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: 'yokoten: `rm -rf` is blocked in this project.' }] } }, TREE);
   assert.equal(stop.kind, 'stop');
   // #707: the same four parts a person reads, so the board never draws a wall of text.
-  const refusal = formatRefusal(finding('force-push', 'git push --force forces the push', 'pull first, then push'));
+  const refusal = formatRefusal(finding('force-push', 'git push --force can overwrite the remote', 'pull first, then push'));
   const [refused] = claudeItems({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't', is_error: true, content: refusal }] } }, TREE);
   assert.deepEqual([refused?.refusal?.id, refused?.refusal?.why, refused?.refusal?.fix], ['force-push', 'A plain force push can throw away work that someone else pushed.', 'Pull first, then push.']);
   assert.deepEqual(museItems('not a record', TREE), []);
