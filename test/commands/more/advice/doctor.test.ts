@@ -198,10 +198,10 @@ test('doctor: each problem ends with its Fix line, one per command (#1115)', () 
     problem('e', 'yokoten.json is broken', 'make `yokoten.json` valid JSON'),
   ]);
   assert.deepEqual(rows, [
-    ['  MISSING     no guard for Claude Code; no runtime installed', '              From this copy of yokoten.', '              Fix: `yokoten install`'],
-    ['  MISSING     ~/.config/yokoten/private-marks has no marks', '              Type your name.', '              Fix: `yokoten marks add`'],
-    ['  MISSING     the settings file is not JSON; make it valid JSON'],
-    ['  MISSING     yokoten.json is broken; make `yokoten.json` valid JSON'],
+    ['  MISSING      no guard for Claude Code; no runtime installed', '               From this copy of yokoten.', '               Fix: `yokoten install`'],
+    ['  MISSING      ~/.config/yokoten/private-marks has no marks', '               Type your name.', '               Fix: `yokoten marks add`'],
+    ['  MISSING      the settings file is not JSON; make it valid JSON'],
+    ['  MISSING      yokoten.json is broken; make `yokoten.json` valid JSON'],
   ]);
 });
 

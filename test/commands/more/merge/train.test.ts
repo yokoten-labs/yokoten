@@ -253,11 +253,11 @@ test('train: the bare plan is rows, the order as a field, and the command that m
   assert.deepEqual(lines, [
     'yokoten train · the plan for 3 pull requests; nothing merged',
     '',
-    '  next        PR #12: it collides with no other open change',
-    '  to do       PR #15: it collides with no other open change',
-    '  to do       PR #20: it collides with no other open change',
+    '  next         PR #12: it collides with no other open change',
+    '  to do        PR #15: it collides with no other open change',
+    '  to do        PR #20: it collides with no other open change',
     '',
-    '  Order       #12 → #15 → #20',
+    '  Order        #12 → #15 → #20',
     '',
     'Next: `yokoten train 12 15 20`',
   ]);
@@ -274,7 +274,7 @@ test('train: each step is a row under the title, and a wrapped one is spaced fro
     { number: 20, mark: 'done', text: 'took the union of the import lines in src/commands/more/merge/train.ts, src/commands/shared.ts' },
     { number: 20, mark: 'done', text: 'squash-merged' },
   ];
-  assert.deepEqual(stepRow(steps[0]), ['  ok          #20         approved and green on 0123456789ab']);
+  assert.deepEqual(stepRow(steps[0]), ['  ok           #20         approved and green on 0123456789ab']);
   let shown = ['yokoten train · merging 1 pull request in this order: #20'];
   const printed = [...shown];
   for (const step of steps) {

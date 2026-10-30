@@ -242,7 +242,7 @@ test('install: an unreadable ~/.claude/settings.json is skipped, the rest goes o
     // Doctor names the same problem, never that the hook is missing, and doesn't crash.
     const doctor = await sandbox.call(['doctor', '--all']);
     const said = content.startsWith('{ not') ? "can't read ~/.claude/settings.json" : '~/.claude/settings.json has an unexpected shape';
-    assert.ok(rowsText(doctor.stdout).split('\n').some((line) => line.startsWith(`  MISSING     session-doctor: ${said}`)), `${what}: ${doctor.stdout}${doctor.stderr}`);
+    assert.ok(rowsText(doctor.stdout).split('\n').some((line) => line.startsWith(`  MISSING      session-doctor: ${said}`)), `${what}: ${doctor.stdout}${doctor.stderr}`);
     assert.doesNotMatch(doctor.stderr, /SyntaxError|TypeError|at /, what);
     assert.equal(readFileSync(file, 'utf8'), content, `${what}: doctor changed the file`);
   }

@@ -1205,7 +1205,7 @@ test('update: doctor says when the core rules are behind; update previews, and -
   const old = kitCore.replace(/^\| 12 \|.*\n/m, '').replace('Plain English, close to', 'Plain words, close to') + own;
   writeFileSync(path, old);
   const doctor = await sandbox.call(['doctor', '--all']);
-  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 lines added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
+  assert.match(rowsText(doctor.stdout), new RegExp(String.raw`MISSING {6}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand \(2 lines added, 1 removed; sections changed: Core rules, Writing\); run \x60yokoten update\x60 to see the change`));
   assert.equal(doctor.status, 1);
   assert.match((await sandbox.call(['doctor', '--session'])).stdout, /^yokoten: the core rules in AGENTS\.md are behind/m, 'a session hears it');
 
@@ -1350,7 +1350,7 @@ test('update: the .yokoten/ copy has the kit\'s AGENTS.md, so doctor and update 
   const path = join(sandbox.repo, 'AGENTS.md');
   const fresh = readFileSync(path, 'utf8');
   writeFileSync(path, fresh.replace('Plain English, close to', 'Plain words, close to'));
-  assert.match(rowsText(vendored('doctor', '--all').stdout), new RegExp(String.raw`MISSING {5}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand`));
+  assert.match(rowsText(vendored('doctor', '--all').stdout), new RegExp(String.raw`MISSING {6}core-rules: the core rules in AGENTS\.md are behind yokoten ${versionPattern}'s, or were edited by hand`));
   const result = vendored('update', '--write');
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(path, 'utf8'), fresh, 'the copy writes its own kit, the one CI checks against');

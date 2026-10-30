@@ -131,7 +131,7 @@ test('bare train prints the plan with its order, says nothing merged, and calls 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /^yokoten train · the plan for 3 pull requests; nothing merged\n/);
   assert.match(result.stdout, /next {9}PR #9: it moves or deletes 1 file/);
-  assert.match(result.stdout, /\n {2}Order {7}#9 → #12 → #5\n/);
+  assert.match(result.stdout, /\n {2}Order {8}#9 → #12 → #5\n/);
   assert.match(result.stdout, /\nNext: `yokoten train 9 12 5`\n$/);
   assert.doesNotMatch(result.stdout, /branch local|merged \d/);
   assert.deepEqual(gh.calls(), [], 'a bare train makes no gh call, so no merge call');

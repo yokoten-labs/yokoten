@@ -46,7 +46,7 @@ test('changelog: previews the change files, and --write moves them into CHANGELO
   sandbox.write('changes/3-c.md', 'Added\n');
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {6}changes\/3-c\.md:1\n {26}no entry after the section\n {26}write the entry/);
+  assert.match(result.stderr, /1 problem; nothing was written\n\n {2}MISSING {6}changes\/3-c\.md:1\n {27}no entry after the section\n {27}write the entry/);
   rmSync(join(sandbox.repo, 'changes/3-c.md'));
   result = await sandbox.call(['changelog', '--write']);
   assert.equal(result.status, 0, result.stderr);
@@ -75,7 +75,7 @@ test('learn: previews a check draft from an incident, writes it with --write, an
   assert.ok(!existsSync(join(sandbox.repo, 'lessons')), 'a preview writes nothing');
   result = await sandbox.call(['learn', '7', '--write'], { extra });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /wrote {8}lessons\/incident-7\/lesson\.ts\n {2}done {9}wrote {7}lessons\/incident-7\/lesson\.test\.ts\n\n1 field still to fill in/);
+  assert.match(result.stdout, /wrote {7}lessons\/incident-7\/lesson\.ts\n {2}done {9}wrote {7}lessons\/incident-7\/lesson\.test\.ts\n\n1 field still to fill in/);
   assert.ok(!/--- lessons/.test(result.stdout), '--write lists the files, not their text');
   assert.match(readFileSync(join(sandbox.repo, 'lessons/incident-7/lesson.ts'), 'utf8'), /id: 'incident-7',/);
   result = await sandbox.call(['learn', '7', '--write'], { extra });
@@ -129,7 +129,7 @@ test('learn: --export writes one small file, and --import adds it as a draft for
   assert.ok(!existsSync(join(sandbox.repo, 'lessons')), 'an import preview writes nothing');
   result = await sandbox.call(['learn', '--import', file, '--write']);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /wrote {8}lessons\/incident-12\/lesson\.ts\n {2}done {9}wrote {7}lessons\/incident-12\/lesson\.test\.ts\n\nReview it and run its test/);
+  assert.match(result.stdout, /wrote {7}lessons\/incident-12\/lesson\.ts\n {2}done {9}wrote {7}lessons\/incident-12\/lesson\.test\.ts\n\nReview it and run its test/);
   assert.equal(readFileSync(join(sandbox.repo, 'lessons/incident-12/lesson.ts'), 'utf8'), lesson);
   // Options that belong to another step are refused, not ignored.
   result = await sandbox.call(['learn', '--export', '12', '--import', file]);
@@ -189,7 +189,7 @@ test('lessons: learn, write the check, ship, then doctor in a second repo shows 
 
   let result = runCopy(['learn', '9', '--write'], yokoten);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /wrote {8}lessons\/incident-9\/lesson\.ts/);
+  assert.match(result.stdout, /wrote {7}lessons\/incident-9\/lesson\.ts/);
   // Not reviewed yet: shipping is refused.
   result = runCopy(['learn', '--ship', 'incident-9'], yokoten);
   assert.equal(result.status, 1);
@@ -215,9 +215,9 @@ test('lessons: learn, write the check, ship, then doctor in a second repo shows 
   // The project's own .yokoten/ copy is from before the ship: it has no incident-9 until init runs again (#77).
   assert.ok(!/lesson incident-9/.test(vendored(['doctor', '--all']).stdout), 'the old copy has no incident-9');
   assert.equal(runCopy(['init'], sandbox.repo).status, 0);
-  assert.match(vendored(['doctor', '--all']).stdout, /\n {2}note {9}new lesson: incident-9 [^\n]*(?:\n {14}[^\n]*)*\n\n {2}note {9}lesson incident-9: \.env is in the repo; /);
+  assert.match(vendored(['doctor', '--all']).stdout, /\n {2}note {9}new lesson: incident-9 [^\n]*(?:\n {15}[^\n]*)*\n\n {2}note {9}lesson incident-9: \.env is in the repo; /);
   result = runCopy(['doctor', '--all'], sandbox.repo);
-  assert.match(result.stdout, /\n {2}note {9}lesson incident-9: \.env is in the repo; remove it, and add it to\n {14}\.gitignore\n/);
+  assert.match(result.stdout, /\n {2}note {9}lesson incident-9: \.env is in the repo; remove it, and add it to\n {15}\.gitignore\n/);
   const report = JSON.parse(runCopy(['doctor', '--json'], sandbox.repo).stdout);
   assert.deepEqual(report.lessons.find((lesson: { id: string }) => lesson.id === 'incident-9'), { id: 'incident-9', mark: 'note' });
   assert.ok(report.notes.some((note: { id: string }) => note.id === 'incident-9') && !report.findings.some((f: { id: string }) => f.id === 'incident-9'), 'a note, never a finding');
@@ -247,10 +247,10 @@ test('learn --upstream: keeps a note with the project hidden, refuses a token, a
   result = await upstream([`In ${project}/src/a.ts the hook for AcmeApp missed a case; log in ${join(sandbox.home, 'log.txt')}`, '--area', 'hook', '--fix', 'match acme_app flags too']);
   const owners = await upstream(['octo-jane saw acme-group and acme-sub in the URL']);
   assert.equal(owners.status, 0, owners.stderr);
-  assert.match(owners.stdout, /\n  note {9}<owner> saw <owner> and <owner> in the URL\n/);
+  assert.match(owners.stdout, /\n  note {8}<owner> saw <owner> and <owner> in the URL\n/);
   assert.equal((await upstream(['--done', /kept note (\S+),/.exec(owners.stdout)?.[1] ?? ''])).status, 0);
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /^yokoten learn --upstream · kept note (\d{8}-\d{6}-[0-9a-f]{4}), outside every repo\n\n {2}note {9}In <project>\/src\/a\.ts the hook for <project> missed a case; log in\n {14}~\/log\.txt\n\n {2}fix idea {4}match <project> flags too\n\n {2}in {10}~\/\.config\/yokoten\/upstream\n/);
+  assert.match(result.stdout, /^yokoten learn --upstream · kept note (\d{8}-\d{6}-[0-9a-f]{4}), outside every repo\n\n {2}note {8}In <project>\/src\/a\.ts the hook for <project> missed a case; log in\n {14}~\/log\.txt\n\n {2}fix idea {4}match <project> flags too\n\n {2}in {10}~\/\.config\/yokoten\/upstream\n/);
   const [file] = readdirSync(inbox);
   const id = file.replace(/\.md$/, '');
   const text = readFileSync(join(inbox, file), 'utf8');

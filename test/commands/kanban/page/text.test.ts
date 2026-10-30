@@ -99,7 +99,7 @@ test('kanban text: no line says the old name', () => {
 
 test('kanban text: a long agent name fits the label field, so every text starts in one column', () => {
   const lines = renderBoardScreen({ ...EMPTY, sessions: [session({ id: '1', agent: 'Claude Code' }), session({ id: '2', agent: 'A Very Long Agent Name' })] });
-  assert.ok(lines.some((line) => /^ {2}note\s{8}Claude {6}a task/.test(line)), lines.join('\n'));
-  assert.ok(lines.some((line) => /^ {2}note\s{8}A Very Lo…\s+a task/.test(line)), lines.join('\n'));
+  assert.ok(lines.some((line) => /^ {2}note\s{9}Claude {6}a task/.test(line)), lines.join('\n'));
+  assert.ok(lines.some((line) => /^ {2}note\s{9}A Very Lo…\s+a task/.test(line)), lines.join('\n'));
   assertScreen(lines);
 });

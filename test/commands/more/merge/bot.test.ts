@@ -707,9 +707,9 @@ test('bot: a new pull request takes its issue\'s milestone; none anywhere is ref
     assert.equal(none.stderr, [
       `${note}yokoten bot · nothing was sent: 1 problem in the milestone`,
       '',
-      '  MISSING     milestone: none given, and the linked issue #2 has none',
-      '              The board and the roadmap show work by milestone. Add',
-      '              `--milestone <name>`, or set a milestone on the issue.',
+      '  MISSING      milestone: none given, and the linked issue #2 has none',
+      '               The board and the roadmap show work by milestone. Add',
+      '               `--milestone <name>`, or set a milestone on the issue.',
       '',
       'Next: fix the command, then run it again.',
       '',
@@ -1862,7 +1862,7 @@ test('bot: git push refuses a commit not dated in UTC, names it without its offs
     assert.equal(refused.stderr, [
       'yokoten bot · nothing was pushed: 1 commit has a time zone other than UTC',
       '',
-      `  to do       ${tip} zoned-tip`,
+      `  to do        ${tip} zoned-tip`,
       '',
       "A commit's time zone tells where the machine that made it is, so every pushed",
       'time is UTC.',
@@ -1932,7 +1932,7 @@ test('bot: every refusal is a screen from its data, with one Next line, and keep
     assert.match(refusalScreen(refusal).at(-1) ?? '', /^Next: |^ {6}/, `${refusal.what}: the Next line is last`);
   }
   // The hash leads the row's text, so a long one keeps every row in one column.
-  assert.ok(refusalScreen(utc).includes('  to do       bbbbbbbbbbbb fix: two'));
+  assert.ok(refusalScreen(utc).includes('  to do        bbbbbbbbbbbb fix: two'));
 });
 
 test('bot: gh pr status adds one screen for the pull requests that cannot merge yet, or nothing (#612, #1115)', () => {
@@ -1942,10 +1942,10 @@ test('bot: gh pr status adds one screen for the pull requests that cannot merge 
     "yokoten bot · 2 open pull requests can't merge yet",
     '',
     'Need a new owner Approve:',
-    '  to do       #21         no owner Approve on this pull request',
+    '  to do        #21         no owner Approve on this pull request',
     '',
     'Could not be checked:',
-    "  can't check #23         could not check the owner's Approve (gh said no)",
+    "  can't check  #23         could not check the owner's Approve (gh said no)",
   ]);
   assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
 });

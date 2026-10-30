@@ -67,7 +67,7 @@ test('installScreen: a first install on each system, its rows from the result (#
 test('installScreen: the PATH step is said for the system the screen is for (#1038)', () => {
   const linux = keepsRules(installScreen(freshInstall('linux'), place('linux', { launcherOnPath: false })));
   assert.match(linux, /^ {2}note {9}command {5}~\/\.local\/bin is not on your PATH yet$/m);
-  assert.match(linux, /^ {26}`export PATH="\$HOME\/\.local\/bin:\$PATH"`$/m);
+  assert.match(linux, /^ {27}`export PATH="\$HOME\/\.local\/bin:\$PATH"`$/m);
   const windows = keepsRules(installScreen(freshInstall('win32'), place('win32', { launcherOnPath: false })));
   assert.match(windows, /^ {2}note {9}command {5}~\\\.local\\bin is not on your PATH yet$/m);
   assert.match(windows, /"Edit environment variables for\s+your account"/);
@@ -87,7 +87,7 @@ test('installScreen: nothing changed, a problem, and no home folder (#1115)', ()
   partly.problems.push(finding('codex-user-hook', `${under('linux', '.codex', 'hooks.json')} is not valid JSON`, 'run `yokoten install` again', { why: 'the guard is not on for Codex CLI until it is' }));
   const text = keepsRules(installScreen(partly, place('linux', { launcherOnPath: false })), true);
   assert.match(text, /^yokoten install · this computer is partly set up$/m);
-  assert.match(text, /^ {2}MISSING {6}guard {7}~\/\.codex\/hooks\.json is not valid JSON\n {26}The guard is not on for Codex CLI until it is\.\n {26}Fix: `yokoten install`$/m);
+  assert.match(text, /^ {2}MISSING {6}guard {7}~\/\.codex\/hooks\.json is not valid JSON\n {27}The guard is not on for Codex CLI until it is\.\n {27}Fix: `yokoten install`$/m);
   const noHome: SetupResult = { ok: false, changes: [], problems: [finding('machine-runtime', 'no home folder', "set HOME to your home folder's full path, then run `yokoten install` again")], notes: [] };
   keepsRules(installScreen(noHome, place('linux', { home: null })), true);
 });

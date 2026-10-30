@@ -224,7 +224,7 @@ test('check --issue: reads the issue from the CI event; a bad title fails, a goo
   assert.match(result.stdout, /check --issue · no problems in this issue/);
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'The review step is missing.', labels: [{ name: 'incident' }] }) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue · 2 problems\n\n  MISSING     title:?\s+it does not start with an area\n +The area tells a reader[^]*Write it as `area: symptom`[^]*\n  MISSING     title:?\s+a full stop at the end/);
+  assert.match(result.stderr, /check --issue · 2 problems\n\n  MISSING      title:?\s+it does not start with an area\n +The area tells a reader[^]*Write it as `area: symptom`[^]*\n  MISSING      title:?\s+a full stop at the end/);
   assert.doesNotMatch(result.stderr, /The review step is missing/, 'the title is user input; it is not printed back');
   result = await sandbox.call(['check', '--issue'], { extra: event({ title: 'site: a page', labels: [] }) });
   assert.equal(result.status, 1);
@@ -280,7 +280,7 @@ test('check --issue: an issue needs the type and tier labels its repo has (#544)
   // No type label: one line (the positive control).
   result = await sandbox.call(['check', '--issue'], { extra: event(['tier B']) });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING     labels:?\s+no type label\n +A reviewer filters on labels[^]*Add one type label, such as feat, bug, docs/);
+  assert.match(result.stderr, /check --issue · 1 problem\n\n  MISSING      labels:?\s+no type label\n +A reviewer filters on labels[^]*Add one type label, such as feat, bug,\s+docs/);
   assert.match(flat(result.stderr), /Add one type label, such as feat, bug, docs/);
   assert.doesNotMatch(result.stderr, /tier B.*no tier label/, 'the tier label it has is not named');
   // No tier label: one line (the positive control).
@@ -362,7 +362,7 @@ test('check outside GitHub Actions: the output is unchanged and no summary is wr
   const plain = await sandbox.call(['check']);
   assert.equal(plain.status, 1);
   assert.equal(plain.stdout, '');
-  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING     a\.md:1\n {14}an email address\n(?:[^\n]+\n){4,9}\nNext: fix it, then `yokoten check`\.\nMore: \S+#privacy\n$/);
+  assert.match(plain.stderr, /^yokoten check · 1 problem\n\n  MISSING      a\.md:1\n {15}an email address\n(?:[^\n]+\n){4,9}\nNext: fix it, then `yokoten check`\.\nMore: \S+#privacy\n$/);
   for (const extra of [{ GITHUB_STEP_SUMMARY: summary }, { GITHUB_ACTIONS: 'false', GITHUB_STEP_SUMMARY: summary }] as Record<string, string>[]) {
     const r = await sandbox.call(['check'], { extra });
     assert.deepEqual([r.status, r.stdout, r.stderr], [plain.status, plain.stdout, plain.stderr], JSON.stringify(extra));
@@ -984,7 +984,7 @@ test('marks off git-name: removed, install no longer adds it, hand-added marks u
   assert.equal(off.status, 0, off.stderr);
   assert.equal(
     off.stdout,
-    'yokoten marks · install no longer adds your git name\n\n  done        removed 1 mark it had added; marks you added yourself are kept\n  undo        `yokoten marks on git-name`\n',
+    'yokoten marks · install no longer adds your git name\n\n  done         removed 1 mark it had added; marks you added yourself are kept\n  undo         `yokoten marks on git-name`\n',
   );
   assert.ok(!marks().includes(NAME) && !marks().includes('from this machine: git name'), 'the git name and its header are gone');
   assert.ok(marks().includes(`\n${HAND_MARK}\n`) && marks().includes(`\n${OTHER}\n`), 'hand-added marks are kept');
@@ -1470,14 +1470,14 @@ test('pr sync: every git call runs as UTC, so the merge commit does too (#809)',
 });
 
 test('pr sync: each report row names the real base branch (#809, #1027)', () => {
-  assert.deepEqual(pullLine({ number: 1, branch: 'work', base: 'release', state: 'merged' }), ['  ok          PR #1       release merged in, tests pass, pushed']);
-  assert.deepEqual(pullLine({ number: 2, branch: 'fix', base: 'main', state: 'resolved', hunks: 2 }), ['  ok          PR #2       main merged in (2 hunks resolved), tests pass, pushed']);
-  assert.deepEqual(pullLine({ number: 3, branch: 'docs', base: 'next', state: 'up-to-date' }), ['  ok          PR #3       up to date with next']);
+  assert.deepEqual(pullLine({ number: 1, branch: 'work', base: 'release', state: 'merged' }), ['  ok           PR #1       release merged in, tests pass, pushed']);
+  assert.deepEqual(pullLine({ number: 2, branch: 'fix', base: 'main', state: 'resolved', hunks: 2 }), ['  ok           PR #2       main merged in (2 hunks resolved), tests pass, pushed']);
+  assert.deepEqual(pullLine({ number: 3, branch: 'docs', base: 'next', state: 'up-to-date' }), ['  ok           PR #3       up to date with next']);
 });
 
 test('pr sync: a list that stops at the limit says so (#809)', () => {
   const lines = prSyncScreen({ isCut: true, pulls: [{ number: 1, branch: 'work', base: 'main', state: 'up-to-date' }] });
-  assert.ok(lines.includes('  note        open list   stops at 100 pull requests; the rest are not synced'), lines.join('\n'));
+  assert.ok(lines.includes('  note         open list   stops at 100 pull requests; the rest are not synced'), lines.join('\n'));
   assert.deepEqual(broken(lines), []);
 });
 
@@ -1497,8 +1497,8 @@ test('check: one screen for a clean check and one for a problem (#1027)', async 
   assert.equal(lines[0], 'yokoten check · 1 problem');
   assert.equal(lines[1], '');
   assert.match(lines[2] ?? "", /^ {2}MISSING {6}a\.md:1$/);
-  assert.match(lines[3] ?? "", /^ {14}an email address$/);
-  assert.match(lines[4] ?? "", /^ {14}An email address points at a person/);
+  assert.match(lines[3] ?? "", /^ {15}an email address$/);
+  assert.match(lines[4] ?? "", /^ {15}An email address points at a person/);
   assert.equal(lines[lines.length - 3], 'Next: fix it, then `yokoten check`.');
   assert.match(lines[lines.length - 2] ?? '', /^More: \S+#privacy$/);
   for (const line of [...clean.stdout.split('\n'), ...lines]) assert.ok(line.length <= 80, `over 80: ${line}`);
@@ -1514,11 +1514,11 @@ test('check: the screen places its notes itself, folded by default and in full w
   const note = finding('long-sentence', 'a sentence of 30 words', 'split it', { file: 'README.md', line: 2, why: 'agents misread long sentences' });
   const folded = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] });
   assert.equal(folded[0], 'yokoten check --pr · 2 problems');
-  assert.ok(folded.includes('  note        1 note: `yokoten check --all` shows each'), folded.join('\n'));
+  assert.ok(folded.includes('  note         1 note: `yokoten check --all` shows each'), folded.join('\n'));
   assert.equal(folded.at(-1), 'Next: fix them, then `yokoten check`.');
   assert.deepEqual(broken(folded, true), []);
   const all = checkScreen({ mode: 'pr', problems, notes: [note], hints: [] }, { isAll: true });
-  assert.ok(all.includes('  note        README.md:2: a sentence of 30 words'), all.join('\n'));
+  assert.ok(all.includes('  note         README.md:2: a sentence of 30 words'), all.join('\n'));
   assert.deepEqual(broken(all, true), []);
   const clean = checkScreen({ mode: 'staged', problems: [], notes: [], hints: [] });
   assert.deepEqual(clean, ['yokoten check --staged · clean: layout, privacy, lead-only files']);
@@ -1539,11 +1539,11 @@ test('ci-health: the screen is rows and tables with one text column, built from 
   const health = summarizeActionsHealth([run, { ...run, id: 2, conclusion: 'success', branch: 'work' }], [{ number: 7, title: 'feat: a\u001b[2J thing', url: 'https://example.com/pull/7', isDraft: false, check: 'test', conclusion: 'failure' }]);
   const lines = ciHealthScreen({ repo: 'octo/demo', health });
   assert.equal(lines[0], 'yokoten ci-health · octo/demo, the last 2 runs: 2 problems');
-  assert.ok(lines.includes('  MISSING     PR #7 test: failure'), lines.join('\n'));
+  assert.ok(lines.includes('  MISSING      PR #7 test: failure'), lines.join('\n'));
   assert.ok(!lines.join('\n').includes('\u001b'), 'a control character from GitHub never reaches the screen');
   assert.deepEqual(broken(lines), []);
   const posted = ciHealthScreen({ repo: 'octo/demo', health, posted: { number: 12, created: false, pinned: true } });
-  assert.deepEqual(posted, ['yokoten ci-health · updated issue #12 in octo/demo', '', '  ok          2 runs: 2 problems']);
+  assert.deepEqual(posted, ['yokoten ci-health · updated issue #12 in octo/demo', '', '  ok           2 runs: 2 problems']);
 });
 
 test('provenance: the screen is a title and fields per commit (#756, #1115)', () => {
@@ -1564,7 +1564,7 @@ test('provenance: the screen is a title and fields per commit (#756, #1115)', ()
 
 test('marks: the counts screen is fields, never a value; marks with no action reads only (#434, #1115)', async () => {
   const lines = marksScreen({ action: 'list', kinds: [{ kind: 'git name', count: 1, isOff: false, isFromInstall: true }, { kind: 'by hand', count: 2, isOff: false, isFromInstall: false }], files: ['~/.config/yokoten/private-marks'] });
-  assert.deepEqual(lines, ['yokoten marks · 3 private marks, values never shown', '', '  git-name    1, added by install', '  your own    2', '', 'Add one: `yokoten marks add`']);
+  assert.deepEqual(lines, ['yokoten marks · 3 private marks, values never shown', '', '  git-name     1, added by install', '  your own     2', '', 'Add one: `yokoten marks add`']);
   assert.deepEqual(broken(lines), []);
   const { sandbox, file } = marksSandbox();
   const result = await sandbox.call(['marks']);
@@ -1616,7 +1616,7 @@ test('test: the plan and the end are screens of their own (#461, #1115)', () => 
   const plan = testPlanScreen({ files: ['test/a.test.ts'], light: true, jobs: 2, cores: 4, freeBytes: 2 * 1024 ** 3, hasNice: true, shown: 'nice -n 10 node --test <1 test file>' });
   assert.equal(plan[0], 'yokoten test · would run 1 test file, 2 at once, niced');
   assert.deepEqual(broken(plan), []);
-  assert.deepEqual(testEndScreen(0), ['  done        tests passed']);
+  assert.deepEqual(testEndScreen(0), ['  done         tests passed']);
   assert.deepEqual(broken(testEndScreen(3), true), []);
 });
 
@@ -1678,10 +1678,10 @@ test('marks: every action is a screen of its result, never a value, and passes t
   assert.deepEqual(marksScreen({ action: 'remove', isRemoved: true, from: 'git name', isSwitched: true }), [
     'yokoten marks · removed the mark from your private marks',
     '',
-    '  note        it came from this machine (your git name), so install adds it',
-    '              again',
+    '  note         it came from this machine (your git name), so install adds it',
+    '               again',
     '',
-    '  stop it     `yokoten marks off git-name`',
+    '  stop it      `yokoten marks off git-name`',
   ]);
   assert.deepEqual(marksScreen({ action: 'fill', found: 3, kinds: ['git name', 'git email'], file }), ['yokoten marks · added your git name and git email from this machine (not shown)', '', `  file        ${file}`]);
   assert.match(marksScreen({ action: 'fill', found: 0, kinds: [], file })[0] ?? '', /this machine has none to add/);

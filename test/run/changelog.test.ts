@@ -163,8 +163,8 @@ test('changelogProblemsScreen: a problem with no place and one with a place shar
   ]);
   const at = (text: string) => lines.find((line) => line.includes(text))?.search(/\S/g) ?? -1;
   const column = (text: string) => (lines.find((line) => line.includes(text)) ?? '').indexOf(text);
-  assert.equal(column('two sections'), 26, lines.join('\n'));
-  assert.equal(column('no entry after the section'), 26, lines.join('\n'));
-  assert.equal(column('keep one'), 26);
+  assert.equal(column('two sections'), 27, lines.join('\n'));
+  assert.equal(column('no entry after the section'), 27, lines.join('\n'));
+  assert.equal(column('keep one'), 27);
   assert.ok(at('write the entry') >= 0);
 });

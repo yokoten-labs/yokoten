@@ -123,7 +123,7 @@ const placeFor = (platform: NodeJS.Platform): StartParts['place'] => ({ platform
 
 test('start: the first run\'s screen says what each part did, then the road, then the commit (#1115)', () => {
   const lines = startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('linux') });
-  assert.deepEqual(lines.slice(0, 4), [`yokoten ${VERSION} · set up; stage 1 of 5, safety net`, '', '  ok          guard on for Claude Code, Codex CLI on this computer', '  ok          3 files written in this project, none of yours changed']);
+  assert.deepEqual(lines.slice(0, 4), [`yokoten ${VERSION} · set up; stage 1 of 5, safety net`, '', '  ok           guard on for Claude Code, Codex CLI on this computer', '  ok           3 files written in this project, none of yours changed']);
   assert.equal(lines.filter((line) => line.startsWith('Next: ')).length, 1, 'one Next line');
   assert.ok(lines.includes('Next: `git add -A && git commit -m "chore: add yokoten"`'), lines.join('\n'));
   assert.match(lines.at(-1) ?? '', /^More: /);

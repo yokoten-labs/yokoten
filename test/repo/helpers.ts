@@ -412,8 +412,8 @@ export function handAdd(stdout: string, skip: string): Record<string, unknown[]>
 
 /** The JSON at the end of doctor's line for `id`. */
 export function doctorHandAdd(stdout: string, id: string, file: string): Record<string, unknown[]> {
-  const line = rowsText(stdout).split('\n').find((l) => l.startsWith(`  note        ${id}: `)) ?? '';
-  assert.ok(line.startsWith(`  note        ${id}: ${COMMENTED(file)}: {`), `doctor: ${stdout}`);
+  const line = rowsText(stdout).split('\n').find((l) => l.startsWith(`  note         ${id}: `)) ?? '';
+  assert.ok(line.startsWith(`  note         ${id}: ${COMMENTED(file)}: {`), `doctor: ${stdout}`);
   return JSON.parse(line.slice(line.indexOf(': {') + 2));
 }
 

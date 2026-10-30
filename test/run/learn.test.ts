@@ -117,7 +117,7 @@ function makeModuleDir(prefix: string): string {
 test('lessons: full doctor notes a new lesson on the first run only; a session, not now and a broken state', async () => {
   const sandbox = makeSandbox();
   const stateFile = join(sandbox.repo, '.git', 'yokoten', 'state.json');
-  const newNote = /\n {2}note {9}a new check ran: ok \(incident-138\); doctor now runs it in this\n {14}project\n\n {2}ok {11}lesson incident-138\n/;
+  const newNote = /\n {2}note {9}a new check ran: ok \(incident-138\); doctor now runs it in this\n {15}project\n\n {2}ok {11}lesson incident-138\n/;
   // The entry, through the real binary; the rest runs in this process.
   let result: Pick<ReturnType<typeof sandbox.run>, 'status' | 'stdout' | 'stderr'> = sandbox.run(['doctor', '--session']);
   assert.equal(result.status, 0, result.stderr);
@@ -180,7 +180,7 @@ test('lessons: a session hears a new lesson that finds something once; a project
   // A later session: nothing; full doctor still notes the lesson as new, and its problem.
   result = await startFound({ session_id: 's-2', source: 'startup' });
   assert.ok(!result.stdout.includes('new lesson'), result.stdout);
-  assert.match((await found.call(['doctor', '--all'])).stdout, /\n {2}note {9}new lesson: incident-138 [^\n]*(?:\n {14}[^\n]*)*\n\n {2}note {9}lesson incident-138: test\/api\.test\.ts/);
+  assert.match((await found.call(['doctor', '--all'])).stdout, /\n {2}note {9}new lesson: incident-138 [^\n]*(?:\n {15}[^\n]*)*\n\n {2}note {9}lesson incident-138: test\/api\.test\.ts/);
   // After full doctor has seen it, a fresh session state never brings it back.
   writeFileSync(foundState, JSON.stringify({ seenLessons: ['incident-138'] }));
   assert.ok(!(await startFound({ session_id: 's-3', source: 'startup' })).stdout.includes('new lesson'));
@@ -802,5 +802,5 @@ test('learn screens: ship, export, import and the inbox are pure functions of th
   const note = { id: '20261027-120000-abcd', when: '2026-10-27T12:00:00Z', part: 'hook', what: 'it missed a case' };
   assert.match(upstreamListScreen([note]).join('\n'), /1 lesson waits[^]*20261027-120000-abcd {2}2026-10-27 12:00 UTC, hook: it missed a case\n\nNext: `yokoten learn --upstream --done <id>`$/);
   assert.deepEqual(upstreamDoneScreen(note.id), ['yokoten learn --upstream · removed note 20261027-120000-abcd']);
-  assert.match(upstreamKeptScreen(note, '~/inbox').join('\n'), /kept note 20261027-120000-abcd, outside every repo\n\n {2}note {9}it missed a case\n {2}in {10}~\/inbox/);
+  assert.match(upstreamKeptScreen(note, '~/inbox').join('\n'), /kept note 20261027-120000-abcd, outside every repo\n\n {2}note {8}it missed a case\n {2}in {10}~\/inbox/);
 });

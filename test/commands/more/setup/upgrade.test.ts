@@ -179,5 +179,5 @@ test('upgrade: each screen keeps the screen rules, built from its result (#1115)
   ];
   for (const [name, result] of cases) assert.deepEqual(screenProblems({ text: upgradeScreen(result).join('\n'), isFailure: !result.ok }), [], name);
   // The failed step's Fix line is the item's last line.
-  assert.equal(upgradeScreen(cases[2]![1]).at(-1), '              Fix: `claude plugin update yokoten-beta@yokoten`');
+  assert.equal(upgradeScreen(cases[2]![1]).at(-1), '               Fix: `claude plugin update yokoten-beta@yokoten`');
 });
