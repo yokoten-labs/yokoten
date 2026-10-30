@@ -133,8 +133,8 @@ npx yokoten doctor      # where you are, and the one next step
 
 ## Roadmap
 
-- **Done, v0.1.1**: the five protections on for everyone; many AI sessions in one repo.
-- **Now, v0.1.2**: five commands up front, `yokoten`, `check`, `desk`, `kanban` and `tidy`; another model than the writer reviews each change.
+- **Done, v0.1.2**: five commands up front, `yokoten`, `check`, `desk`, `kanban` and `tidy`; another model than the writer reviews each change.
+- **Now, v0.2.0**: `doctor --files` reads only the files in a project, so a web page can show its road; a review ends in three rounds.
 - **Later**: a lesson one project learns becomes a check for every project.
 
 *Yokoten* (横展) is a word from Toyota's factories: a fix that one line finds goes to every line.

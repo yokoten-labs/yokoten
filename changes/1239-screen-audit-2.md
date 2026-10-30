@@ -1,3 +1,0 @@
-Fixed
-
-On `check`, `merge` and the other problem screens, every place (`docs/a.md:3`) now stands on its own line under the mark, and the text follows at one column. On screens with labels, a long label still stands alone and its text lines up with the other labels' text. `yokoten trust` run outside a terminal now says to open a terminal and type it there. `doctor` no longer shows "Or install the Claude Code plugin" above its Fix line. `adopt` says "no model key was found". `learn --help` no longer lists `--ship`, `--export` and `--import` twice. The `check` screen no longer calls an ignore a pull request adds a warning; it is a note, as in the CI log. `changelog` and `mcp --check` rows start their text in one column (#1239).
