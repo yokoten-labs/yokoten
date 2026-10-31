@@ -1,5 +1,5 @@
 # The reviewer of another model (issue #1088, record 0048). On each same-repo pull request,
-# DeepSeek reads the diff and the body, and this job posts one review on the head commit as
+# DeepSeek, through OpenCode Go (record 0060), reads the diff and the body, and this job posts one review on the head commit as
 # the reviewer App, yokoten-reviewer[bot]: APPROVE or REQUEST_CHANGES. The merge check
 # counts an area lead approval only from that login. An error, a timeout or an unclear
 # answer posts a comment, never an approval.
@@ -46,12 +46,12 @@ jobs:
           private-key: ${{ secrets.REVIEWER_APP_KEY }}
           permission-pull-requests: write
           permission-contents: read
-      # The model id from DeepSeek's API docs (api-docs.deepseek.com, Chat Completions).
+      # The model id from OpenCode Go's docs (opencode.ai/docs/go).
       # The token and the key go in through env only; the script never prints them.
       - run: node .github/review/review.ts
         env:
           REVIEWER_TOKEN: ${{ steps.app-token.outputs.token }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          DEEPSEEK_MODEL: deepseek-flash
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          REVIEW_MODEL: deepseek-v4.1-flash
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
