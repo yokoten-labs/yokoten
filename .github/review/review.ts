@@ -1,11 +1,11 @@
 // The reviewer of another model (issue #1088, record 0048). The `review` workflow runs it on
-// each same-repo pull request. It sends the diff and the body to DeepSeek and posts one
+// each same-repo pull request. It sends the diff and the body to the model and posts one
 // review as the reviewer App, yokoten-reviewer[bot]: APPROVE or REQUEST_CHANGES, on the head
 // commit. The merge check counts an area lead approval only from that login.
 //
 //   node .github/review/review.ts
 //
-// It reads REVIEWER_TOKEN (the App's token), DEEPSEEK_API_KEY, DEEPSEEK_MODEL,
+// It reads REVIEWER_TOKEN (the App's token), OPENCODE_API_KEY, REVIEW_MODEL,
 // GITHUB_REPOSITORY, PR_NUMBER and HEAD_SHA from the environment. It never prints a token
 // or a key.
 //
@@ -26,10 +26,10 @@ export const MAX_DIFF_CHARS = 120_000;
 export const MAX_PARTS = 4;
 /** The part of the pull request body the reviewer reads, in characters. */
 export const MAX_BODY_CHARS = 20_000;
-/** How long one DeepSeek call may take (ms): a full answer, inside the job's 20 minutes, with room for one retry of a cut part (two calls in a row). */
+/** How long one model call may take (ms): a full answer, inside the job's 20 minutes, with room for one retry of a cut part (two calls in a row). */
 export const MODEL_TIMEOUT_MS = 480_000;
 /**
- * The longest answer DeepSeek may write, in tokens: its reasoning and the JSON both count.
+ * The longest answer the model may write, in tokens: its reasoning and the JSON both count.
  * At 32K a large pull request was cut off before the verdict, twice on PR #1106, after about
  * 200 s; 64K takes about 400 s, inside MODEL_TIMEOUT_MS.
  */
@@ -41,7 +41,10 @@ export const MAX_FINDINGS = 10;
 /** The longest summary or finding kept, in characters; a longer one is cut. */
 export const MAX_TEXT_CHARS = 300;
 
-const DEEPSEEK_URL = 'https://api.deepseek.com/chat/completions';
+// OpenCode Go's OpenAI-style API (opencode.ai/docs/go, record 0060). The model stays DeepSeek's.
+export const MODEL_URL = 'https://opencode.ai/inference/go/openai/v1/chat/completions';
+/** Who is calling: OpenCode's docs ask a client to name itself, not its HTTP library. */
+export const USER_AGENT = 'yokoten-reviewer/1.0';
 const GITHUB_API = 'https://api.github.com';
 
 /** How many findings of each tag a review holds, counted before any cut. */
@@ -365,7 +368,7 @@ export function reviewFor(verdict: Verdict, model: string, round = 1): Review {
 /** The review when the reviewer could not judge: never an APPROVE. */
 export const unsureReview = (why: string): Review => ({
   event: 'COMMENT',
-  body: `The DeepSeek review did not run to the end: ${why}. This is not an approval. Push again or rerun the review workflow, or ask the owner.`,
+  body: `The review did not run to the end: ${why}. This is not an approval. Push again or rerun the review workflow, or ask the owner.`,
 });
 
 /**
@@ -457,7 +460,7 @@ export function mergeVerdicts(verdicts: Verdict[]): Verdict {
 }
 
 /**
- * The request DeepSeek gets. `reasoning_effort` is set, not left to the API's default (high
+ * The request the model gets. `reasoning_effort` is set, not left to the API's default (high
  * as of 2026-10-26), so a change of default can't change how long the reasoning runs.
  */
 export const REASONING_EFFORT = 'high';
@@ -465,54 +468,54 @@ export function requestBody(model: string, messages: ReturnType<typeof buildMess
   return JSON.stringify({ model, messages, response_format: { type: 'json_object' }, reasoning_effort: REASONING_EFFORT, max_tokens: MAX_ANSWER_TOKENS, stream: false });
 }
 
-/** How long to wait before the one retry of a failed DeepSeek call (ms). */
+/** How long to wait before the one retry of a failed model call (ms). */
 export const RETRY_WAIT_MS = 15_000;
 
-/** A failed DeepSeek call that a second call may not repeat: a body that is not JSON, or a busy API (429, 5xx). */
+/** A failed model call that a second call may not repeat: a body that is not JSON, or a busy API (429, 5xx). */
 export class RetryableError extends Error {}
 
-/** What the reviewer needs to call DeepSeek; a test hands in its own. */
+/** What the reviewer needs to call the model; a test hands in its own. */
 export type ModelCall = { fetch: typeof fetch; now: () => number; wait: (ms: number) => Promise<void> };
 const realCall: ModelCall = { fetch: (...args) => fetch(...args), now: () => Date.now(), wait: (ms) => new Promise((done) => setTimeout(done, ms)) };
 
 /**
- * Sends the messages to DeepSeek and returns the answer text. Errors name the status and
+ * Sends the messages to the model and returns the answer text. Errors name the status and
  * the kind of body, never the body. A retryable failure is tried once more, after
  * RETRY_WAIT_MS, but only when the failed call took under half of MODEL_TIMEOUT_MS, so two
  * calls stay inside the job (#1263).
  */
-export async function askDeepSeek(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall = realCall): Promise<string> {
+export async function askReviewModel(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall = realCall, session = 'yokoten-review'): Promise<string> {
   const started = call.now();
   try {
-    return await askOnce(apiKey, model, messages, call);
+    return await askOnce(apiKey, model, messages, call, session);
   } catch (error) {
     if (!(error instanceof RetryableError) || call.now() - started >= MODEL_TIMEOUT_MS / 2) throw error;
     await call.wait(RETRY_WAIT_MS);
     try {
-      return await askOnce(apiKey, model, messages, call);
+      return await askOnce(apiKey, model, messages, call, session);
     } catch (again) {
       throw new Error(`${(again as Error).message}, twice (one retry)`);
     }
   }
 }
 
-async function askOnce(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall): Promise<string> {
+async function askOnce(apiKey: string, model: string, messages: ReturnType<typeof buildMessages>, call: ModelCall, session: string): Promise<string> {
   let response: Response;
   try {
-    response = await call.fetch(DEEPSEEK_URL, {
+    response = await call.fetch(MODEL_URL, {
       method: 'POST',
-      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json', 'user-agent': USER_AGENT, 'x-opencode-session': session },
       body: requestBody(model, messages),
       signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
   } catch {
-    throw new Error('the DeepSeek API did not answer in time');
+    throw new Error('the model API did not answer in time');
   }
   let text: string;
   try {
     text = await response.text();
   } catch {
-    throw new RetryableError(`the DeepSeek API answer broke off (HTTP ${response.status})`);
+    throw new RetryableError(`the model API answer broke off (HTTP ${response.status})`);
   }
   let data: unknown = null;
   try {
@@ -521,10 +524,10 @@ async function askOnce(apiKey: string, model: string, messages: ReturnType<typeo
     data = null;
   }
   if (!response.ok) {
-    const message = `the DeepSeek API answered HTTP ${response.status}${apiErrorOf(data)}`;
+    const message = `the model API answered HTTP ${response.status}${apiErrorOf(data)}`;
     throw response.status === 429 || response.status >= 500 ? new RetryableError(message) : new Error(message);
   }
-  if (data === null) throw new RetryableError(`the DeepSeek API answer was not JSON (${bodyKind(text)})`);
+  if (data === null) throw new RetryableError(`the model API answer was not JSON (${bodyKind(text)})`);
   return answerOf(data);
 }
 
@@ -551,8 +554,8 @@ export function answerOf(data: unknown): string {
   const reason = typeof choice?.finish_reason === 'string' && /^[a-z_]{1,40}$/.test(choice.finish_reason) ? choice.finish_reason : 'none';
   if (reason !== 'stop' || typeof choice?.message?.content !== 'string') {
     const hint = reason === 'length' ? `, cut off at ${MAX_ANSWER_TOKENS} tokens` : '';
-    if (reason === 'length') throw new CutOff(`the DeepSeek API gave no finished answer (finish_reason: ${reason}${hint})`);
-    throw new Error(`the DeepSeek API gave no finished answer (finish_reason: ${reason}${hint})`);
+    if (reason === 'length') throw new CutOff(`the model API gave no finished answer (finish_reason: ${reason}${hint})`);
+    throw new Error(`the model API gave no finished answer (finish_reason: ${reason}${hint})`);
   }
   return choice.message.content;
 }
@@ -603,8 +606,8 @@ async function earlierReviews(token: string, repo: string, number: number): Prom
 async function main(): Promise<void> {
   const env = process.env;
   const token = env.REVIEWER_TOKEN ?? '';
-  const apiKey = env.DEEPSEEK_API_KEY ?? '';
-  const model = env.DEEPSEEK_MODEL ?? '';
+  const apiKey = env.OPENCODE_API_KEY ?? '';
+  const model = env.REVIEW_MODEL ?? '';
   const repo = env.GITHUB_REPOSITORY ?? '';
   const number = Number(env.PR_NUMBER);
   const head = env.HEAD_SHA ?? '';
@@ -649,9 +652,9 @@ async function main(): Promise<void> {
   }
   if (!incremental && /^[0-9a-f]{40}$/.test(base)) diff = await compare(base);
   let review: Review;
-  if (!apiKey) review = unsureReview('the DEEPSEEK_API_KEY secret is not set');
+  if (!apiKey) review = unsureReview('the OPENCODE_API_KEY secret is not set');
   else if (diff === null) review = unsureReview('GitHub could not give the diff');
-  else review = await decideReview({ body: pull.body ?? '', diff, model, askModel: (messages) => askDeepSeek(apiKey, model, messages), earlierBodies: earlier.map((each) => each.body), incremental });
+  else review = await decideReview({ body: pull.body ?? '', diff, model, askModel: (messages) => askReviewModel(apiKey, model, messages, realCall, `yokoten-review-${number}-${head.slice(0, 12)}`), earlierBodies: earlier.map((each) => each.body), incremental });
   await callGitHub(token, `/repos/${repo}/pulls/${number}/reviews`, { method: 'POST', body: { commit_id: head, event: review.event, body: review.body } });
   console.log(`review: posted ${review.event} on ${head.slice(0, 7)}`);
 }

@@ -10,7 +10,7 @@ import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
 import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
-import { answerOf, apiErrorOf, askDeepSeek, bodyKind, type ModelCall, RETRY_WAIT_MS, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
+import { answerOf, apiErrorOf, askReviewModel, MODEL_URL, USER_AGENT, bodyKind, type ModelCall, RETRY_WAIT_MS, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
 // #612: the approval git fetch must not hang the bot. The git reads share the gh read
 // budget through one constant, which gitRead passes to every approval git command.
@@ -607,8 +607,8 @@ test('review: only a clear APPROVE posts an approval; errors, timeouts and junk 
   assert.equal(changes.event, 'REQUEST_CHANGES');
   assert.equal(parseLeadApproval(changes.body), null, 'a change request carries no approval line');
   for (const [name, answer] of [
-    ['an API error', async () => { throw new Error('the DeepSeek API answered HTTP 500'); }],
-    ['a timeout', async () => { throw new Error('the DeepSeek API did not answer in time'); }],
+    ['an API error', async () => { throw new Error('the model API answered HTTP 500'); }],
+    ['a timeout', async () => { throw new Error('the model API did not answer in time'); }],
     ['junk', async () => 'sure, approved'],
     ['extra prose', async () => `${approve} -- approved`],
   ] as [string, () => Promise<string>][]) {
@@ -799,8 +799,8 @@ test('review: the workflow runs the base reviewer from main with the App token a
   assert.match(code, /^ {10}private-key: \$\{\{ secrets\.REVIEWER_APP_KEY \}\}$/m);
   assert.match(code, /^ {10}REVIEWER_TOKEN: \$\{\{ steps\.app-token\.outputs\.token \}\}$/m);
   assert.doesNotMatch(code, /github\.token|secrets\.GITHUB_TOKEN/, 'the review is posted with the App token, not the Actions token');
-  assert.match(code, /^ {10}DEEPSEEK_MODEL: deepseek-flash$/m);
-  assert.match(code, /^ {10}DEEPSEEK_API_KEY: \$\{\{ secrets\.DEEPSEEK_API_KEY \}\}$/m);
+  assert.match(code, /^ {10}REVIEW_MODEL: deepseek-v4\.1-flash$/m);
+  assert.match(code, /^ {10}OPENCODE_API_KEY: \$\{\{ secrets\.OPENCODE_API_KEY \}\}$/m);
   const owners = readFileSync(join(ROOT, '.github/CODEOWNERS'), 'utf8');
   for (const path of ['/.github/workflows/', '/.github/review/']) assert.match(owners, new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, (mark) => `\\${mark}`)} @`, 'm'), `CODEOWNERS owns ${path}`);
 });
@@ -850,7 +850,7 @@ test('requestBody: the effort and the answer cap are set, never left to the API 
 
 test('review: an answer cut off at the token cap is asked once more as halves (PR #1118)', async () => {
   const diff = ['a', 'b'].map((name) => `diff --git a/${name}.ts b/${name}.ts\n--- a/${name}.ts\n+++ b/${name}.ts\n@@ -1 +1 @@\n-x\n+${'y'.repeat(200)}\n`).join('');
-  const cut = () => { throw new CutOff('the DeepSeek API gave no finished answer (finish_reason: length, cut off at 65536 tokens)'); };
+  const cut = () => { throw new CutOff('the model API gave no finished answer (finish_reason: length, cut off at 65536 tokens)'); };
   const no = JSON.stringify({ verdict: 'REQUEST_CHANGES', summary: 'No.', findings: [{ severity: 'high', text: 'b.ts: wrong' }] });
   const run = async (answers: (() => string)[]) => {
     let calls = 0;
@@ -869,7 +869,7 @@ test('review: an answer cut off at the token cap is asked once more as halves (P
   assert.match(twice.review.body, /finish_reason: length/);
   assert.equal(twice.calls, 3);
   // Another error is not retried.
-  const other = await run([() => { throw new Error('the DeepSeek API answered HTTP 500'); }]);
+  const other = await run([() => { throw new Error('the model API answered HTTP 500'); }]);
   assert.equal(other.review.event, 'COMMENT');
   assert.equal(other.calls, 1);
 });
@@ -956,7 +956,7 @@ test('review: only completed reviews by the reviewer App count as rounds (#1217)
   const entry = (login: string, body: string, commit_id = 'a'.repeat(40)) => ({ user: { login }, body, commit_id });
   const found = completedReviews([
     entry(REVIEWER_LOGIN, '**✅ Approve** · Nothing to fix · ok', 'b'.repeat(40)),
-    entry(REVIEWER_LOGIN, 'The DeepSeek review did not run to the end: x.'),
+    entry(REVIEWER_LOGIN, 'The review did not run to the end: x.'),
     entry('someone', '**❌ Changes requested** · 1 Important · x'),
     entry(REVIEWER_LOGIN, '**❌ Changes requested** · 1 Important · y', 'c'.repeat(40)),
     { user: null, body: null },
@@ -1003,7 +1003,7 @@ test('review: a quick failed DeepSeek call is retried once; the error names the 
       },
     };
     try {
-      return { answer: await askDeepSeek('key', 'model', [], call), calls, waits };
+      return { answer: await askReviewModel('key', 'model', [], call), calls, waits };
     } catch (error) {
       return { error: (error as Error).message, calls, waits };
     }
@@ -1011,12 +1011,32 @@ test('review: a quick failed DeepSeek call is retried once; the error names the 
   assert.deepEqual(await run([[200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 1, waits: [] }, 'a good answer is one call');
   assert.deepEqual(await run([[200, '{"choices":[{"fin'], [200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 2, waits: [RETRY_WAIT_MS] }, 'a cut body, then a good one');
   assert.deepEqual(await run([[503, '<html>busy</html>'], [200, good]]), { answer: '{"verdict":"APPROVE"}', calls: 2, waits: [RETRY_WAIT_MS] }, 'a 5xx, then a good one');
-  assert.deepEqual(await run([[200, ''], [200, '']]), { error: 'the DeepSeek API answer was not JSON (empty), twice (one retry)', calls: 2, waits: [RETRY_WAIT_MS] });
-  assert.deepEqual(await run([[400, '{"error":{"message":"bad request"}}']]), { error: 'the DeepSeek API answered HTTP 400: bad request', calls: 1, waits: [] }, 'a 400 is not retried');
+  assert.deepEqual(await run([[200, ''], [200, '']]), { error: 'the model API answer was not JSON (empty), twice (one retry)', calls: 2, waits: [RETRY_WAIT_MS] });
+  assert.deepEqual(await run([[400, '{"error":{"message":"bad request"}}']]), { error: 'the model API answered HTTP 400: bad request', calls: 1, waits: [] }, 'a 400 is not retried');
   const slow = await run([[200, 'x'], [200, good]], MODEL_TIMEOUT_MS / 2);
-  assert.deepEqual(slow, { error: 'the DeepSeek API answer was not JSON (1 characters of other text)', calls: 1, waits: [] }, 'a slow failure is not retried, so two calls stay inside the job');
+  assert.deepEqual(slow, { error: 'the model API answer was not JSON (1 characters of other text)', calls: 1, waits: [] }, 'a slow failure is not retried, so two calls stay inside the job');
   assert.equal(bodyKind('  '), 'empty');
   assert.equal(bodyKind('<!doctype html><p>502</p>'), 'an HTML page, 25 characters');
   assert.equal(bodyKind('{"a":'), 'cut off after 5 characters');
   assert.equal(bodyKind('secret-ish text'), '15 characters of other text', 'the text itself is never shown');
+});
+
+// Issue #1290: the call goes to OpenCode Go, names itself, and keeps one session for a review.
+test('review: the model call names its address, its client and its session (#1290)', async () => {
+  const seen: { url: string; headers: Record<string, string> }[] = [];
+  const answer = JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: '{"verdict":"APPROVE"}' } }] });
+  const call: ModelCall = {
+    fetch: (async (url: string, init: { headers: Record<string, string> }) => {
+      seen.push({ url, headers: init.headers });
+      return new Response(answer, { status: 200 });
+    }) as unknown as typeof fetch,
+    now: () => 0,
+    wait: async () => {},
+  };
+  await askReviewModel('key', 'deepseek-v4.1-flash', [], call, 'yokoten-review-7-abc');
+  assert.equal(seen[0].url, MODEL_URL);
+  assert.match(MODEL_URL, /^https:\/\/opencode\.ai\/inference\/go\/openai\/v1\/chat\/completions$/);
+  assert.equal(seen[0].headers['user-agent'], USER_AGENT);
+  assert.equal(seen[0].headers['x-opencode-session'], 'yokoten-review-7-abc');
+  assert.equal(seen[0].headers.authorization, 'Bearer key');
 });
