@@ -1040,3 +1040,15 @@ test('review: the model call names its address, its client and its session (#129
   assert.equal(seen[0].headers['x-opencode-session'], 'yokoten-review-7-abc');
   assert.equal(seen[0].headers.authorization, 'Bearer key');
 });
+
+// Issue #1290: the model the workflow names counts as an area lead, and stays in DeepSeek's family.
+test('review: the workflow model passes the merge check, and not on its own family (#1290)', () => {
+  const model = /^ {10}REVIEW_MODEL: (\S+)$/m.exec(readFileSync(join(ROOT, '.github/workflows/review.yml'), 'utf8'))?.[1] ?? '';
+  assert.ok(model, 'the workflow names a model');
+  const head = 'c'.repeat(40);
+  const line = parseLeadApproval(`ok\n\n${approvalLine(model)}`);
+  assert.deepEqual(line, { lead: 'DeepSeek', vendor: 'DeepSeek', model });
+  const read = { tier: 'A', head, approved: null, after: 0, sameDiff: true, writers: [{ vendor: 'Claude Code', model: 'claude-opus-5-5' }], lead: { ...line!, login: REVIEWER_LOGIN, commit: head, after: 0, sameDiff: true } };
+  assert.equal(checkMergeApproval(read), null);
+  assert.match(checkMergeApproval({ ...read, writers: [{ vendor: 'DeepSeek', model }] })?.what ?? '', /same model family/);
+});
