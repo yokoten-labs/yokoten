@@ -838,7 +838,8 @@ test('init: a merge commit runs the commit check too (#239)', async () => {
   sandbox.git('checkout', '-q', 'main');
   const merge = (zone: string) => spawnSync('git', ['merge', '--no-ff', '-q', '-m', 'merge topic', 'topic'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: zone }, encoding: 'utf8' });
   // A merge with the author's time zone is refused, and the zone is never printed.
-  const zoned = merge('Asia/Tokyo');
+  // A POSIX zone: Git for Windows reads `Asia/Tokyo` as UTC.
+  const zoned = merge('JST-9');
   assert.notEqual(zoned.status, 0, 'the merge commit is checked');
   assert.match(zoned.stderr, /carries your time zone/);
   assert.doesNotMatch(zoned.stderr, /\+0900/);

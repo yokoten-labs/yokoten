@@ -490,7 +490,8 @@ test('check --staged: stops a commit whose time carries a time zone, never print
 
 test('check --staged: with nothing staged, no commit time to check (#208)', async () => {
   const sandbox = makeSandbox();
-  const zoned = { TZ: 'Asia/Tokyo' };
+  // A POSIX zone: Git for Windows reads `Asia/Tokyo` as UTC, and the test then sees no zone.
+  const zoned = { TZ: 'JST-9' };
   // An empty repo, then one with a commit: nothing staged is ok, and says so.
   for (const step of ['empty', 'committed']) {
     if (step === 'committed') sandbox.git('commit', '-q', '--allow-empty', '-m', 'first');
@@ -515,7 +516,8 @@ test('check --staged: with nothing staged, no commit time to check (#208)', asyn
 test('check --history: counts commits with a time zone, as a note that does not fail (#40)', async () => {
   const sandbox = makeSandbox();
   sandbox.git('commit', '-q', '--allow-empty', '-m', 'utc');
-  spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'zoned'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: 'Asia/Tokyo' } });
+  // A POSIX zone: Git for Windows reads `Asia/Tokyo` as UTC.
+  spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'zoned'], { cwd: sandbox.repo, env: { ...sandbox.env, TZ: 'JST-9' } });
   const r = await sandbox.call(['check', '--history', '--all']);
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /note +1 commit\(s\) record a time zone other than UTC/);
