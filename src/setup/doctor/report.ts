@@ -7,7 +7,7 @@ import { moreLine, nextLine, row, type RowMark, screen, SCREEN_ROWS, section, sp
 import { hideHome, homeOf, isUtcTimeZone, timeZoneFix } from '../../rules/privacy.ts';
 import { guardLine } from '../../host/light.ts';
 import { check } from '../../run/check.ts';
-import { countNotes, waitingLine } from '../../run/learn.ts';
+import { noteAgeDays, readInbox, staleLine, waitingLine } from '../../run/learn.ts';
 import { type Gh, type GhLater, readServer, type ServerSettings, type Unread } from '../../host/github/index.ts';
 import { type Host, hostOf, isNoAdapter, noAdapter } from '../../host/hosts.ts';
 import { readUnsaved, unsavedNotes } from '../advice/unsaved.ts';
@@ -74,15 +74,22 @@ function readOrigin(host: Host, gh: Gh): ServerSettings | Unread {
   return noAdapter(host);
 }
 
+/** How old the oldest note may get before every repo hears of it (#1336). */
+const INBOX_WAIT_DAYS = 3;
+
 /**
- * In yokoten's own repo only, a note when lessons from other projects wait in the inbox
- * (#392). Elsewhere nothing: the inbox is for whoever works on yokoten. One readdir and
- * the package.json read, no child process, so the session start stays fast.
+ * A note when lessons for yokoten wait in the inbox. In yokoten's own repo at once (#392).
+ * Elsewhere only once the oldest is INBOX_WAIT_DAYS old, since the lead may never work in
+ * the yokoten repo itself (#1336). One readdir and the package.json read, no child
+ * process, so the session start stays fast.
  */
-export function upstreamNote(root: string, env: Env): Finding | null {
-  if (!isSelf(root)) return null;
-  const line = waitingLine(countNotes(env));
-  return line ? finding('upstream-inbox', line, 'open an issue for each, then remove its note with `yokoten learn --upstream --done <id>`') : null;
+export function upstreamNote(root: string, env: Env, now = Date.now()): Finding | null {
+  const { count, oldestId } = readInbox(env);
+  if (!count || !oldestId) return null;
+  if (isSelf(root)) return finding('upstream-inbox', waitingLine(count) ?? '', 'open an issue for each, then remove its note with `yokoten learn --upstream --done <id>`');
+  const days = noteAgeDays(oldestId, now);
+  if (days === null || days < INBOX_WAIT_DAYS) return null;
+  return finding('upstream-inbox', staleLine(count, days), 'open an issue in the yokoten repo for each, or hand them to whoever works on yokoten; then remove each note with `yokoten learn --upstream --done <id>`');
 }
 
 /** What a project with CI off leaves unchecked (#377): said once, in full doctor, so the trade-off stays visible. */

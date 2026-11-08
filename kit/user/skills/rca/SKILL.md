@@ -53,7 +53,7 @@ Add the rule row to `AGENTS.md`: the rule, this incident in one line, and the ch
 Ask: where else can this happen? Other paths in this repo, and every other project.
 
 - Is the cause in yokoten itself? Then `yokoten learn --upstream "<what happened>"`. It
-  keeps a note outside every repo, with this project hidden. In the yokoten repo, the
-  session start lists it until someone opens the issue.
+  keeps a note outside every repo, with this project hidden. The session start counts
+  the notes until someone opens the issues: in the yokoten repo at once, elsewhere after 3 days.
 - For each other project, open an issue there, or note why it does not apply.
 - Close the incident only when every place has a check or a recorded reason.

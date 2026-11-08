@@ -985,7 +985,7 @@ yokoten learn --upstream "the guard let git push --tags through" --area hook --f
 
 知られた秘密の形を持つ注意は保ちません。コミットチェックが知るトークン、URL の中のパスワード、値のある `password=`、`token=`、`api_key=`、JSON web token、OpenAI の鍵です。掃除のあとも IP アドレスや非公開の印を持つ注意も保ちません。yokoten は見つけた詳細の種類を言い、値を決して言いません。どこにも何も送りません。ホームフォルダがないとき（空の HOME）は、何も保ちません。
 
-yokoten のリポジトリでは、セッションの開始と `doctor` が、待っている注意の数を言います。`yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list` です。ほかのリポジトリはこの行を決して見ません。注意ごとに issue を開き、`yokoten learn --upstream --done <id>` でそれを消します。
+yokoten のリポジトリでは、セッションの開始と `doctor` が、待っている注意の数を言います。`yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list` です。ほかのリポジトリでも、いちばん古い注意が 3 日たつと言います。`yokoten: 3 lessons for yokoten have waited 5 days on this machine: yokoten learn --upstream --list` です。注意ごとに yokoten のリポジトリで issue を開くか、yokoten の担当者に渡します。そのあと `yokoten learn --upstream --done <id>` でそれを消します。
 
 ### 設定
 

@@ -1351,7 +1351,9 @@ yokoten learn --upstream "the guard let git push --tags through" --area hook --f
 
 在 yokoten 自己的仓库里，会话开头和 `doctor` 会说有几条在等：
 `yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list`。
-别的仓库看不到这一行。每条开一个 issue，开完用 `yokoten learn --upstream --done <id>` 删掉。
+在别的仓库里，最早的一条放满 3 天后也会说：
+`yokoten: 3 lessons for yokoten have waited 5 days on this machine: yokoten learn --upstream --list`。
+每条在 yokoten 仓库开一个 issue，或者交给负责 yokoten 的人。开完用 `yokoten learn --upstream --done <id>` 删掉。
 
 ### 设置
 

@@ -58,7 +58,8 @@ Stuck: if the task can't be done, or the brief looks wrong, stop and say so in t
        That is a good report, not a failure.
 Stop: after the same step fails three times, or the guard refuses three times, stop.
       Go back to your last anchor, or write your report. Stopping is good work.
-Report: what you changed, the commands you ran with their output, what you are unsure of.
+Report: what you changed, the commands you ran with their output, what you are unsure of,
+        and any gap in yokoten itself (the lead keeps it with `yokoten learn --upstream`).
 Proof: before you say "done", run a real test, type check or build, and show its output.
 ```
 
