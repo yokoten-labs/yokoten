@@ -976,15 +976,28 @@ export function writeNote(env: Env, note: Omit<UpstreamNote, 'id' | 'when'>, now
   return written;
 }
 
-/** How many notes wait. One readdir, no file read, so the session start stays fast. */
-export function countNotes(env: Env): number {
+/** How many notes wait, and the oldest one's id. One readdir, no file read, so the session start stays fast. */
+export function readInbox(env: Env): { count: number; oldestId: string | null } {
   const dir = upstreamDir(env);
-  if (!dir) return 0;
+  if (!dir) return { count: 0, oldestId: null };
   try {
-    return readdirSync(dir).filter((name) => NOTE_FILE.test(name)).length;
+    const names = readdirSync(dir).filter((name) => NOTE_FILE.test(name)).sort();
+    return { count: names.length, oldestId: names.length ? names[0].slice(0, -3) : null };
   } catch {
-    return 0;
+    return { count: 0, oldestId: null };
   }
+}
+
+/** How many notes wait. */
+export const countNotes = (env: Env): number => readInbox(env).count;
+
+/** Whole days since a note's id time (`20261020-120000-ab12`, UTC), or null for an id of another shape. */
+export function noteAgeDays(id: string, now: number): number | null {
+  const parts = /^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-/.exec(id);
+  if (!parts) return null;
+  const [year, month, day, hour, minute, second] = parts.slice(1).map(Number);
+  const written = Date.UTC(year, month - 1, day, hour, minute, second);
+  return Math.max(0, Math.floor((now - written) / 86_400_000));
 }
 
 /** The notes, oldest first, as their files hold them. A file that can't be read is left out. */
@@ -1025,5 +1038,9 @@ export function removeNote(env: Env, id: string): boolean {
 /** The line the session start and doctor give in yokoten's own repo, or null with no note. */
 export const waitingLine = (count: number): string | null =>
   count ? `${count} ${count === 1 ? 'lesson' : 'lessons'} from other projects ${count === 1 ? 'waits' : 'wait'} to become ${count === 1 ? 'an issue' : 'issues'}: yokoten learn --upstream --list` : null;
+
+/** The line every other repo gives once the oldest note is old (#1336). */
+export const staleLine = (count: number, days: number): string =>
+  `${count} ${count === 1 ? 'lesson' : 'lessons'} for yokoten ${count === 1 ? 'has' : 'have'} waited ${days} days on this machine: yokoten learn --upstream --list`;
 
 export { terminalText };

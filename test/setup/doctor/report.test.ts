@@ -926,15 +926,19 @@ test('doctor: a desk that can see ~/.claude/CLAUDE.md hears that the home folder
   }
 });
 
-// #392: lessons from other projects wait in ~/.config/yokoten/upstream. Only yokoten's own
-// repo, found by its package name, hears about them; another repo hears nothing.
-test('doctor: in the yokoten repo, the session and doctor count the notes from other projects; elsewhere nothing', async () => {
+// #392: lessons from other projects wait in ~/.config/yokoten/upstream. yokoten's own repo,
+// found by its package name, hears about them at once; another repo only once the oldest is
+// 3 days old (#1336).
+const noteIdAt = (ms: number, tail: string) => `${new Date(ms).toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)}-${tail}`;
+
+test('doctor: in the yokoten repo, the session and doctor count the notes from other projects; elsewhere only old ones', async () => {
   const sandbox = makeSandbox();
   const inbox = join(sandbox.home, '.config', 'yokoten', 'upstream');
   mkdirSync(inbox, { recursive: true });
-  for (const id of ['20261020-120000-aaaa', '20261020-130000-bbbb', '20261020-140000-cccc']) writeFileSync(join(inbox, `${id}.md`), 'when: 2026-10-20T12:00:00Z\npart: unknown\nwhat: x\n');
+  const hourAgo = Date.now() - 3_600_000;
+  for (const tail of ['aaaa', 'bbbb', 'cccc']) writeFileSync(join(inbox, `${noteIdAt(hourAgo, tail)}.md`), 'when: 2026-10-20T12:00:00Z\npart: unknown\nwhat: x\n');
   const line = 'yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list';
-  // Another repo: not a word, though the notes are there.
+  // Another repo: not a word while the notes are new.
   assert.ok(!(await sandbox.call(['doctor', '--session'])).stdout.includes('lessons from other projects'));
   assert.equal(upstreamNote(sandbox.repo, { HOME: sandbox.home }), null);
   // A fake yokoten repo: the count, as the session's last line.
@@ -955,9 +959,24 @@ test('doctor: in the yokoten repo, the session and doctor count the notes from o
   const full = doctor(sandbox.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noGh });
   assert.ok(rowsOf(full.lines).includes(`  note         upstream-inbox: ${note?.what}`), full.lines.join('\n'));
   assert.deepEqual(full.report.notes?.filter((found) => found.id === 'upstream-inbox'), [note]);
-  // Elsewhere, full doctor has neither.
+  // Elsewhere, full doctor has neither while the notes are new.
   const other = makeSandbox();
   assert.ok(!doctor(other.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noGh }).lines.some((text) => text.includes('upstream-inbox')));
+  // A note 5 days old: every repo hears of it, the session and full doctor alike.
+  writeFileSync(join(inbox, `${noteIdAt(Date.now() - 5 * 86_400_000, 'dddd')}.md`), 'when: 2026-10-20T12:00:00Z\npart: unknown\nwhat: x\n');
+  const stale = upstreamNote(other.repo, { HOME: sandbox.home });
+  assert.equal(stale?.what, '4 lessons for yokoten have waited 5 days on this machine: yokoten learn --upstream --list');
+  assert.match(stale?.fix ?? '', /--done <id>/);
+  const otherSession = doctor(other.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, session: true, gh: noGh });
+  assert.deepEqual(otherSession.report.findings.filter((found) => found.id === 'upstream-inbox'), [stale]);
+  assert.ok(doctor(other.repo, { env: { HOME: sandbox.home, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: noGh }).lines.some((text) => text.includes('upstream-inbox')));
+  // The day it turns 3 days old counts; a day before does not.
+  const now = Date.now();
+  rmSync(inbox, { recursive: true, force: true });
+  mkdirSync(inbox, { recursive: true });
+  writeFileSync(join(inbox, `${noteIdAt(now - 3 * 86_400_000, 'eeee')}.md`), 'what: x\n');
+  assert.ok(upstreamNote(other.repo, { HOME: sandbox.home }, now));
+  assert.equal(upstreamNote(other.repo, { HOME: sandbox.home }, now - 86_400_000), null);
   // An empty home: no inbox, no line.
   const empty = makeTempDir('yokoten-empty-');
   assert.equal(upstreamNote(sandbox.repo, { HOME: empty }), null);

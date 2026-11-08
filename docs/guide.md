@@ -1704,8 +1704,10 @@ anywhere. Without a home folder (an empty HOME), nothing is kept.
 
 In the yokoten repo, the session start and `doctor` say how many notes wait:
 `yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list`.
-Other repos never see this line. Open an issue for each note, then remove it with
-`yokoten learn --upstream --done <id>`.
+In any other repo, they say it once the oldest note is 3 days old:
+`yokoten: 3 lessons for yokoten have waited 5 days on this machine: yokoten learn --upstream --list`.
+Open an issue in the yokoten repo for each note, or hand the notes to whoever works on
+yokoten. Then remove each with `yokoten learn --upstream --done <id>`.
 
 ### Settings
 
