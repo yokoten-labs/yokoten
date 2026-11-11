@@ -15,6 +15,7 @@ import { guideLink } from '../../lib/content/docs';
 import { stopLines } from '../../lib/terminal/screen';
 import StopArt from '../../components/brand/StopArt.astro';
 import { inline } from '../../lib/page/text';
+import { splitSentences } from '../../lib/page/sentences';
 import { brandsFor } from '../../lib/page/brands';
 export const getStaticPaths = langPaths;
 const { lang } = Astro.props as { lang: Lang };
@@ -29,7 +30,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         <li class="tag tag-running">v{version.version}</li>
         {d.hero.tags.map((tag) => <li class="tag">{tag}</li>)}
       </ul>
-      <h1 id="hero-title">{d.hero.headline}</h1>
+      <h1 id="hero-title">{splitSentences(d.hero.headline).map((sentence) => <span class="line">{sentence}</span>)}</h1>
       <p class="sub">{d.hero.sub}</p>
       <div class="actions">
         <Cmd t={t} size="lg" />
@@ -45,7 +46,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
       </dl>
     </div>
     <div class="proof">
-      <Terminal screen="guard, force push" head={t.terminal.stopped} exit={t.terminal.exit} window />
+      <Terminal screen="guard, wipe home" head={t.terminal.stopped} exit={t.terminal.exit} window />
     </div>
   </section>
 
@@ -63,6 +64,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         );
       })}
     </ul>
+    <p class="lede limit">{d.stops.limit}</p>
     <p class="more"><a href={rulesLink}>{d.stops.more} →</a></p>
   </Row>
 
@@ -83,7 +85,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
 
   <section id="again" class="row band-ink again" aria-labelledby="again-title">
     <div class="again-copy">
-      <p id="again-title" class="again-title">{d.hero.headline}</p>
+      <p id="again-title" class="again-title">{splitSentences(d.hero.headline).map((sentence) => <span class="line">{sentence}</span>)}</p>
       <p class="lede">{d.hero.sub}</p>
     </div>
   </section>
@@ -93,11 +95,14 @@ const rulesLink = await guideLink(lang, 'coreRules');
      the container's edge (owner, 2026-10-28: "所有topic全部居左"). Two-column rows use the same
      grid as the hero, words left and the screen right, so the pair fills the centred container.
      Phone under 48rem: one column. Tablet 48-64rem: one column, wider cards. Desktop: two columns. */
+  .line { display: block; }
+  /* Two sentences, two lines each on a desktop: a gap between the sentences keeps them apart. */
+  h1 .line + .line { margin-top: 0.28em; }
   .hero { display: grid; gap: 3rem; padding-block: 3.5rem 5rem; }
   .copy { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
   .hero .tags { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1.75rem; }
-  h1 { font-size: clamp(2.5rem, 10vw, 3.75rem); letter-spacing: -0.03em; line-height: 0.98; margin: 0; max-width: 13ch; text-wrap: balance; }
-  .sub { font-size: 1.125rem; line-height: 1.5; margin: 1.5rem 0 0; color: var(--muted); }
+  h1 { font-size: clamp(2.5rem, 10vw, 3.75rem); letter-spacing: -0.03em; line-height: 1.06; margin: 0; max-width: 13ch; text-wrap: balance; }
+  .sub { font-size: 1.125rem; line-height: 1.5; margin: 1.75rem 0 0; color: var(--muted); }
   .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.75rem; margin-top: 2.25rem; }
   .ghost { font-weight: 600; text-decoration: none; padding: 0.5rem 0.25rem; border-bottom: 2px solid var(--link); }
   /* what it works with and where it runs: one labelled row each, every name its own chip */
@@ -122,6 +127,14 @@ const rulesLink = await guideLink(lang, 'coreRules');
   @media (min-width: 64rem) {
     .hero { grid-template-columns: minmax(0, 36rem) minmax(0, 44rem); justify-content: space-between; align-items: center; gap: 4rem; padding-block: 5rem 6rem; }
     h1 { font-size: clamp(3rem, 4.4vw, 4rem); }
+    /* The screen's middle sits on the headline's middle (owner, 2026-11-12), not on the middle of
+       the whole column: the chips below made the screen hang low. The words join the hero's grid,
+       the screen takes the headline's row with no height of its own, and overflows it evenly. */
+    .hero { column-gap: 4rem; row-gap: 0; align-items: start; }
+    .copy { display: contents; }
+    .copy > * { grid-column: 1; }
+    .proof { grid-column: 2; grid-row: 2; align-self: center; height: 0; display: flex; align-items: center; }
+    .proof > :global(*) { flex: 1; min-width: 0; }
   }
 
   /* What it stops: three cards. The plain caption leads, the reason follows, the screen's own line
@@ -159,4 +172,5 @@ const rulesLink = await guideLink(lang, 'coreRules');
   .again-copy { display: grid; gap: 1rem; }
   .again-title { font-family: var(--font-cond); font-weight: 700; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.02em; margin: 0; max-width: 16ch; text-wrap: balance; }
   .again .lede { margin: 0; }
+  .lede.limit { margin-top: 1.5rem; }
 </style>

@@ -84,7 +84,7 @@ const home = defineCollection({
   schema: z.strictObject({
     meta,
     hero: z.strictObject({ headline: text.max(80), sub: text, works: named, platforms: named, tags: list(text.max(20), 1) }),
-    stops: z.strictObject({ ...head, cards: list(z.strictObject({ screen, caption: text }), 3), more: text }),
+    stops: z.strictObject({ ...head, cards: list(z.strictObject({ screen, caption: text }), 3), limit: text, more: text }),
     firstMinute: z.strictObject({ ...head, callouts: list(text, 3) }),
     questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 3) }),
   }),
@@ -175,6 +175,7 @@ const about = defineCollection({
   schema: z.strictObject({
     meta,
     intro: z.strictObject({ ...head, body: text }),
+    why: z.strictObject({ ...head, body: text, link: text }),
     built: z.strictObject({ ...head, body: text, facts: z.strictObject({ mergedPrs: text, records: text, testFiles: text, version: text }) }),
     privacy: z.strictObject({ ...head, items: list(z.strictObject({ title: text, body: text }), 4) }),
     contact: z.strictObject({ ...head, items: list(z.strictObject({ title: text, body: text }), 3) }),

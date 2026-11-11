@@ -5,7 +5,7 @@
   },
   "hero": {
     "headline": "你的 agent 跑了 rm -rf。隔壁的專案還在。",
-    "sub": "一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。",
+    "sub": "一個指令，開啟 agent 的沙箱；沙箱起不來，agent 就停下。",
     "works": {
       "label": "適用於",
       "items": [
@@ -37,18 +37,19 @@
     "title": "它擋什麼",
     "cards": [
       {
-        "screen": "guard, force push",
-        "caption": "強制推送，會把別人的工作沖掉。"
-      },
-      {
         "screen": "guard, wipe home",
         "caption": "一條指令，清空你的家目錄。"
+      },
+      {
+        "screen": "guard, force push",
+        "caption": "強制推送，會把別人的工作沖掉。"
       },
       {
         "screen": "guard, tag push",
         "caption": "發版這件事，只該由專案擁有者來做。"
       }
     ],
+    "limit": "它不保護 agent 啟動時所在的資料夾。請在某一個專案裡啟動，不要在家目錄裡啟動。",
     "more": "全部規則"
   },
   "firstMinute": {
