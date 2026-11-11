@@ -4,7 +4,7 @@
     "description": "Your agent ran rm -rf. The project next door is still there. One command turns on your agent's sandbox, and it fails closed: npx yokoten."
   },
   "hero": {
-    "headline": "Your agent ran rm -rf. The project next door is still there.",
+    "headline": "Your agent ran rm -rf. Next door is still there.",
     "sub": "One command turns on your agent's sandbox.",
     "works": {
       "label": "Works with",

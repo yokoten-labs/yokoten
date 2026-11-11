@@ -64,7 +64,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         );
       })}
     </ul>
-    <p class="lede">{d.stops.limit}</p>
+    <p class="lede limit">{d.stops.limit}</p>
     <p class="more"><a href={rulesLink}>{d.stops.more} →</a></p>
   </Row>
 
@@ -162,4 +162,5 @@ const rulesLink = await guideLink(lang, 'coreRules');
   .again-copy { display: grid; gap: 1rem; }
   .again-title { font-family: var(--font-cond); font-weight: 700; font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.02em; margin: 0; max-width: 16ch; text-wrap: balance; }
   .again .lede { margin: 0; }
+  .lede.limit { margin-top: 1.5rem; }
 </style>
