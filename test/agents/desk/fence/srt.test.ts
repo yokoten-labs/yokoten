@@ -203,6 +203,42 @@ test('fenceCommand: with srt here, the command writes in the root and nowhere el
   assert.ok(!existsSync(join(projects, 'out.txt')), 'a write next to it never reaches the disk');
 });
 
+// The wipe of issue #1342, replayed (record 0061): an agent in one project deletes the
+// projects next to it. The guard allows these commands in a folder of projects; the fence
+// must refuse the write, whatever the command looks like.
+test('fenceCommand: with srt here, a delete from inside one project never removes the project next to it (replay of #1342)', { skip: reason || false }, () => {
+  const wipeScript = `const fs = require('fs'); for (const name of fs.readdirSync('..')) { if (name !== 'project-a') { try { fs.rmSync('../' + name, { recursive: true, force: true }); } catch {} } }`;
+  const neighbour = `try { require('fs').rmSync(process.argv[1], { recursive: true, force: true }); } catch {}`;
+  const cases: [string, (kept: string) => string[]][] = [
+    ['rm -rf of the project next door', () => ['sh', '-c', 'rm -rf ../project-b']],
+    ['rm -rf of everything one folder up', () => ['sh', '-c', 'rm -rf ../*']],
+    ['find with -delete', () => ['sh', '-c', 'find ../project-b -delete']],
+    ['a script that deletes each folder next to it', () => [process.execPath, '-e', wipeScript]],
+    ['a script that deletes it by its full path', (kept) => [process.execPath, '-e', neighbour, dirname(kept)]],
+  ];
+  for (const [name, command] of cases) {
+    const work = realpathSync(makeTempDir('work-'));
+    const root = join(work, 'project-a');
+    const kept = join(work, 'project-b', 'kept.txt');
+    mkdirSync(join(root, '.git'), { recursive: true });
+    mkdirSync(dirname(kept));
+    writeFileSync(kept, 'not yours');
+    writeFileSync(join(root, 'own.txt'), 'yours');
+    const fenced = fenceCommand({ root, writable: [], network: [] }, command(kept), process.platform, process.env);
+    spawnSync(fenced.command[0], fenced.command.slice(1), { cwd: root, encoding: 'utf8' });
+    assert.equal(existsSync(kept) && readFileSync(kept, 'utf8'), 'not yours', name);
+  }
+  // The control: the same fence lets the project delete its own file, so a kept file above is the fence's work.
+  const work = realpathSync(makeTempDir('work-'));
+  const root = join(work, 'project-a');
+  mkdirSync(join(root, '.git'), { recursive: true });
+  writeFileSync(join(root, 'own.txt'), 'yours');
+  const fenced = fenceCommand({ root, writable: [], network: [] }, ['sh', '-c', 'rm -f own.txt'], process.platform, process.env);
+  const ran = spawnSync(fenced.command[0], fenced.command.slice(1), { cwd: root, encoding: 'utf8' });
+  assert.equal(ran.status, 0, ran.stderr);
+  assert.ok(!existsSync(join(root, 'own.txt')), 'a delete inside the project works');
+});
+
 test('startOptions and treeKill: no shell; a group to end at once on Linux and macOS, taskkill on Windows (case table)', () => {
   const cases: [NodeJS.Platform, boolean, ReturnType<typeof startOptions>, ReturnType<typeof treeKill>][] = [
     ['linux', true, { shell: false, detached: true, windowsHide: false }, { kind: 'signal', pid: -42, signal: 'SIGTERM' }],
