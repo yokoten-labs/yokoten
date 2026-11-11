@@ -1,6 +1,6 @@
 # 0061 The public yokoten is the safety net only
 
-Status: accepted
+Status: accepted; read with [0062](0062-the-gate-and-the-hard-lines.md)
 Date: 2026-11-11 (UTC)
 
 ## Context
