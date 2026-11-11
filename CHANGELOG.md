@@ -6,6 +6,21 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-11
+
+### Changed
+
+- Lessons for yokoten that wait in `learn --upstream`'s inbox now show in every repo once the oldest is 3 days old, not only in the yokoten repo, and a worker's report names any gap in yokoten itself (#1336).
+
+### Fixed
+
+- The first-run sample in the README names the real version, not one that never shipped, and a test holds it and the guide's status line to `package.json`. The guide no longer promises a version for removing the old desk fence (#1282).
+- `init` sets `NODE_USE_ENV_PROXY=1` for agent sessions in `.claude/settings.json`. Without it, a Node program that uses `fetch` could not reach the network inside the Claude Code sandbox. A value you set stays (#1347).
+
+### Security
+
+- `init` now writes a Claude Code sandbox that fails closed: `sandbox.failIfUnavailable` is `true` and `sandbox.allowUnsandboxedCommands` is `false`, next to `sandbox.enabled`. Claude Code stops when the sandbox can't start, and no command runs again outside it. A value you set stays, and `doctor` names what differs. On Linux the sandbox needs `bubblewrap` and `socat`; `doctor --all` says when one is missing. A session that starts in your home folder, or in a folder that holds two or more git repositories, now hears one line: a sandbox there protects none of those projects (#1345).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
@@ -847,7 +862,8 @@ The README is also in [中文](https://github.com/yokoten-labs/yokoten/blob/v0.1
 - Problems show on the changed lines of the pull request, with how to fix them.
 - A translation is flagged when only the English changed; a newer CI run on main cancels the older one.
 
-[Unreleased]: https://github.com/yokoten-labs/yokoten/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/yokoten-labs/yokoten/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.2.1
 [0.2.0]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.2.0
 [0.1.2]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.1.2
 [0.1.1]: https://github.com/yokoten-labs/yokoten/releases/tag/v0.1.1

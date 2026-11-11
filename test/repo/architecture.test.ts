@@ -2911,7 +2911,9 @@ test('tests: none names the current or the next version; they read VERSION, so a
   const found: string[] = [];
   for (const path of filesUnder(join(ROOT, 'test')).filter((file) => file.endsWith('.ts'))) {
     const text = readFileSync(join(ROOT, 'test', path), 'utf8');
-    for (const line of versionLines(text, VERSION)) found.push(`test/${path}:${line}`);
+    // The DeepSeek Harness samples name a pre-release of that tool. Its number met ours at a
+    // release (2026-11-11), so a pre-release tail is skipped for the current version too.
+    for (const line of versionLines(text, VERSION, true)) found.push(`test/${path}:${line}`);
     for (const next of nextVersions(VERSION)) for (const line of versionLines(text, next, true)) found.push(`test/${path}:${line} (${next})`);
   }
   assert.deepEqual(found, [], `use VERSION from src/setup/files.ts, or a sample far from it, instead of ${VERSION} or the next version at: ${found.join(', ')}`);

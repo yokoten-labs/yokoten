@@ -29,7 +29,7 @@ Linux では、サンドボックスに `bubblewrap` と `socat` が必要です
 
 <!-- The first run in a new repo; regenerate it when the screen changes. -->
 ```text
-yokoten 0.2.0 · set up; stage 1 of 5, safety net
+yokoten 0.2.1 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
   ok           38 files written in this project, none of yours changed

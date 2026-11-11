@@ -1,6 +1,6 @@
 {
   "name": "yokoten",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Your agent ran rm -rf. The project next door is still there. One command turns on your agent's sandbox, and it fails closed: npx yokoten.",
   "keywords": [
     "ai-agents",
