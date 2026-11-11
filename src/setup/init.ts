@@ -141,10 +141,12 @@ function agentHooks(name: string, file: string, add: () => Change[]): { ok: bool
 type SandboxWrite = 'added' | 'same' | 'kept' | 'hand' | 'unreadable' | Problem;
 
 /** One agent's sandbox (#589) as a change, or the problem that left it out. */
-function sandboxStep(agent: string, name: string, file: string, why: string, write: SandboxWrite): Step {
-  if (write === 'added') return stepOf({ changes: [changeOf('added', 'setting', file, `the ${name} sandbox in ${file} (${why})`, { agent, isSandbox: true })] });
-  if (write === 'same') return stepOf({ changes: [changeOf('kept', 'setting', file, `the ${name} sandbox in ${file}`, { agent, isSandbox: true })] });
-  if (write === 'kept') return stepOf({ changes: [changeOf('kept', 'setting', file, `your ${name} sandbox in ${file} (doctor names what differs)`, { agent, yours: true, isSandbox: true })] });
+function sandboxStep(agent: string, name: string, file: string, why: string, write: SandboxWrite, isSandbox: boolean): Step {
+  // Only a real sandbox is marked: Gemini's block keeps YOLO mode off and is no sandbox (#1360).
+  const mark = isSandbox ? { isSandbox } : {};
+  if (write === 'added') return stepOf({ changes: [changeOf('added', 'setting', file, `the ${name} sandbox in ${file} (${why})`, { agent, ...mark })] });
+  if (write === 'same') return stepOf({ changes: [changeOf('kept', 'setting', file, `the ${name} sandbox in ${file}`, { agent, ...mark })] });
+  if (write === 'kept') return stepOf({ changes: [changeOf('kept', 'setting', file, `your ${name} sandbox in ${file} (doctor names what differs)`, { agent, yours: true, ...mark })] });
   if (write === 'hand') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${file} has comments, so add ${gemini.SANDBOX_HAND_ADD} there by hand`, 'yokoten init')] });
   if (write === 'unreadable') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: can't read ${file}; make it readable`, 'yokoten init')] });
   return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${skippedBecause(file, write, 'init')}`)] });
@@ -156,14 +158,15 @@ function sandboxStep(agent: string, name: string, file: string, why: string, wri
  * `ok` is false when a sandbox file was skipped; a sandbox the user set stays (`kept`).
  */
 function sandboxSteps(root: string): { ok: boolean; step: Step } {
-  const writes: [string, string, string, string, SandboxWrite][] = [
-    ['Claude Code', 'Claude Code', '.claude/settings.json', 'shell commands stay in the project; new network hosts ask first', addClaudeSandbox(root)],
-    ['Codex', 'Codex', '.codex/config.toml', 'writes stay in the project; network is off; Codex asks before going beyond', codex.addProjectSandbox(root)],
-    ['Gemini CLI', 'Gemini', '.gemini/settings.json', 'YOLO mode, which approves everything, stays off', gemini.addProjectSandbox(root)],
-    ['Grok CLI', 'Grok', '.grok/sandbox.toml', 'the yokoten profile keeps writes in the project', grok.addProjectSandbox(root)],
+  // The last column is whether the file holds a real sandbox: Gemini's only keeps YOLO mode off.
+  const writes: [string, string, string, string, SandboxWrite, boolean][] = [
+    ['Claude Code', 'Claude Code', '.claude/settings.json', 'shell commands stay in the project; new network hosts ask first', addClaudeSandbox(root), true],
+    ['Codex', 'Codex', '.codex/config.toml', 'writes stay in the project; network is off; Codex asks before going beyond', codex.addProjectSandbox(root), true],
+    ['Gemini CLI', 'Gemini', '.gemini/settings.json', 'YOLO mode, which approves everything, stays off', gemini.addProjectSandbox(root), false],
+    ['Grok CLI', 'Grok', '.grok/sandbox.toml', 'the yokoten profile keeps writes in the project', grok.addProjectSandbox(root), true],
   ];
   const step = stepOf();
-  for (const [agent, name, file, why, write] of writes) addStep(step, sandboxStep(agent, name, file, why, write));
+  for (const [agent, name, file, why, write, isSandbox] of writes) addStep(step, sandboxStep(agent, name, file, why, write, isSandbox));
   return { ok: writes.every(([, , , , write]) => write === 'added' || write === 'same' || write === 'kept'), step };
 }
 

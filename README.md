@@ -31,11 +31,8 @@ The first run shows one screen: what it set up, where you are, and the next comm
 yokoten 0.2.1 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
-
   ok           38 files written in this project, none of yours changed
-
-  ok           sandbox on for Claude Code, Codex, Gemini CLI, Grok CLI in this
-               project
+  ok           sandbox on for Claude Code, Codex, Grok CLI in this project
 
   MISSING      ~/.config/yokoten/private-marks is missing or has no marks
                Type your name, your city or a domain; it is not shown.
@@ -45,7 +42,8 @@ yokoten 0.2.1 · set up; stage 1 of 5, safety net
   next         Run your tests on every push
   to do        Put the project on GitHub or Gitea
   to do        Name the owner (CODEOWNERS)
-  to do        2 more steps, listed by `npx yokoten doctor --all`
+  to do        Set up the bot account
+  to do        Add a license and a security policy
   can't check  9 steps: they read the code host; doctor checks them after a push
 
   note         16 uncommitted files, the oldest changed 1 minute ago

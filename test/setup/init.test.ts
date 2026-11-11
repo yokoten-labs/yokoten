@@ -2579,4 +2579,8 @@ test('init: only an agent\'s project sandbox change carries isSandbox, added the
   assert.ok(first.every((change) => change.kind === 'setting' && change.agent), 'each one names its agent');
   const again = marked(initIn(sandbox));
   assert.ok(again.some((change) => change.agent === 'Claude Code' && change.state === 'kept'), JSON.stringify(again));
+  assert.deepEqual(first.map((change) => change.agent), ['Claude Code', 'Codex', 'Grok CLI'], 'Gemini is no sandbox');
+  const geminiChange = initIn(makeSandbox()).changes.find((change) => change.agent === 'Gemini CLI' && change.path === '.gemini/settings.json' && change.kind === 'setting' && /sandbox/.test(change.note ?? ''));
+  assert.ok(geminiChange, 'the Gemini change is still there');
+  assert.equal(geminiChange.isSandbox, undefined);
 });
