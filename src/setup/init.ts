@@ -94,7 +94,7 @@ export const stepOf = (part: Partial<Step> = {}): Step => ({ changes: part.chang
 export const setupNote = (id: string, what: string, fix = ''): Finding => ({ id, what, why: '', fix });
 
 /** One change: its state, its kind and path, and the words a `--list` row says after the state. */
-export const changeOf = (state: ChangeState, kind: Change['kind'], path: string, note: string, more: { agent?: string; yours?: boolean } = {}): Change => ({ state, kind, path, note, ...more });
+export const changeOf = (state: ChangeState, kind: Change['kind'], path: string, note: string, more: { agent?: string; yours?: boolean; isSandbox?: boolean } = {}): Change => ({ state, kind, path, note, ...more });
 
 /** A write as `writeManaged` and the hook writers report it, as a change (#984: the user's file is kept, and says so). */
 export function writeChange(state: ReportState, kind: Change['kind'], path: string, what: string, agent?: string): Change {
@@ -142,9 +142,9 @@ type SandboxWrite = 'added' | 'same' | 'kept' | 'hand' | 'unreadable' | Problem;
 
 /** One agent's sandbox (#589) as a change, or the problem that left it out. */
 function sandboxStep(agent: string, name: string, file: string, why: string, write: SandboxWrite): Step {
-  if (write === 'added') return stepOf({ changes: [changeOf('added', 'setting', file, `the ${name} sandbox in ${file} (${why})`, { agent })] });
-  if (write === 'same') return stepOf({ changes: [changeOf('kept', 'setting', file, `the ${name} sandbox in ${file}`, { agent })] });
-  if (write === 'kept') return stepOf({ changes: [changeOf('kept', 'setting', file, `your ${name} sandbox in ${file} (doctor names what differs)`, { agent, yours: true })] });
+  if (write === 'added') return stepOf({ changes: [changeOf('added', 'setting', file, `the ${name} sandbox in ${file} (${why})`, { agent, isSandbox: true })] });
+  if (write === 'same') return stepOf({ changes: [changeOf('kept', 'setting', file, `the ${name} sandbox in ${file}`, { agent, isSandbox: true })] });
+  if (write === 'kept') return stepOf({ changes: [changeOf('kept', 'setting', file, `your ${name} sandbox in ${file} (doctor names what differs)`, { agent, yours: true, isSandbox: true })] });
   if (write === 'hand') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${file} has comments, so add ${gemini.SANDBOX_HAND_ADD} there by hand`, 'yokoten init')] });
   if (write === 'unreadable') return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: can't read ${file}; make it readable`, 'yokoten init')] });
   return stepOf({ problems: [setupNote('sandbox', `skipped the ${name} sandbox: ${skippedBecause(file, write, 'init')}`)] });

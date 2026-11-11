@@ -133,6 +133,24 @@ test('start: the first run\'s screen says what each part did, then the road, the
   assert.ok(startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('win32') }).includes('Next: `git add -A; git commit -m "chore: add yokoten"`'));
 });
 
+test('start: a sandbox init wrote or kept gets one row after the files row (#1360)', () => {
+  const sandbox: Change = { state: 'added', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', isSandbox: true, note: 'the Claude Code sandbox in .claude/settings.json' };
+  const lines = startScreen({ install: INSTALLED, init: { ...ADDED, changes: [...ADDED.changes, sandbox] }, report: REPORT, place: placeFor('linux') });
+  assert.deepEqual(lines.slice(2, 5), ['  ok           guard on for Claude Code, Codex CLI on this computer', '  ok           4 files written in this project, none of yours changed', '  ok           sandbox on for Claude Code in this project']);
+  // A kept sandbox counts too, and an agent is named once.
+  const kept: Change[] = [{ ...sandbox, state: 'kept' }, { ...sandbox, state: 'kept', agent: 'Codex', path: '.codex/config.toml' }];
+  const text = startScreen({ init: { ...ADDED, changes: [...ADDED.changes, ...kept] }, report: REPORT, place: placeFor('linux') }).join('\n');
+  assert.match(text, /^ {2}ok {11}sandbox on for Claude Code, Codex in this project$/m);
+});
+
+test('start: no sandbox change means no sandbox row (#1360)', () => {
+  const lines = startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('linux') });
+  assert.equal(lines.some((line) => line.includes('sandbox on')), false, lines.join('\n'));
+  // A setting that is not a sandbox, even with an agent, is no sandbox row.
+  const tz: Change = { state: 'kept', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', yours: true };
+  assert.equal(startScreen({ init: { ...ADDED, changes: [...ADDED.changes, tz] }, report: REPORT, place: placeFor('linux') }).some((line) => line.includes('sandbox on')), false);
+});
+
 test('start: an install that failed keeps its problem with the Fix line, and the title says partly (#1027, #1115)', () => {
   const failed: SetupResult = {
     ...INSTALLED,
