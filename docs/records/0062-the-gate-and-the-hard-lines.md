@@ -22,8 +22,9 @@ reading of the gate on 2026-11-11.
 ## Decision
 
 1. **The merge gate, in two stages.**
-   - Now: `train` and the conflict map are removed. The merge gate stays where it is, in
-     the core: the checks the bot runs before it merges.
+   - Now: `train` and the conflict map are removed, as record 0061 says in point 7. The
+     reason is in record [0046](0046-merge-gate-not-queue.md): the host has a merge queue.
+     The merge gate stays where it is, in the core: the checks the bot runs before it merges.
    - Later, with point 8 of record 0061: the merge gate moves out of the core, together
      with the bot. It is not deleted.
    - So "yokoten keeps the gate" in point 7 means "until the bot moves".
@@ -32,11 +33,14 @@ reading of the gate on 2026-11-11.
    quotes, variables, substitutions or heredocs are worked out.
 3. **The list of hard lines is not in this record.** The plan that removes the guard's
    shell reading names each one, and the owner accepts that plan first.
+4. **No code changes with this record.** The guard reads shell as before until that plan
+   merges, with its list and a test for each line. The sandbox default is already on `main`.
 
 ## Options not taken
 
-- **Edit record 0061.** An accepted decision is not rewritten; a reader of the history
-  would not see that the text changed after a review.
+- **Edit the decision in record 0061.** An accepted decision is not rewritten; a reader of
+  the history would not see that the text changed after a review. Only its status line
+  changes: it now points here.
 - **Name the hard lines here.** The list needs the measurements of that plan. A list
   written now would be a guess.
 
