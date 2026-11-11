@@ -3,7 +3,9 @@
   "home": "yokoten, home",
   "nav": {
     "label": "Pages",
+    "how": "How it works",
     "docs": "Docs",
+    "road": "Road",
     "about": "About"
   },
   "docs": {
