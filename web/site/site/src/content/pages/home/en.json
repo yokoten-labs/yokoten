@@ -56,7 +56,7 @@
     "label": "Your first minute",
     "title": "What `npx yokoten` does",
     "callouts": [
-      "Turns the guard and the sandbox on.",
+      "Turns the guard on, and the sandbox where your agent has one.",
       "Adds the rules. Changes none of your files.",
       "Shows the one next command."
     ]

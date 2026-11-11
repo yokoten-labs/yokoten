@@ -114,7 +114,7 @@ export function startScreen({ install, init, report, place }: StartParts): strin
     const kept = init.changes.some((change) => change.yours) ? 'your own files kept' : 'none of yours changed';
     items.push(...partItems(init, `${count(written, 'file')} written in this project, ${kept}`, 'this project is only partly set up'));
   }
-  const sandboxed = init ? [...new Set(init.changes.filter((change) => change.isSandbox && change.agent).map((change) => change.agent))] : [];
+  const sandboxed = init ? [...new Set(init.changes.filter((change) => change.isSandbox && change.agent && !change.yours).map((change) => change.agent))] : [];
   if (sandboxed.length) items.push(row('ok', `sandbox on for ${sandboxed.join(', ')} in this project`));
   const isDone = (install?.ok ?? true) && (init?.ok ?? true) && !install?.problems.length && !init?.problems.length;
   const heading = title(VERSION, `${isDone ? 'set up' : 'partly set up'}; ${doctorSummary(report)}`);
