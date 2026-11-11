@@ -34,7 +34,7 @@ const site = defineCollection({
   schema: z.strictObject({
     skip: text,
     home: text,
-    nav: z.strictObject({ label: text, docs: text, about: text }),
+    nav: z.strictObject({ label: text, how: text, docs: text, road: text, about: text }),
     /**
      * The docs pages: the sidebar's three groups, each page's name (by its page key) and description,
      * the guide's chapter list and the links between chapters, the phone's fold, and the note on a
