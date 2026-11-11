@@ -550,7 +550,7 @@ set. A subagent starts no session, so it hears nothing.
 
 | Agent | What `init` writes | Why |
 |---|---|---|
-| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` is `true` | Shell commands stay in the worktree. New network hosts ask first |
+| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` and `sandbox.failIfUnavailable` are `true`, `sandbox.allowUnsandboxedCommands` is `false` | Shell commands stay in the worktree. New network hosts ask first. A sandbox that can't start stops Claude Code. No command runs again outside it |
 | Codex | `.codex/config.toml`: `sandbox_mode` is `workspace-write`, `approval_policy` is `on-request`, `network_access` is `false` | Writes stay in the worktree. Network stays off. Codex asks before it goes beyond |
 | Gemini | `.gemini/settings.json`: `security.disableYoloMode` is `true` | YOLO mode, which approves everything, stays off |
 | Grok | `.grok/sandbox.toml`: `[profiles.yokoten]` builds on `workspace` | The `yokoten` profile keeps writes in the worktree. Workers run with `grok --sandbox yokoten` |

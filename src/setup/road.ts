@@ -1022,7 +1022,7 @@ export const ROAD: Step[] = [
     what: (root, env) => firstSandboxProblem(root, env)?.what ?? 'the agent sandboxes are in place',
     fix: (root, env) => firstSandboxProblem(root, env)?.fix ?? 'nothing to do',
     why: 'a worker writes only where the sandbox allows, so it must cover the worktree',
-    how: '.claude/settings.json turns the sandbox on with no * host; .codex/config.toml pins workspace-write, on-request and no network; .gemini/settings.json blocks YOLO mode; .grok/sandbox.toml holds a workspace profile; writable paths stay in the project',
+    how: '.claude/settings.json turns the sandbox on with no * host, stops when it cannot start, and lets no command run outside it; .codex/config.toml pins workspace-write, on-request and no network; .gemini/settings.json blocks YOLO mode; .grok/sandbox.toml holds a workspace profile; writable paths stay in the project',
   },
   reviewStep,
   {

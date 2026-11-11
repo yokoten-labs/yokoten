@@ -2173,7 +2173,7 @@ test('init: writes each agent sandbox, a second run changes nothing, and a sandb
   assert.ok(has(result, 'added', /^the Gemini sandbox in \.gemini\/settings\.json \(YOLO mode/));
   assert.ok(has(result, 'added', /^the Grok sandbox in \.grok\/sandbox\.toml \(the yokoten profile/));
   const claude = JSON.parse(readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8'));
-  assert.deepEqual(claude.sandbox, { enabled: true });
+  assert.deepEqual(claude.sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
   assert.ok(claude.hooks.PreToolUse.length === 1, 'the sandbox keeps the hooks');
   assert.equal(claude.env.TZ, 'UTC');
   const codex = readFileSync(join(sandbox.repo, '.codex', 'config.toml'), 'utf8');
@@ -2193,7 +2193,7 @@ test('init: writes each agent sandbox, a second run changes nothing, and a sandb
   assert.ok(has(again, 'kept', /^the Codex sandbox in \.codex\/config\.toml$/));
   assert.ok(has(again, 'kept', /^the Gemini sandbox in \.gemini\/settings\.json$/));
   assert.ok(has(again, 'kept', /^the Grok sandbox in \.grok\/sandbox\.toml$/));
-  assert.deepEqual(JSON.parse(readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true });
+  assert.deepEqual(JSON.parse(readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
 
   // The user sets each sandbox their own way: a third run keeps them, and still exits 0.
   const setJson = (file: string, change: (data: Record<string, unknown>) => void) => {

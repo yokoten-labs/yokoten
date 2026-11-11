@@ -516,7 +516,7 @@ function sandboxProject(files: Record<string, string>): string {
 /** The four sandbox files as init writes them. */
 function goodSandboxFiles(): Record<string, string> {
   return {
-    '.claude/settings.json': JSON.stringify({ sandbox: { enabled: true } }),
+    '.claude/settings.json': JSON.stringify({ sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false } }),
     '.codex/config.toml': 'sandbox_mode = "workspace-write"\napproval_policy = "on-request"\n\n[sandbox_workspace_write]\nnetwork_access = false\n',
     '.gemini/settings.json': JSON.stringify({ security: { disableYoloMode: true } }),
     '.grok/sandbox.toml': '[profiles.yokoten]\nextends = "workspace"\n',
@@ -544,6 +544,8 @@ test('road: the sandbox step is missing, then done, then names each too-wide val
       rmSync(good, { recursive: true, force: true });
     }
     const cases: [string, Record<string, string>, RegExp, RegExp][] = [
+      ['claude runs with no sandbox when it cannot start (#1345)', { ...goodSandboxFiles(), '.claude/settings.json': JSON.stringify({ sandbox: { enabled: true, failIfUnavailable: false, allowUnsandboxedCommands: false } }) }, /no sandbox when it can't start/, /failIfUnavailable/],
+      ['claude lets a command leave the sandbox (#1345)', { ...goodSandboxFiles(), '.claude/settings.json': JSON.stringify({ sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: true } }) }, /run again outside it/, /allowUnsandboxedCommands/],
       ['claude allows every host', { ...goodSandboxFiles(), '.claude/settings.json': JSON.stringify({ sandbox: { enabled: true, network: { allowedDomains: ['*'] } } }) }, /allows every network host/, /allowedDomains/],
       ['codex runs without a sandbox', { ...goodSandboxFiles(), '.codex/config.toml': 'sandbox_mode = "danger-full-access"\napproval_policy = "on-request"\n\n[sandbox_workspace_write]\nnetwork_access = false\n' }, /danger-full-access/, /workspace-write/],
       ['gemini allows YOLO mode', { ...goodSandboxFiles(), '.gemini/settings.json': JSON.stringify({ security: { disableYoloMode: false } }) }, /YOLO mode is allowed/, /disableYoloMode/],

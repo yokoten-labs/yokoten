@@ -188,7 +188,7 @@ export function sandboxControl(
     if (!codexProblem(dir, env)) failed.push('Codex sandbox check');
     if (!geminiProblem(dir)) failed.push('Gemini CLI sandbox check');
     if (!grokProblem(dir, env)) failed.push('Grok sandbox check');
-    write('.claude/settings.json', '{"sandbox": {"enabled": true}}');
+    write('.claude/settings.json', '{"sandbox": {"enabled": true, "failIfUnavailable": true, "allowUnsandboxedCommands": false}}');
     write('.codex/config.toml', 'sandbox_mode = "workspace-write"\napproval_policy = "on-request"\n\n[sandbox_workspace_write]\nnetwork_access = false\n');
     write('.gemini/settings.json', '{"security": {"disableYoloMode": true}}');
     write('.grok/sandbox.toml', '[profiles.yokoten]\nextends = "workspace"\n');
