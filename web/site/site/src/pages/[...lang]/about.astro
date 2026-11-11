@@ -4,7 +4,7 @@ import Sheet from '../../layouts/Sheet.astro';
 import Row from '../../components/blocks/Row.astro';
 import { langPaths, type Lang } from '../../lib/i18n';
 import { pageData } from '../../lib/content/data';
-import { version } from '../../lib/content/facts';
+import { LINKS, version } from '../../lib/content/facts';
 import { inline } from '../../lib/page/text';
 export const getStaticPaths = langPaths;
 const { lang } = Astro.props as { lang: Lang };
@@ -26,7 +26,7 @@ const facts = [
   <Row id="why" no="01" label={d.why.label}>
     <h2 id="why-title">{d.why.title}</h2>
     <p class="lede">{d.why.body}</p>
-    <p class="more"><a href="https://github.com/yokoten-labs/yokoten/issues/new/choose" rel="noopener">{d.why.link} →</a></p>
+    <p class="more"><a href={`${LINKS.github}/issues/new/choose`} rel="noopener">{d.why.link} →</a></p>
   </Row>
 
   <Row id="built" no="02" label={d.built.label}>

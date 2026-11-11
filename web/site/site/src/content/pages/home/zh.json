@@ -5,7 +5,7 @@
   },
   "hero": {
     "headline": "你的 agent 跑了 rm -rf。隔壁的项目还在。",
-    "sub": "一条命令，打开 agent 的沙箱。",
+    "sub": "一条命令，打开 agent 的沙箱；沙箱起不来，agent 就停下。",
     "works": {
       "label": "适用于",
       "items": [
