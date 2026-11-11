@@ -13,7 +13,7 @@ import { DEFAULTS } from '../../../src/rules/config.ts';
 import { cleanOlderInstall, hookRunsYokoten, launcherDir, PROFILE_LINE, setUpLauncher } from '../../../src/setup/install.ts';
 import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
 import { doctor, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks } from '../../../src/setup/doctor/index.ts';
-import { deskFenceCheck, FENCE_PROGRAMS, mergeTimeZones } from '../../../src/setup/doctor/checks.ts';
+import { deskFenceCheck, FENCE_PROGRAMS, HOME_FOLDER_NOTE, mergeTimeZones, WORK_FOLDER_ENTRIES, WORK_FOLDER_NOTE, workFolderNote } from '../../../src/setup/doctor/checks.ts';
 import { road, ROAD } from '../../../src/setup/road.ts';
 
 /** A screen with each wrapped row on one line again: the rows wrap at 80 columns under their text (#1115). */
@@ -684,6 +684,31 @@ test('doctor: with the launcher off the PATH, every command in the text is `npx 
   const bare = makeTempDir('yokoten-npx-');
   const viaNpx = doctor(root, { env: { HOME: bare, npm_command: 'exec', PATH: env.PATH, YOKOTEN_TEMP_DIRS: '' }, config: DEFAULTS, gh: () => { throw new Error('no network'); } });
   assert.match(viaNpx.lines.join('\n'), /`npx yokoten init`/);
+});
+
+// #1345: a session that starts above its projects gets one line; it reads little, and only reads.
+test('workFolderNote: the home folder and a folder of two repositories get the line; one repository, none, or an unreadable folder do not (case table)', () => {
+  // The paths are joined as the system joins them, so the table reads the same on Windows.
+  const repos = (names: string[]) => (path: string) => names.some((name) => path === join('/work', name));
+  const cases: [string, string, string | null, string[] | null, string[], string | null][] = [
+    ['the home folder', '/home/someone', '/home/someone', [], [], HOME_FOLDER_NOTE],
+    ['the home folder, written another way', '/home/someone/', '/home/someone', [], [], HOME_FOLDER_NOTE],
+    ['two repositories inside', '/work', '/home/someone', ['a', 'b', 'notes.txt'], ['a', 'b'], WORK_FOLDER_NOTE],
+    ['one repository inside', '/work', '/home/someone', ['a', 'b'], ['a'], null],
+    ['no repository inside', '/work', '/home/someone', ['a', 'b'], [], null],
+    ['a folder that cannot be read', '/work', '/home/someone', null, ['a', 'b'], null],
+    ['no home folder known', '/work', null, ['a', 'b'], ['a', 'b'], WORK_FOLDER_NOTE],
+  ];
+  for (const [name, folder, home, listed, isRepo, want] of cases) assert.equal(workFolderNote(folder, home, () => listed, repos(isRepo)), want, name);
+  // The cost is capped: a second repository past the cap is never looked at, and the look stops at the second one found.
+  const many = Array.from({ length: WORK_FOLDER_ENTRIES + 50 }, (_, at) => `entry-${at}`);
+  const looked: string[] = [];
+  const late = (path: string) => { looked.push(path); return path === join('/work', 'entry-0') || path === join('/work', `entry-${WORK_FOLDER_ENTRIES + 10}`); };
+  assert.equal(workFolderNote('/work', null, () => many, late), null);
+  assert.equal(looked.length, WORK_FOLDER_ENTRIES);
+  looked.length = 0;
+  assert.equal(workFolderNote('/work', null, () => many, (path) => { looked.push(path); return true; }), WORK_FOLDER_NOTE);
+  assert.equal(looked.length, 2);
 });
 
 // #1097: the desk fence needs bwrap, rg and socat on Linux; doctor says which are missing, and never installs.

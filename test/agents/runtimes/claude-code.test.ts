@@ -378,19 +378,28 @@ function settingsProject(settings: string | object): string {
 test('sandbox write: the block is added, kept when yours, and skipped when the file is not JSON', () => {
   const root = makeTempDir('yokoten-claude-');
   assert.equal(addProjectSandbox(root), 'added');
-  assert.deepEqual(JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true });
+  assert.deepEqual(JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
   assert.equal(addProjectSandbox(root), 'same');
-  // A block without `enabled` takes it; the rest of the file stays.
+  // A block from before #1345 has only `enabled`: it takes the two keys that fail closed.
+  const older = settingsProject({ sandbox: { enabled: true } });
+  assert.equal(addProjectSandbox(older), 'added');
+  assert.deepEqual(JSON.parse(readFileSync(join(older, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
+  // A block without the keys takes them; the rest of the file stays.
   const partial = settingsProject({ hooks: {}, sandbox: { network: { allowedDomains: ['example.com'] } } });
   assert.equal(addProjectSandbox(partial), 'added');
   const merged = JSON.parse(readFileSync(join(partial, '.claude', 'settings.json'), 'utf8'));
-  assert.equal(merged.sandbox.enabled, true);
-  assert.deepEqual(merged.sandbox.network, { allowedDomains: ['example.com'] });
+  assert.deepEqual(merged.sandbox, { network: { allowedDomains: ['example.com'] }, enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false });
   assert.deepEqual(merged.hooks, {});
   // `false` is the user's explicit choice: init keeps it, and doctor names it.
   const off = settingsProject({ sandbox: { enabled: false } });
   assert.equal(addProjectSandbox(off), 'kept');
-  assert.deepEqual(JSON.parse(readFileSync(join(off, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: false });
+  assert.deepEqual(JSON.parse(readFileSync(join(off, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: false }, 'a sandbox turned off gets no key');
+  // Each of the two new keys, set by the user to the wider value, is kept too.
+  for (const yours of [{ failIfUnavailable: false }, { allowUnsandboxedCommands: true }]) {
+    const set = settingsProject({ sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, ...yours } });
+    assert.equal(addProjectSandbox(set), 'kept');
+    assert.deepEqual(JSON.parse(readFileSync(join(set, '.claude', 'settings.json'), 'utf8')).sandbox, { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, ...yours });
+  }
   assert.deepEqual(addProjectSandbox(settingsProject('not json {')), { kind: 'json' });
   assert.deepEqual(addProjectSandbox(settingsProject({ sandbox: 'yes' })), { kind: 'shape', hint: '`sandbox` should be an object' });
   assert.deepEqual(addProjectSandbox(settingsProject({ hooks: 'x' })), { kind: 'shape', hint: '`hooks` should be an object' });
@@ -399,8 +408,15 @@ test('sandbox write: the block is added, kept when yours, and skipped when the f
 
 test('sandbox problem: missing, off, and wider, each with its one fix', () => {
   assert.deepEqual(sandboxProblem(makeTempDir('yokoten-claude-')), { what: 'no sandbox in .claude/settings.json', fix: '`yokoten init` adds it' });
-  assert.equal(sandboxProblem(settingsProject({ sandbox: { enabled: true } })), null);
-  assert.equal(sandboxProblem(settingsProject({ sandbox: { enabled: true, network: { allowedDomains: ['example.com'] } } })), null, 'named hosts are narrower');
+  const closed = { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false };
+  assert.equal(sandboxProblem(settingsProject({ sandbox: closed })), null);
+  assert.equal(sandboxProblem(settingsProject({ sandbox: { ...closed, network: { allowedDomains: ['example.com'] } } })), null, 'named hosts are narrower');
+  // The two keys that fail closed (#1345): a missing one is init's to add, a wider one is named with its key.
+  const open = (sandbox: object) => sandboxProblem(settingsProject({ sandbox }));
+  assert.deepEqual(open({ enabled: true }), { what: "the sandbox in .claude/settings.json lets commands run with no sandbox when it can't start", fix: '`yokoten init` adds it' });
+  assert.deepEqual(open({ ...closed, failIfUnavailable: false })?.fix, 'set sandbox.failIfUnavailable to true in .claude/settings.json');
+  assert.deepEqual(open({ enabled: true, failIfUnavailable: true }), { what: 'the sandbox in .claude/settings.json lets a command run again outside it', fix: '`yokoten init` adds it' });
+  assert.deepEqual(open({ ...closed, allowUnsandboxedCommands: true })?.fix, 'set sandbox.allowUnsandboxedCommands to false in .claude/settings.json');
   const problem = (settings: string | object) => sandboxProblem(settingsProject(settings));
   assert.deepEqual(problem({ hooks: {} }), { what: 'no sandbox in .claude/settings.json', fix: '`yokoten init` adds it' });
   assert.deepEqual(problem({ sandbox: { enabled: false } }), { what: 'the sandbox in .claude/settings.json is off', fix: 'set sandbox.enabled to true in .claude/settings.json' });

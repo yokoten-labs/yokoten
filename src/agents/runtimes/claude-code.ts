@@ -384,6 +384,14 @@ export const tempDir = (env: Env, uid: number): string => join(env.CLAUDE_CODE_T
 // the temp folder, and network goes through a proxy whose allowlist starts empty, so a new
 // host asks first. `.worktrees/` is inside the project, so a worker's worktree is covered.
 // Copilot CLI reads this file's hooks too, but its own sandbox is user-level (#589).
+//
+// Two more keys make it fail closed (record 0061, #1345). The same page says a sandbox that
+// can't start lets commands run with none, unless `sandbox.failIfUnavailable` is true. It
+// also says a failed command may run again outside, unless `sandbox.allowUnsandboxedCommands`
+// is false. The sandbox covers shell commands only: the file tools stay under the guard.
+
+/** The keys init writes in the `sandbox` block, each with the value that fails closed. */
+export const SANDBOX_KEYS: Readonly<Record<string, boolean>> = { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false };
 
 /** The project's sandbox file, relative to the root. */
 export const SANDBOX_FILE = '.claude/settings.json';
@@ -395,9 +403,9 @@ function withSandbox(settings: Settings): { settings: Settings } | { problem: { 
 }
 
 /**
- * Write the project's Claude sandbox: the block when it is missing, `enabled` when the
- * block lacks it, and nothing else. `false` stays: the user's explicit choice is theirs,
- * and doctor names what differs. Returns what that took, or why the file was skipped.
+ * Write the project's Claude sandbox: the block when it is missing, each of `SANDBOX_KEYS`
+ * the block lacks, and nothing else. A value the user set stays: the explicit choice is
+ * theirs, and doctor names what differs. A block with `enabled` off gets no key at all. Returns what that took, or why the file was skipped.
  */
 export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | Problem {
   const path = projectSettings(root);
@@ -408,17 +416,17 @@ export function addProjectSandbox(root: string): 'added' | 'same' | 'kept' | Pro
   const shaped = withSandbox(envChecked.settings);
   if ('problem' in shaped) return shaped.problem;
   const sandbox = shaped.settings.sandbox as Record<string, unknown> | undefined;
-  if (sandbox === undefined) {
-    table.settings.sandbox = { enabled: true };
+  const block: Record<string, unknown> = sandbox ?? {};
+  // A sandbox the user turned off is theirs whole: init adds no key to it.
+  if (Object.hasOwn(block, 'enabled') && block.enabled !== true) return 'kept';
+  const missing = Object.keys(SANDBOX_KEYS).filter((key) => !Object.hasOwn(block, key));
+  if (missing.length) {
+    for (const key of missing) block[key] = SANDBOX_KEYS[key];
+    table.settings.sandbox = block;
     writeSettings(path, table.settings);
     return 'added';
   }
-  if (!Object.hasOwn(sandbox, 'enabled')) {
-    sandbox.enabled = true;
-    writeSettings(path, table.settings);
-    return 'added';
-  }
-  return sandbox.enabled === true ? 'same' : 'kept';
+  return Object.keys(SANDBOX_KEYS).every((key) => block[key] === SANDBOX_KEYS[key]) ? 'same' : 'kept';
 }
 
 /**
@@ -456,6 +464,15 @@ export function sandboxProblem(root: string): { what: string; fix: string } | nu
   const allowed = isObject(network) && Array.isArray(network.allowedDomains) ? network.allowedDomains : null;
   if (allowed?.some((host) => typeof host === 'string' && host.trim() === '*')) {
     return { what: `the sandbox in ${file} allows every network host (*)`, fix: `list only the hosts the project needs in sandbox.network.allowedDomains in ${file}` };
+  }
+  // The two keys that make it fail closed. A missing one is init's to add; another value is the user's to change.
+  if (sandbox.failIfUnavailable !== true) {
+    const fix = Object.hasOwn(sandbox, 'failIfUnavailable') ? `set sandbox.failIfUnavailable to true in ${file}` : '`yokoten init` adds it';
+    return { what: `the sandbox in ${file} lets commands run with no sandbox when it can't start`, fix };
+  }
+  if (sandbox.allowUnsandboxedCommands !== false) {
+    const fix = Object.hasOwn(sandbox, 'allowUnsandboxedCommands') ? `set sandbox.allowUnsandboxedCommands to false in ${file}` : '`yokoten init` adds it';
+    return { what: `the sandbox in ${file} lets a command run again outside it`, fix };
   }
   return null;
 }

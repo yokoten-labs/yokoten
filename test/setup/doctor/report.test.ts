@@ -597,8 +597,11 @@ test('doctor --session: one block, about the first step of the first stage not d
   ]);
   // Outside a repo it says nothing (unless yokoten itself is broken). A stop marker keeps
   // the walk from finding the repo around this folder when TMPDIR lives inside one.
-  stopCheckoutWalk(sandbox.home);
-  assert.equal((await sandbox.call(['doctor', '--session'], { cwd: sandbox.home })).stdout, '');
+  // The folder is not the home folder, which has a line of its own (#1345).
+  const plainFolder = join(sandbox.home, 'plain');
+  mkdirSync(plainFolder);
+  stopCheckoutWalk(plainFolder);
+  assert.equal((await sandbox.call(['doctor', '--session'], { cwd: plainFolder })).stdout, '');
 });
 
 test('doctor --session: "not now" skips a step, by the names yokoten.json already uses', async () => {

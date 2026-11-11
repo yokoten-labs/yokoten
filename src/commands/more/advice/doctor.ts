@@ -17,12 +17,12 @@ import { workerRole } from '../../../rules/guards/index.ts';
 import { canKeepStatus, changeAgentStatus, findStatusCheckout, startFields } from '../../../run/hook.ts';
 import { docsLink, findingRow, sentence } from '../../../rules/text/message.ts';
 import { columnFor, LABEL_COLUMN, nextLine, ROW_INDENT, screen, section, spaced, table, type TableRow } from '../../../rules/text/screen.ts';
-import { hideHome } from '../../../rules/privacy.ts';
+import { hideHome, homeOf } from '../../../rules/privacy.ts';
 import { type Decision, type Draft, draft, draftJson, facts, type Row, YOU_DECIDE } from '../../../setup/advice/adopt.ts';
 import { explain, type Explained, ids } from '../../../setup/advice/explain.ts';
 import { nodeTestsSnippet } from '../../../setup/advice/tests-job.ts';
 import { cleanOlderInstall, type OlderInstallCleanup, PROFILE_MARK } from '../../../setup/install.ts';
-import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED } from '../../../setup/doctor/index.ts';
+import { blocksToSay, doctor, fullLines, noteLines, OUTPUT_STOP, readAtOnce, reportJson, SERVER_TIMEOUT_MS, sessionBlocks, type SessionStart, shortLines, STEP_TITLES, UNFILTERED, workFolderNote } from '../../../setup/doctor/index.ts';
 import { ROAD, STAGES } from '../../../setup/road.ts';
 import { READERS } from '../../hook.ts';
 import { count, fail, field, type Invocation, isTerminal, moreLine, noRootFinding, noRootScreen, noteLine, parse, print, printJson, requireRoot, rootOf, row, say, terminalOf, title, usage, wrap } from '../../shared.ts';
@@ -75,11 +75,13 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   // takes back what v0.1.0 left, with install's own rules (#935).
   const cleanup = session ? cleanOlderInstall(env, { platform }) : null;
   const { ok, report } = doctor(root, { env, config, session, files, host, ...(server ? { server } : {}), gh: root && !files ? ghIn(root, env, SERVER_TIMEOUT_MS) : undefined, platform });
-  // Full doctor outside a repo says so (#205). A session there stays quiet: no noise in a non-repo folder.
+  // Outside a repo, the folder may hold every project: one line says a sandbox can't protect them (#1345).
+  const above = root ? null : workFolderNote(cwd, homeOf(env));
+  // Full doctor outside a repo says so (#205). A session there stays quiet, but for that one line.
   if (!root && !session) {
     const missing = noRootFinding(cwd, invocation.env);
     if (isJson) printJson(invocation, { ...reportJson(report), ok: false, findings: [...report.findings, missing] });
-    else print(invocation, screen(fullLines(report), noRootScreen('doctor', missing)), invocation.stderr);
+    else print(invocation, screen(fullLines(report), above ? noteLine(above) : [], noRootScreen('doctor', missing)), invocation.stderr);
     return 1;
   }
   if (isJson) {
@@ -94,7 +96,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
   const said = root && session
     ? blocksToSay(env, start, sessionBlocks(report, { isPlugin: Boolean(env.CLAUDE_PLUGIN_ROOT) }))
     : [session || options.flags.has('--all') ? fullLines(report) : shortLines(report)];
-  const lines = sessionScreen(said, {
+  const told = sessionScreen(said, {
     // A desk that named a vendor other than the harness's (#748) speaks first.
     identity: root && session ? identityLine(agent, env) : '',
     cleanup,
@@ -102,6 +104,7 @@ export async function runDoctor(invocation: Invocation): Promise<number> {
     // An agent that can't filter command output hears it at session start, with the opt-in (#390).
     isUnfiltered: Boolean(root) && session && agent !== 'claude-code' && config.privacy.output !== 'stop',
   });
+  const lines = above ? screen(told, noteLine(above)) : told;
   // Gemini CLI reads a SessionStart hook's context from JSON only (#211).
   if (session && agent === 'gemini') {
     if (lines.length) say(invocation, `${gemini.formatSessionContext(hideHome(lines.join('\n'), env))}\n`, invocation.stdout);

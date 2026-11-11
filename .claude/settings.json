@@ -23,6 +23,15 @@
     ]
   },
   "env": {
-    "TZ": "UTC"
+    "TZ": "UTC",
+    "NODE_USE_ENV_PROXY": "1"
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowedDomains": ["github.com", "api.github.com", "registry.npmjs.org"]
+    }
   }
 }
