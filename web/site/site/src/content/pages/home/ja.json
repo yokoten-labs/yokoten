@@ -9,14 +9,15 @@
     "works": {
       "label": "対応ツール",
       "items": [
-        "Claude Code",
-        "Codex",
-        "Copilot",
-        "Antigravity",
-        "Muse Code",
-        "OpenCode",
+        "Claude Code"
+      ]
+    },
+    "inWork": {
+      "label": "対応準備中",
+      "items": [
         "Grok",
-        "DeepSeek"
+        "Muse Code",
+        "OpenCode"
       ]
     },
     "platforms": {
@@ -24,8 +25,7 @@
       "items": [
         "Linux",
         "macOS",
-        "Windows（WSL）",
-        "Windows ネイティブ（ベータ）"
+        "Windows（WSL）"
       ]
     },
     "tags": [
@@ -37,18 +37,19 @@
     "title": "何を止めるか",
     "cards": [
       {
-        "screen": "guard, force push",
-        "caption": "ほかの人の作業を消してしまう強制プッシュ。"
-      },
-      {
         "screen": "guard, wipe home",
         "caption": "ホームフォルダーを丸ごと消すコマンド。"
+      },
+      {
+        "screen": "guard, force push",
+        "caption": "ほかの人の作業を消してしまう強制プッシュ。"
       },
       {
         "screen": "guard, tag push",
         "caption": "オーナーだけが行うべきリリース。"
       }
     ],
+    "limit": "エージェントを起動したフォルダーは守りません。ホームフォルダーではなく、ひとつのプロジェクトで起動してください。",
     "more": "全ルール"
   },
   "firstMinute": {

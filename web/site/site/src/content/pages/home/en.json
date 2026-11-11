@@ -9,14 +9,15 @@
     "works": {
       "label": "Works with",
       "items": [
-        "Claude Code",
-        "Codex",
-        "Copilot",
-        "Antigravity",
-        "Muse Code",
-        "OpenCode",
+        "Claude Code"
+      ]
+    },
+    "inWork": {
+      "label": "In work",
+      "items": [
         "Grok",
-        "DeepSeek"
+        "Muse Code",
+        "OpenCode"
       ]
     },
     "platforms": {
@@ -24,8 +25,7 @@
       "items": [
         "Linux",
         "macOS",
-        "Windows (WSL)",
-        "Native Windows (beta)"
+        "Windows (WSL)"
       ]
     },
     "tags": [
@@ -37,18 +37,19 @@
     "title": "What it stops",
     "cards": [
       {
-        "screen": "guard, force push",
-        "caption": "A force push that throws away someone's work."
-      },
-      {
         "screen": "guard, wipe home",
         "caption": "A command that wipes your home folder."
+      },
+      {
+        "screen": "guard, force push",
+        "caption": "A force push that throws away someone's work."
       },
       {
         "screen": "guard, tag push",
         "caption": "A release that only the owner should make."
       }
     ],
+    "limit": "It does not protect the folder the agent starts in. Start it in one project, not in your home folder.",
     "more": "Every rule"
   },
   "firstMinute": {

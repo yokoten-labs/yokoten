@@ -9,14 +9,15 @@
     "works": {
       "label": "适用于",
       "items": [
-        "Claude Code",
-        "Codex",
-        "Copilot",
-        "Antigravity",
-        "Muse Code",
-        "OpenCode",
+        "Claude Code"
+      ]
+    },
+    "inWork": {
+      "label": "适配中",
+      "items": [
         "Grok",
-        "DeepSeek"
+        "Muse Code",
+        "OpenCode"
       ]
     },
     "platforms": {
@@ -24,8 +25,7 @@
       "items": [
         "Linux",
         "macOS",
-        "Windows（WSL）",
-        "原生 Windows（测试版）"
+        "Windows（WSL）"
       ]
     },
     "tags": [
@@ -37,18 +37,19 @@
     "title": "它拦什么",
     "cards": [
       {
-        "screen": "guard, force push",
-        "caption": "强制推送，会把别人的工作冲掉。"
-      },
-      {
         "screen": "guard, wipe home",
         "caption": "一条命令，清空你的主目录。"
+      },
+      {
+        "screen": "guard, force push",
+        "caption": "强制推送，会把别人的工作冲掉。"
       },
       {
         "screen": "guard, tag push",
         "caption": "发版这件事，只该由项目所有者来做。"
       }
     ],
+    "limit": "它不保护 agent 启动时所在的文件夹。请在某一个项目里启动，不要在主目录里启动。",
     "more": "全部规则"
   },
   "firstMinute": {

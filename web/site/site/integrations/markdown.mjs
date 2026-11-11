@@ -72,7 +72,7 @@ function pageMarkdown(page, lang) {
   const out = [];
   const section = (head, ...parts) => out.push(`## ${head}`, ...parts.filter(Boolean));
   if (page === 'home') {
-    out.push(`# ${d.hero.headline}`, d.hero.sub, '```sh\nnpx yokoten\n```', [d.hero.works, d.hero.platforms].map((g) => `- ${g.label}: ${g.items.join(', ')}`).join('\n'));
+    out.push(`# ${d.hero.headline}`, d.hero.sub, '```sh\nnpx yokoten\n```', [d.hero.works, d.hero.inWork, d.hero.platforms].map((g) => `- ${g.label}: ${g.items.join(', ')}`).join('\n'));
     section(d.stops.title, ...d.stops.cards.flatMap((c) => [`**${c.caption}**`, screen(c.screen)]));
     section(d.firstMinute.title, screen('first run'), numbered(d.firstMinute.callouts));
     section(d.questions.title, ...d.questions.items.flatMap((i) => [`### ${i.q}`, i.a]));

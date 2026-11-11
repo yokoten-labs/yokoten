@@ -36,7 +36,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         <a class="ghost" href="#stops">{d.stops.title} <span aria-hidden="true">↓</span></a>
       </div>
       <dl class="works">
-        {([['works', d.hero.works], ['platforms', d.hero.platforms]] as const).map(([row, g]) => {
+        {([['works', d.hero.works], ['inWork', d.hero.inWork], ['platforms', d.hero.platforms]] as const).map(([row, g]) => {
           const brands = brandsFor(row, g.items);
           return <div class={row}><dt>{g.label}</dt><dd><ul>{g.items.map((it, i) => (
             <li>{brands[i].url ? <a class="chip" href={brands[i].url} rel="noopener"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule={brands[i].rule} aria-hidden="true" set:html={brands[i].body} />{it}</a> : <span class="chip"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule={brands[i].rule} aria-hidden="true" set:html={brands[i].body} />{it}</span>}</li>
@@ -45,7 +45,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
       </dl>
     </div>
     <div class="proof">
-      <Terminal screen="guard, force push" head={t.terminal.stopped} exit={t.terminal.exit} window />
+      <Terminal screen="guard, wipe home" head={t.terminal.stopped} exit={t.terminal.exit} window />
     </div>
   </section>
 
@@ -63,6 +63,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         );
       })}
     </ul>
+    <p class="lede">{d.stops.limit}</p>
     <p class="more"><a href={rulesLink}>{d.stops.more} →</a></p>
   </Row>
 
