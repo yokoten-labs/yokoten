@@ -1,6 +1,6 @@
 {
   "name": "yokoten",
-  "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup.",
+  "description": "Your agent ran rm -rf. The project next door is still there. One command turns on your agent's sandbox, and it fails closed: npx yokoten.",
   "author": {
     "name": "coo1white",
     "url": "https://github.com/coo1white"

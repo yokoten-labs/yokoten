@@ -1,11 +1,11 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "yokoten 替你擋下 AI 程式 agent 那些收不回來的錯誤。一個指令，不用設定。"
+    "description": "你的 agent 跑了 rm -rf。隔壁的專案還在。一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。"
   },
   "hero": {
-    "headline": "擋下 AI agent 那些收不回來的錯誤。",
-    "sub": "一個指令裝好，不用改任何設定。",
+    "headline": "你的 agent 跑了 rm -rf。隔壁的專案還在。",
+    "sub": "一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。",
     "works": {
       "label": "適用於",
       "items": [

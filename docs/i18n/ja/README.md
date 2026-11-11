@@ -6,9 +6,9 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-yokoten は、AI コーディングエージェントが取り返しのつかないミスをするのを止めます。
+あなたのエージェントが rm -rf を実行しました。隣のプロジェクトは無事です。
 
-コマンドひとつで、設定はいりません。
+コマンドひとつで、エージェントのサンドボックスが有効になります。サンドボックスが起動できなければ、エージェントは止まります：npx yokoten。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 
@@ -22,6 +22,8 @@ npx yokoten
 ```
 
 これだけです。コマンドひとつで、設定はいりません。何度でも実行でき、足りない分だけを行います。
+
+Linux では、サンドボックスに `bubblewrap` と `socat` が必要です。ないと Claude Code は止まります。
 
 初回は一画面だけ表示されます。設定した内容、いまの段階、次のコマンドです。
 
@@ -49,6 +51,12 @@ yokoten 0.2.1 · set up; stage 1 of 5, safety net
 Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `npx yokoten doctor --all` shows every check and 5 notes
 ```
+
+## なぜ作ったか
+
+私の AI エージェントは、削除コマンドひとつで、作業フォルダ全体を消しました。ガードは入れていましたが、止められませんでした。ガードが読むのはシェルの文字列で、シェルの書き方は多すぎたのです。そこで yokoten は、エージェントのサンドボックスを標準で有効にし、サンドボックスが起動できなければ止まり、サンドボックスなしでは実行しないようにしました。テストが、ひとつのプロジェクトの中から五つの削除コマンドを yokoten の囲いに向けて再生します。隣のプロジェクトは残ります。
+
+サンドボックスは、エージェントを起動したフォルダを守りません。エージェントはホームフォルダではなく、ひとつのプロジェクトで起動してください。そうしないと、yokoten が知らせます。
 
 ## 何を止めるか
 
