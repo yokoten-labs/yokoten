@@ -15,6 +15,7 @@ import { guideLink } from '../../lib/content/docs';
 import { stopLines } from '../../lib/terminal/screen';
 import StopArt from '../../components/brand/StopArt.astro';
 import { inline } from '../../lib/page/text';
+import { splitSentences } from '../../lib/page/sentences';
 import { brandsFor } from '../../lib/page/brands';
 export const getStaticPaths = langPaths;
 const { lang } = Astro.props as { lang: Lang };
@@ -29,7 +30,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
         <li class="tag tag-running">v{version.version}</li>
         {d.hero.tags.map((tag) => <li class="tag">{tag}</li>)}
       </ul>
-      <h1 id="hero-title">{d.hero.headline}</h1>
+      <h1 id="hero-title">{splitSentences(d.hero.headline).map((sentence) => <span class="line">{sentence}</span>)}</h1>
       <p class="sub">{d.hero.sub}</p>
       <div class="actions">
         <Cmd t={t} size="lg" />
@@ -84,7 +85,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
 
   <section id="again" class="row band-ink again" aria-labelledby="again-title">
     <div class="again-copy">
-      <p id="again-title" class="again-title">{d.hero.headline}</p>
+      <p id="again-title" class="again-title">{splitSentences(d.hero.headline).map((sentence) => <span class="line">{sentence}</span>)}</p>
       <p class="lede">{d.hero.sub}</p>
     </div>
   </section>
@@ -94,6 +95,7 @@ const rulesLink = await guideLink(lang, 'coreRules');
      the container's edge (owner, 2026-10-28: "所有topic全部居左"). Two-column rows use the same
      grid as the hero, words left and the screen right, so the pair fills the centred container.
      Phone under 48rem: one column. Tablet 48-64rem: one column, wider cards. Desktop: two columns. */
+  .line { display: block; }
   .hero { display: grid; gap: 3rem; padding-block: 3.5rem 5rem; }
   .copy { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
   .hero .tags { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1.75rem; }

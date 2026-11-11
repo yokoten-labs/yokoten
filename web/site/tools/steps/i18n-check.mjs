@@ -112,7 +112,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       const h1s = (html.match(/<h1[\s>]/g) ?? []).length;
       if (h1s !== 1) { console.error(`i18n-check: dist/${file} has ${h1s} <h1>, not one`); process.exit(1); }
       // The home hero is the headline (h1), then the one line under it, then the action.
-      if (slug === 'index' && !/<h1[^>]*>[^<]+<\/h1>\s*<p class="sub"/.test(html)) { console.error(`i18n-check: dist/${file}: the hero is not headline (h1) then its line`); process.exit(1); }
+      if (slug === 'index' && !/<h1[^>]*>(?:<span[^>]*>[^<]+<\/span>)+<\/h1>\s*<p class="sub"/.test(html)) { console.error(`i18n-check: dist/${file}: the hero is not headline (h1) then its line`); process.exit(1); }
       return { lang, file, sk: skeleton(html) };
     });
     const [base, ...rest] = group;

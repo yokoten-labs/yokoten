@@ -5,7 +5,7 @@
   },
   "hero": {
     "headline": "你的 agent 跑了 rm -rf。隔壁的專案還在。",
-    "sub": "一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。",
+    "sub": "一個指令，開啟 agent 的沙箱。",
     "works": {
       "label": "適用於",
       "items": [
