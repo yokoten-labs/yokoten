@@ -557,6 +557,8 @@ set. A subagent starts no session, so it hears nothing.
 
 A value you set stays. `doctor` names what differs, with one fix.
 
+`init` also sets `NODE_USE_ENV_PROXY=1` for agent sessions, under `env` in `.claude/settings.json`. The sandbox sends network through a proxy. Node's own `fetch` reads that proxy only with this switch.
+
 Muse Code, DeepSeek Harness, Antigravity and Copilot have no project-writable sandbox, so `init` writes none for them. Muse has no project settings file for one. DeepSeek Harness and Antigravity keep only hooks in the project, and Copilot's own sandbox is user-level. OpenCode gets a plugin, not a sandbox file.
 
 ### DeepSeek Harness
