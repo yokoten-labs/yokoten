@@ -8,6 +8,12 @@
     "title": "Built on its own line",
     "body": "yokoten is built by AI agents that work under yokoten's own guard and rules, with one person who owns the project and approves what ships."
   },
+  "why": {
+    "label": "Why",
+    "title": "Why I built this",
+    "body": "My agent deleted my whole work folder. One command. I had a guard on, and it did not stop it. A guard reads commands, and commands have too many forms. A sandbox does not read. It refuses.",
+    "link": "Tell me what broke"
+  },
   "built": {
     "label": "How it is built",
     "title": "The numbers, read from the repo",

@@ -34,7 +34,7 @@ const site = defineCollection({
   schema: z.strictObject({
     skip: text,
     home: text,
-    nav: z.strictObject({ label: text, how: text, docs: text, road: text, about: text }),
+    nav: z.strictObject({ label: text, docs: text, about: text }),
     /**
      * The docs pages: the sidebar's three groups, each page's name (by its page key) and description,
      * the guide's chapter list and the links between chapters, the phone's fold, and the note on a
@@ -175,6 +175,7 @@ const about = defineCollection({
   schema: z.strictObject({
     meta,
     intro: z.strictObject({ ...head, body: text }),
+    why: z.strictObject({ ...head, body: text, link: text }),
     built: z.strictObject({ ...head, body: text, facts: z.strictObject({ mergedPrs: text, records: text, testFiles: text, version: text }) }),
     privacy: z.strictObject({ ...head, items: list(z.strictObject({ title: text, body: text }), 4) }),
     contact: z.strictObject({ ...head, items: list(z.strictObject({ title: text, body: text }), 3) }),

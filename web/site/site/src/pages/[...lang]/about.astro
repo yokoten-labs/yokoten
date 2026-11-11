@@ -23,24 +23,30 @@ const facts = [
     <p class="lede">{d.intro.body}</p>
   </section>
 
-  <Row id="built" no="01" label={d.built.label}>
+  <Row id="why" no="01" label={d.why.label}>
+    <h2 id="why-title">{d.why.title}</h2>
+    <p class="lede">{d.why.body}</p>
+    <p class="more"><a href="https://github.com/yokoten-labs/yokoten/issues/new/choose" rel="noopener">{d.why.link} →</a></p>
+  </Row>
+
+  <Row id="built" no="02" label={d.built.label}>
     <h2 id="built-title">{d.built.title}</h2>
     <p class="lede">{d.built.body}</p>
     <dl class="facts body">{facts.map(([n, what]) => <div><dt>{what}</dt><dd>{n}</dd></div>)}</dl>
   </Row>
 
 
-  <Row id="privacy" no="02" label={d.privacy.label}>
+  <Row id="privacy" no="03" label={d.privacy.label}>
     <h2 id="privacy-title">{d.privacy.title}</h2>
     <dl class="items body">{d.privacy.items.map((i) => <div><dt>{i.title}</dt><dd set:html={inline(i.body)} /></div>)}</dl>
   </Row>
 
-  <Row id="contact" no="03" label={d.contact.label}>
+  <Row id="contact" no="04" label={d.contact.label}>
     <h2 id="contact-title">{d.contact.title}</h2>
     <dl class="items body">{d.contact.items.map((i) => <div><dt>{i.title}</dt><dd set:html={inline(i.body)} /></div>)}</dl>
   </Row>
 
-  <Row id="license" no="04" label={d.license.label}>
+  <Row id="license" no="05" label={d.license.label}>
     <h2 id="license-title">{d.license.title}</h2>
     <p class="lede" set:html={inline(d.license.body)} />
   </Row>
