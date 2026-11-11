@@ -2,7 +2,7 @@
 // the launcher, and the wording of a command. Practice is shared with the other parts.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, type RuleId } from '../../rules/text/message.ts';
@@ -247,7 +247,43 @@ export const FENCE_PROGRAMS = { bwrap: 'bubblewrap', rg: 'ripgrep', socat: 'soca
 const listOf = (names: readonly string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? ''));
 
 /** Why the fence matters, for the desk-fence note. */
-const FENCE_WHY = '`yokoten desk` starts each agent inside this fence, so a desk will not start without them';
+const FENCE_WHY = '`yokoten desk` needs them all, and the Claude Code sandbox needs bubblewrap and socat; neither starts without them';
+
+/** The most entries `workFolderNote` looks at in one folder, so a huge folder costs little. */
+export const WORK_FOLDER_ENTRIES = 200;
+
+/** What a session hears in the home folder: every project is inside the agent's reach. */
+export const HOME_FOLDER_NOTE = 'this is your home folder, so a sandbox here protects none of your projects; start the agent inside one project';
+
+/** What a session hears in a folder of projects. */
+export const WORK_FOLDER_NOTE = 'this folder holds several projects, so a sandbox here protects none of them; start the agent inside one project';
+
+/** The names in a folder, or null when it can't be read. */
+const entriesOf = (folder: string): string[] | null => {
+  try {
+    return readdirSync(folder);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The one line for a session that starts above its projects (record 0061, #1345), or null. A
+ * sandbox lets an agent write in the folder it starts in. In the home folder, or in a folder
+ * with two or more git repositories right inside it, that is every project: one delete takes
+ * them all (#1342). Read only: one listing, and one look for `.git` in each entry, at most
+ * `WORK_FOLDER_ENTRIES` of them, stopping at the second repository. `list` and `isRepo` are
+ * for a test.
+ */
+export function workFolderNote(folder: string, home: string | null, list: (folder: string) => string[] | null = entriesOf, isRepo: (path: string) => boolean = (path) => existsSync(join(path, '.git'))): string | null {
+  if (home !== null && resolve(folder) === resolve(home)) return HOME_FOLDER_NOTE;
+  let repos = 0;
+  for (const name of (list(folder) ?? []).slice(0, WORK_FOLDER_ENTRIES)) {
+    if (isRepo(join(folder, name))) repos += 1;
+    if (repos === 2) return WORK_FOLDER_NOTE;
+  }
+  return null;
+}
 
 /**
  * Whether the desk fence can start on this machine (#1097): on Linux, each program it needs

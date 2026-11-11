@@ -2386,7 +2386,7 @@ const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/setup/init.test.ts': { cap: 55, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
   'test/setup/doctor/report.test.ts': { cap: 51, reason: 'the report doctor prints: its order, its notes and the session form' },
   'test/setup/doctor/checks.test.ts': { cap: 23, reason: 'one whole run for each note that its check and doctor both print' },
-  'test/commands/more/advice/doctor.test.ts': { cap: 22, reason: 'the advice doctor prints for each finding' },
+  'test/commands/more/advice/doctor.test.ts': { cap: 24, reason: 'the advice doctor prints for each finding, and the line above the projects in a session and in full doctor (#1345)' },
   'test/agents/runtimes/muse.test.ts': { cap: 15, reason: "init and doctor on a Muse Code project: its settings and trust" },
   'test/agents/runtimes/grok.test.ts': { cap: 12, reason: "init and doctor on a Grok CLI project: its settings and trust" },
   'test/setup/install/hooks.test.ts': { cap: 8, reason: 'doctor after install for each agent that has a user-level hooks file' },

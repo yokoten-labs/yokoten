@@ -3,7 +3,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import childProcess, { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -12,7 +12,7 @@ import { CLI, makeSandbox, pathWithoutGh, pick, stopCheckoutWalk } from '../../.
 import { underMark } from '../../../repo/docs/screen-rules.ts';
 import { problemRows, runDoctor, sessionNoteBlocks, sessionScreen } from '../../../../src/commands/more/advice/doctor.ts';
 import type { Invocation, Output } from '../../../../src/commands/shared.ts';
-import { machineChecks } from '../../../../src/setup/doctor/checks.ts';
+import { HOME_FOLDER_NOTE, machineChecks, WORK_FOLDER_NOTE } from '../../../../src/setup/doctor/checks.ts';
 import { fillMarks, machineMarks, paths } from '../../../../src/setup/install.ts';
 
 // What Codex and Gemini CLI hear at a session start: they don't filter command output (#390), as a note (#1099).
@@ -42,9 +42,39 @@ test('doctor --session --agent: plain text for Codex, hookSpecificOutput JSON fo
   assert.ok(!result.stdout.includes(sandbox.home), 'output shows the home path');
   // Outside a repo there is nothing to say, and no JSON either. A stop marker keeps the
   // walk from finding the repo around this folder when TMPDIR lives inside one.
-  stopCheckoutWalk(sandbox.home);
-  assert.equal((await sandbox.call(['doctor', '--session', '--agent', 'gemini'], { cwd: sandbox.home })).stdout, '');
+  const plainFolder = join(sandbox.home, 'plain');
+  mkdirSync(plainFolder);
+  stopCheckoutWalk(plainFolder);
+  assert.equal((await sandbox.call(['doctor', '--session', '--agent', 'gemini'], { cwd: plainFolder })).stdout, '');
   assert.equal((await sandbox.call(['doctor', '--session', '--agent', 'cursor'])).status, 1);
+});
+
+// #1345, record 0061: a sandbox lets an agent write in the folder it starts in. Started above
+// its projects, one delete takes them all (#1342), so that one start is not quiet.
+test('doctor --session above the projects: one line in the home folder and in a folder of repositories, none in a plain folder (#1345)', async () => {
+  const sandbox = makeSandbox();
+  const session = async (cwd: string) => (await sandbox.call(['doctor', '--session'], { cwd })).stdout;
+  // The home folder.
+  const atHome = await session(sandbox.home);
+  assert.equal(atHome, 'note: this is your home folder, so a sandbox here protects none of your\n      projects; start the agent inside one project\n');
+  assert.equal(atHome.replace(/\s+/g, ' ').trim(), `note: ${HOME_FOLDER_NOTE}`);
+  // A folder with two repositories right inside it (the positive control).
+  const work = join(sandbox.home, 'work');
+  for (const name of ['one', 'two']) {
+    mkdirSync(join(work, name), { recursive: true });
+    stopCheckoutWalk(join(work, name));
+  }
+  const said = (await session(work)).replace(/\s+/g, ' ');
+  assert.ok(said.includes(WORK_FOLDER_NOTE.slice(0, 40)), said);
+  // Full doctor says it too, under the no-repo screen, and still exits 1.
+  const full = await sandbox.call(['doctor'], { cwd: work });
+  assert.equal(full.status, 1);
+  assert.ok(full.stderr.replace(/\s+/g, ' ').includes(WORK_FOLDER_NOTE.slice(0, 40)), full.stderr);
+  // One repository inside, or none: quiet, as before.
+  const single = join(sandbox.home, 'single');
+  mkdirSync(join(single, 'one'), { recursive: true });
+  stopCheckoutWalk(join(single, 'one'));
+  assert.equal(await session(single), '');
 });
 
 test('doctor --session: a desk names the real model and vendor first, and the board keeps the model (#748)', async () => {
