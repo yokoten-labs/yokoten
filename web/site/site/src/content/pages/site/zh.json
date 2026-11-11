@@ -3,9 +3,7 @@
   "home": "yokoten 首页",
   "nav": {
     "label": "页面",
-    "how": "原理",
     "docs": "文档",
-    "road": "路线",
     "about": "关于"
   },
   "docs": {

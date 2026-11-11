@@ -1,6 +1,6 @@
 ---
-// The header, as on the live yokoten.app: the security notice above it, then the lockup, the three
-// sections (docs, road, about; on a phone, a menu button left of the tools), and three icon tools: the theme menu (system, light, dark), the
+// The header, as on the live yokoten.app: the security notice above it, then the lockup, the two
+// sections (docs, about; on a phone, a menu button left of the tools), and three icon tools: the theme menu (system, light, dark), the
 // language menu and the GitHub mark, last, where an engineer looks for it. No framework: the menus
 // are buttons and links, and public/js/theme.js opens them, moves the focus and remembers the choices.
 import Lockup from '../brand/Lockup.astro';
@@ -9,7 +9,7 @@ import { LINKS } from '../../lib/content/facts';
 import type { CollectionEntry } from 'astro:content';
 interface Props { lang: Lang; page: Page | '404'; sub?: string; t: CollectionEntry<'site'>['data'] }
 const { lang, page, sub = '', t } = Astro.props;
-const nav = (['how', 'docs', 'road', 'about'] as const).map((p) => ({ page: p, text: t.nav[p] }));
+const nav = (['docs', 'about'] as const).map((p) => ({ page: p, text: t.nav[p] }));
 /** Every docs page is under Docs: it stays marked on them. */
 const section = page !== '404' && DOCS_PAGES.includes(page) ? 'docs' : page;
 const here = page === '404' ? 'home' : page;
