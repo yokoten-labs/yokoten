@@ -9,15 +9,14 @@
     "works": {
       "label": "Works with",
       "items": [
-        "Claude Code"
-      ]
-    },
-    "inWork": {
-      "label": "In work",
-      "items": [
-        "Grok",
+        "Claude Code",
+        "Codex",
+        "Copilot",
+        "Antigravity",
         "Muse Code",
-        "OpenCode"
+        "OpenCode",
+        "Grok",
+        "DeepSeek"
       ]
     },
     "platforms": {
@@ -25,7 +24,8 @@
       "items": [
         "Linux",
         "macOS",
-        "Windows (WSL)"
+        "Windows (WSL)",
+        "Native Windows (beta)"
       ]
     },
     "tags": [

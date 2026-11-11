@@ -57,6 +57,7 @@ const PLATFORMS: Brand[] = [
   path(siLinux.path),
   path(siApple.path),
   mark(microsoft),
+  mark(microsoft),
 ];
 
 /**
@@ -67,7 +68,7 @@ const PLATFORMS: Brand[] = [
 export const agentName = (name: string): string => name.replace(/\s*\([^)]*\)$/, '').trim();
 
 /** The brands of a row, one per name. A name with no icon, or an agent the README does not verify, fails the build. */
-export function brandsFor(row: 'works' | 'inWork' | 'platforms', names: readonly string[]): Brand[] {
+export function brandsFor(row: 'works' | 'platforms', names: readonly string[]): Brand[] {
   if (row === 'platforms') {
     if (names.length !== PLATFORMS.length) throw new Error(`the home page lists ${names.length} platforms, lib/page/brands.ts has ${PLATFORMS.length}: give each one its icon`);
     return PLATFORMS;

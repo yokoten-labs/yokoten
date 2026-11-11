@@ -9,15 +9,14 @@
     "works": {
       "label": "適用於",
       "items": [
-        "Claude Code"
-      ]
-    },
-    "inWork": {
-      "label": "適配中",
-      "items": [
-        "Grok",
+        "Claude Code",
+        "Codex",
+        "Copilot",
+        "Antigravity",
         "Muse Code",
-        "OpenCode"
+        "OpenCode",
+        "Grok",
+        "DeepSeek"
       ]
     },
     "platforms": {
@@ -25,7 +24,8 @@
       "items": [
         "Linux",
         "macOS",
-        "Windows（WSL）"
+        "Windows（WSL）",
+        "原生 Windows（測試版）"
       ]
     },
     "tags": [
