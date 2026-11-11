@@ -1,11 +1,11 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "你的 agent 跑了 rm -rf。隔壁的專案還在。一個指令就開啟 agent 的沙箱，而且沙箱出錯時一律拒絕：npx yokoten。"
+    "description": "你的 agent 跑了 rm -rf。隔壁的專案還在。一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。"
   },
   "hero": {
     "headline": "你的 agent 跑了 rm -rf。隔壁的專案還在。",
-    "sub": "一個指令就開啟 agent 的沙箱，而且沙箱出錯時一律拒絕：npx yokoten。",
+    "sub": "一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。",
     "works": {
       "label": "適用於",
       "items": [

@@ -8,7 +8,7 @@
 
 你的 agent 跑了 rm -rf。隔壁的專案還在。
 
-一個指令就開啟 agent 的沙箱，而且沙箱出錯時一律拒絕：npx yokoten。
+一個指令開啟 agent 的沙箱；沙箱起不來，agent 就停下：npx yokoten。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · 繁體中文 · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -54,7 +54,7 @@ More: `npx yokoten doctor --all` shows every check and 5 notes
 
 ## 我為什麼做它
 
-我的 AI agent 用一個刪除指令，刪掉了我整個工作資料夾。我裝了守衛，它沒攔住。守衛讀的是 shell 文字，而 shell 的寫法太多。所以 yokoten 現在預設開啟 agent 的沙箱，沙箱出錯時一律拒絕。有一個測試，在一個專案裡重放五個刪除指令，對著 yokoten 的圍欄跑；旁邊的專案還在。
+我的 AI agent 用一個刪除指令，刪掉了我整個工作資料夾。我裝了守衛，它沒攔住。守衛讀的是 shell 文字，而 shell 的寫法太多。所以 yokoten 現在預設開啟 agent 的沙箱，沙箱起不來就停下，不會不帶沙箱執行。有一個測試，在一個專案裡重放五個刪除指令，對著 yokoten 的圍欄跑；旁邊的專案還在。
 
 沙箱不保護 agent 啟動時所在的資料夾。請在某一個專案裡啟動 agent，不要在你的家目錄裡啟動；你這樣做時，yokoten 會提醒。
 
