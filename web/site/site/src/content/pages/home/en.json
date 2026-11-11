@@ -1,11 +1,11 @@
 {
   "meta": {
     "title": "yokoten",
-    "description": "yokoten stops your AI coding agent from making the mistake you can't undo. One command, no setup."
+    "description": "Your agent ran rm -rf. The project next door is still there. One command turns on your agent's sandbox, and it fails closed: npx yokoten."
   },
   "hero": {
-    "headline": "Stops the mistake you can't undo.",
-    "sub": "One command sets it up. Nothing to configure.",
+    "headline": "Your agent ran rm -rf. The project next door is still there.",
+    "sub": "One command turns on your agent's sandbox, and it fails closed: npx yokoten.",
     "works": {
       "label": "Works with",
       "items": [
