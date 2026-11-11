@@ -11,6 +11,7 @@ import { type Change, type SetupResult } from '../../../../src/setup/files.ts';
 import { finding } from '../../../../src/rules/text/message.ts';
 import { screenProblems, underMark } from '../../../repo/docs/screen-rules.ts';
 import { VERSION } from '../../../../src/setup/files.ts';
+import { setupNote } from '../../../../src/setup/init.ts';
 import { commitCommand } from '../../../../src/commands/more/setup/init.ts';
 import { makeSandbox } from '../../../repo/helpers.ts';
 
@@ -131,6 +132,41 @@ test('start: the first run\'s screen says what each part did, then the road, the
   assert.deepEqual(screenProblems({ text: lines.join('\n') }), []);
   // Windows PowerShell 5 has no `&&`: the commit command there uses `;` (#1038).
   assert.ok(startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('win32') }).includes('Next: `git add -A; git commit -m "chore: add yokoten"`'));
+});
+
+test('start: a sandbox init wrote or kept gets one row after the files row (#1360)', () => {
+  const sandbox: Change = { state: 'added', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', isSandbox: true, note: 'the Claude Code sandbox in .claude/settings.json' };
+  const lines = startScreen({ install: INSTALLED, init: { ...ADDED, changes: [...ADDED.changes, sandbox] }, report: REPORT, place: placeFor('linux') });
+  assert.deepEqual(lines.slice(2, 5), ['  ok           guard on for Claude Code, Codex CLI on this computer', '  ok           4 files written in this project, none of yours changed', '  ok           sandbox on for Claude Code in this project']);
+  // A kept sandbox counts too, and an agent is named once.
+  const kept: Change[] = [{ ...sandbox, state: 'kept' }, { ...sandbox, state: 'kept', agent: 'Codex', path: '.codex/config.toml' }];
+  const text = startScreen({ init: { ...ADDED, changes: [...ADDED.changes, ...kept] }, report: REPORT, place: placeFor('linux') }).join('\n');
+  assert.match(text, /^ {2}ok {11}sandbox on for Claude Code, Codex in this project$/m);
+});
+
+test('start: a sandbox of yours that differs gets no row, a same one does (#1360)', () => {
+  const same: Change = { state: 'kept', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', isSandbox: true };
+  const yours: Change = { state: 'kept', kind: 'setting', path: '.codex/config.toml', agent: 'Codex', isSandbox: true, yours: true };
+  const text = startScreen({ init: { ...ADDED, changes: [...ADDED.changes, same, yours] }, report: REPORT, place: placeFor('linux') }).join('\n');
+  assert.match(text, /^ {2}ok {11}sandbox on for Claude Code in this project$/m);
+  assert.equal(startScreen({ init: { ...ADDED, changes: [...ADDED.changes, yours] }, report: REPORT, place: placeFor('linux') }).some((line) => line.includes('sandbox on')), false);
+});
+
+test('start: a written sandbox and a skipped one show the ok row and the problem (#1360)', () => {
+  const written: Change = { state: 'added', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', isSandbox: true };
+  const skipped: SetupResult = { ...ADDED, ok: false, changes: [...ADDED.changes, written], problems: [setupNote('sandbox', "skipped the Grok sandbox: can't read .grok/sandbox.toml; make it readable", 'yokoten init')] };
+  const text = startScreen({ init: skipped, report: REPORT, place: placeFor('linux') }).join('\n');
+  assert.match(text, /^ {2}ok {11}sandbox on for Claude Code in this project$/m);
+  // The problem text wraps at 80 columns, so the match stops before the wrap.
+  assert.match(text, /^ {2}MISSING {6}skipped the Grok sandbox: can't read \.grok\/sandbox\.toml; make it$/m);
+});
+
+test('start: no sandbox change means no sandbox row (#1360)', () => {
+  const lines = startScreen({ install: INSTALLED, init: ADDED, report: REPORT, place: placeFor('linux') });
+  assert.equal(lines.some((line) => line.includes('sandbox on')), false, lines.join('\n'));
+  // A setting that is not a sandbox, even with an agent, is no sandbox row.
+  const tz: Change = { state: 'kept', kind: 'setting', path: '.claude/settings.json', agent: 'Claude Code', yours: true };
+  assert.equal(startScreen({ init: { ...ADDED, changes: [...ADDED.changes, tz] }, report: REPORT, place: placeFor('linux') }).some((line) => line.includes('sandbox on')), false);
 });
 
 test('start: an install that failed keeps its problem with the Fix line, and the title says partly (#1027, #1115)', () => {

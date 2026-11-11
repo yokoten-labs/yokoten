@@ -32,6 +32,7 @@ yokoten 0.2.1 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
   ok           38 files written in this project, none of yours changed
+  ok           sandbox on for Claude Code, Codex, Grok CLI in this project
 
   MISSING      ~/.config/yokoten/private-marks is missing or has no marks
                Type your name, your city or a domain; it is not shown.

@@ -2570,3 +2570,17 @@ test('init (#984): a project agent file that is there gets yokoten\'s entries, a
   assert.ok(initIn(sandbox).ok);
   assert.deepEqual([readFileSync(join(sandbox.repo, '.claude', 'settings.json'), 'utf8'), readFileSync(join(sandbox.repo, '.gemini', 'settings.json'), 'utf8')], before);
 });
+
+test('init: only an agent\'s project sandbox change carries isSandbox, added then kept (#1360)', () => {
+  const sandbox = makeSandbox();
+  const marked = (result: InitResult) => result.changes.filter((change) => change.isSandbox);
+  const first = marked(initIn(sandbox));
+  assert.ok(first.some((change) => change.agent === 'Claude Code' && change.state === 'added' && change.path === '.claude/settings.json'), JSON.stringify(first));
+  assert.ok(first.every((change) => change.kind === 'setting' && change.agent), 'each one names its agent');
+  const again = marked(initIn(sandbox));
+  assert.ok(again.some((change) => change.agent === 'Claude Code' && change.state === 'kept'), JSON.stringify(again));
+  assert.deepEqual(first.map((change) => change.agent), ['Claude Code', 'Codex', 'Grok CLI'], 'Gemini is no sandbox');
+  const geminiChange = initIn(makeSandbox()).changes.find((change) => change.agent === 'Gemini CLI' && change.path === '.gemini/settings.json' && change.kind === 'setting' && /sandbox/.test(change.note ?? ''));
+  assert.ok(geminiChange, 'the Gemini change is still there');
+  assert.equal(geminiChange.isSandbox, undefined);
+});

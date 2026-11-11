@@ -303,6 +303,8 @@ export interface Change {
   path: string;
   agent?: string;
   yours?: boolean;
+  /** Set only on an agent's project sandbox, so a screen tells it from other settings without reading text. */
+  isSandbox?: boolean;
   note?: string;
 }
 
