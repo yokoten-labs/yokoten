@@ -245,6 +245,8 @@ test('init: adds the practices, keeps what is there, and doctor asks for the rem
   assert.deepEqual(settings.hooks.Stop, [stopHook], 'the stop check, once (#92)');
   assert.deepEqual(settings.hooks.SubagentStop, [stopHook], 'SubagentStop, once (#614)');
   assert.equal(settings.env.TZ, 'UTC', 'agent commits record no time zone (#40)');
+  assert.equal(settings.env.NODE_USE_ENV_PROXY, '1', "Node's fetch goes through the sandbox's proxy (#1347)");
+  assert.ok(has(result, 'kept', /^NODE_USE_ENV_PROXY=1 for agent sessions/));
   assert.ok(has(result, 'kept', /^the Codex tool-call hook/));
   assert.ok(has(result, 'kept', /^the Gemini CLI tool-call hook/));
   const codex = JSON.parse(readFileSync(join(sandbox.repo, '.codex', 'hooks.json'), 'utf8'));
@@ -298,6 +300,25 @@ test("init: a TZ the user set in .claude/settings.json is kept, with one note (#
   assert.deepEqual(result.changes.filter((change) => change.yours).map((change) => change.note), ['your TZ in .claude/settings.json; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there'], 'one kept setting of the user\'s, shown as a note');
   assert.doesNotMatch(said(result), /Europe\/Paris/, 'the value is not printed');
   assert.doesNotMatch(said(result), /updated TZ=UTC/);
+});
+
+// #1347: the sandbox sends network through a proxy, and Node's own fetch reads it only with
+// NODE_USE_ENV_PROXY=1. init adds the key; a value the user set stays, with one note and no value shown.
+test('init: NODE_USE_ENV_PROXY=1 is added for agent sessions, and a value the user set is kept (#1347)', async () => {
+  const fresh = makeSandbox();
+  const added = initIn(fresh);
+  assert.ok(added.ok, said(added));
+  assert.ok(has(added, 'added', /^NODE_USE_ENV_PROXY=1 for agent sessions in \.claude\/settings\.json$/));
+  assert.equal(JSON.parse(readFileSync(join(fresh.repo, '.claude', 'settings.json'), 'utf8')).env.NODE_USE_ENV_PROXY, '1');
+  const sandbox = makeSandbox();
+  const file = join(sandbox.repo, '.claude', 'settings.json');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify({ env: { NODE_USE_ENV_PROXY: 'off-by-choice' } }));
+  const result = initIn(sandbox);
+  assert.ok(result.ok, said(result));
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).env.NODE_USE_ENV_PROXY, 'off-by-choice', "the user's value stays");
+  assert.deepEqual(result.changes.filter((change) => change.yours).map((change) => change.note), ['your NODE_USE_ENV_PROXY in .claude/settings.json; yokoten wants 1 so a Node program reaches the network in the sandbox: set "NODE_USE_ENV_PROXY": "1" under "env" there']);
+  assert.doesNotMatch(said(result), /off-by-choice/, 'the value is not printed');
 });
 
 /** Whether the step's first change is git pointed at .githooks: the commit check leads the list (#654). */

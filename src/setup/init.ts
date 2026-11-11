@@ -228,6 +228,8 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, platform: NodeJS
   const claudeHooks = agentHooks('the Claude Code settings', '.claude/settings.json', () => {
     checkProjectSettings(root);
     const zone = setProjectEnv(root, 'TZ', 'UTC');
+    // The sandbox sends network through a proxy; Node's own fetch reads it only with this switch (#1347).
+    const proxy = setProjectEnv(root, 'NODE_USE_ENV_PROXY', '1');
     const file = '.claude/settings.json';
     return [
       writeChange(addProjectHook(root, hookCli), 'hook', file, `the tool-call hook in ${file}`, 'Claude Code'),
@@ -236,6 +238,10 @@ function initRun(root: string, env: Env, gh: Gh, noCi: boolean, platform: NodeJS
       zone === 'kept (yours)'
         ? changeOf('kept', 'setting', file, `your TZ in ${file}; yokoten wants UTC so commit times carry no time zone: set "TZ": "UTC" under "env" there`, { agent: 'Claude Code', yours: true })
         : writeChange(zone, 'setting', file, `TZ=UTC for agent sessions in ${file}`, 'Claude Code'),
+      // The user's own value stays here too. The value is not shown.
+      proxy === 'kept (yours)'
+        ? changeOf('kept', 'setting', file, `your NODE_USE_ENV_PROXY in ${file}; yokoten wants 1 so a Node program reaches the network in the sandbox: set "NODE_USE_ENV_PROXY": "1" under "env" there`, { agent: 'Claude Code', yours: true })
+        : writeChange(proxy, 'setting', file, `NODE_USE_ENV_PROXY=1 for agent sessions in ${file}`, 'Claude Code'),
     ];
   });
   // Codex, Gemini CLI, Antigravity CLI, OpenCode, Muse Code, DeepSeek Harness and Grok CLI get the same guard, whether or not they are

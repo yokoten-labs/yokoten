@@ -207,7 +207,8 @@ export function addProjectStopHook(root: string, cli: string): Added {
 
 /**
  * An environment variable for every agent session in the project (settings "env"). Used
- * for TZ=UTC, so the agents' commits record no time zone. A file that won't parse, or whose
+ * for TZ=UTC, so the agents' commits record no time zone, and for NODE_USE_ENV_PROXY=1, so
+ * Node's own fetch goes through the sandbox's proxy (#1347). A file that won't parse, or whose
  * `env` is the wrong type, throws `UnreadableHooksFile` and stays as it was. A value the
  * user set already stays as it is (#988): 'kept (yours)', and the caller prints a note.
  */
