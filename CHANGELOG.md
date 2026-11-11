@@ -11,6 +11,7 @@ All notable changes are listed here. The format follows
 ### Changed
 
 - Lessons for yokoten that wait in `learn --upstream`'s inbox now show in every repo once the oldest is 3 days old, not only in the yokoten repo, and a worker's report names any gap in yokoten itself (#1336).
+- The README, the npm description and the site home page now say one concrete claim: "Your agent ran rm -rf. The project next door is still there." The README adds a "Why I built this" section and a note that the Linux sandbox needs `bubblewrap` and `socat` (#1354).
 
 ### Fixed
 
