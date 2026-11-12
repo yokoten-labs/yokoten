@@ -12,6 +12,12 @@
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · 简体中文 · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
+## 适合你吗？
+
+适合，如果有编码 agent 在你的电脑上运行命令，而你希望在它删掉另一个项目、强制推送、提交密钥或发布版本之前把它拦下。只需设置一次；之后没有任何命令要运行。
+
+如果你的 agent 已经在自己的沙箱里运行，而且你从不让它推送或发布，你可能用不着它。
+
 ## 开始
 
 要有 [Node](https://nodejs.org/) 22.23.4 或更高。然后运行：
@@ -22,6 +28,8 @@ npx yokoten
 ```
 
 就这样：一条命令，什么都不用设。随时可以再运行一次，它只做还缺的部分。
+
+要卸载：运行 `npx yokoten uninstall`。它会收回在这台电脑上写入的内容，你自己的文件和设置保持原样。它加到项目里的文件都是普通文件，可以直接删除。
 
 在 Linux 上，沙箱需要 `bubblewrap` 和 `socat`；缺了它们，Claude Code 就会停下。
 

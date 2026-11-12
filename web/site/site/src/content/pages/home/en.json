@@ -63,8 +63,12 @@
   },
   "questions": {
     "label": "Questions",
-    "title": "Three questions",
+    "title": "Four questions",
     "items": [
+      {
+        "q": "Is it for me?",
+        "a": "Yes, if a coding agent runs commands on your machine. Set it up once; after that there is nothing to run."
+      },
       {
         "q": "Is it free?",
         "a": "Yes. It is open source under MIT, with no account to make."
@@ -75,7 +79,7 @@
       },
       {
         "q": "How do I remove it?",
-        "a": "Run `yokoten uninstall`; the files it added to a project are plain files you can delete."
+        "a": "Run `npx yokoten uninstall`. It takes back what it wrote on this computer and leaves your own files and settings as they were. The files it added to a project are plain files you can delete."
       }
     ]
   }

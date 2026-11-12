@@ -11,6 +11,12 @@ One command turns on your agent's sandbox, and it fails closed: npx yokoten.
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
+## Is it for you?
+
+Yes, if a coding agent runs commands on your machine and you want it stopped before it deletes another project, force-pushes, commits a key or ships a release. Set it up once; after that there is nothing to run.
+
+You may not need it if your agent already runs in its own sandbox, and you never let it push or release.
+
 ## Start
 
 You need [Node](https://nodejs.org/) 22.23.4 or later. Then run:
@@ -21,6 +27,8 @@ npx yokoten
 ```
 
 That's it: one command, nothing to set. Run it again any time; it does only what is still missing.
+
+To take it off: `npx yokoten uninstall`. It takes back what it wrote on this computer and leaves your own files and settings as they were. The files it added to a project are plain files you can delete.
 
 On Linux the sandbox needs `bubblewrap` and `socat`; without them Claude Code stops.
 
