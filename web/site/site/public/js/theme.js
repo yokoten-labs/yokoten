@@ -17,7 +17,6 @@
   };
   var SLUGS = {
     home: '',
-    how: 'how',
     docs: 'docs',
     stopped: 'docs/stopped',
     overview: 'docs/overview',

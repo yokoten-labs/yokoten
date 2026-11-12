@@ -32,8 +32,8 @@ const LANGS = {
 const DOC_PAGES = { overview: 'start', docsRoad: 'road' };
 /** The docs pages, as the site data names them (docs.<page>, docs.<page>Description). */
 const DOCS_PAGES = ['docs', 'stopped', 'overview', 'docsRoad', 'guide'];
-const ALL_PAGES = ['home', 'how', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'road', 'about'];
-const SLUG = { home: '', how: 'how', docs: 'docs', stopped: 'docs/stopped', overview: 'docs/overview', docsRoad: 'docs/road', guide: 'docs/guide', road: 'road', about: 'about' };
+const ALL_PAGES = ['home', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'road', 'about'];
+const SLUG = { home: '', docs: 'docs', stopped: 'docs/stopped', overview: 'docs/overview', docsRoad: 'docs/road', guide: 'docs/guide', road: 'road', about: 'about' };
 /** The page-data folder of the docs pages laid out from page data. */
 const DATA_DIR = { docs: 'quickstart', stopped: 'stopped' };
 
@@ -76,10 +76,6 @@ function pageMarkdown(page, lang) {
     section(d.stops.title, ...d.stops.cards.flatMap((c) => [`**${c.caption}**`, screen(c.screen)]));
     section(d.firstMinute.title, screen('first run'), numbered(d.firstMinute.callouts));
     section(d.questions.title, ...d.questions.items.flatMap((i) => [`### ${i.q}`, i.a]));
-  } else if (page === 'how') {
-    out.push(`# ${d.intro.title}`);
-    section(d.player.all, numbered(d.steps));
-    section(d.questions.title, ...d.questions.items.flatMap((i) => [`### ${i.q}`, i.a]), d.questions.note);
   } else if (page === 'road') {
     out.push(`# ${d.intro.title}`, d.intro.body);
     const stages = facts('stages');

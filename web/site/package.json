@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "dev": "astro dev --root site",
-    "build": "node tools/steps/mark.mjs && node tools/steps/how-flow.mjs && node tools/steps/video-sizes.mjs && npm run site:facts && astro build --root site && npm run i18n",
+    "build": "node tools/steps/mark.mjs && node tools/steps/video-sizes.mjs && npm run site:facts && astro build --root site && npm run i18n",
     "i18n": "node tools/steps/i18n-check.mjs",
     "preview": "astro preview --root site --host --port 4173",
     "deploy": "npm run build && wrangler deploy --config worker/wrangler.jsonc",
