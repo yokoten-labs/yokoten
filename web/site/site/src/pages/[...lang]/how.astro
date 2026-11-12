@@ -1,5 +1,5 @@
 ---
-// How it works: one task from you to the server, as a picture you step through (Play, Previous,
+// How it works: the delete next door, as a picture you step through (Play, Previous,
 // Next, Restart, Speed, every step in a list), then three questions on the sandbox. The picture and
 // its clock come from tools/steps/how-flow.mjs (generated/how/); the step texts are page data.
 import Sheet from '../../layouts/Sheet.astro';
@@ -61,7 +61,6 @@ const words = { ...d.player, total };
   <Row id="questions" no="02" label={d.questions.label}>
     <h2 id="questions-title">{d.questions.title}</h2>
     <dl class="items body">{d.questions.items.map((i) => <div><dt>{i.q}</dt><dd>{i.a}</dd></div>)}</dl>
-    <p class="note">{d.questions.note}</p>
   </Row>
 </Sheet>
 <script>
@@ -150,6 +149,5 @@ const words = { ...d.player, total };
   @media (min-width: 48rem) { .items { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   .items dt { font-weight: 700; margin-bottom: 0.5rem; }
   .items dd { margin: 0; }
-  .note { font-family: var(--font-mono); font-size: 0.8125rem; color: var(--andon); }
   @media (prefers-reduced-motion: reduce) { .stage :global(.pkt) { display: none; } }
 </style>

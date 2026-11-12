@@ -1,12 +1,12 @@
 {
   "meta": {
     "title": "仕組み · yokoten",
-    "description": "ひとつのタスクを、あなたからサーバーまで追います。lead、自分のサンドボックスで動くデスクの worker、各操作の前のガード、届いたときのチェック。"
+    "description": "Follow your agent through one task: its own sandbox keeps rm -rf away from the project next door, the guard stops a force push, and the checks run before and after the push."
   },
   "intro": {
     "label": "仕組み",
     "title": "ひとつのタスクを順番に",
-    "body": "「再生」を押すか、「次へ」で一歩ずつ進めます。タグひとつが、動いているデータひとつです。"
+    "body": "「再生」を押すか、「次へ」で一歩ずつ進めます。"
   },
   "player": {
     "label": "いまのステップ",
@@ -26,23 +26,13 @@
     "green": "許可された、または通った"
   },
   "steps": [
-    "あなたが lead にタスクを渡します。",
-    "lead がモデルに聞きます。yokoten はこれを読みません。",
-    "lead がデスクを開きます。まずガードがチェックします。",
-    "yokoten がデスクを開きます。専用のクローンを、サンドボックスの中に。",
-    "worker がモデルに聞きます。外に出られるのはモデルの API だけです。",
-    "worker が push しようとします。ガードが止めます。",
-    "worker がファイルを編集します。ガードは通します。",
-    "コミットすると、コミットチェックがサンドボックスの中で動きます。",
-    "デスクがサンドボックスの中でテストを動かします。これが証拠です。",
-    "lead がデスクを閉じて、証拠を受け取ります。",
-    "lead が差分を読み、自分でもチェックを動かします。",
-    "lead が PR を開きます。ガードの設定に触れるので、ガードがあなたに聞きます（予定）。",
-    "あなたが認めると、PR がサーバーへ行きます。",
-    "1 回目：lead が CI を確認します。失敗でした。",
-    "lead が直して、もう一度 push します。これもガードを通ります。",
-    "2 回目：lead が CI を確認します。通りました。",
-    "lead がマージして、あなたに伝えます。",
+    "You run npx yokoten in your project. It turns on your agent's own sandbox.",
+    "You give your agent a task.",
+    "The agent edits a file in the project. The sandbox lets it through.",
+    "The agent runs rm -rf on the folder next door. The sandbox refuses: it can't write there.",
+    "The agent tries a force push. The guard stops it.",
+    "The agent commits. The commit check looks for secrets and personal data.",
+    "The pull request goes to GitHub. CI runs the same check again.",
     "リリースとタグはあなただけです。"
   ],
   "questions": {
@@ -50,18 +40,17 @@
     "title": "サンドボックスについて",
     "items": [
       {
-        "q": "エージェントにはもうサンドボックスがあります。なぜ yokoten のものを使うのですか？",
-        "a": "サンドボックスは会社ごとに違い、閉じ込めるのはコマンドだけです。デスクは、どの会社の worker でも、同じやり方で worker 全体を閉じ込めます。"
+        "q": "My agent already has a sandbox. What does yokoten add?",
+        "a": "Most agents ship with it off, or with a way around it. yokoten turns it on for the project. For Claude Code it also closes the way around: if the sandbox can't start, commands don't run."
       },
       {
-        "q": "サンドボックスは両方とも動きますか？",
-        "a": "いいえ。デスクの中では、yokoten のサンドボックスがエージェント自身のものに代わります。"
+        "q": "What does the sandbox not protect?",
+        "a": "The folder the agent starts in. Start it in one project, not in your home folder."
       },
       {
-        "q": "worker はどの会社のものでもいいですか？",
-        "a": "はい。Claude Code、Codex、Grok、Muse が使えます。"
+        "q": "Which agents get a sandbox?",
+        "a": "Claude Code and Codex: yokoten turns one on in the project's settings. Grok: yokoten writes a sandbox profile, and you start Grok with --sandbox yokoten. Gemini CLI, Muse and the others have no project sandbox, so they get the guard only."
       }
-    ],
-    "note": "修正中：issue #1171、#1172、#1174。"
+    ]
   }
 }

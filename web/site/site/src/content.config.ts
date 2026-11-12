@@ -153,7 +153,7 @@ const road = defineCollection({
   }),
 });
 
-/** How it works: one task as a step-by-step picture (tools/steps/how-flow.mjs draws it), and three questions on the sandbox. */
+/** How it works: the delete next door as a step-by-step picture (tools/steps/how-flow.mjs draws it), and three questions on the sandbox. */
 const how = defineCollection({
   loader: pages('how'),
   schema: z.strictObject({
@@ -165,8 +165,8 @@ const how = defineCollection({
       all: text, legend: text, data: text, red: text, green: text,
     }),
     /** One line per step of the picture, in its order (generated/how/flow.json has the same count). */
-    steps: list(text, 18),
-    questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 3), note: text }),
+    steps: list(text, 8),
+    questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 3) }),
   }),
 });
 

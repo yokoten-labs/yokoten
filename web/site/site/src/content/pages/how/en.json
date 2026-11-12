@@ -1,12 +1,12 @@
 {
   "meta": {
     "title": "How it works · yokoten",
-    "description": "Follow one task from you to the server: the lead, a desk worker in its own sandbox, the guard before each action, and the checks when it lands."
+    "description": "Follow your agent through one task: its own sandbox keeps rm -rf away from the project next door, the guard stops a force push, and the checks run before and after the push."
   },
   "intro": {
     "label": "How it works",
     "title": "One task, step by step",
-    "body": "Press Play, or go one step at a time with Next. Each tag is one piece of data moving."
+    "body": "Press Play, or go one step at a time with Next."
   },
   "player": {
     "label": "Current step",
@@ -26,23 +26,13 @@
     "green": "allowed or passed"
   },
   "steps": [
-    "You give the lead a task.",
-    "The lead asks the model. yokoten doesn't read this.",
-    "The lead opens a desk. The guard checks it first.",
-    "yokoten opens the desk: its own clone, in a sandbox.",
-    "The worker asks the model. Only the model API gets out.",
-    "The worker tries to push. The guard stops it.",
-    "The worker edits a file. The guard lets it through.",
-    "It commits, and the commit check runs in the sandbox.",
-    "The desk runs the tests in the sandbox: evidence.",
-    "The lead closes the desk and gets the evidence.",
-    "The lead reviews the diff and runs the checks itself.",
-    "The lead opens a PR. It touches guard settings, so the guard asks you (coming).",
-    "With your yes, the PR goes to the server.",
-    "Round 1: the lead checks CI. It failed.",
-    "The lead fixes it and pushes again, through the guard.",
-    "Round 2: the lead checks CI. It passed.",
-    "The lead merges, then tells you.",
+    "You run npx yokoten in your project. It turns on your agent's own sandbox.",
+    "You give your agent a task.",
+    "The agent edits a file in the project. The sandbox lets it through.",
+    "The agent runs rm -rf on the folder next door. The sandbox refuses: it can't write there.",
+    "The agent tries a force push. The guard stops it.",
+    "The agent commits. The commit check looks for secrets and personal data.",
+    "The pull request goes to GitHub. CI runs the same check again.",
     "Only you release and tag."
   ],
   "questions": {
@@ -50,18 +40,17 @@
     "title": "About the sandbox",
     "items": [
       {
-        "q": "My agent already has a sandbox. Why use yokoten's?",
-        "a": "Each vendor's sandbox is different, and it only locks commands. A desk locks the whole worker the same way, whatever its vendor."
+        "q": "My agent already has a sandbox. What does yokoten add?",
+        "a": "Most agents ship with it off, or with a way around it. yokoten turns it on for the project. For Claude Code it also closes the way around: if the sandbox can't start, commands don't run."
       },
       {
-        "q": "Do both sandboxes run?",
-        "a": "No. Inside a desk, the yokoten sandbox replaces the agent's own."
+        "q": "What does the sandbox not protect?",
+        "a": "The folder the agent starts in. Start it in one project, not in your home folder."
       },
       {
-        "q": "Can a worker come from any vendor?",
-        "a": "Yes: Claude Code, Codex, Grok or Muse."
+        "q": "Which agents get a sandbox?",
+        "a": "Claude Code and Codex: yokoten turns one on in the project's settings. Grok: yokoten writes a sandbox profile, and you start Grok with --sandbox yokoten. Gemini CLI, Muse and the others have no project sandbox, so they get the guard only."
       }
-    ],
-    "note": "Being fixed: issues #1171, #1172 and #1174."
+    ]
   }
 }
