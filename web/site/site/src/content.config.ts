@@ -162,7 +162,7 @@ const how = defineCollection({
     player: z.strictObject({
       label: text, count: text.includes('{n}').includes('{total}'), ready: text,
       play: text, pause: text, replay: text, prev: text, next: text, restart: text, speed: text,
-      all: text, legend: text, data: text, red: text, green: text,
+      all: text, legend: text, red: text, green: text,
     }),
     /** One line per step of the picture, in its order (generated/how/flow.json has the same count). */
     steps: list(text, 8),

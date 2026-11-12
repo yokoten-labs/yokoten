@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "原理 · yokoten",
-    "description": "Follow your agent through one task: its own sandbox keeps rm -rf away from the project next door, the guard stops a force push, and the checks run before and after the push."
+    "description": "跟着 agent 走完一个任务：它自己的沙箱让 rm -rf 碰不到隔壁的项目，守卫拦下 force push，检查在 push 前后各跑一次。"
   },
   "intro": {
     "label": "原理",
@@ -21,18 +21,17 @@
     "speed": "速度",
     "all": "全部步骤",
     "legend": "图例",
-    "data": "一份正在移动的数据",
-    "red": "被拦下、失败，或者在等你",
+    "red": "被拦下或被拒绝",
     "green": "放行或通过"
   },
   "steps": [
-    "You run npx yokoten in your project. It turns on your agent's own sandbox.",
-    "You give your agent a task.",
-    "The agent edits a file in the project. The sandbox lets it through.",
-    "The agent runs rm -rf on the folder next door. The sandbox refuses: it can't write there.",
-    "The agent tries a force push. The guard stops it.",
-    "The agent commits. The commit check looks for secrets and personal data.",
-    "The pull request goes to GitHub. CI runs the same check again.",
+    "你在项目里运行 npx yokoten。它会打开 agent 自己的沙箱。",
+    "你给 agent 一个任务。",
+    "agent 修改项目里的一个文件。沙箱放行。",
+    "agent 对隔壁的文件夹运行 rm -rf。沙箱拒绝：那里不能写。",
+    "agent 试图 force push。守卫拦下。",
+    "agent 提交代码。提交检查会找密钥和个人信息。",
+    "拉取请求发到 GitHub。CI 把同样的检查再跑一遍。",
     "只有你能发版、打标签。"
   ],
   "questions": {
@@ -40,16 +39,16 @@
     "title": "关于沙箱",
     "items": [
       {
-        "q": "My agent already has a sandbox. What does yokoten add?",
-        "a": "Most agents ship with it off, or with a way around it. yokoten turns it on for the project. For Claude Code it also closes the way around: if the sandbox can't start, commands don't run."
+        "q": "我的 agent 已经有沙箱了。yokoten 多做了什么？",
+        "a": "多数 agent 出厂时沙箱是关的，或者留着绕过的办法。yokoten 为项目把它打开。对 Claude Code，还会堵上绕过的办法：沙箱起不来，命令就不运行。"
       },
       {
-        "q": "What does the sandbox not protect?",
-        "a": "The folder the agent starts in. Start it in one project, not in your home folder."
+        "q": "沙箱不保护什么？",
+        "a": "agent 启动时所在的文件夹。请在某一个项目里启动它，不要在主目录里启动。"
       },
       {
-        "q": "Which agents get a sandbox?",
-        "a": "Claude Code and Codex: yokoten turns one on in the project's settings. Grok: yokoten writes a sandbox profile, and you start Grok with --sandbox yokoten. Gemini CLI, Muse and the others have no project sandbox, so they get the guard only."
+        "q": "哪些 agent 有沙箱？",
+        "a": "Claude Code 和 Codex：yokoten 在项目设置里打开沙箱。Grok：yokoten 写一份沙箱配置，你用 --sandbox yokoten 启动 Grok。Gemini CLI、Muse 等没有项目沙箱，只有守卫。"
       }
     ]
   }

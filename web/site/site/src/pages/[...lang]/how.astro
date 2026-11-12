@@ -49,7 +49,6 @@ const words = { ...d.player, total };
         <div class="panel">
           <p class="small">{d.player.legend}</p>
           <dl class="legend">
-            <dt><span class="key key-data">data</span></dt><dd>{d.player.data}</dd>
             <dt><span class="key key-red">red</span></dt><dd>{d.player.red}</dd>
             <dt><span class="key key-green">green</span></dt><dd>{d.player.green}</dd>
           </dl>
@@ -141,7 +140,6 @@ const words = { ...d.player, total };
   .legend { display: grid; grid-template-columns: auto 1fr; gap: 0.4rem 0.6rem; margin: 0; font-size: 0.8125rem; align-items: center; }
   .legend dd { margin: 0; color: var(--muted); }
   .key { display: inline-block; font-family: var(--font-mono); font-weight: 600; font-size: 0.6875rem; padding: 0.1rem 0.5rem; border-radius: 9px; color: var(--bg); }
-  .key-data { background: var(--fg); }
   .key-red { background: var(--andon); }
   .key-green { background: var(--running); }
   .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

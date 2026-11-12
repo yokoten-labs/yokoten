@@ -21,8 +21,7 @@
     "speed": "Speed",
     "all": "All steps",
     "legend": "Legend",
-    "data": "a piece of data moving",
-    "red": "stopped, failed, or waits for you",
+    "red": "stopped or refused",
     "green": "allowed or passed"
   },
   "steps": [

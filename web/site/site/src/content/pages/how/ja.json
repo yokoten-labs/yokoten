@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "仕組み · yokoten",
-    "description": "Follow your agent through one task: its own sandbox keeps rm -rf away from the project next door, the guard stops a force push, and the checks run before and after the push."
+    "description": "エージェントのひとつのタスクを追います。専用のサンドボックスが rm -rf を隣のプロジェクトに近づけず、ガードが force push を止め、チェックは push の前後に走ります。"
   },
   "intro": {
     "label": "仕組み",
@@ -21,18 +21,17 @@
     "speed": "速さ",
     "all": "すべてのステップ",
     "legend": "凡例",
-    "data": "動いているデータ",
-    "red": "止められた、失敗した、またはあなた待ち",
+    "red": "止められた、または拒否された",
     "green": "許可された、または通った"
   },
   "steps": [
-    "You run npx yokoten in your project. It turns on your agent's own sandbox.",
-    "You give your agent a task.",
-    "The agent edits a file in the project. The sandbox lets it through.",
-    "The agent runs rm -rf on the folder next door. The sandbox refuses: it can't write there.",
-    "The agent tries a force push. The guard stops it.",
-    "The agent commits. The commit check looks for secrets and personal data.",
-    "The pull request goes to GitHub. CI runs the same check again.",
+    "プロジェクトで npx yokoten を実行します。エージェント自身のサンドボックスが有効になります。",
+    "エージェントにタスクを渡します。",
+    "エージェントがプロジェクト内のファイルを編集します。サンドボックスは通します。",
+    "エージェントが隣のフォルダに rm -rf を実行します。サンドボックスは拒否します。そこには書き込めません。",
+    "エージェントが force push を試みます。ガードが止めます。",
+    "エージェントがコミットします。コミットチェックが、秘密情報や個人情報を探します。",
+    "プルリクエストが GitHub に届きます。CI が同じチェックをもう一度実行します。",
     "リリースとタグはあなただけです。"
   ],
   "questions": {
@@ -40,16 +39,16 @@
     "title": "サンドボックスについて",
     "items": [
       {
-        "q": "My agent already has a sandbox. What does yokoten add?",
-        "a": "Most agents ship with it off, or with a way around it. yokoten turns it on for the project. For Claude Code it also closes the way around: if the sandbox can't start, commands don't run."
+        "q": "使っているエージェントにはもうサンドボックスがあります。yokoten は何を足しますか？",
+        "a": "多くのエージェントは、サンドボックスが無効の状態か、抜け道つきで出荷されます。yokoten はプロジェクトでそれを有効にします。Claude Code では抜け道もふさぎます。サンドボックスが起動できなければ、コマンドは実行されません。"
       },
       {
-        "q": "What does the sandbox not protect?",
-        "a": "The folder the agent starts in. Start it in one project, not in your home folder."
+        "q": "サンドボックスが守らないものは何ですか？",
+        "a": "エージェントを起動したフォルダです。ホームフォルダではなく、ひとつのプロジェクトの中で起動してください。"
       },
       {
-        "q": "Which agents get a sandbox?",
-        "a": "Claude Code and Codex: yokoten turns one on in the project's settings. Grok: yokoten writes a sandbox profile, and you start Grok with --sandbox yokoten. Gemini CLI, Muse and the others have no project sandbox, so they get the guard only."
+        "q": "どのエージェントにサンドボックスがありますか？",
+        "a": "Claude Code と Codex：yokoten がプロジェクトの設定で有効にします。Grok：yokoten がサンドボックスのプロファイルを書き、Grok は --sandbox yokoten で起動します。Gemini CLI、Muse などにはプロジェクトのサンドボックスがないため、ガードだけになります。"
       }
     ]
   }
