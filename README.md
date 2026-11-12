@@ -13,7 +13,7 @@ One command turns on your agent's sandbox, and it fails closed: npx yokoten.
 
 ## Is it for you?
 
-Yes, if a coding agent runs commands on your machine and you want it stopped before it deletes another project, force-pushes, commits a key or ships a release. Set it up once; after that there is nothing to run.
+Yes, if a coding agent runs commands on your machine and you want it stopped before it deletes another project, force-pushes, commits a key or ships a release. Set it up once; after that there is nothing to run day to day.
 
 You may not need it if your agent already runs in its own sandbox, and you never let it push or release.
 

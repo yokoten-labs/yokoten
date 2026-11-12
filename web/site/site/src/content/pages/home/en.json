@@ -67,7 +67,7 @@
     "items": [
       {
         "q": "Is it for me?",
-        "a": "Yes, if a coding agent runs commands on your machine. Set it up once; after that there is nothing to run."
+        "a": "Yes, if a coding agent runs commands on your machine. Set it up once; after that there is nothing to run day to day. If your agent already runs in its own sandbox and never pushes or releases, you may not need it."
       },
       {
         "q": "Is it free?",
