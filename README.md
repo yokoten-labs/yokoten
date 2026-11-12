@@ -54,7 +54,9 @@ More: `npx yokoten doctor --all` shows every check and 5 notes
 
 ## Why I built this
 
-My AI agent deleted my whole work folder with one delete command. I had a guard installed, and it did not stop it. The guard read shell text, and shell has too many forms. So yokoten now turns on the agent's sandbox by default, and the sandbox fails closed. A test replays five delete commands from inside one project against yokoten's fence, and the project next to it stays.
+My agent, Claude Opus 5.5, one of the best coding models there is, ran one delete command and wiped my whole work folder. I had a guard on, and it did not stop it. A guard reads commands, and commands have too many forms. So yokoten now turns on the agent's sandbox. A sandbox does not read. It refuses. My lesson: whatever agent you use, turn on its own sandbox. yokoten turns it on for you, where your agent has one.
+
+A test replays five delete commands from inside one project against yokoten's fence, and the project next to it stays.
 
 A sandbox does not protect the folder the agent starts in. Start the agent in one project, not in your home folder; yokoten says so when you don't.
 

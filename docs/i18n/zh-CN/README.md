@@ -55,7 +55,9 @@ More: `npx yokoten doctor --all` shows every check and 5 notes
 
 ## 我为什么做它
 
-我的 AI agent 用一条删除命令，删掉了我整个工作文件夹。我装了守卫，它没拦住。守卫读的是 shell 文本，而 shell 的写法太多。所以 yokoten 现在默认打开 agent 的沙箱，沙箱起不来就停下，不会不带沙箱运行。有一个测试，在一个项目里重放五条删除命令，对着 yokoten 的围栏跑；旁边的项目还在。
+我的 agent 用的是 Claude Opus 5.5，最强的写代码模型之一。它跑了一条删除命令，删光了我的整个工作文件夹。当时 guard 开着，没拦住。guard 靠读命令判断，可命令的写法太多了。所以 yokoten 现在会打开 agent 的沙箱。沙箱不读命令，直接拒绝。我的教训是：不管用哪家的 agent，都要打开它自带的沙箱。只要你的 agent 有沙箱，yokoten 就替你打开。
+
+有一个测试，在一个项目里重放五条删除命令，对着 yokoten 的围栏跑；旁边的项目还在。
 
 沙箱不保护 agent 启动时所在的文件夹。请在某一个项目里启动 agent，不要在你的主目录里启动；你这样做时，yokoten 会提醒。
 

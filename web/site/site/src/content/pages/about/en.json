@@ -11,7 +11,7 @@
   "why": {
     "label": "Why",
     "title": "Why I built this",
-    "body": "My agent deleted my whole work folder. One command. I had a guard on, and it did not stop it. A guard reads commands, and commands have too many forms. A sandbox does not read. It refuses.",
+    "body": "My agent, Claude Opus 5.5, one of the best coding models there is, ran one delete command and wiped my whole work folder. I had a guard on, and it did not stop it. A guard reads commands, and commands have too many forms. So yokoten now turns on the agent's sandbox. A sandbox does not read. It refuses. My lesson: whatever agent you use, turn on its own sandbox. yokoten turns it on for you, where your agent has one.",
     "link": "Tell me what broke"
   },
   "built": {
