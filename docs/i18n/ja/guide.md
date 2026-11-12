@@ -324,12 +324,14 @@ Actions の実行の取り消しと削除は、リードにもワーカーにも
 
 | エージェント | `init` が書くもの | なぜ |
 |---|---|---|
-| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` が `true` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く |
+| Claude&nbsp;Code | `.claude/settings.json`: `sandbox.enabled` と `sandbox.failIfUnavailable` が `true`、`sandbox.allowUnsandboxedCommands` が `false` | シェルのコマンドはワークツリーにとどまる。新しいネットワークのホストは先に聞く。始められないサンドボックスは Claude Code を止める。サンドボックスの外でコマンドが走ることは、もうない |
 | Codex | `.codex/config.toml`: `sandbox_mode` が `workspace-write`、`approval_policy` が `on-request`、`network_access` が `false` | 書き込みはワークツリーにとどまる。ネットワークは切ったまま。その外へ出る前に Codex が聞く |
 | Gemini | `.gemini/settings.json`: `security.disableYoloMode` が `true` | すべてを承認する YOLO モードは切ったまま |
 | Grok | `.grok/sandbox.toml`: `[profiles.yokoten]` が `workspace` の上に作られる | `yokoten` プロファイルが書き込みをワークツリーに保つ。ワーカーは `grok --sandbox yokoten` で走る |
 
 あなたが設定した値は残ります。`doctor` は違うものを名指しし、直し方を一つ示します。
+
+`init` は、エージェントのセッションのために `NODE_USE_ENV_PROXY=1` も設定します。場所は `.claude/settings.json` の `env` の下です。サンドボックスは、ネットワークをプロキシ経由で送ります。Node 自身の `fetch` は、このスイッチがあるときだけそのプロキシを読みます。
 
 Muse Code、DeepSeek Harness、Antigravity、Copilot には、プロジェクトに書けるサンドボックスがありません。だから `init` はそれらに何も書きません。Muse にはそのためのプロジェクト設定ファイルがありません。DeepSeek Harness と Antigravity はプロジェクトにフックだけを保ち、Copilot 自身のサンドボックスはユーザーレベルです。OpenCode はプラグインを受け取り、サンドボックスのファイルは受け取りません。
 ### DeepSeek Harness

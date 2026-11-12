@@ -424,6 +424,23 @@ worker 用 shell 写只有 lead 能改的文件，守卫也会拦，跟拦编辑
 lead-only files are guarded"。单独开的 worker 会话没看到这句话，就是没设这个变量。子 agent
 不会开新会话，所以听不到这句话。
 
+### 沙箱
+
+`init` 会为项目写好每个 agent 的沙箱。`doctor` 在 `sandbox` 这一步检查它。worker 要在它自己的工作副本里启动，这样沙箱才罩得住它。
+
+| Agent | `init` 写什么 | 为什么 |
+|---|---|---|
+| Claude&nbsp;Code | `.claude/settings.json`：`sandbox.enabled` 和 `sandbox.failIfUnavailable` 是 `true`，`sandbox.allowUnsandboxedCommands` 是 `false` | shell 命令留在工作副本里。新的网络主机先问。沙箱起不来，Claude Code 就停下。不会再有命令在沙箱外跑 |
+| Codex | `.codex/config.toml`：`sandbox_mode` 是 `workspace-write`，`approval_policy` 是 `on-request`，`network_access` 是 `false` | 写入留在工作副本里。网络保持关闭。要越界时 Codex 先问 |
+| Gemini | `.gemini/settings.json`：`security.disableYoloMode` 是 `true` | 一律批准的 YOLO 模式保持关闭 |
+| Grok | `.grok/sandbox.toml`：`[profiles.yokoten]` 建在 `workspace` 之上 | `yokoten` 配置把写入留在工作副本里。worker 用 `grok --sandbox yokoten` 运行 |
+
+你设过的值会保留。`doctor` 会指出哪里不同，并给一个修法。
+
+`init` 还会为 agent 会话设置 `NODE_USE_ENV_PROXY=1`，写在 `.claude/settings.json` 的 `env` 下。沙箱让网络走代理。Node 自带的 `fetch` 只有设了这个开关才会读这个代理。
+
+Muse Code、DeepSeek Harness、Antigravity 和 Copilot 没有项目里能写的沙箱，所以 `init` 不给它们写。Muse 没有放这个的项目设置文件。DeepSeek Harness 和 Antigravity 在项目里只放钩子，Copilot 自己的沙箱在用户级。OpenCode 得到的是插件，不是沙箱文件。
+
 ### DeepSeek Harness
 
 DeepSeek Harness（`dsh`）靠一个桥接插件来跑 Claude Code 格式的命令钩子。这个插件不在 dsh
