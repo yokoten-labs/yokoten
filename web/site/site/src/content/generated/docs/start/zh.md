@@ -2,8 +2,8 @@
 title: "yokoten · 横展"
 doc: start
 lang: zh
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/zh-CN/README.md"
-ref: "v0.2.0"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/i18n/zh-CN/README.md"
+ref: "v0.2.1"
 ---
 
 [![npm](https://img.shields.io/npm/v/yokoten?logo=npm)](https://www.npmjs.com/package/yokoten)
@@ -11,9 +11,9 @@ ref: "v0.2.0"
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-yokoten 拦住 AI 编程 agent 犯下收不回来的错误。
+你的 agent 跑了 rm -rf。隔壁的项目还在。
 
-一条命令，不用设置。
+一条命令打开 agent 的沙箱；沙箱起不来，agent 就停下：npx yokoten。
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · 简体中文 · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -28,14 +28,17 @@ npx yokoten
 
 就这样：一条命令，什么都不用设。随时可以再运行一次，它只做还缺的部分。
 
+在 Linux 上，沙箱需要 `bubblewrap` 和 `socat`；缺了它们，Claude Code 就会停下。
+
 第一次运行只有一屏：装好了什么、你走到哪一步、下一条要输入的命令。
 
-<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
+<!-- The first run in a new repo; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.3 · set up; stage 1 of 5, safety net
+yokoten 0.2.1 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
-  ok           37 files written in this project, none of yours changed
+  ok           38 files written in this project, none of yours changed
+  ok           sandbox on for Claude Code, Codex, Grok CLI in this project
 
   MISSING      ~/.config/yokoten/private-marks is missing or has no marks
                Type your name, your city or a domain; it is not shown.
@@ -54,6 +57,12 @@ yokoten 0.1.3 · set up; stage 1 of 5, safety net
 Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `npx yokoten doctor --all` shows every check and 5 notes
 ```
+
+## 我为什么做它
+
+我的 AI agent 用一条删除命令，删掉了我整个工作文件夹。我装了守卫，它没拦住。守卫读的是 shell 文本，而 shell 的写法太多。所以 yokoten 现在默认打开 agent 的沙箱，沙箱起不来就停下，不会不带沙箱运行。有一个测试，在一个项目里重放五条删除命令，对着 yokoten 的围栏跑；旁边的项目还在。
+
+沙箱不保护 agent 启动时所在的文件夹。请在某一个项目里启动 agent，不要在你的主目录里启动；你这样做时，yokoten 会提醒。
 
 ## 它拦住什么
 

@@ -724,7 +724,7 @@
     "id": "upstream-inbox",
     "rule": "a gap in yokoten found in another project becomes an issue in the yokoten repo",
     "why": "a lesson that stays in a note on one machine never becomes a check",
-    "check": "in the yokoten repo only, the session start and `doctor` count the notes in ~/.config/yokoten/upstream; `yokoten learn --upstream` writes them, with the project and the owner hidden; a note, never a failure",
+    "check": "the session start and `doctor` count the notes in ~/.config/yokoten/upstream: in the yokoten repo at once, in any other repo once the oldest is 3 days old; `yokoten learn --upstream` writes them, with the project and the owner hidden; a note, never a failure",
     "guard": false
   },
   {
