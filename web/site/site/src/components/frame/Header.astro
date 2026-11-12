@@ -9,7 +9,7 @@ import { LINKS } from '../../lib/content/facts';
 import type { CollectionEntry } from 'astro:content';
 interface Props { lang: Lang; page: Page | '404'; sub?: string; t: CollectionEntry<'site'>['data'] }
 const { lang, page, sub = '', t } = Astro.props;
-const nav = (['how', 'docs', 'road', 'about'] as const).map((p) => ({ page: p, text: t.nav[p] }));
+const nav = (['docs', 'road', 'about'] as const).map((p) => ({ page: p, text: t.nav[p] }));
 /** Every docs page is under Docs: it stays marked on them. */
 const section = page !== '404' && DOCS_PAGES.includes(page) ? 'docs' : page;
 const here = page === '404' ? 'home' : page;

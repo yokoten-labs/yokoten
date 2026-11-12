@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const dist = join(fileURLToPath(new URL('../..', import.meta.url)), 'dist');
 const LANG_DIRS = [['en', ''], ['zh', 'zh/'], ['tw', 'zh-tw/'], ['ja', 'ja/']];
 /** The pages laid out from page data, as dist/ files; the home page is index.html. */
-export const SLUGS = ['index', 'how', 'road', 'about', 'docs', 'docs/stopped'];
+export const SLUGS = ['index', 'road', 'about', 'docs', 'docs/stopped'];
 /** The docs pages: their words are the repo's docs, whose translations differ in length, so only that each exists (with its .md) is checked.
  * The guide's chapters, dist/docs/guide/<chapter>.html, are added from the English build: every language has every chapter. */
 export const DOC_SLUGS = ['docs/overview', 'docs/road', 'docs/guide'];

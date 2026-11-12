@@ -1,6 +1,10 @@
 # Old URLs, 301 to where their content now lives, in every language.
 # Cloudflare reads this file from the assets (site-content-refactor.md, the page map).
 # The Start and Guard pages became the docs: /start is the README at /docs, /guard is the guide.
+/how / 301
+/zh/how /zh/ 301
+/zh-tw/how /zh-tw/ 301
+/ja/how /ja/ 301
 /start /docs 301
 /guard /docs/guide 301
 /how-it-works /docs/guide 301

@@ -34,7 +34,7 @@ const site = defineCollection({
   schema: z.strictObject({
     skip: text,
     home: text,
-    nav: z.strictObject({ label: text, how: text, docs: text, road: text, about: text }),
+    nav: z.strictObject({ label: text, docs: text, road: text, about: text }),
     /**
      * The docs pages: the sidebar's three groups, each page's name (by its page key) and description,
      * the guide's chapter list and the links between chapters, the phone's fold, and the note on a
@@ -153,23 +153,6 @@ const road = defineCollection({
   }),
 });
 
-/** How it works: the delete next door as a step-by-step picture (tools/steps/how-flow.mjs draws it), and three questions on the sandbox. */
-const how = defineCollection({
-  loader: pages('how'),
-  schema: z.strictObject({
-    meta,
-    intro: z.strictObject({ ...head, body: text }),
-    player: z.strictObject({
-      label: text, count: text.includes('{n}').includes('{total}'), ready: text,
-      play: text, pause: text, replay: text, prev: text, next: text, restart: text, speed: text,
-      all: text, legend: text, red: text, green: text,
-    }),
-    /** One line per step of the picture, in its order (generated/how/flow.json has the same count). */
-    steps: list(text, 8),
-    questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 3) }),
-  }),
-});
-
 const about = defineCollection({
   loader: pages('about'),
   schema: z.strictObject({
@@ -241,4 +224,4 @@ const chapters = defineCollection({
   }),
 });
 
-export const collections = { site, home, quickstart, stopped, docs, chapters, how, road, about };
+export const collections = { site, home, quickstart, stopped, docs, chapters, road, about };
