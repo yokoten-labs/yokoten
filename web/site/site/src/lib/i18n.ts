@@ -11,10 +11,10 @@ export const LANG_INFO: Record<Lang, { dir: string; html: string; name: string; 
   ja: { dir: 'ja', html: 'ja', name: '日本語', og: 'en' },
 };
 
-/** The pages: home, road and about, and the docs' quick start (docs) and stop page (stopped), are laid out
+/** The pages: home and about, and the docs' quick start (docs) and stop page (stopped), are laid out
  * from page data; overview (the README), docsRoad (every step of the road) and guide (the guide's
  * chapters, one page each under it) are the repo's docs. */
-export const PAGES = ['home', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'road', 'about'] as const;
+export const PAGES = ['home', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'about'] as const;
 export type Page = (typeof PAGES)[number];
 const SLUGS: Record<Page, string> = {
   home: '',
@@ -23,7 +23,6 @@ const SLUGS: Record<Page, string> = {
   overview: 'docs/overview',
   docsRoad: 'docs/road',
   guide: 'docs/guide',
-  road: 'road',
   about: 'about',
 };
 

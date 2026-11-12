@@ -1,6 +1,6 @@
 // The files agents read, written next to the HTML at build, from the same page data the HTML
 // is built from, so the Markdown and the pages never differ:
-//   <page>.md              every page in every language: /index.md, /road.md, /zh/index.md, /ja/about.md ...
+//   <page>.md              every page in every language: /index.md, /about.md, /zh/index.md, /ja/about.md ...
 //                          and the docs: /docs.md (the quick start), /docs/stopped.md, /docs/overview.md (the README),
 //                          /docs/road.md, copied from src/content/generated/docs/ (the English one where a doc has no
 //                          translation), and the guide: /docs/guide.md (its intro and chapters) and
@@ -32,8 +32,8 @@ const LANGS = {
 const DOC_PAGES = { overview: 'start', docsRoad: 'road' };
 /** The docs pages, as the site data names them (docs.<page>, docs.<page>Description). */
 const DOCS_PAGES = ['docs', 'stopped', 'overview', 'docsRoad', 'guide'];
-const ALL_PAGES = ['home', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'road', 'about'];
-const SLUG = { home: '', docs: 'docs', stopped: 'docs/stopped', overview: 'docs/overview', docsRoad: 'docs/road', guide: 'docs/guide', road: 'road', about: 'about' };
+const ALL_PAGES = ['home', 'docs', 'stopped', 'overview', 'docsRoad', 'guide', 'about'];
+const SLUG = { home: '', docs: 'docs', stopped: 'docs/stopped', overview: 'docs/overview', docsRoad: 'docs/road', guide: 'docs/guide', about: 'about' };
 /** The page-data folder of the docs pages laid out from page data. */
 const DATA_DIR = { docs: 'quickstart', stopped: 'stopped' };
 
@@ -76,17 +76,6 @@ function pageMarkdown(page, lang) {
     section(d.stops.title, ...d.stops.cards.flatMap((c) => [`**${c.caption}**`, screen(c.screen)]));
     section(d.firstMinute.title, screen('first run'), numbered(d.firstMinute.callouts));
     section(d.questions.title, ...d.questions.items.flatMap((i) => [`### ${i.q}`, i.a]));
-  } else if (page === 'road') {
-    out.push(`# ${d.intro.title}`, d.intro.body);
-    const stages = facts('stages');
-    const total = stages.reduce((n, s) => n + s.steps.length, 0);
-    section(
-      d.stages.title,
-      bullets(stages.map((s) => `${d.stages.stage} ${s.number}: ${s.name} (${d.stages.steps.replace('{n}', s.steps.length)})`)),
-      `[${d.stages.all.replace('{n}', total)}](${ORIGIN + mdOf('docsRoad', lang)})`,
-    );
-    section(`${d.desk.title} (${d.desk.tag})`, d.desk.body, `[${d.desk.more}](${ORIGIN + mdOf('guide', lang)})`);
-    section(`${d.kanban.title} (${d.kanban.tag})`, d.kanban.body, `[${d.kanban.more}](${ORIGIN + mdOf('guide', lang)})`);
   } else if (page === 'docs') {
     const node = /\d+\.\d+\.\d+/.exec(facts('version').node)[0];
     const stages = facts('stages');

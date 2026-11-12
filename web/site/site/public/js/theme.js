@@ -6,7 +6,7 @@
 //    replaced, so the other language never flashes. Picking a language in the switcher saves it.
 // The 404 page is English; here it only sets <html lang> and the title.
 // Keep the table below in step with LANG_INFO and SLUGS in site/src/lib/i18n.ts (a page's
-// <html data-page> is its key: home, docs, stopped, overview, docsRoad, guide, road, about; a guide
+// <html data-page> is its key: home, docs, stopped, overview, docsRoad, guide, about; a guide
 // chapter also has <html data-sub>, its slug, the same in every language).
 (function () {
   var LANGS = {
@@ -22,7 +22,6 @@
     overview: 'docs/overview',
     docsRoad: 'docs/road',
     guide: 'docs/guide',
-    road: 'road',
     about: 'about',
   };
   var html = document.documentElement;
