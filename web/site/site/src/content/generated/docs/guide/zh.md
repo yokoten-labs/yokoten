@@ -2,11 +2,11 @@
 title: "yokoten 使用指南"
 doc: guide
 lang: zh
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/zh-CN/guide.md"
-ref: "v0.2.0"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/i18n/zh-CN/guide.md"
+ref: "v0.2.1"
 ---
 
-[README](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/zh-CN/README.md) 是简短版。剩下的都在这里：yokoten 为什么要做、它怎么工作、有哪些规则和命令，还有它做不到的事。
+[README](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/i18n/zh-CN/README.md) 是简短版。剩下的都在这里：yokoten 为什么要做、它怎么工作、有哪些规则和命令，还有它做不到的事。
 
 ## 一条赛道
 
@@ -61,7 +61,7 @@ yokoten 把这些经验写成规则，再配上会自己跑的检查：
 | 开 PR | 用你的账号开，权限和你一样大 | 用 bot 账号开；你不点头，什么都合不进去 |
 | 换到另一个项目 | 一切从头来 | 看出这个项目缺什么，问你要不要补上 |
 
-这些保护一装上就开着，人人都有：不用回答问题，也不用改文件。能改变它的每个设置，都能改回默认。[记录 0014](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0014-safe-by-default.md) 写了 yokoten 哪些事自己做、哪些先问你、哪些绝不做。
+这些保护一装上就开着，人人都有：不用回答问题，也不用改文件。能改变它的每个设置，都能改回默认。[记录 0014](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0014-safe-by-default.md) 写了 yokoten 哪些事自己做、哪些先问你、哪些绝不做。
 
 ## 守桥：五条保护
 
@@ -195,17 +195,17 @@ Status 字段设成 Todo、In progress、In review、Done 四项。建看板要 
 如果某一步对应外部的标准，`yokoten doctor` 会在步骤名后面写出来，比如 `ci (Scorecard: CI-Tests)`。
 会话开头那三行不写。
 
-为什么这样分，见[决定记录 0004](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0004-the-road.md)。
+为什么这样分，见[决定记录 0004](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0004-the-road.md)。
 
 这个仓库自己也在走这条路，每一关你都能直接看它怎么运转：
 
 | 关 | 学会什么 | 在这里看 |
 |---|---|---|
-| **1 · 安全网** | AI 要读的规则，以及规则管不住时拦下它的检查 | [AGENTS.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/AGENTS.md) |
+| **1 · 安全网** | AI 要读的规则，以及规则管不住时拦下它的检查 | [AGENTS.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/AGENTS.md) |
 | **2 · 先开 issue，再走 PR** | 每次改动先开 issue 说清为什么；CI 通过了才合并；用标签、里程碑（milestone）和看板管起来 | [issue](https://github.com/yokoten-labs/yokoten/issues?q=is%3Aissue)、[PR](https://github.com/yokoten-labs/yokoten/pulls?q=is%3Apr)、[看板](https://github.com/orgs/yokoten-labs/projects/1) |
-| **3 · 发版** | 写明改了什么、为什么改的提交信息；CHANGELOG；每次发版一个版本号 | [CHANGELOG.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/CHANGELOG.md) |
+| **3 · 发版** | 写明改了什么、为什么改的提交信息；CHANGELOG；每次发版一个版本号 | [CHANGELOG.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/CHANGELOG.md) |
 | **4 · 带一支 AI 团队** | bot 开 PR，worker 领任务，reviewer 审查；最后拍板的永远是你 | [像带团队一样管 agent](#像带团队一样管-agent) |
-| **5 · 公开** | 把全部提交历史查一遍，看有没有漏出隐私；打开安全设置；保护 `main` 分支 | [安全说明](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/SECURITY.md) |
+| **5 · 公开** | 把全部提交历史查一遍，看有没有漏出隐私；打开安全设置；保护 `main` 分支 | [安全说明](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/SECURITY.md) |
 
 AI 想推送发版 tag 时，会看到：
 
@@ -515,7 +515,7 @@ Windows 上请用 Git Bash。
 
 大多数人只需要一条命令：`npx yokoten`。它做了 `install`、`init` 和 `doctor` 的活：
 补上缺的东西，再给出一屏：你在哪里，下一步做什么。`trust` 和 `update` 仍是各自独立的步骤。除它之外，`yokoten help` 只列四条命令：
-`desk`、`kanban`、`check` 和 `tidy`（[记录 0043](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0043-v012-three-commands.md)）。
+`desk`、`kanban`、`check` 和 `tidy`（[记录 0043](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0043-v012-three-commands.md)）。
 旧命令照样能用，并会告诉你它搬到了哪里。`yokoten help --all` 把它们都列出来，下面「命令」里的表一条条讲清。
 
 ### 装哪个版本
@@ -604,11 +604,11 @@ hook 跑的是这两份拷贝，所以不用联网，也不用再经过 `npx`。
 
 npm 上的包跑的是编译好的 JavaScript，因为 Node 不处理 `node_modules` 里的 TypeScript。
 仓库本身还是不用编译，只有 `npm pack` 打包的时候才生成 `dist/`
-（见[记录 0008](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0008-npm-package.md)，英文）。
+（见[记录 0008](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0008-npm-package.md)，英文）。
 
 发布到 npm 是主人様的事，跟打发版 tag 一样。tag 一推上去，发布 workflow 就开始跑：先跑检查，
 然后发布那一步停下来，等主人様在 `release` 环境里点批准，批准了才发到 npm。整个过程不存任何
-npm token（见[记录 0009](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0009-release-environment.md)，英文）。只有第一个版本例外，
+npm token（见[记录 0009](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0009-release-environment.md)，英文）。只有第一个版本例外，
 由主人様手动发布：npm 上还没有这个包的时候，没法设置信任哪个 workflow。第一个版本发布之前，先
 [从 clone 下来的仓库装](#从-clone-下来的仓库装)。
 
@@ -642,7 +642,7 @@ export PATH="$HOME/.local/bin:$PATH" # added by yokoten
 并告诉你是哪个文件。`uninstall` 会删掉启动脚本和带标记的那一行。PATH 里没有一个
 `yokoten` 跑的是装好的这一份时，`doctor` 会提醒你。
 
-这些命令（包括上面 npx 那几条）在 [docs/facts.json](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/facts.json) 里还有一份，网站读的是那份，所以改命令的时候两边都要改。
+这些命令（包括上面 npx 那几条）在 [docs/facts.json](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/facts.json) 里还有一份，网站读的是那份，所以改命令的时候两边都要改。
 
 ### 当成 GitHub Action 用
 
@@ -788,7 +788,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `check --issue` | 在 CI 里检查 issue 的标题，见下面的「issue 标题」 |
 | `check --anchor [--repo <owner/name>]` | 每个已经过去的 UTC 日，拿事件日志最后一行的哈希去 Sigstore Rekor 里对；对不上就点名是哪一天。发到 Rekor 的只有那 64 个十六进制字符，日志的行、路径和名字都不出这台电脑。`--repo` 指定给它签名的仓库的锚定工作流 |
 | `ci-health [--repo <owner/name>] [--write] [--dry-run]` | 读最近 200 次 Actions 运行和打开的 PR 的检查，打印报告，什么都不写。加 `--write` 才更新那个固定的 issue「CI health」；`--dry-run` 只打印报告 |
-| `provenance <ref> [--json]` | 给一个提交，或一个范围里的每个提交，写明写的人、审的人、批准的人、等级和 issue；从 squash 后的提交信息和宿主上最新的 Approve 读。`--json` 输出记录。见[来源记录](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/i18n/standard.md#来源) |
+| `provenance <ref> [--json]` | 给一个提交，或一个范围里的每个提交，写明写的人、审的人、批准的人、等级和 issue；从 squash 后的提交信息和宿主上最新的 Approve 读。`--json` 输出记录。见[来源记录](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/i18n/standard.md#来源) |
 | `borrowed [--dry-run] [--json]` | 通过 `gh` 把 `src/borrowed/` 里的每个文件和上游默认分支对比，每个有变化的来源开一个 issue。安全修复会在标题里点出来。`--dry-run` 只显示报告，不开 issue；`--json` 以数据形式输出报告。见[借来的代码](#借来的代码) |
 | `marks allow <mark> --here` | 让词表里的一个词只在这个仓库放行，不需要 yokoten.json。放行记在这台电脑上，不写进仓库。`--remove` 撤回。见「隐私」 |
 | `redact` | 从标准输入读文字，把你的信息换成占位符再输出：`<owner>`、`<email>`、`<host>`、`<mark>`。命令守卫会让有风险的命令先过一遍它。见「隐私」 |
@@ -802,7 +802,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `learn --upstream "<发生了什么>" [--area <name>] [--fix <idea>]` | 记下 yokoten 自己的一个毛病，项目和你本人的信息都先藏掉。`--list` 列出这些记录，`--done <id>` 删掉一条。见下面的「问题出在 yokoten 自己身上」 |
 | `check --history` | 对所有分支的每一个提交做隐私检查。私有仓库公开之前跑一遍。浅克隆看不到旧的提交，所以它不扫描、直接报错；在 CI 里要拉下全部历史（`fetch-depth: 0`）。文件里查到问题时，写的是加进这个文件的那次提交，和那次提交里的路径：`文件 @ <提交>`。`git replace` 藏不住提交，它照样读原来的提交；有 grafts 文件时同样不扫描、直接报错。 |
 | `pr sync` | 每次合并之后，把每个打开的 PR 更新到它的基础分支：合并基础分支，只解决两种机械冲突（两边在同一处各加了一整块，或两边改了同一个 import 列表），每次合并（干净合并或解决冲突后）都先运行 typecheck 和改动文件对应的测试，然后以 bot 的身份推送。其他冲突会停下，并打印文件、冲突块和一份派活说明。每行报告会写明实际合并的基础分支；打开的 PR 列表最多 100 条，截断时会说明。它从不强制推送、从不 rebase，也不在 GitHub 上解决冲突。每次合并后都要跑。 |
-| `hook [--agent <name>] [--commands-only] [--denial <mode>] [--json] [--protocol]` | 工具调用守卫，从标准输入读一次工具调用：默认读 Claude Code 的 PreToolUse；加 `--agent codex` 读 Codex 的 PreToolUse，加 `--agent gemini` 读 Gemini CLI 的 BeforeTool，加 `--agent antigravity` 读 Antigravity CLI 的 PreToolUse，加 `--agent muse` 读 Muse Code 的 PreToolUse，加 `--agent deepseek-harness` 读 DeepSeek Harness 的 PreToolUse，加 `--agent grok` 读 Grok CLI 的 PreToolUse。加 `--denial exit2` 时，拒绝仍以退出码 2 和标准错误上的原因返回，供只看退出码的宿主使用。加 `--protocol` 时，任何工具都能发送守卫协议并读取回答，见[守卫协议](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0039-the-guard-protocol.md) |
+| `hook [--agent <name>] [--commands-only] [--denial <mode>] [--json] [--protocol]` | 工具调用守卫，从标准输入读一次工具调用：默认读 Claude Code 的 PreToolUse；加 `--agent codex` 读 Codex 的 PreToolUse，加 `--agent gemini` 读 Gemini CLI 的 BeforeTool，加 `--agent antigravity` 读 Antigravity CLI 的 PreToolUse，加 `--agent muse` 读 Muse Code 的 PreToolUse，加 `--agent deepseek-harness` 读 DeepSeek Harness 的 PreToolUse，加 `--agent grok` 读 Grok CLI 的 PreToolUse。加 `--denial exit2` 时，拒绝仍以退出码 2 和标准错误上的原因返回，供只看退出码的宿主使用。加 `--protocol` 时，任何工具都能发送守卫协议并读取回答，见[守卫协议](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0039-the-guard-protocol.md) |
 | `hook --stop [--agent <name>]` | 收尾检查。从标准输入读这一轮结束的事件，检查改过的文件：默认读 Claude Code 的 Stop；加 `--agent codex` 读 Codex 的 Stop，加 `--agent gemini` 读 Gemini CLI 的 AfterAgent，加 `--agent grok` 读 Grok CLI 的 Stop。见[收尾检查](#收尾检查) |
 | `test [--heavy] [--print] [-- <runner words>]` | 轻量地跑测试，给和别的工作共用的机器用（#461）：用 `nice -n 10` 跑 `node --test`（Windows 上不用 nice），`--test-concurrency` 最多取核数的一半、每 1 GB 空闲内存最多 1 个，至少为 1。`--` 后面的词交给测试运行器：测试文件，或者它自己的选项。默认就是开着的。`YOKOTEN_LIGHT_TESTS=0` 对每次调用关掉，`--heavy` 只关这一次。`--print` 只显示命令和原因，不运行 |
 | `stops [off \| on]` | 显示 `~/.config/yokoten/stops.jsonl` 这个拦截记录，以及 yokoten 还在不在写它。`off` 停止写入并删掉记录，`on` 重新开始。记录只留在这台电脑上。见[收尾检查](#收尾检查) |
@@ -813,7 +813,7 @@ token。在 `yokoten.yml` 里，同一个 PR 推了新提交，还在跑的那�
 | `desk [<issue> \| "<任务>"] [--agent <名字>] [--pr] [--no-install] [--json]` | 不带参数：列出你的工位，什么都不写（加 `--json` 就把这份列表当数据打印）。带 issue 号或一句任务：建工位 `../<仓库>-desks/<n>/`（它自己的克隆，分支 `desk/<n>`），写好简报，在围栏里启动 AI（先选 Claude Code）。AI 退出后，在围栏里跑检查和测试，一屏给出证据。它从不 push；`--pr` 才推分支并开 PR（配了 bot 就用 bot）。中途停下的工位，下次启动时会列出来，`desk <n>` 从最后一次提交接着做。原生 Windows 上请在 WSL 里跑 |
 | `desk <agent> <文件夹> [--name <名字>] [--read <路径>] [--host <主机>] [--marks] -- <命令>` | 把 worker 的 agent 放进一个围起来的工位里启动：只有它自己的克隆、自己的状态文件夹，除了模型的 API 不能上网。只有 lead 跑它。见 [工位](#工位) |
 | `uninstall [--list]` | 撤掉 `install` 装的东西：带 yokoten 管理标记的入口技能和 agent，Claude Code、Codex CLI、Gemini CLI、Antigravity CLI、Copilot CLI、Grok CLI、Muse Code 设置里的 hook，OpenCode 的插件，还有 `~/.local/share/yokoten`。私有词表和 mailmap 文件只剩 `install` 写的表头时，也一并删掉；`install` 建的空文件夹和 git 配置文件也删掉。`install` 之前就有的文件夹留着。你自己的文件、改动和设置都留着；拦截记录会被删掉。再跑一次什么也不会变。`--list` 逐行列出它删掉的或留下的每个文件 |
-| `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md#3-the-bot-a-github-app) |
+| `bot -- <命令>` | 以 bot 的身份运行一条命令（`gh`、`git push`），用一小时有效的令牌，令牌不会打印出来。如果命令是 `gh issue` 或 `gh pr` 的 `create`、`edit`，并且带了标题，它会先按 CI 的规则检查标题；标题不合格就直接拒绝，什么都不会发出去。用 `gh api` 改 issue 或 PR 时，标题也照样检查。`gh pr create` 和 `gh pr edit` 如果带了 `--body` 或 `--body-file`，正文也会先过一遍：规则和 `check --pr` 里检查正文的那部分一样，看的是这个 PR 的分支改了哪些文件，以及基础分支上的 CODEOWNERS。正文不合格同样直接拒绝，什么都不发出去。正文最后一行不是 `🤖 Made with <agent> (<model>)`（可写一个或多个逗号分隔的组合）的同样直接拒绝：每个 PR 都要写明做出它的每个 AI 和模型。这一行可以加一段 `reviewed by <agent> (<模型>)`，或用 `and` 连起两个审阅者，最多两个。评论（`gh pr comment`、`gh issue comment`）、带正文的审查（`gh pr review --body`）和新建的 issue（`gh issue create --body`）也要带上这一行：最后一行不是 `Made with` 行的正文同样直接拒绝。带 `--attach` 的正文会被拒绝：上传的文件会落在 `Made with` 行之后。只改正文的编辑（`gh pr edit --body`、`gh issue edit --body`）保持原样。`gh pr create` 没给类型标签或 tier 标签时，bot 会自动补上：类型看标题（`fix` 补 `bug`），tier 看正文第一行的 `tier:`。`gh pr edit` 换了标题或正文时也会这样补，并在正文给出新 tier 时移除旧的 tier 标签。你自己给的标签保留不动。你给的 tier 标签和正文对不上，就直接拒绝，提示和 `check --pr` 一样。仓库里没有的标签，bot 会说一声然后不加；它从不新建标签。`gh pr create` 没带 `--milestone` 时，bot 会用第一个关联 issue（`Closes #N`、`Part of #N`）的里程碑；这些 issue 都没有里程碑，就直接拒绝，什么都不发出去，请自己加上 `--milestone`。gh 读不到那个 issue 时，PR 照发，不带里程碑，只留一条提示。它只运行 `gh` 和 `git`，所以 `env gh …`、`sh -c …` 这类写法会被拒绝；gh 的别名（alias）它不认，别名里的标题不会被检查。设置方法见 [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/server.md#3-the-bot-a-github-app) |
 | `train [<pr>...] [--wait <秒>] [--next]` | 按给出的顺序，以 bot 的身份合并一批已批准、检查全绿的 PR；第一个需要人来处理的 PR 就让它停下。不给 PR 编号时只按冲突地图给出的顺序打印计划，什么都不合并；要合并就写出编号。顺序是：先合并移动路径的改动，单独进行；再合并不与其他改动冲突的；然后合并被最多改动冲突的那个，最旧的优先。第一次合并之前先记下每个 PR 的基础分支，所以叠在被 squash 合并的分支上的 PR，会用它和那个分支真正共有的基础来合并。只涉及 import 行的冲突取并集；真正的冲突、测试失败、`check` 失败或缺少批准都会让列车停下。每次合并后的树先测试再推送；推送后的合并要等 CI 通过；`--wait` 设等多久，默认 1800 秒。`--next` 只说出下一个 PR 是哪个、为什么，不合并。只有 lead 能跑 |
 | `kanban [--text] [--json] [--no-open]` | 旧名字 `board` 照样能用，先打一行告诉你现在叫 `kanban`。只在这台电脑上开一个只读页面：各个会话、等你处理的 PR，以及 Actions。页面上没有任何东西能启动、停掉或改动工作。启动后自己在浏览器里打开页面并登录好，按 Ctrl-C 停掉（加 `--no-open` 就只打印地址）。登录用的密钥只交给浏览器。加 `--text` 就在终端里用纯文本打印同一份快照，加 `--json` 就打印成数据。见「看板」 |
 | `tidy [--local \| --empty [--yes]] [--json]` | 只打 `tidy`：列出旧东西，按你能做的事分组。旧东西指已合并或远端已删的分支、没活了的 worktree 和工位、工位已删但还留着的日志。每行写原因和大小，什么也不改（加 `--json` 就把列表当数据打印）。`--local`：先给每样东西存一份（分支打成 bundle，没提交的改动打成 patch，再写 `index.json`），然后搬进 `~/.local/state/yokoten/trash` 里按时间命名的文件夹。只要有一份没存成，就一样也不搬。正在用的工位和 worktree 不碰。GitHub 上的分支只列出来。`--empty`：问你一句，再删回收站里放了 7 天以上的文件夹；没有终端时要加 `--yes` |
@@ -883,7 +883,7 @@ AI 工具还有一条：hook 跑得比它的超时还久，工具就直接放行
 
 有些毛病出在电脑上：它一来，所有 AI 会话都停了，AI 自己却看不见。
 完整的 `doctor` 把它们列在 `machine:` 下面，都是提示，不影响退出码。
-查哪些、为什么这样查，见[记录 0012](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0012-machine-checks.md)（英文）。
+查哪些、为什么这样查，见[记录 0012](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0012-machine-checks.md)（英文）。
 
 - **disk-space**：放仓库的那块盘快满了。盘一满，所有会话都会停。剩下不到 20 GB、
   而且不到整块盘的 10% 时，doctor 才提醒。想换个线，就设 `YOKOTEN_MIN_FREE_GB`；
@@ -1356,7 +1356,9 @@ yokoten learn --upstream "the guard let git push --tags through" --area hook --f
 
 在 yokoten 自己的仓库里，会话开头和 `doctor` 会说有几条在等：
 `yokoten: 3 lessons from other projects wait to become issues: yokoten learn --upstream --list`。
-别的仓库看不到这一行。每条开一个 issue，开完用 `yokoten learn --upstream --done <id>` 删掉。
+在别的仓库里，最早的一条放满 3 天后也会说：
+`yokoten: 3 lessons for yokoten have waited 5 days on this machine: yokoten learn --upstream --list`。
+每条在 yokoten 仓库开一个 issue，或者交给负责 yokoten 的人。开完用 `yokoten learn --upstream --done <id>` 删掉。
 
 ### 设置
 
@@ -1409,7 +1411,7 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 | `YOKOTEN_RELEASE_APPROVAL=1` | 主人様允许这个会话发版。没见过 Muse Code 把它传给钩子 |
 | `YOKOTEN_PRIVATE_MARKS` | 再加一个私有词表文件。里面的词跟 `~/.config/yokoten/private-marks` 里的合在一起用，不会顶替它。见「隐私」 |
 | `YOKOTEN_MIN_FREE_GB` | 盘上剩的空间少于这么多 GB 时，`doctor` 提醒；`0` 就不提醒。见[本机提示](#本机提示) |
-| `YOKOTEN_BOT_APP_ID`、`YOKOTEN_BOT_KEY`、`YOKOTEN_BOT_INSTALLATION` | bot 的设置，也可以写成 `~/.config/yokoten/keys.env` 里的几行。见 [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md#3-the-bot-a-github-app) |
+| `YOKOTEN_BOT_APP_ID`、`YOKOTEN_BOT_KEY`、`YOKOTEN_BOT_INSTALLATION` | bot 的设置，也可以写成 `~/.config/yokoten/keys.env` 里的几行。见 [server.md](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/server.md#3-the-bot-a-github-app) |
 | `YOKOTEN_GITHUB_API` | 换一个 GitHub API 地址，比如自建的 GitHub Enterprise Server |
 | `YOKOTEN_PR_LIVE=1` | `check --pr` 用 `GITHUB_TOKEN` 去读 PR 现在的标题、正文、标签和里程碑，不读触发时留下的事件文件。读不到这些就失败。kit 里的 `pr.yml` 会设上它 |
 | `LLAMA_API_KEY` 或 `MODEL_API_KEY`、`LLAMA_API_BASE`、`LLAMA_MODEL` | `adopt` 用的模型，见[先拿一份草稿](#先拿一份草稿) |
@@ -1417,7 +1419,7 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 
 ## 核心规则
 
-完整的表格和每条的来由在 [`kit/project/AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/kit/project/AGENTS.md)。
+完整的表格和每条的来由在 [`kit/project/AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/kit/project/AGENTS.md)。
 
 1. 所有工作从 issue 开始，不用 todo 文件。
 2. 没有 PR、CI 没过，什么都进不了 `main`。
@@ -1437,7 +1439,7 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 读代码时，最先看到的是名字，看得最多的也是名字。名字起得好，读的人不用往回翻，就知道它装的是什么。
 有一项研究请 72 位开发者在代码里找错：名字是完整单词时，他们比看单个字母或缩写快了大约 19%。
 
-yokoten 自己的代码守五条规矩。为什么这么定、参考了哪些资料，写在[记录 0006](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0006-names.md)。
+yokoten 自己的代码守五条规矩。为什么这么定、参考了哪些资料，写在[记录 0006](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0006-names.md)。
 
 1. 用完整的英文单词。缩写只用人人都认识的：`id`、`url`、`pr`、`ci`、`env`、`config`、`repo`、`dir`、`json`、`html`。不要从单词中间删字母。
 2. 一个名字最多 4 个词。不限字符数：一限字符，大家就会去缩写。
@@ -1522,7 +1524,7 @@ tag 由主人様来打。`merge` 只通过 bot 合并，新提交不是 UTC 就�
 
 ### 区域 lead 在自己区域里批准
 
-记录 [0026](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0026-the-owner-is-the-board.md) 把非硬线路径的锁从你的 code owner
+记录 [0026](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0026-the-owner-is-the-board.md) 把非硬线路径的锁从你的 code owner
 审查移到 yokoten 的合并检查。区域 lead 用 GitHub 审查来批准。审查正文的最后一行写明 lead、
 它的厂商和模型：
 
@@ -1531,7 +1533,7 @@ Approved by area lead Sonnet (Anthropic, Claude Sonnet 5.5)
 ```
 
 GitHub 会记下这次审查针对的提交。之后又有新提交，就要重新审查。lead 的模型必须和 `Made with`
-行里每个写代码的模型都不一样（记录 [0047](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0047-tier-a-by-another-model.md)）。
+行里每个写代码的模型都不一样（记录 [0047](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0047-tier-a-by-another-model.md)）。
 Claude Sonnet 可以批准 Claude Opus 写的代码，别家厂商的 lead 也可以。检查比的是名字，不是写法：
 `claude-opus-5-5` 和 `Claude Opus 5.5` 算同一个模型。`Made with` 行没写出写代码的人，检查就拒绝。
 `.github/CODEOWNERS` 列出的文件，以及放松规则的改动，仍然要你批准。发版的 PR 会改
@@ -1560,7 +1562,7 @@ Claude Sonnet 可以批准 Claude Opus 写的代码，别家厂商的 lead 也�
 `documentation`。tier 标签是 `tier A`、`tier B` 或 `tier C`，写成 `tier: B` 也行，而且要跟正文第一行的
 `tier:` 一样。少了哪个、哪个不对，各报一条，每条都说怎么改。
 
-服务器怎么设置，一步一步写在 [`docs/server.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/server.md)。
+服务器怎么设置，一步一步写在 [`docs/server.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/server.md)。
 
 ### 在 PR 上会看到的审查机器人
 
@@ -1684,7 +1686,7 @@ git diff main refs/desks/42
   `node --test test/agents/desk/start.test.ts`，检查这套规矩。
 - **原生 Windows**：没有工位。`yokoten desk` 什么都不启动，只提示改用 WSL。原生 Windows 上只有守卫在把关。
 
-`YOKOTEN_FENCE=own` 会用旧的围栏，留到 v0.1.3：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
+`YOKOTEN_FENCE=own` 暂时会用旧的围栏：Linux 上是 `bwrap`，macOS 上是 `sandbox-exec`。
 
 ### agent 之间发消息
 
@@ -2078,14 +2080,14 @@ hook 不可能认得所有命令。输出里露出了你的信息，就开一个
 这些做法也出自那几个项目，在那里也管用。可放进一套通用的工具里，花的力气比省下的多：检查每个提交的
 类型是否和改动的文件对得上；在合并队列里逐字节重放合并；给 todo 文件分门别类的目录；
 978 行的规则文件；把签过名的发版结论提交进仓库；把受控英语写作规范当硬性规则（后来带回了一个轻量版，只做提醒、不卡 CI，见
-[记录 0005](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/0005-plain-english.md)）。一条做法
+[记录 0005](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/0005-plain-english.md)）。一条做法
 要在不止一个项目里证明过值得，才能进来。
 
 
 ## 现状
 
-版本 0.1。背后的决定记录在 [`docs/records/`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/docs/records/)。工作用 issue 跟踪；参与开发
-yokoten 本身的规则在 [`AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.0/AGENTS.md)。
+版本 0.2。背后的决定记录在 [`docs/records/`](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/docs/records/)。工作用 issue 跟踪；参与开发
+yokoten 本身的规则在 [`AGENTS.md`](https://github.com/yokoten-labs/yokoten/blob/v0.2.1/AGENTS.md)。
 
 ### 往哪里去
 

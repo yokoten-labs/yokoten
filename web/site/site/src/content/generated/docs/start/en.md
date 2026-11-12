@@ -2,8 +2,8 @@
 title: "yokoten · 横展"
 doc: start
 lang: en
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/README.md"
-ref: "v0.2.0"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.1/README.md"
+ref: "v0.2.1"
 ---
 
 [![npm](https://img.shields.io/npm/v/yokoten?logo=npm)](https://www.npmjs.com/package/yokoten)
@@ -11,9 +11,9 @@ ref: "v0.2.0"
 [![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/yokoten-labs/yokoten/blob/main/LICENSE)
 [![Node](https://img.shields.io/badge/Node-%E2%89%A522.23.4-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 
-yokoten stops your AI coding agent from making the mistake you can't undo.
+Your agent ran rm -rf. The project next door is still there.
 
-One command, no setup.
+One command turns on your agent's sandbox, and it fails closed: npx yokoten.
 
 [yokoten.app](https://yokoten.app/?from=github) · English · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · [日本語](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/ja/README.md)
 
@@ -28,14 +28,17 @@ npx yokoten
 
 That's it: one command, nothing to set. Run it again any time; it does only what is still missing.
 
+On Linux the sandbox needs `bubblewrap` and `socat`; without them Claude Code stops.
+
 The first run shows one screen: what it set up, where you are, and the next command.
 
-<!-- The first run in a new repo, from `yokoten` 0.1.3; regenerate it when the screen changes. -->
+<!-- The first run in a new repo; regenerate it when the screen changes. -->
 ```text
-yokoten 0.1.3 · set up; stage 1 of 5, safety net
+yokoten 0.2.1 · set up; stage 1 of 5, safety net
 
   ok           guard on for Claude Code on this computer
-  ok           37 files written in this project, none of yours changed
+  ok           38 files written in this project, none of yours changed
+  ok           sandbox on for Claude Code, Codex, Grok CLI in this project
 
   MISSING      ~/.config/yokoten/private-marks is missing or has no marks
                Type your name, your city or a domain; it is not shown.
@@ -54,6 +57,12 @@ yokoten 0.1.3 · set up; stage 1 of 5, safety net
 Next: `git add -A && git commit -m "chore: add yokoten"`
 More: `npx yokoten doctor --all` shows every check and 5 notes
 ```
+
+## Why I built this
+
+My AI agent deleted my whole work folder with one delete command. I had a guard installed, and it did not stop it. The guard read shell text, and shell has too many forms. So yokoten now turns on the agent's sandbox by default, and the sandbox fails closed. A test replays five delete commands from inside one project against yokoten's fence, and the project next to it stays.
+
+A sandbox does not protect the folder the agent starts in. Start the agent in one project, not in your home folder; yokoten says so when you don't.
 
 ## What it stops
 

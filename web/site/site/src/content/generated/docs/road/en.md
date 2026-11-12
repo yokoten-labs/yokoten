@@ -2,8 +2,8 @@
 title: "The yokoten road"
 doc: road
 lang: en
-source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.0/src/setup/road.ts"
-ref: "v0.2.0"
+source: "https://github.com/yokoten-labs/yokoten/blob/v0.2.1/src/setup/road.ts"
+ref: "v0.2.1"
 ---
 
 Day one is the safety net. After that, yokoten walks a project through how good teams work, one step at a time: 5 stages, 26 steps. Each step is a check yokoten can run. `yokoten` shows the first one that isn't done, and you can say "not now" to any step.
