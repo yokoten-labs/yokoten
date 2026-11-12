@@ -1,4 +1,4 @@
-// Checks that the built pages laid out from page data (home, road, about, and the docs' quick start and stop page), in the four languages, have the same shape: the owner's rule is one layout for
+// Checks that the built pages laid out from page data (home, about, and the docs' quick start and stop page), in the four languages, have the same shape: the owner's rule is one layout for
 // every language. Run it after `npm run build`; it reads dist/ and compares a skeleton of each page:
 // the sequence of sections (by id), the headings (h1-h4) and how deep they sit, the number of list
 // items (li, or dt in a definition list) in each list, the <details> and <pre> blocks, and the links in each section. The words are not compared.
@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 const dist = join(fileURLToPath(new URL('../..', import.meta.url)), 'dist');
 const LANG_DIRS = [['en', ''], ['zh', 'zh/'], ['tw', 'zh-tw/'], ['ja', 'ja/']];
 /** The pages laid out from page data, as dist/ files; the home page is index.html. */
-export const SLUGS = ['index', 'road', 'about', 'docs', 'docs/stopped'];
+export const SLUGS = ['index', 'about', 'docs', 'docs/stopped'];
 /** The docs pages: their words are the repo's docs, whose translations differ in length, so only that each exists (with its .md) is checked.
  * The guide's chapters, dist/docs/guide/<chapter>.html, are added from the English build: every language has every chapter. */
 export const DOC_SLUGS = ['docs/overview', 'docs/road', 'docs/guide'];

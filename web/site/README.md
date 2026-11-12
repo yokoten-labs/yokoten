@@ -2,7 +2,7 @@
 
 The website for [yokoten](https://github.com/yokoten-labs/yokoten), served at <https://yokoten.app>. It lives in the yokoten repository under `web/site/` (record 0055), with its own `package.json`; nothing here goes into the npm package.
 
-Five pages (home, start, guard, road, about) in four languages (en, zh, zh-tw, ja), built by [Astro](https://astro.build) with Tailwind 4 and IBM Plex into static files. A Cloudflare Worker serves them as static assets, answers byte-range requests for the promo video, counts page views (no personal data) and serves the Markdown version of each page to AI agents. The only script a page ships is `js/theme.js` (theme, language, and how long the page was on screen).
+Three sections (home, docs, about) in four languages (en, zh, zh-tw, ja), built by [Astro](https://astro.build) with Tailwind 4 and IBM Plex into static files. A Cloudflare Worker serves them as static assets, answers byte-range requests for the promo video, counts page views (no personal data) and serves the Markdown version of each page to AI agents. The only script a page ships is `js/theme.js` (theme, language, and how long the page was on screen).
 
 ```sh
 npm install

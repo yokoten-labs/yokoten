@@ -8,7 +8,7 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")/../.." && pwd)
 OUT="${1:-$HOME/.cache/fable/shots}"
 HOST=$(cat "$HOME/.cache/fable/mac-host.txt")
-PAGES="/:home /zh/:zh /zh-tw/:tw /ja/:ja /road:road /about:about /docs:docs /docs/road:docs-road /docs/guide:guide /ja/docs:ja-docs"
+PAGES="/:home /zh/:zh /zh-tw/:tw /ja/:ja /about:about /docs:docs /docs/road:docs-road /docs/guide:guide /ja/docs:ja-docs"
 tar -C "$HERE" -czf - dist tools/images/preview.mjs | ssh -o BatchMode=yes "$HOST" 'mkdir -p ~/work/site-preview && tar -xzf - -C ~/work/site-preview'
 # The phone shots: headless Chrome will not lay a window out narrower than about 500 px, so each
 # phone page is framed in an iframe exactly 390 px wide and the shot is cut to that width.

@@ -34,7 +34,7 @@ const site = defineCollection({
   schema: z.strictObject({
     skip: text,
     home: text,
-    nav: z.strictObject({ label: text, docs: text, road: text, about: text }),
+    nav: z.strictObject({ label: text, docs: text, about: text }),
     /**
      * The docs pages: the sidebar's three groups, each page's name (by its page key) and description,
      * the guide's chapter list and the links between chapters, the phone's fold, and the note on a
@@ -140,19 +140,6 @@ const docs = defineCollection({
   }),
 });
 
-const road = defineCollection({
-  loader: pages('road'),
-  schema: z.strictObject({
-    meta,
-    intro: z.strictObject({ ...head, body: text }),
-    /** The five stages as cards: "Stage 1", the name, "{n} steps"; then "All {n} steps", to the road doc. */
-    stages: z.strictObject({ ...head, stage: text, steps: text.includes('{n}'), all: text.includes('{n}') }),
-    /** Desk and kanban: one plain sentence or two, and a link to their section in the guide. */
-    desk: z.strictObject({ ...head, body: text, more: text, tag: text.max(20) }),
-    kanban: z.strictObject({ ...head, body: text, more: text, tag: text.max(20) }),
-  }),
-});
-
 const about = defineCollection({
   loader: pages('about'),
   schema: z.strictObject({
@@ -224,4 +211,4 @@ const chapters = defineCollection({
   }),
 });
 
-export const collections = { site, home, quickstart, stopped, docs, chapters, road, about };
+export const collections = { site, home, quickstart, stopped, docs, chapters, about };
