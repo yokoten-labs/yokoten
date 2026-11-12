@@ -5,6 +5,10 @@
 /zh/how /zh/ 301
 /zh-tw/how /zh-tw/ 301
 /ja/how /ja/ 301
+/how.md /index.md 301
+/zh/how.md /zh/index.md 301
+/zh-tw/how.md /zh-tw/index.md 301
+/ja/how.md /ja/index.md 301
 /start /docs 301
 /guard /docs/guide 301
 /how-it-works /docs/guide 301
