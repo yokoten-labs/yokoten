@@ -86,7 +86,7 @@ const home = defineCollection({
     hero: z.strictObject({ headline: text.max(80), sub: text, works: named, platforms: named, tags: list(text.max(20), 1) }),
     stops: z.strictObject({ ...head, cards: list(z.strictObject({ screen, caption: text }), 3), limit: text, more: text }),
     firstMinute: z.strictObject({ ...head, callouts: list(text, 3) }),
-    questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 3) }),
+    questions: z.strictObject({ ...head, items: list(z.strictObject({ q: text, a: text }), 4) }),
   }),
 });
 

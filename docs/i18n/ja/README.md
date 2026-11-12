@@ -12,6 +12,12 @@
 
 [yokoten.app](https://yokoten.app/?from=github) · [English](https://github.com/yokoten-labs/yokoten/blob/main/README.md) · [简体中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-CN/README.md) · [繁體中文](https://github.com/yokoten-labs/yokoten/blob/main/docs/i18n/zh-TW/README.md) · 日本語
 
+## あなたに必要ですか？
+
+はい。コーディングエージェントがあなたのマシンでコマンドを実行していて、別のプロジェクトの削除、強制プッシュ、鍵のコミット、リリースの公開の前にそれを止めたいなら、必要です。設定は一度だけです。その後、普段は実行するものがありません。
+
+エージェントがすでに専用のサンドボックスで動いていて、プッシュもリリースもさせないなら、必要ないかもしれません。
+
 ## はじめる
 
 [Node](https://nodejs.org/) 22.23.4 以降が必要です。そして実行します。
@@ -22,6 +28,8 @@ npx yokoten
 ```
 
 これだけです。コマンドひとつで、設定はいりません。何度でも実行でき、足りない分だけを行います。
+
+外すには `npx yokoten uninstall` を実行します。このコンピューターに書き込んだものを元に戻し、あなた自身のファイルと設定はそのまま残します。プロジェクトに追加したファイルは普通のファイルなので、削除してかまいません。
 
 Linux では、サンドボックスに `bubblewrap` と `socat` が必要です。ないと Claude Code は止まります。
 
