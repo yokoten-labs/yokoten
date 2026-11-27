@@ -16,6 +16,10 @@ import { CODEOWNERS_PLACES, readCodeOwners } from './pull-request.ts';
 // dismissed review refuses. A COMMENTED review is neutral. Fail closed: what git or gh
 // can't answer is an `unsure`, and the caller refuses it.
 
+/** The next step when no CODEOWNERS file covers a pull request (issue #1381). */
+export const NO_CODEOWNERS_FIX =
+  'Add a CODEOWNERS line that names the owner, such as `* @OWNER`, on the base branch, then merge again. Or ask the review workflow for the approval of an area lead of another model.';
+
 /** A deciding review by a code owner, as the `reviews` endpoint names it. */
 interface OwnerReview {
   login: string;
@@ -388,7 +392,7 @@ function approvalFreshness(
  * gh or git can't answer, it returns `unsure` with the reason; the caller refuses it.
  * Reads no token itself: `gh` runs with whatever sign-in the caller set up.
  */
-export function readApprovalState(gh: Gh, root: string, env: Env, number: number, repo: string): MergeApprovalRead | { unsure: string } {
+export function readApprovalState(gh: Gh, root: string, env: Env, number: number, repo: string): MergeApprovalRead | { unsure: string; fix?: string } {
   let pulled: unknown;
   try {
     pulled = JSON.parse(gh(['api', `repos/${repo}/pulls/${number}`]));
@@ -431,7 +435,7 @@ export function readApprovalState(gh: Gh, root: string, env: Env, number: number
   const ownerWhy = hardLine.length ? `a hard-line file (${shown})` : looser.looser ? `a looser change (${looser.file})` : null;
   // A lead approval can stand alone on a change with no hard-line file. Without one,
   // the code owner is still the only approval the check reads.
-  if (!owners && !lead) return { unsure: `no CODEOWNERS file covers pull request ${number}, so no code owner can approve it` };
+  if (!owners && !lead) return { unsure: `no CODEOWNERS file covers pull request ${number}, so no code owner can approve it`, fix: NO_CODEOWNERS_FIX };
   let eligible = new Set<string>();
   if (owners) {
     const rules = parseCodeOwners(owners.text);
@@ -461,6 +465,8 @@ export function readApprovalState(gh: Gh, root: string, env: Env, number: number
     approved: ownerState ? ownerState.commit : null,
     after: ownerState ? ownerState.after : 0,
     sameDiff: ownerState ? ownerState.sameDiff : true,
+    // An older owner review that no longer approves is named in the refusal (issue #1381).
+    ...(decision && decision.state !== 'APPROVED' ? { ownerReview: { state: decision.state, commit: decision.commit } } : {}),
   };
   if (!lead) return ownerOnly ? { ...baseState, ownerOnly: true, ownerWhy } : baseState;
   if (ownerOnly) return { ...baseState, ownerOnly: true, ownerWhy };

@@ -28,6 +28,7 @@ import {
 } from '../../../repo/helpers.ts';
 import { invoke } from '../../../repo/invoke.ts';
 import { screenProblems } from '../../../repo/docs/screen-rules.ts';
+import { NO_CODEOWNERS_FIX } from '../../../../src/host/github/approval.ts';
 import { approveScreen, botHeading, emptyPostProblems, mergeRefusal, type PostProblems, postRefusal, programRefusal, refusalScreen, runRefusal, utcRefusal } from '../../../../src/commands/more/merge/bot.ts';
 import { finding } from '../../../../src/rules/text/message.ts';
 import { noteLine, row } from '../../../../src/rules/text/screen.ts';
@@ -1924,8 +1925,17 @@ test('bot: every refusal is a screen from its data, with one Next line, and keep
   const utc = utcRefusal(commits, null);
   assert.equal(utc.rule, 'push');
   assert.equal(utc.fix, 'run `TZ=UTC git rebase --ignore-date bbbbbbbbbbbb^` on the branch, then push again.');
-  const merges = [mergeRefusal({ kind: 'needsApprove', text: 'no owner Approve on this pull request' }), mergeRefusal({ kind: 'unchecked', text: "could not check the owner's Approve (gh said no)" })];
-  assert.deepEqual(merges.map((refusal) => refusal.fix), ['Merge again once the owner has approved the head on GitHub.', 'Fix what stopped the check, then merge again.']);
+  // Issue #1381: an Approve refusal names the exact GitHub steps and says not to merge in
+  // the browser; a stop with its own next step keeps it; a plain unchecked stop stays short.
+  const noOwners = { kind: 'unchecked' as const, text: "could not check the owner's Approve (no CODEOWNERS file covers pull request 47, so no code owner can approve it)", fix: NO_CODEOWNERS_FIX };
+  const merges = [mergeRefusal({ kind: 'needsApprove', text: 'no owner Approve on this pull request' }), mergeRefusal({ kind: 'unchecked', text: "could not check the owner's Approve (gh said no)" }), mergeRefusal(noOwners)];
+  const browser = 'Do not click Merge in the browser: its squash commit gets local time, not UTC.';
+  assert.deepEqual(merges.map((refusal) => refusal.fix), [
+    `The owner opens Files changed, clicks Review changes, picks Approve and clicks Submit review. Then merge again through the bot. ${browser}`,
+    'Fix what stopped the check, then merge again.',
+    `${NO_CODEOWNERS_FIX} ${browser}`,
+  ]);
+  assert.match(refusalScreen(merges[2]).join(' '), /Next: Add a CODEOWNERS line that names the owner/);
   for (const refusal of [program, runRefusal('gh', { error: missing }), runRefusal('gh', { signal: 'SIGTERM' }), utc, ...merges]) {
     assert.ok(refusal);
     assert.deepEqual(failed(refusalScreen(refusal)), [], refusal.what);
