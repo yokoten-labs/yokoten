@@ -38,6 +38,7 @@ import {
   writerAgents,
   sameModelWriter,
   checkPullRequest,
+  checkSizeRatchet,
   checkPullRequestBody,
   checkPullRequestTitle,
   isChangeFile,
@@ -939,4 +940,35 @@ test('issueLabelChoices: the repo labels for each kind an issue leaves out (#112
 test('nonUtcCommits: a line not in COMMIT_FORMAT is refused, never skipped (#1120)', () => {
   assert.equal(nonUtcCommits(['abc123 a line with no separators']).length, 1);
   assert.deepEqual(nonUtcCommits(['', '  ']), []);
+});
+
+test('size ratchet: a pull request may lower the cap or add one, never raise, remove or loosen it', () => {
+  const cap = (maxLines?: number) => JSON.stringify({ layout: { maxEntries: 7 }, size: maxLines === undefined ? {} : { maxLines } });
+  const noSize = JSON.stringify({ layout: { maxEntries: 7 } });
+  const cases: [string, string | null, string | null, RegExp | null][] = [
+    ['raised', cap(5000), cap(5100), /raises the size cap from 5000 to 5100: the cap only goes down/],
+    ['lowered', cap(5000), cap(4900), null],
+    ['unchanged', cap(5000), cap(5000), null],
+    ['key added', noSize, cap(69200), null],
+    ['added with the file', null, cap(69200), null],
+    ['key removed', cap(5000), noSize, /removes the size cap/],
+    ['file removed', cap(5000), null, /removes the size cap/],
+    ['maxLines left out means the default', cap(4000), cap(), /from 4000 to 5000/],
+    ['"size": null is no cap', cap(5000), JSON.stringify({ size: null }), /removes the size cap/],
+    ["a head that is not JSON is the config check's problem", cap(5000), '{ nope', null],
+    ['an exempt entry added', cap(5000), JSON.stringify({ size: { maxLines: 5000, exempt: ['src'] } }), /adds "src" to "size\.exempt"/],
+    ['an exempt entry kept', JSON.stringify({ size: { maxLines: 5000, exempt: ['gen'] } }), JSON.stringify({ size: { maxLines: 4000, exempt: ['gen'] } }), null],
+    ['an exempt entry dropped', JSON.stringify({ size: { maxLines: 5000, exempt: ['gen'] } }), cap(5000), null],
+    ['fork turned on', cap(5000), JSON.stringify({ size: { maxLines: 5000, fork: true } }), /turns on "size\.fork"/],
+    ['fork turned off', JSON.stringify({ size: { fork: true } }), JSON.stringify({ size: { fork: false } }), null],
+    ['no cap at the base: exempt and fork are free', noSize, JSON.stringify({ size: { maxLines: 9000, exempt: ['src'], fork: true } }), null],
+  ];
+  for (const [name, before, after, expected] of cases) {
+    const problem = checkSizeRatchet(before, after);
+    if (expected === null) assert.equal(problem, null, name);
+    else {
+      assert.match(problem?.what ?? '', expected, name);
+      assert.match(problem?.fix ?? '', /^cut code instead/, name);
+    }
+  }
 });

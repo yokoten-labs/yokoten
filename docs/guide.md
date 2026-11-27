@@ -1328,6 +1328,7 @@ missing key, a key set to `null`, or a missing file gives the default.
 | Key | Must be | Default |
 |-----|---------|---------|
 | `layout` | `{ "maxEntries": 7, "exempt": ["docs/records"] }`: a whole number above 0, and a list of folders or globs | 7, no folder exempt |
+| `size` | `{ "maxLines": 5000, "exempt": ["generated"], "fork": false }`: a whole number above 0, a list of folders or globs, and true or false | no cap: the count is a note |
 | `tests` | a list of globs | `*.test.*`, `*.spec.*`, `*_test.go`, `test/**`, `tests/**` |
 | `leadOnly` | a list of globs | the rules, agent config, hooks and CI |
 | `privacy` | `{ "allow": [], "skip": [], "utc": true, "output": "run", "skipOwnName": true }`: two lists of text, true or false, `"run"` or `"stop"`, and true or false | lockfiles skipped, UTC on, output run, own name skipped |
@@ -1720,6 +1721,9 @@ A list you set replaces the default list; it does not add to it.
 |-----|---------|--------------|
 | `layout.maxEntries` | `7` | The most entries a folder may hold (core rule 10) |
 | `layout.exempt` | none | Folders that may grow past it. See [Folders that may grow](#folders-that-may-grow) |
+| `size.maxLines` | `5000` | The most lines of the project's own code. See [The project size](#the-project-size) |
+| `size.exempt` | none | Folders whose code does not count, written as in `layout.exempt` |
+| `size.fork` | `false` | `true` for a fork: the count is a note, not a problem |
 | `tests` | `*.test.*`, `*.spec.*`, `*_test.go`, `test/**`, `tests/**` | The test files a fix task may not change |
 | `leadOnly` | the rules, agent config, `.githooks/**`, `.github/**`, the vendored runtime `.yokoten/**`, `.yokotenignore` | The files a worker may not change |
 | `privacy.allow` | none | Exact strings the privacy check lets through, such as a public support address, or this project's own name from your private marks |
@@ -1755,6 +1759,10 @@ character is special. One glob covers every crate of a Rust workspace:
 ```
 
 `check` and `doctor` note a glob that matches no folder, so a stale entry shows.
+
+#### The project size
+
+A repo chooses a size cap with a `size` key in yokoten.json. The commit check and CI then count the physical lines of the project's own code files in the index, in any language: Rust, Go, Python, C, shell, JS/TS, CSS, HTML and more. Docs, config, data, lock files and minified files are not code. Tests, benches, `vendor/`, fetched folders, `src/borrowed/` and the `size.exempt` folders do not count. Over `size.maxLines` is a problem, and within 10% of it is a note. A fork sets `"fork": true` and gets the count as a note. Without the key, `check` gives the count as one note. `check --pr` fails a pull request that raises the cap, removes it, adds a `size.exempt` entry or turns `fork` on: the cap only goes down. A project over 5000 lines sets its real count, then lowers it step by step.
 
 Environment variables:
 

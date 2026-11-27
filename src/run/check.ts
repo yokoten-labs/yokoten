@@ -7,9 +7,9 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Config, Env } from '../rules/config.ts';
-import { findUnknownKeys, hasChosenLayout, matcher } from '../rules/config.ts';
+import { findUnknownKeys, hasChosenLayout, hasChosenSize, matcher } from '../rules/config.ts';
 import { checkEdit, withWorkerMark } from '../rules/guards/index.ts';
-import { checkBuildOutput, checkCodeOwners, checkLayout, CODEOWNERS_PLACES, codeOwnersPath, foldLayoutHits } from '../rules/layout.ts';
+import { checkBuildOutput, checkCodeOwners, checkLayout, checkSize, CODEOWNERS_PLACES, codeOwnersPath, foldLayoutHits, sizeCountedFiles } from '../rules/layout.ts';
 import { type Finding, finding, isFailingFinding } from '../rules/text/message.ts';
 import { isChangeFile, longSentenceNote, longSentences } from '../rules/pr.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneCommandFix } from '../rules/privacy.ts';
@@ -608,6 +608,14 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
     const folded = foldLayoutHits(layoutHits, config);
     if (folded) notes.push(folded);
   }
+  // The project size: line counts from the index, in one batch read. A commit counts only
+  // when the cap holds; the tree check also gives the count of a fork or a repo with no cap.
+  const isSizeChosen = hasChosenSize(root);
+  if (!staged || (isSizeChosen && !config.size.fork)) {
+    const sizeReads = { isBorrowed: isBorrowedFile, isChosen: isSizeChosen };
+    const lines = indexLineCounts(root, sizeCountedFiles(indexed(), config, sizeReads), env);
+    problems.push(...checkSize(indexed(), (path) => lines.get(path) ?? 0, config, sizeReads, notes));
+  }
   // A CODEOWNERS line for a path that moved protects nothing (#667), so the new path has no
   // owner review. The line is lead-only: the fix tells the reader to hand it to the lead.
   // With `--staged`, the index is the commit's tree, so its CODEOWNERS is the one that
@@ -615,6 +623,25 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
   const owners = findCodeOwnersFile(root, env, staged ? indexed() : undefined);
   if (owners) problems.push(...checkCodeOwners(indexed(), owners.text, owners.file, new Set(config.leadOnly.map(codeOwnersPath))));
   return problems;
+}
+
+/** The physical lines of each path as the index holds it, read in one `git cat-file --batch` run. */
+function indexLineCounts(root: string, paths: string[], env: Env): Map<string, number> {
+  const wanted = new Set(paths);
+  const blobOf = new Map<string, string>();
+  if (wanted.size === 0) return new Map();
+  // Each entry is "<mode> <blob> <stage>\t<path>".
+  for (const entry of list(git(root, env, ['ls-files', '-s', '-z']))) {
+    const path = entry.slice(entry.indexOf('\t') + 1);
+    if (wanted.has(path)) blobOf.set(path, entry.split(' ')[1] ?? '');
+  }
+  const blobs = readBlobs(root, [...blobOf.values()], env);
+  const countLines = (bytes: Buffer): number => {
+    let lines = bytes.length > 0 && bytes[bytes.length - 1] !== 10 ? 1 : 0;
+    for (let at = bytes.indexOf(10); at >= 0; at = bytes.indexOf(10, at + 1)) lines++;
+    return lines;
+  };
+  return new Map([...blobOf].map(([path, blob]) => [path, countLines(blobs.get(blob)?.bytes ?? Buffer.alloc(0))]));
 }
 
 /** The first CODEOWNERS file GitHub reads here, with its text, or null when there is none. */

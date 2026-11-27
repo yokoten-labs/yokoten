@@ -93,6 +93,101 @@ export function checkLayout(files: string[], { layout }: Pick<Config, 'layout'>,
   return problems;
 }
 
+// ---- The project size (owner rule, 2026-11-27) ----
+//
+// A project one person wrote keeps its own code at or under "size.maxLines" lines. Tests,
+// benches, vendored, fetched and borrowed code don't count, nor the folders in "size.exempt",
+// written as layout.exempt is. The run reads the line counts; this part only judges them.
+
+/** Folders, at any depth, whose code is not the project's own source. */
+const SIZE_SKIPPED_DIRS = ['test', 'tests', '__tests__', 'benches', 'vendor'];
+/** Test files by their name, in any folder: `a.test.ts`, `a.spec.ts`, `a_test.go`, `test_a.py`. */
+const SIZE_TEST_NAME = /\.(?:test|spec)\.[^/]+$|_test\.[^/]+$|(?:^|\/)test_[^/]*\.py$/;
+/**
+ * The extensions of source code the size rule counts, in every language a project may be
+ * written in. Docs, config, data, lock files and images are not code; neither is minified
+ * output (`a.min.js`). This list is the size rule's own: the naming notes keep JS/TS only.
+ */
+const SIZE_CODE_EXTENSIONS = new Set([
+  'js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx',
+  'rs', 'go', 'py', 'rb', 'java', 'kt', 'kts', 'scala', 'swift', 'm', 'mm',
+  'c', 'h', 'cc', 'cpp', 'cxx', 'hpp', 'hh', 'cs', 'fs', 'php', 'lua', 'dart',
+  'ex', 'exs', 'erl', 'hs', 'ml', 'clj', 'zig', 'nim',
+  'sh', 'bash', 'zsh', 'ps1', 'psm1', 'sql',
+  'vue', 'svelte', 'astro', 'css', 'scss', 'html',
+]);
+
+/** Whether a path is source code by its extension, as the size rule counts it. */
+export function isSizeCodeFile(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0 || /\.min\.[^.]+$/.test(name)) return false;
+  return SIZE_CODE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+/** How many of the biggest files a size finding names. */
+const SIZE_LISTED = 5;
+
+/** A test for exempt entries, as layout.exempt reads them: whether a path is one of them or inside one. */
+function compileExemptTest(entries: string[]): (path: string) => boolean {
+  const exact = new Set<string>();
+  const globs: RegExp[] = [];
+  for (const entry of entries) {
+    const folder = trimFolder(entry);
+    const pattern = compileExemptGlob(folder);
+    if (pattern) globs.push(pattern);
+    else exact.add(folder);
+  }
+  return (path) => {
+    const parts = path.split('/');
+    for (let depth = 1; depth <= parts.length; depth++) {
+      const dir = parts.slice(0, depth).join('/');
+      if (exact.has(dir) || globs.some((glob) => glob.test(`/${dir}`))) return true;
+    }
+    return false;
+  };
+}
+
+/** What the size rule asks of the run: which paths are borrowed. */
+export interface SizeReads {
+  isBorrowed: (path: string) => boolean;
+}
+
+/** The paths among `files` whose lines count toward the cap. */
+export function sizeCountedFiles(files: string[], { size }: Pick<Config, 'size'>, { isBorrowed }: SizeReads): string[] {
+  const isExempt = compileExemptTest(size.exempt);
+  return files.filter((path) => {
+    const dirs = path.split('/').slice(0, -1);
+    if (!isSizeCodeFile(path) || isBorrowed(path) || SIZE_TEST_NAME.test(path) || dirs[0] === WORKTREES_DIR) return false;
+    return !dirs.some((dir) => SIZE_SKIPPED_DIRS.includes(dir) || FETCHED_DIRS.includes(dir)) && !isExempt(path);
+  });
+}
+
+/**
+ * The size problem, when the counted code is over the cap, else none. The count is a note
+ * within 10% of the cap, for a fork, and when the repo has not chosen the cap (`isChosen`).
+ * `countLines` gives a counted file's physical lines.
+ */
+export function checkSize(files: string[], countLines: (path: string) => number, { size }: Pick<Config, 'size'>, reads: SizeReads & { isChosen: boolean }, notes: Finding[]): Finding[] {
+  const counts = sizeCountedFiles(files, { size }, reads).map((path) => ({ path, lines: countLines(path) }));
+  const total = counts.reduce((sum, file) => sum + file.lines, 0);
+  if (total === 0) return [];
+  const biggest = counts.sort((a, b) => b.lines - a.lines || a.path.localeCompare(b.path)).slice(0, SIZE_LISTED);
+  const named = biggest.map((file) => `${file.path} (${file.lines})`).join(', ');
+  const what = `${total} lines of the project's own code`;
+  if (!reads.isChosen) {
+    // A repo already over the default starts at its own count, rounded up, so the key passes.
+    const start = Math.max(size.maxLines, Math.ceil(total / 100) * 100);
+    notes.push(finding('size', `${what}; no cap is set`, `to hold this repo to a cap, add \`"size": { "maxLines": ${start} }\` to yokoten.json`, { why: 'the size cap is a rule a repo chooses; this one has no "size" key in yokoten.json, so its count is a note' }));
+  } else if (size.fork) {
+    notes.push(finding('size', `${what}; a fork, so the cap of ${size.maxLines} is not held`, 'nothing to do while this repo is a fork', { why: 'a fork carries code its upstream wrote' }));
+  } else if (total > size.maxLines) {
+    return [finding('size', `${what}, over the cap of ${size.maxLines}; the biggest: ${named}`, 'cut code until the count is under the cap; for a fork, set `"size": { "fork": true }` in yokoten.json')];
+  } else if (total * 10 > size.maxLines * 9) {
+    notes.push(finding('size', `${what}, within 10% of the cap of ${size.maxLines}; the biggest: ${named}`, 'cut code before the count reaches the cap'));
+  }
+  return [];
+}
+
 /** How many folders the folded note names before it says how many more. */
 const FOLDED_NAMES = 5;
 

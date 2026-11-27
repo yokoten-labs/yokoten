@@ -7,7 +7,7 @@
 // input: it is read here as data, and never printed back in full.
 
 import type { Config } from './config.ts';
-import { matcher } from './config.ts';
+import { DEFAULTS, matcher } from './config.ts';
 import { type Finding, finding } from './text/message.ts';
 import { GIT_VALUE_OPTIONS } from './guards/bash/read/words.ts';
 
@@ -1629,4 +1629,33 @@ export function noMilestoneFinding(issues: number[]): Finding {
   const named = issues.map((issue) => `#${issue}`).join(', ');
   const which = issues.length === 1 ? `the linked issue ${named} has none` : `none of the linked issues ${named} has one`;
   return finding('pr-milestone', `milestone: none given, and ${which}`, 'add `--milestone <name>`, or set a milestone on the issue');
+}
+
+/**
+ * The problem when a pull request loosens the size cap: it raises or removes `maxLines`, adds
+ * a `size.exempt` entry or turns `fork` on. The cap only goes down. `before` and `after` are
+ * yokoten.json's text at the base and the head, or null where there is none. A file that is
+ * not JSON is the config check's problem, not this one's.
+ */
+export function checkSizeRatchet(before: string | null, after: string | null): Finding | null {
+  const read = (text: string | null): { max: number; exempt: unknown[]; fork: boolean } | undefined => {
+    try {
+      const size = text === null ? undefined : (JSON.parse(text) as { size?: { maxLines?: unknown; exempt?: unknown; fork?: unknown } | null }).size;
+      if (size === undefined || size === null) return { max: Infinity, exempt: [], fork: false };
+      const max = typeof size.maxLines === 'number' ? size.maxLines : DEFAULTS.size.maxLines;
+      return { max, exempt: Array.isArray(size.exempt) ? size.exempt : [], fork: size.fork === true };
+    } catch {
+      return undefined;
+    }
+  };
+  const [old, now] = [read(before), read(after)];
+  // With no cap at the base there is nothing to loosen.
+  if (old === undefined || now === undefined || old.max === Infinity) return null;
+  const added = now.exempt.filter((glob) => !old.exempt.includes(glob));
+  let said: string | null = null;
+  if (now.max > old.max) said = now.max === Infinity ? 'removes the size cap' : `raises the size cap from ${old.max} to ${now.max}`;
+  else if (added.length) said = `adds ${added.map((glob) => JSON.stringify(glob)).join(', ')} to "size.exempt"`;
+  else if (now.fork && !old.fork) said = 'turns on "size.fork"';
+  if (!said) return null;
+  return finding('size', `this pull request ${said}: the cap only goes down`, 'cut code instead, and keep "size" in yokoten.json as it was; for a real fork, the owner merges this by hand', { file: 'yokoten.json' });
 }

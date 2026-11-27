@@ -9,6 +9,7 @@ export interface Config {
   /** The code host, when the origin remote's address does not name it: `auto`, or `gitea` for a self-hosted Gitea (#505). */
   host: 'auto' | 'gitea';
   layout: { maxEntries: number; exempt: string[] };
+  size: { maxLines: number; exempt: string[]; fork: boolean };
   tests: string[];
   leadOnly: string[];
   privacy: { allow: string[]; skip: string[]; utc: boolean; output: 'run' | 'stop'; skipOwnName: boolean };
@@ -29,6 +30,10 @@ export const DEFAULTS: Config = {
   // files there. A folder in `exempt` may grow: a log (records, root-cause reports), or a
   // third-party fixture set kept under its upstream names. An entry may be a glob (#381).
   layout: { maxEntries: 7, exempt: [] },
+  // At most this many lines of the project's own code: tests, benches and vendored code
+  // don't count. A repo chooses the cap with a "size" key; without one, the count is a note.
+  // `exempt` holds folders, as layout.exempt does; a fork (`fork`) gets the count as a note.
+  size: { maxLines: 5000, exempt: [], fork: false },
   // What counts as a test file. A fix task must not change one.
   tests: ['*.test.*', '*.spec.*', '*_test.go', 'test/**', 'tests/**'],
   // What only the lead (the session that reviews and pushes) may change: the rules the
@@ -178,6 +183,10 @@ const SHAPES: Record<keyof Config, Shape | Fields> = {
     example: '{ "maxEntries": 7, "exempt": ["docs/records"] }',
     fields: { maxEntries: shape('a whole number above 0, such as 7', (value) => Number.isInteger(value) && (value as number) > 0), exempt: textList('["docs/records"]') },
   },
+  size: {
+    example: '{ "maxLines": 5000, "exempt": ["generated"], "fork": false }',
+    fields: { maxLines: shape('a whole number above 0, such as 5000', (value) => Number.isInteger(value) && (value as number) > 0), exempt: textList('["generated"]'), fork: trueOrFalse },
+  },
   tests: textList('["*.test.*", "test/**"]'),
   leadOnly: textList('["AGENTS.md", ".github/**"]'),
   privacy: {
@@ -270,10 +279,15 @@ export function findUnknownKeys(root: string): Finding[] {
  * a repo that only runs `check` has none, and its folder hits are one note. A file that
  * can't be read counts as chosen, so a broken file never turns the cap off.
  */
-export function hasChosenLayout(root: string): boolean {
+export const hasChosenLayout = (root: string): boolean => hasChosenKey(root, 'layout');
+
+/** Whether this repo chose the size cap: its yokoten.json holds a "size" key, read as "layout" is. */
+export const hasChosenSize = (root: string): boolean => hasChosenKey(root, 'size');
+
+function hasChosenKey(root: string, key: 'layout' | 'size'): boolean {
   try {
-    const layout = readConfigFile(root).layout;
-    return layout !== undefined && layout !== null;
+    const value = readConfigFile(root)[key];
+    return value !== undefined && value !== null;
   } catch {
     return true;
   }
