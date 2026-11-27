@@ -99,7 +99,7 @@ export const RULES = {
     docs: guide('the-core-rules'),
   },
   'hard-reset': {
-    rule: 'no hard reset: it throws away work (record 0034)',
+    rule: 'no hard reset that throws away work (record 0034)',
     why: 'a hard reset drops every change you have not committed, and git cannot bring it back',
     check: 'the tool-call guard stops `git reset --hard`, and reads a shortened option as git does (`--har` means `--hard`). It lets one through only when it is the whole command, with one plain ref, and loses nothing: no uncommitted change or untracked file, no ignored file in the way, and every commit it drops is on another branch, tag or remote branch. `git reset` without `--hard`, `git revert`, `git switch -C <branch> <ref>` and `git branch -f <branch> <ref>` pass',
     docs: guide('the-safeguard'),

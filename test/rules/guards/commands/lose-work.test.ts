@@ -178,7 +178,18 @@ test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
   git('switch', '-q', '-c', 'side', 'HEAD~1');
   writeFileSync(join(root, 'cache.txt'), 'local\n');
   stop('git reset --hard main', /writes over `cache\.txt`/);
+  // From a subfolder, with `diff.relative` set, the guard still reads the whole repo.
+  writeFileSync(join(root, '.git', 'info', 'exclude'), 'ignored/\n');
+  const sub = join(root, 'ignored');
+  mkdirSync(sub);
+  git('config', 'diff.relative', 'true');
+  assert.match(check('git reset --hard main', sub)?.what ?? '', /writes over `cache\.txt`/);
   rmSync(join(root, 'cache.txt'));
+  pass('git reset --hard main', sub);
+  git('update-index', '--assume-unchanged', 'a.txt');
+  assert.match(check('git reset --hard main', sub)?.what ?? '', /uncommitted work/);
+  git('update-index', '--no-assume-unchanged', 'a.txt');
+  git('config', '--unset', 'diff.relative');
   pass('git reset --hard main');
   // Forms the guard can't read are refused, never guessed.
   for (const command of [
@@ -192,7 +203,24 @@ test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
     'git reset --hard --recurse-submodules main',
     'git reset --hard no-such-ref',
     'git reset --hard main -- a.txt',
+    // A `-C` folder the shell expands may be another repo than the one the guard reads.
+    'git -C $OLDPWD reset --hard main',
+    'git -C "$PWD" reset --hard main',
+    'git -C re* reset --hard main',
+    'git -C ~ reset --hard main',
+    'git -C ~/x reset --hard main',
+    'git -C r? reset --hard main',
+    'git -C [r] reset --hard main',
+    'git -C {a,b} reset --hard main',
+    'git -C `pwd` reset --hard main',
   ]) stop(command, /can't tell/);
+  // A decoy folder named `$OLDPWD`, clean, does not let a reset through elsewhere.
+  const decoyHome = makeTempDir('yokoten-decoy-');
+  const decoy = join(decoyHome, '$OLDPWD');
+  mkdirSync(decoy);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: decoy });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'one'], { cwd: decoy });
+  assert.equal(check('git -C $OLDPWD reset --hard main', decoyHome)?.id, 'hard-reset');
   const unborn = makeMainRepo();
   assert.equal(check('git reset --hard', unborn)?.id, 'hard-reset');
   assert.equal(check('git reset --hard', makeTempDir('yokoten-no-repo-'))?.id, 'hard-reset');

@@ -297,10 +297,13 @@ export function checkGitLoseWork(words: string[], cwd: string | null, env: Env):
 // `git reset --hard <ref>` in a clean checkout is the usual way to move a branch. It passes
 // only when the guard can read that it loses nothing; every other form is refused.
 
-export const HARD_RESET_UNSURE = "yokoten can't tell what this `git reset --hard` throws away: it reads only a whole command with one plain ref and `-q`, in a repo it can open";
+export const HARD_RESET_UNSURE = "yokoten can't tell what this `git reset --hard` throws away: it reads only a whole command with plain `-C` folders, one plain ref and `-q` or `--quiet`, in a repo it can open";
 export const HARD_RESET_FIX = 'commit or stash the work first; to move a branch to another ref, use `git switch -C <branch> <ref>`, or `git branch -f <branch> <ref>` for a branch that is not checked out; to undo a commit, use `git revert`';
 // The characters of a plain ref (`origin/main`, `HEAD~1`, `@{u}`): none the shell expands.
 const PLAIN_REF = /^[\w./@{}^][\w./@{}~^-]*$/;
+// The characters of a plain `-C` folder: none the shell expands, so the guard reads the folder
+// the shell runs in. No `$`, backtick, `~`, glob or backslash (#1379).
+export const PLAIN_FOLDER = /^[\w./:][\w./:+,=@-]*$/;
 
 /**
  * Why `git reset --hard` with `args` in `directory` may lose work, or null when it loses
@@ -312,28 +315,30 @@ export function findHardResetLoss(args: string[], directory: string | null, env:
   const refs = args.filter((arg) => !isGitLongOption(arg, '--hard') && arg !== '-q' && !isGitLongOption(arg, '--quiet'));
   const ref = refs[0] ?? 'HEAD';
   if (directory === null || refs.length > 1 || !PLAIN_REF.test(ref) || ref.includes('..')) return HARD_RESET_UNSURE;
-  const head = readGit(directory, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], env);
-  const target = readGit(directory, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], env);
-  const status = readGit(directory, ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'], env);
-  const flags = readGit(directory, ['ls-files', '-v'], env);
+  // Read from the top of the repo, so a subfolder (or `diff.relative`) narrows no list (#1379).
   const root = readGit(directory, ['rev-parse', '--show-toplevel'], env);
-  if (!head || !target || status === null || flags === null || !root) return HARD_RESET_UNSURE;
+  if (!root) return HARD_RESET_UNSURE;
+  const head = readGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], env);
+  const target = readGit(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], env);
+  const status = readGit(root, ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'], env);
+  const flags = readGit(root, ['ls-files', '-v'], env);
+  if (!head || !target || status === null || flags === null) return HARD_RESET_UNSURE;
   // A file marked assume-unchanged (a small letter) or skip-worktree (`S`) hides its edits from status.
   if (status !== '' || /^(?:[a-z]|S) /m.test(flags)) return 'git reset --hard throws away uncommitted work';
   // A file the target adds may already be on disk, ignored: the reset writes over it.
   // Each name starts with `>`, so the trimmed answer keeps a name's own leading space.
-  const added = readGit(directory, ['diff', '--no-ext-diff', '--no-renames', '--name-only', '--diff-filter=A', '-z', '--line-prefix=>', head, target], env);
+  const added = readGit(root, ['diff', '--no-ext-diff', '--no-relative', '--no-renames', '--name-only', '--diff-filter=A', '-z', '--line-prefix=>', head, target], env);
   const paths = added?.split('\0').filter(Boolean) ?? [''];
   if (paths.some((path) => !path.startsWith('>'))) return HARD_RESET_UNSURE;
   for (const path of paths) {
     const inTheWay = findBlockingPath(root, path.slice(1));
-    if (inTheWay !== null) return `\`git reset --hard ${ref}\` writes over \`${inTheWay}\`, a file git does not track`;
+    if (inTheWay !== null) return `\`git reset --hard ${ref}\` writes over \`${inTheWay}\`, which is already on disk`;
   }
   // The commits only this branch holds: on no other branch, tag or remote branch.
-  const branch = readGit(directory, ['symbolic-ref', '--quiet', 'HEAD'], env);
+  const branch = readGit(root, ['symbolic-ref', '--quiet', 'HEAD'], env);
   if (branch !== null && !branch.startsWith('refs/heads/')) return HARD_RESET_UNSURE;
   const exclude = branch === null ? [] : [`--exclude=${branch.slice('refs/heads/'.length)}`];
-  const dropped = readGit(directory, ['rev-list', '--max-count=1', head, `^${target}`, '--not', ...exclude, '--branches', '--tags', '--remotes'], env);
+  const dropped = readGit(root, ['rev-list', '--max-count=1', head, `^${target}`, '--not', ...exclude, '--branches', '--tags', '--remotes'], env);
   if (dropped === null) return HARD_RESET_UNSURE;
   if (dropped !== '') return `\`git reset --hard ${ref}\` drops commits that no other branch, tag or remote branch holds`;
   return null;
