@@ -64,7 +64,7 @@ const TEST_TOP = ['repo/architecture.test.ts', 'repo/git-template.ts', 'repo/hel
 const PROSE_TESTS = ['setup/kit-habits.test.ts'];
 // A module whose tests ran past the Windows job's time cap in one file (issue #1243) has a
 // folder of test files in place of it, one for each area, and one helper module they share.
-const SPLIT_TESTS: Record<string, string> = { 'setup/install.ts': 'setup/install/helpers.ts' };
+const SPLIT_TESTS: Record<string, string> = { 'setup/install.ts': 'setup/install/helpers.ts', 'setup/init.ts': 'setup/init/helpers.ts' };
 const splitFolder = (module: string) => module.replace(/\.ts$/, '/');
 // Modules with no test file of their own. Keep it short: a new module gets its test file.
 const NO_TEST_FILE = [
@@ -114,10 +114,10 @@ test('test files: each one is the test file of a src module, at the same path (#
   ]);
   // A split module: its folder of test files stands for its one file (issue #1243).
   assert.deepEqual(testFileProblems(['setup/install.ts', ...NO_TEST_FILE], ['setup/install/hooks.test.ts', 'setup/install/helpers.ts']), []);
-  assert.deepEqual(testFileProblems(['setup/install.ts', 'setup/init.ts', ...NO_TEST_FILE], ['setup/install/hooks.test.ts', 'setup/init/hooks.test.ts', 'setup/install/other.ts']), [
-    'test/setup/init/hooks.test.ts is not the test file of a src module (src/setup/init/hooks.ts)',
+  assert.deepEqual(testFileProblems(['setup/install.ts', 'setup/road.ts', ...NO_TEST_FILE], ['setup/install/hooks.test.ts', 'setup/road/hooks.test.ts', 'setup/install/other.ts']), [
+    'test/setup/road/hooks.test.ts is not the test file of a src module (src/setup/road/hooks.ts)',
     'test/setup/install/other.ts is not the test file of a src module (src/setup/install/other.ts)',
-    'src/setup/init.ts has no test/setup/init.test.ts',
+    'src/setup/road.ts has no test/setup/road.test.ts',
   ]);
   assert.deepEqual(testFileProblems(['setup/install.ts', ...NO_TEST_FILE], ['setup/install/helpers.ts']), ['src/setup/install.ts has no test/setup/install.test.ts']);
   const tests = filesUnder(join(ROOT, 'test'));
@@ -2061,7 +2061,11 @@ const WINDOWS_BRANCHES: [string, number][] = [
   ['setup/doctor/checks.test.ts', 2],
   ['setup/doctor/machine.test.ts', 1],
   ['setup/doctor/report.test.ts', 2],
-  ['setup/init.test.ts', 5],
+  ['setup/init/ci.test.ts', 1],
+  ['setup/init/helpers.ts', 1],
+  ['setup/init/hooks.test.ts', 1],
+  ['setup/init/project.test.ts', 1],
+  ['setup/init/settings.test.ts', 1],
 ];
 
 const WINDOWS_NAMES = new Set(['isWindows', 'IS_WINDOWS', 'isWin', 'IS_WIN']);
@@ -2307,7 +2311,7 @@ const CHILD_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
   'test/commands/more/learn.test.ts': { cap: 15, reason: 'the full lesson loop runs two other copies of yokoten (the clone and .yokoten/), and the system-home fallback is in the CLI entry' },
   'test/repo/architecture.test.ts': { cap: 8, reason: 'it checks child processes themselves: a killed child, the split tool, the test home, the session variables and the report node --test writes' },
   'test/run/cli.test.ts': { cap: 9, reason: 'it tests bin/yokoten.ts itself: the entry, its compile cache, the demo loop and --help through the real entry' },
-  'test/setup/init.test.ts': { cap: 10, reason: 'the entries of init, doctor, update and install, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
+  'test/setup/init/update.test.ts': { cap: 7, reason: 'the entries of init, doctor and update, and the copies of yokoten that init writes (.yokoten/) or a clone holds' },
 };
 const CHILD_FIX = 'use sandbox.call in place of sandbox.run, or call the function; keep a child only for the entry, with a comment saying why';
 
@@ -2383,7 +2387,10 @@ test('child processes: each test file starts at most CHILD_CAP, or its allowance
 // Windows. The limit is TEST_LIMITS' full-runs row; files above it are on FULL_RUN_ALLOWANCE
 // at their count, which may only go down, like CHILD_ALLOWANCE.
 const FULL_RUN_ALLOWANCE: Record<string, { cap: number; reason: string }> = {
-  'test/setup/init.test.ts': { cap: 55, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/init/update.test.ts': { cap: 23, reason: 'init, doctor and update on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/init/ci.test.ts': { cap: 10, reason: 'init with and without CI on whole projects: what each writes, and that a second run changes nothing' },
+  'test/setup/init/settings.test.ts': { cap: 10, reason: 'init on whole projects for each agent: what it writes, and that a second run changes nothing' },
+  'test/setup/init/hooks.test.ts': { cap: 8, reason: 'init on whole projects with hooks of their own: what it writes, and that a second run changes nothing' },
   'test/setup/doctor/report.test.ts': { cap: 51, reason: 'the report doctor prints: its order, its notes and the session form' },
   'test/setup/doctor/checks.test.ts': { cap: 23, reason: 'one whole run for each note that its check and doctor both print' },
   'test/commands/more/advice/doctor.test.ts': { cap: 24, reason: 'the advice doctor prints for each finding, and the line above the projects in a session and in full doctor (#1345)' },
@@ -2428,7 +2435,7 @@ test('whole runs: a file over the limit fails with the fix, one at it passes, an
 test('whole runs: each test file writes at most the full-runs limit, or its allowance (#1109)', () => {
   const paths = execFileSync('git', ['ls-files', 'test'], { cwd: ROOT, encoding: 'utf8' }).split('\n').filter((path) => path.endsWith('.test.ts'));
   const files = Object.fromEntries(paths.map((path) => [path, readFileSync(join(ROOT, path), 'utf8')]));
-  assert.ok(countFullRuns(files['test/setup/init.test.ts'] ?? '') > 0, 'no whole run found in init.test.ts; the count is broken');
+  assert.ok(countFullRuns(files['test/setup/init/update.test.ts'] ?? '') > 0, 'no whole run found in init/update.test.ts; the count is broken');
   assert.deepEqual(fullRunProblems(files), []);
 });
 
