@@ -162,8 +162,10 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     const mayWrite = heredoc !== undefined || fills || writesFile(words) || isUnsure(words) || writers.some((other) => other !== words);
     // The name is built only on a refusal (#498).
     const saw = (isMarked: (word: string) => boolean) => writeRisk(words, { heredoc, plainText, plainAt, fills, writers, isMarked });
+    // Where this command's program runs: a push and a post read it the same way (#1377).
+    const launched = launchFolder(words, postCwd, { env, isTildeQuoted });
     const reason =
-      checkGit(words, { env, config, cwd, folder: postCwd, rules }) ??
+      checkGit(words, { env, config, cwd, folder: launched.folder, isLaunched: launched.isLaunched, rules }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
       hostSettingsWrite(words) ??
@@ -183,7 +185,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkBlocked(words, config?.commands.block ?? {}) ??
       // The text a post carries comes before the publish rule: a publish that would leak a
       // private mark names the mark, which is the part the agent must fix (#391, #829).
-      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
+      checkPosted(words, { env, config, cwd: launched.folder, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder: movesFolder || launched.isLaunched, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd, platform: placeNow.platform }) : null) ??
       // A worker by agent type, in a checkout where the commit check can't see a worker (#1225).
@@ -314,6 +316,44 @@ function changesFolder(name: 'env' | 'sudo', words: string[], index: number): tr
   return index;
 }
 
+// The env options that take no value and leave the folder alone.
+const ENV_PLAIN_OPTIONS = /^(?:-[i0v]+|--(?:ignore-environment|null|debug)|--unset=.*)$/s;
+
+/**
+ * Where a command's program runs (#1377): `folder`, moved by a leading `env -C <dir>`,
+ * `env --chdir <dir>` or `env --chdir=<dir>`. The folder is read as a cd reads it, without
+ * CDPATH, which env never searches. Null when a launcher moves it in a way the guard can't
+ * read: joined options (`-iC`), a split string, a second move, `sudo -D`, or `--chdir=~…`. `isLaunched`:
+ * a launcher names the folder. A git push and a gh post both read it from here.
+ */
+export function launchFolder(words: string[], folder: string | null, { env, isTildeQuoted }: { env: Env; isTildeQuoted: boolean }): { folder: string | null; isLaunched: boolean } {
+  const unknown = { folder: null, isLaunched: true };
+  let index = 0;
+  while (index < words.length && /^[A-Za-z_]\w*=/.test(words[index])) index++;
+  let named: string | undefined;
+  if (programName(words[index] ?? '') === 'env') {
+    for (index++; index < words.length && words[index].startsWith('-'); index++) {
+      const word = words[index];
+      if (word === '--') {
+        index++;
+        break;
+      }
+      const value = word === '-C' || word === '--chdir' ? words[++index] : word.startsWith('--chdir=') ? word.slice('--chdir='.length) : undefined;
+      if (value !== undefined) {
+        // bash expands no ~ after `--chdir=`, which is no assignment: env goes to a folder named ~.
+        if (named !== undefined || value === '' || value.startsWith('-') || (word.startsWith('--chdir=') && value.startsWith('~'))) return unknown;
+        named = value;
+      } else if (word === '-u' || word === '--unset') index++;
+      else if (!ENV_PLAIN_OPTIONS.test(word)) return unknown;
+    }
+  }
+  // Any launcher after it that moves the folder again: the guard does not follow it.
+  const rest = words.slice(index);
+  const movesAgain = rest.some((word, at) => (programName(word) === 'env' || programName(word) === 'sudo') && changesFolder(programName(word) as 'env' | 'sudo', rest, at + 1) === true);
+  if (movesAgain) return unknown;
+  if (named === undefined) return { folder, isLaunched: false };
+  return { folder: folderAfter(['cd', named], folder, { env, isTildeQuoted, isCdPathSkipped: true }), isLaunched: true };
+}
 
 /**
  * The folder whose git reads the same tags and settings as `--git-dir <path>` (#865). A
@@ -438,7 +478,8 @@ function gitDirectoryOf(words: string[], start: number, from: string | null): { 
 
 // `folder`: where the command runs after its `cd`s. `cwd` is null after a cd, for the hooks
 // setting; a push still reads its tags from the folder the cd went to (#1015).
-function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules }): Finding | null {
+// `isLaunched`: an `env -C` named `folder`, so a push reads its tags there, or is unknown (#1377).
+function checkGit(words: string[], { env, config, cwd, folder = cwd, isLaunched = false, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; isLaunched?: boolean; rules?: FileRules }): Finding | null {
   const start = words.findIndex(isGit);
   if (start === -1) return null;
   const settings: string[] = [];
@@ -447,7 +488,7 @@ function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { 
   const { directory } = here;
   // Where a push reads its tags: after a cd, the folder it went to. A folder the command
   // names (or moves to) that git can't read leaves the push unknown, so it is refused.
-  const moved = cwd === null && folder !== null;
+  const moved = isLaunched || (cwd === null && folder !== null);
   const pushFrom = moved ? gitDirectoryOf(words, start, folder) : here;
   const pushDirectory = pushFrom.directory;
   const isPushUnknown = () => (pushFrom.isNamed || moved) && (pushDirectory === null || readGit(pushDirectory, ['rev-parse', '--git-dir'], env) === null);

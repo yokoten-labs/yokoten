@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
-import { blocked, allowed, makeSandbox, makeTempDir } from '../../../../test/repo/helpers.ts';
+import { blocked, allowed, makeSandbox, makeTempDir, shellPlaces } from '../../../../test/repo/helpers.ts';
 
 test('the bot is not a way around the guard', () => {
   assert.ok(checkCommand('node .yokoten/bin/yokoten.ts bot -- git push --tags', { cwd: process.cwd(), env: {} }));
@@ -34,6 +34,49 @@ test('release: a tag push from a repo named by a Git Bash path is refused on Win
   sandbox.git('config', 'push.followTags', 'true');
   for (const form of named) assert.equal(run(form)?.id, 'release', `${form}, with push.followTags`);
   assert.equal(run('git -C /tmp/repo push --dry-run'), null, 'a dry run changes nothing');
+});
+
+// #1377: `env -C <repo>` names the repo a push runs in, as it names the repo a post goes to.
+// The session sits in the folder above the repo, which is no repo itself. Each place writes
+// the repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so Windows writes Git Bash's `/c/x`.
+test('release: env -C names the repo a bot push reads its tags in; a folder it cannot place is refused (#1377)', () => {
+  const sandbox = makeSandbox();
+  sandbox.git('commit', '-q', '--allow-empty', '-m', 'start');
+  sandbox.git('tag', 'rel-1');
+  const parent = dirname(sandbox.repo);
+  sandbox.write('body.md', 'plain text\n');
+  for (const { name, place, at } of shellPlaces(parent)) {
+    const repo = at(sandbox.repo);
+    const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: parent, place });
+    const forms = [`env -C ${repo} yokoten bot -- git push`, `env --chdir=${repo} git push`, 'env -C repo yokoten bot -- git push', `env -u X -C ${repo} git push`];
+    for (const form of forms) {
+      assert.equal(run(`${form} origin feature`), null, `${name}: ${form} origin feature`);
+      assert.equal(run(`${form} origin rel-1`)?.id, 'release', `${name}: ${form} origin rel-1`);
+    }
+    // The gh twin of the same form is read from the same folder: a body file there is found.
+    assert.equal(run(`env -C ${repo} yokoten bot -- gh issue create --title x --body-file body.md`), null, `${name}: gh reads the same folder`);
+    assert.equal(run(`env -C ${at(parent)} yokoten bot -- gh issue create --title x --body-file body.md`)?.id, 'unreadable-command', `${name}: gh in the parent finds no body`);
+    // A folder git can't open, or one the guard can't place: its tags can't be read.
+    for (const command of [
+      `env -C ${at(join(parent, 'nowhere'))} yokoten bot -- git push origin feature`,
+      `env -C ${at(parent)} yokoten bot -- git push origin feature`,
+      'env -C "$REPO" yokoten bot -- git push origin feature',
+      `env -iC ${repo} git push origin feature`,
+      `env -C ${repo} sudo -D ${at(parent)} git push origin feature`,
+    ]) {
+      assert.equal(run(command)?.id, 'release', `${name}: ${command}`);
+    }
+  }
+  // bash expands ~ at the start of a word, but none after `--chdir=`: env goes to ./~/repo.
+  // HOME is this system's own path, so only this system's place reads it.
+  const home = (command: string) => checkCommand(command, { env: { ...sandbox.env, HOME: parent }, cwd: parent });
+  assert.equal(home('env -C ~/repo git push origin feature'), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) assert.equal(home(`${launch} git push origin feature`)?.id, 'release', launch);
+  sandbox.git('config', 'push.followTags', 'true');
+  for (const { name, place, at } of shellPlaces(parent)) {
+    const pushed = checkCommand(`env -C ${at(sandbox.repo)} yokoten bot -- git push origin feature`, { env: sandbox.env, cwd: parent, place });
+    assert.equal(pushed?.id, 'release', `${name}: push.followTags is read in the env -C repo`);
+  }
 });
 
 // .yokoten/ is the copy of yokoten the hooks and CI run: a worker that changes it can turn the checks off (#297).

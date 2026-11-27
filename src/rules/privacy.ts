@@ -194,6 +194,10 @@ function rewriteUrl(url: string, rules: [string, string][]): string | null {
 
 /** Why a repo gets no machine allow because it has no origin: not unsure, nothing to name it by. */
 export const NO_ORIGIN = 'this repo has no origin remote';
+/** Why a repo with origin and another remote gets no machine allow: gh may post to the other one. */
+export const OTHER_REMOTE = 'this repo has a remote other than origin';
+/** Why a repo whose only remote has another name gets no machine allow. */
+export const ONLY_OTHER_REMOTE = 'this repo has no origin remote, only a remote with another name';
 
 /**
  * The repo at `dir`, as the machine allow file keys it, or why yokoten can't tell (#447).
@@ -229,8 +233,8 @@ export function repoKey(dir: string, env: Env): RepoKey | { unsure: string } | {
     else if (lower.startsWith('url.') && lower.endsWith('.pushinsteadof')) pushInsteadOf.push([key.slice(4, -14), value]);
   }
   if (elsewhere) return { unsure: elsewhere };
-  if (!remotes.has('origin')) return remotes.size ? { unsure: 'this repo has a remote other than origin' } : { none: NO_ORIGIN };
-  if (remotes.size > 1) return { unsure: 'this repo has a remote other than origin' };
+  if (!remotes.has('origin')) return remotes.size ? { unsure: ONLY_OTHER_REMOTE } : { none: NO_ORIGIN };
+  if (remotes.size > 1) return { unsure: OTHER_REMOTE };
   if (!urls.length) return { unsure: "the origin remote can't be read" };
   // Fetch addresses through insteadOf. A push goes to pushurl when set, else to the url through pushInsteadOf first.
   const fetch = urls.map((url) => rewriteUrl(url, insteadOf) ?? url);
@@ -1844,13 +1848,19 @@ export function isBotProgram(word: string): boolean {
   return BOT_PROGRAM_WORD.test(word);
 }
 
+// A folder a lone post's `cd` or `env -C` names: quoted, or plain path characters, or `~`.
+const PLAIN_FOLDER = String.raw`'[^'\n]*'|"[^"$\x60\\\n]*"|~?[\w./+@%:,=-]+|~`;
+const LONE_CD = new RegExp(String.raw`^cd[ \t]+(${PLAIN_FOLDER})[ \t]*&&[ \t]*`);
+// `env -C <folder>` or `env --chdir=<folder>` before a lone post (#1377): env runs gh there.
+// bash expands no ~ after `--chdir=`, so that form may not start with one.
+const LONE_CHDIR = new RegExp(String.raw`^env[ \t]+(?:-C[ \t]+|--chdir[ \t]+|--chdir=(?!~))(${PLAIN_FOLDER})[ \t]+`);
 // The start of a lone post: the allowed variables, then `gh` or the bot's `yokoten bot -- gh`.
 const LONE_POST_START = new RegExp(String.raw`^(?:(?:(?:NODE_USE_ENV_PROXY|GH_REPO|GH_HOST)=[\w./:@-]*|TZ=UTC)[ \t]+)*(?:(?:node[ \t]+)?${BOT_PROGRAM}[ \t]+bot[ \t]+--[ \t]+)?gh[ \t]`);
 
 /**
  * Whether the command line is one gh post and nothing else (#447): `gh …`, or the bot's
  * `yokoten bot -- gh …` with a yokoten `isBotProgram` trusts (#506), optionally after one
- * plain `cd <folder> &&`. Before it, only
+ * plain `cd <folder> &&`, then at most one `env -C <folder>` (#1377). Before it, only
  * NODE_USE_ENV_PROXY, GH_REPO or GH_HOST may be set, to a plain value (#498), or TZ to UTC
  * (#488); GH_REPO and GH_HOST name another target, so namesTarget still keeps the allow. Outside quotes only
  * letters, digits, spaces and `_ . / : , = + @ % -` are trusted, plus one here-string or
@@ -1860,13 +1870,16 @@ const LONE_POST_START = new RegExp(String.raw`^(?:(?:(?:NODE_USE_ENV_PROXY|GH_RE
  * backquote and backslash are refused; single quotes hold anything. Anything else could
  * change where gh posts before it runs, so no allow applies (record 0014). Listing shell
  * features one by one missed one each round, so the check names what it trusts.
- * `cd` is true when the line starts with that `cd`; its target may start with `~`.
+ * `cd` is true when the line starts with that `cd`; its target may start with `~`. `chdir` is
+ * the folder `env -C` names.
  */
-export function lonePost(command: string): { cd: boolean; target?: string } | null {
+export function lonePost(command: string): { cd: boolean; target?: string; chdir?: string } | null {
   noteWork(command.length);
   let text = trimStart(command, ' \t');
-  const cd = text.match(/^cd[ \t]+('[^'\n]*'|"[^"$`\\\n]*"|~?[\w./+@%:,=-]+|~)[ \t]*&&[ \t]*/);
+  const cd = text.match(LONE_CD);
   if (cd) text = text.slice(cd[0].length);
+  const chdir = text.match(LONE_CHDIR);
+  if (chdir) text = text.slice(chdir[0].length);
   const start = text.match(LONE_POST_START);
   if (!start) return null;
   let quote: string | null = null;
@@ -1900,7 +1913,7 @@ export function lonePost(command: string): { cd: boolean; target?: string } | nu
     else return null;
   }
   if (quote) return null;
-  const lone = cd ? { cd: true, target: cd[1] } : { cd: false };
+  const lone = { ...(cd ? { cd: true, target: cd[1] } : { cd: false }), ...(chdir ? { chdir: chdir[1] } : {}) };
   if (index >= text.length) return heredoc ? null : lone;
   // A newline: only a heredoc's body may follow, then nothing.
   if (!heredoc) return null;
@@ -2006,21 +2019,25 @@ function repoTop(dir: string, env: Env): string | null {
 }
 
 /**
- * Whether a gh post goes to the repo it runs in, so an allow for that repo may apply (#447):
- * the line is the post alone (`lonePost`), it names no other target, and a `cd` before it
- * stays in the repo the line started in (`from`).
+ * Which repo a gh post goes to, so that repo's allow may apply (#447, #1377): null when the
+ * line is not the post alone (`lonePost`) or names another target. `same`: the repo the line
+ * started in (`from`). `moved`: a `cd` or `env -C` took it to another repo, at `cwd`. Only
+ * the machine allow is kept per repo, so only it applies there; the session's yokoten.json
+ * is another repo's. A folder the guard can't place is null: no allow (fail closed).
  */
-function isPostHere(gh: GhCommand, { env, command, cwd, from }: { env: Env; command: string; cwd: string | null; from?: string | null }): boolean {
+function postPlace(gh: GhCommand, { env, command, cwd, from }: { env: Env; command: string; cwd: string | null; from?: string | null }): 'same' | 'moved' | null {
   const lone = lonePost(withoutReadPipe(command));
-  if (!lone || namesTarget(gh, command, env)) return false;
-  if (!lone.cd) return true;
-  if (!cwd || !from) return false;
+  if (!lone || namesTarget(gh, command, env)) return null;
+  if (!lone.cd && lone.chdir === undefined) return 'same';
+  if (!cwd) return null;
   // bash searches CDPATH for a bare relative folder, and CDPATH may be set in the shell
   // without being exported, so only /, ./, ../ or an unquoted ~ or ~/ say where cd goes. A
   // quoted ~ is not your home: bash keeps it as a folder named ~, and searches CDPATH for it.
-  if (lone.target !== undefined && !/^(?:~(?:\/|$)|['"]?(?:\/|\.\/|\.\.\/))/.test(lone.target)) return false;
+  // env -C searches no CDPATH: the guard placed its folder in `cwd`.
+  if (lone.target !== undefined && !/^(?:~(?:\/|$)|['"]?(?:\/|\.\/|\.\.\/))/.test(lone.target)) return null;
   const top = repoTop(cwd, env);
-  return top !== null && top === repoTop(from, env);
+  if (top === null) return null;
+  return from && top === repoTop(from, env) ? 'same' : 'moved';
 }
 
 /**
@@ -2124,15 +2141,18 @@ export function checkPost(
   const allow = privacy?.allow ?? [];
   // An allowed mark is left out of the path shown too (#424). The project's and the machine's
   // allow (#447) are for the repo the command runs in: a post gets them only when it is the
-  // line's one command (after at most a cd within the same repo) and names no other target.
+  // line's one command and names no other target. After a cd or env -C into another repo,
+  // only that repo's machine allow applies (#1377).
   const withKinds = loadMarkKinds(env);
   const kinds = mapMarkKinds(withKinds);
   const all = withKinds.map((mark) => mark.value);
   // The bot runs no shell: its own words are the whole post, so only a named target leaves the repo.
-  const isHere = all.length > 0 && (isSender ? cwd !== null && !namesTarget(gh, '', env) : isPostHere(gh, { env, command, cwd, from }));
+  const place = all.length === 0 ? null : isSender ? (cwd !== null && !namesTarget(gh, '', env) ? 'same' : null) : postPlace(gh, { env, command, cwd, from });
+  const isHere = place !== null;
+  const isSame = place === 'same';
   const key = isHere && cwd !== null ? repoKey(cwd, env) : null;
-  const named = isHere && skipsOwnName(env, privacy) ? sameNameMarks(all, key) : [];
-  const own = isHere ? [...ownMarks(all, [...allow, ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];
+  const named = isSame && skipsOwnName(env, privacy) ? sameNameMarks(all, key) : [];
+  const own = isHere ? [...ownMarks(all, [...(isSame ? allow : []), ...machineAllowed(env, cwd, key ?? undefined).allow]), ...named] : [];
   const marks = all.filter((mark) => !own.includes(mark));
   for (const piece of posted.pieces) {
     const hit = scanText(piece.text, { file: piece.source, marks, allow, ownAllow: [], kinds, env, inlineIgnores: false, hasContactPlaces: false, allowsLocalNetwork: false }).find(isFailingFinding);

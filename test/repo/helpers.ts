@@ -55,6 +55,7 @@ import {
   ROAD,
 } from '../../src/setup/road.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
+import { realPath } from '../../src/platform/paths.ts';
 import type { MachineProbe } from '../../src/setup/doctor/machine.ts';
 import { lineHash } from '../../src/host/sigstore/record.ts';
 import { REAL_MACHINE } from '../../src/setup/doctor/machine.ts';
@@ -144,6 +145,38 @@ export function makeTempDir(prefix = 'yokoten-'): string {
   const path = mkdtempSync(join(tempParent, prefix));
   testFolders.at(-1)?.push(path);
   return path;
+}
+
+/**
+ * A Windows path in Git Bash's drive form (#1377): `C:\x\y` is `/c/x/y`, the way Git Bash
+ * prints it. Pure, so a test can check it on any system; a path with no drive is only given
+ * forward slashes.
+ */
+export function gitBashForm(path: string): string {
+  return path.replace(/^([A-Za-z]):[\\/]*/, (_, drive: string) => `/${drive.toLowerCase()}/`).replaceAll('\\', '/');
+}
+
+/**
+ * `path` as a test writes it in a command line for `platform`'s shell (#1377). bash reads a
+ * backslash as an escape, and the guard places a `cd` only to a folder from `/`, so on Windows
+ * the path goes in Git Bash's drive form (`/c/x`), by its long names (`RUNNER~1` is
+ * `runneradmin`), the way Git Bash prints it.
+ */
+export function shellPath(path: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? gitBashForm(realPath(path)) : path;
+}
+
+/**
+ * The places a guard test runs its command lines in, with how each writes a folder under
+ * `tmp` (#1377): this system with its own paths (on Windows the Git Bash `/c/...` form), and
+ * Windows with Git Bash `/tmp/...` paths, read through `place`. Linux CI runs the win32 row's
+ * Git Bash reading, but not the drive form: a `/c/...` folder exists only on Windows.
+ */
+export function shellPlaces(tmp: string): { name: string; place?: { platform: NodeJS.Platform; tmp: string }; at: (path: string) => string }[] {
+  return [
+    { name: process.platform, at: (path) => shellPath(path) },
+    { name: 'win32, Git Bash', place: { platform: 'win32', tmp }, at: (path) => `/tmp${path.slice(tmp.length).replaceAll('\\', '/')}` },
+  ];
 }
 
 /**
