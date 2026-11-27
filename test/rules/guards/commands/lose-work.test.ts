@@ -5,6 +5,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
+import { PLAIN_FOLDER } from '../../../../src/rules/guards/commands/lose-work.ts';
 import { makeTempDir, makeSandbox, allowed, refusedAs } from '../../../../test/repo/helpers.ts';
 
 test('guard: an alias is refused, not parsed (#560)', () => {
@@ -141,7 +142,8 @@ test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
   const spellings = (ref: string) => [`git reset --hard ${ref}`, `git reset --har ${ref}`, `git reset --h ${ref}`];
   // A clean branch with no commits of its own moves to another ref.
   for (const command of [...spellings('main'), 'git reset --hard', 'git reset -q --hard main', 'git reset --hard main >/dev/null']) pass(command);
-  pass(`git -C ${root} reset --hard main`, process.cwd());
+  // The folder as a shell word: Git Bash reads a backslash as an escape, so a Windows path is written with `/`.
+  pass(`git -C ${root.replaceAll('\\', '/')} reset --hard main`, process.cwd());
   // An uncommitted edit, a staged one, and an untracked file have no other copy.
   writeFileSync(join(root, 'a.txt'), 'two\n');
   for (const command of spellings('main')) stop(command, /uncommitted work/);
@@ -227,6 +229,21 @@ test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
   // The refusal names the safe way to move a branch.
   git('switch', '-q', 'topic');
   assert.match(check('git reset --hard main')?.fix ?? '', /git switch -C <branch> <ref>.*git branch -f <branch> <ref>/);
+});
+
+// #1379: a `-C` folder is plain only when the shell keeps it as written, on every system.
+test('guard: a plain -C folder, per system: a backslash is refused, the slash spelling passes (#1379)', () => {
+  const cases: { platform: NodeJS.Platform; folder: string; plain: boolean }[] = [
+    { platform: 'linux', folder: '/tmp/yokoten-reset-1/repo', plain: true },
+    { platform: 'linux', folder: 'repo/sub', plain: true },
+    { platform: 'darwin', folder: '/private/var/folders/x/T/repo', plain: true },
+    // Git Bash on Windows: `C:\Users\x` reaches git as `C:Usersx`, so the native path is not plain.
+    { platform: 'win32', folder: 'C:\\Users\\x\\AppData\\Local\\Temp\\repo', plain: false },
+    { platform: 'win32', folder: 'C:/Users/x/AppData/Local/Temp/repo', plain: true },
+    { platform: 'win32', folder: '/c/Users/x/AppData/Local/Temp/repo', plain: true },
+    { platform: 'win32', folder: 'C:/Users/RUNNER~1/Temp/repo', plain: false },
+  ];
+  for (const { platform, folder, plain } of cases) assert.equal(PLAIN_FOLDER.test(folder), plain, `${platform}: ${folder}`);
 });
 
 // #560: deleting the default branch throws away the line every branch builds on.
