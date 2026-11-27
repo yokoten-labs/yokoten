@@ -156,7 +156,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     found.push(f);
   };
   const env = { YOKOTEN_FIX_TASK: '1', YOKOTEN_ROLE: 'worker' };
-  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git tag v1.2.3', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git reset --hard', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1', 'gh api -X PATCH repos/o/r -f visibility=public']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
+  for (const c of ['git push --tags', 'git push origin v1.0.0', 'git tag v1.2.3', 'git -c push.followTags=true push', 'gh release create v1', 'npm publish', 'git push --force', 'git commit --no-verify -m x', 'git commit -nm x', 'git config core.hooksPath /dev/null', 'gh run cancel 1', 'gh api -X PATCH repos/o/r -f visibility=public']) add(checkCommand(c, { cwd: process.cwd(), env: {} }));
   add(checkCommand('python3 --version', { cwd: process.cwd(), env: {}, config: { commands: { block: { python3: 'this project is TypeScript only' } } } }));
   add(checkCommand(`bash -c "${':;'.repeat(300000)}"`, { cwd: process.cwd(), env: {} })); // too many commands to read
   add(checkCommand('alias x=y', { cwd: process.cwd(), env: {} }));
@@ -173,6 +173,8 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   const mainRepo = makeTempDir('yokoten-default-main-');
   execFileSync('git', ['init', '-q', '-b', 'main', mainRepo]);
   add(checkCommand('git branch -D main', { cwd: mainRepo, env: {} }));
+  // A repo with no commit: the guard can't tell what a hard reset throws away (#1379).
+  add(checkCommand('git reset --hard', { cwd: mainRepo, env: {} }));
   // The other ways to lose work or history (#828).
   add(checkCommand('rm -rf .', { cwd: process.cwd(), env: {} }));
   add(checkCommand('git clean -fdx', { cwd: process.cwd(), env: {} }));

@@ -1,3 +1,4 @@
+import { lstatSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { finding, type Finding } from '../../text/message.ts';
 import { type Env } from '../../config.ts';
@@ -30,6 +31,23 @@ export function checkShellAlias(words: string[], env: Env): Finding | null {
 
 const REMOVE_PROGRAMS = new Set(['rm', 'rmdir', 'unlink', 'shred']);
 const REMOVE_GIT_FIX = 'delete only the files you mean (a tracked file with `git rm <path>`); to start over, clone the repo again';
+// The `rm` options that never descend into a folder: `-f`, `-i`, `-v`, and `--` (#1380).
+const RM_PLAIN_OPTION = /^(?:-[fiv]+|--|--force|--verbose)$/;
+
+/**
+ * Whether `path` is one plain file right under a `.git` folder, named `*.md` or `*.txt`, such
+ * as a PR body the agent wrote there. Git keeps no such file in `.git`. An allow list: a glob,
+ * `$`, `..` or a second `.git` in the path does not match (#1380).
+ */
+function isGitNoteFile(path: string): boolean {
+  const parts = path.split('/');
+  const name = parts.pop() ?? '';
+  if (parts.pop() !== '.git' || !/^[\w-][\w.-]*\.(?:md|txt)$/.test(name)) return false;
+  // An absolute path starts with an empty part; a relative one may start with `.`.
+  if (parts[0] === '' && parts.length > 1) parts.shift();
+  if (parts[0] === '.') parts.shift();
+  return parts.every((part) => /^[\w.-]+$/.test(part) && part !== '.' && part !== '..' && !mayBeDotGit(part));
+}
 
 /** `rm` and friends on a path that can be `.git`, and a `find` that deletes with nothing keeping it out (#573, #744). For a worker the mark rule answers first. */
 export function checkRemoveGit(words: string[], cwd: string | null, env: Env): Finding | null {
@@ -47,7 +65,8 @@ export function checkRemoveGit(words: string[], cwd: string | null, env: Env): F
     const args = withoutShellRedirects(words, at + 1);
     if (REMOVE_PROGRAMS.has(name)) {
       const targets = plainArgs(args);
-      const target = targets.find((word) => word.split(PATH_BREAKS).filter(Boolean).some(mayBeDotGit));
+      const mayKeepNote = name === 'unlink' || (name === 'rm' && args.every((arg) => !arg.startsWith('-') || RM_PLAIN_OPTION.test(arg)));
+      const target = targets.find((word) => word.split(PATH_BREAKS).filter(Boolean).some(mayBeDotGit) && !(mayKeepNote && isGitNoteFile(word)));
       if (target !== undefined) {
         return finding('remove-git', `\`${name}\` would delete \`${target}\``, REMOVE_GIT_FIX);
       }
@@ -269,6 +288,74 @@ export function checkGitLoseWork(words: string[], cwd: string | null, env: Env):
     if (forced && name !== undefined && isDefaultBranch(name, directory, env)) {
       return finding('move-default-branch', `\`git ${sub}\` moves the default branch \`${name}\``, MOVE_BRANCH_FIX);
     }
+  }
+  return null;
+}
+
+// ---- A hard reset that loses nothing (#1379) ----
+//
+// `git reset --hard <ref>` in a clean checkout is the usual way to move a branch. It passes
+// only when the guard can read that it loses nothing; every other form is refused.
+
+export const HARD_RESET_UNSURE = "yokoten can't tell what this `git reset --hard` throws away: it reads only a whole command with plain `-C` folders, one plain ref and `-q` or `--quiet`, in a repo it can open";
+export const HARD_RESET_FIX = 'commit or stash the work first; to move a branch to another ref, use `git switch -C <branch> <ref>`, or `git branch -f <branch> <ref>` for a branch that is not checked out; to undo a commit, use `git revert`';
+// The characters of a plain ref (`origin/main`, `HEAD~1`, `@{u}`): none the shell expands.
+const PLAIN_REF = /^[\w./@{}^][\w./@{}~^-]*$/;
+// The characters of a plain `-C` folder: none the shell expands, so the guard reads the folder
+// the shell runs in. No `$`, backtick, `~`, glob or backslash (#1379).
+export const PLAIN_FOLDER = /^[\w./:][\w./:+,=@-]*$/;
+
+/**
+ * Why `git reset --hard` with `args` in `directory` may lose work, or null when it loses
+ * nothing: the checkout has no uncommitted change or untracked file, no ignored file is in the
+ * way, and every commit it drops is on another branch, tag or remote branch. A repo or ref the
+ * guard can't read is a reason too (#1379).
+ */
+export function findHardResetLoss(args: string[], directory: string | null, env: Env): string | null {
+  const refs = args.filter((arg) => !isGitLongOption(arg, '--hard') && arg !== '-q' && !isGitLongOption(arg, '--quiet'));
+  const ref = refs[0] ?? 'HEAD';
+  if (directory === null || refs.length > 1 || !PLAIN_REF.test(ref) || ref.includes('..')) return HARD_RESET_UNSURE;
+  // Read from the top of the repo, so a subfolder (or `diff.relative`) narrows no list (#1379).
+  const root = readGit(directory, ['rev-parse', '--show-toplevel'], env);
+  if (!root) return HARD_RESET_UNSURE;
+  const head = readGit(root, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], env);
+  const target = readGit(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], env);
+  const status = readGit(root, ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'], env);
+  const flags = readGit(root, ['ls-files', '-v'], env);
+  if (!head || !target || status === null || flags === null) return HARD_RESET_UNSURE;
+  // A file marked assume-unchanged (a small letter) or skip-worktree (`S`) hides its edits from status.
+  if (status !== '' || /^(?:[a-z]|S) /m.test(flags)) return 'git reset --hard throws away uncommitted work';
+  // A file the target adds may already be on disk, ignored: the reset writes over it.
+  // Each name starts with `>`, so the trimmed answer keeps a name's own leading space.
+  const added = readGit(root, ['diff', '--no-ext-diff', '--no-relative', '--no-renames', '--name-only', '--diff-filter=A', '-z', '--line-prefix=>', head, target], env);
+  const paths = added?.split('\0').filter(Boolean) ?? [''];
+  if (paths.some((path) => !path.startsWith('>'))) return HARD_RESET_UNSURE;
+  for (const path of paths) {
+    const inTheWay = findBlockingPath(root, path.slice(1));
+    if (inTheWay !== null) return `\`git reset --hard ${ref}\` writes over \`${inTheWay}\`, which is already on disk`;
+  }
+  // The commits only this branch holds: on no other branch, tag or remote branch.
+  const branch = readGit(root, ['symbolic-ref', '--quiet', 'HEAD'], env);
+  if (branch !== null && !branch.startsWith('refs/heads/')) return HARD_RESET_UNSURE;
+  const exclude = branch === null ? [] : [`--exclude=${branch.slice('refs/heads/'.length)}`];
+  const dropped = readGit(root, ['rev-list', '--max-count=1', head, `^${target}`, '--not', ...exclude, '--branches', '--tags', '--remotes'], env);
+  if (dropped === null) return HARD_RESET_UNSURE;
+  if (dropped !== '') return `\`git reset --hard ${ref}\` drops commits that no other branch, tag or remote branch holds`;
+  return null;
+}
+
+/** The first part of `path` under `root` that is already on disk and would be written over: the file itself, or a parent that is not a folder. */
+function findBlockingPath(root: string, path: string): string | null {
+  const parts = path.split('/');
+  for (let count = 1; count <= parts.length; count++) {
+    const place = parts.slice(0, count);
+    let isFolder: boolean;
+    try {
+      isFolder = lstatSync(join(root, ...place)).isDirectory();
+    } catch {
+      return null;
+    }
+    if (count === parts.length || !isFolder) return place.join('/');
   }
   return null;
 }

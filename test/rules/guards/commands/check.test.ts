@@ -179,7 +179,13 @@ test('release: making a repo public is the owner\'s', () => {
 });
 
 test('losing work: a hard reset is stopped', () => {
-  for (const command of ['git reset --hard', 'git reset --hard origin/main', 'git -C ../other reset --hard HEAD~1']) blocked(command);
+  // A checkout with an untracked file: a clean one that loses nothing may reset (#1379).
+  const repo = makeTempDir('yokoten-reset-');
+  spawnSync('git', ['init', '-q', '-b', 'main', repo]);
+  writeFileSync(join(repo, 'draft.txt'), 'draft\n');
+  for (const command of ['git reset --hard', 'git reset --hard origin/main', 'git -C ../other reset --hard HEAD~1']) {
+    assert.equal(checkCommand(command, { cwd: repo, env: {} })?.id, 'hard-reset', command);
+  }
   allowed('git reset --soft HEAD~1');
   allowed('git reset');
   allowed('git restore --staged AGENTS.md');

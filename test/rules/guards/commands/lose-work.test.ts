@@ -1,10 +1,11 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
+import { PLAIN_FOLDER } from '../../../../src/rules/guards/commands/lose-work.ts';
 import { makeTempDir, makeSandbox, allowed, refusedAs } from '../../../../test/repo/helpers.ts';
 
 test('guard: an alias is refused, not parsed (#560)', () => {
@@ -86,6 +87,164 @@ test('guard: removing .git is refused (#560)', () => {
   assert.match(checkCommand('rm -rf .git', { cwd: process.cwd(), env: {} })?.fix ?? '', /clone the repo again/);
   assert.match(checkCommand('find . -name .git -delete', { cwd: process.cwd(), env: {} })?.fix ?? '', /clone the repo again/);
   assert.match(checkCommand("printf '%s\\0' .git | xargs -0 rm -rf", { cwd: process.cwd(), env: {} })?.fix ?? '', /clone the repo again/);
+});
+
+// #1380: one plain `*.md` or `*.txt` file right under .git is the agent's own note, such as a
+// PR body: git keeps no such file there. Anything else under .git is still refused.
+test('guard: a note file right under .git may be removed, nothing else there (#1380)', () => {
+  for (const command of [
+    'rm -f .git/pr-body.md',
+    'rm .git/pr-body.md',
+    'rm -f ./.git/notes.txt',
+    'rm -fv -- .git/pr-body.md .git/notes.txt',
+    'unlink .git/pr-body.md',
+    'rm -f repos/demo/.git/pr-body.md',
+  ]) allowed(command);
+  for (const command of [
+    'rm -rf .git',
+    'rm -rf .git/objects',
+    'rm .git/HEAD',
+    'rm .git/refs/heads/main',
+    'rm -rf .git/logs',
+    'rm .git/*',
+    'rm .git/*.md',
+    'rm -rf .git/pr-body.md',
+    'rm -r .git/pr-body.md',
+    'rm --recursive .git/pr-body.md',
+    'rm -f .git/pr-body.md .git/HEAD',
+    'rm -f .git/../.git/pr-body.md',
+    'rm -f .git/modules/x/.git/pr-body.md',
+    'rm -f $REPO/.git/pr-body.md',
+    'rm -f .git/.md',
+    'rmdir .git/notes.md',
+    'shred .git/pr-body.md',
+    'find .git -delete',
+  ]) refusedAs(command, 'remove-git');
+});
+
+// #1379: a hard reset that loses nothing passes; any loss, or a state the guard can't read, is refused.
+test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
+  const root = makeTempDir('yokoten-reset-');
+  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', ...args], { cwd: root, encoding: 'utf8' });
+  git('init', '-q', '-b', 'main');
+  writeFileSync(join(root, 'a.txt'), 'one\n');
+  writeFileSync(join(root, '.gitignore'), 'cache.txt\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'one');
+  git('switch', '-q', '-c', 'topic');
+  const check = (command: string, cwd = root) => checkCommand(command, { cwd, env: {} });
+  const pass = (command: string, cwd = root) => assert.equal(check(command, cwd), null, `should allow: ${command}`);
+  const stop = (command: string, what: RegExp) => {
+    const result = check(command);
+    assert.equal(result?.id, 'hard-reset', command);
+    assert.match(result?.what ?? '', what, command);
+  };
+  const spellings = (ref: string) => [`git reset --hard ${ref}`, `git reset --har ${ref}`, `git reset --h ${ref}`];
+  // A clean branch with no commits of its own moves to another ref.
+  for (const command of [...spellings('main'), 'git reset --hard', 'git reset -q --hard main', 'git reset --hard main >/dev/null']) pass(command);
+  // The folder as a shell word: Git Bash reads a backslash as an escape, so a Windows path is written with `/`.
+  // The long real path: a Windows runner's temp folder has 8.3 short names (RUNNER~1), and `~` is no plain folder (#1237).
+  pass(`git -C ${realpathSync.native(root).replaceAll('\\', '/')} reset --hard main`, process.cwd());
+  // An uncommitted edit, a staged one, and an untracked file have no other copy.
+  writeFileSync(join(root, 'a.txt'), 'two\n');
+  for (const command of spellings('main')) stop(command, /uncommitted work/);
+  git('add', 'a.txt');
+  stop('git reset --hard main', /uncommitted work/);
+  git('reset', '-q');
+  git('checkout', '-q', '--', 'a.txt');
+  writeFileSync(join(root, 'new.txt'), 'new\n');
+  for (const command of spellings('main')) stop(command, /uncommitted work/);
+  rmSync(join(root, 'new.txt'));
+  // An edit hidden from status by assume-unchanged.
+  git('update-index', '--assume-unchanged', 'a.txt');
+  stop('git reset --hard main', /uncommitted work/);
+  git('update-index', '--no-assume-unchanged', 'a.txt');
+  // A commit only this branch holds is dropped; once another branch holds it, nothing is lost.
+  writeFileSync(join(root, 'b.txt'), 'b\n');
+  git('add', 'b.txt');
+  git('commit', '-q', '-m', 'two');
+  for (const command of spellings('main')) stop(command, /no other branch, tag or remote branch holds/);
+  git('branch', 'keep');
+  pass('git reset --hard main');
+  git('branch', '-q', '-D', 'keep');
+  // A commit made on a detached HEAD: no branch holds it.
+  git('switch', '-q', '--detach');
+  pass('git reset --hard main');
+  git('commit', '-q', '--allow-empty', '-m', 'detached');
+  stop('git reset --hard main', /no other branch/);
+  git('switch', '-q', 'topic');
+  // A file the target adds may already be on disk, ignored: the reset writes over it.
+  git('switch', '-q', 'main');
+  writeFileSync(join(root, 'cache.txt'), 'built\n');
+  git('add', '-f', 'cache.txt');
+  git('commit', '-q', '-m', 'track cache');
+  git('switch', '-q', '-c', 'side', 'HEAD~1');
+  writeFileSync(join(root, 'cache.txt'), 'local\n');
+  stop('git reset --hard main', /writes over `cache\.txt`/);
+  // From a subfolder, with `diff.relative` set, the guard still reads the whole repo.
+  writeFileSync(join(root, '.git', 'info', 'exclude'), 'ignored/\n');
+  const sub = join(root, 'ignored');
+  mkdirSync(sub);
+  git('config', 'diff.relative', 'true');
+  assert.match(check('git reset --hard main', sub)?.what ?? '', /writes over `cache\.txt`/);
+  rmSync(join(root, 'cache.txt'));
+  pass('git reset --hard main', sub);
+  git('update-index', '--assume-unchanged', 'a.txt');
+  assert.match(check('git reset --hard main', sub)?.what ?? '', /uncommitted work/);
+  git('update-index', '--no-assume-unchanged', 'a.txt');
+  git('config', '--unset', 'diff.relative');
+  pass('git reset --hard main');
+  // Forms the guard can't read are refused, never guessed.
+  for (const command of [
+    'git status && git reset --hard main',
+    'echo x >> a.txt; git reset --hard main',
+    'GIT_DIR=x git reset --hard main',
+    'git --work-tree=/srv reset --hard main',
+    'git reset --hard $REF',
+    'git reset --hard ~/x',
+    'git reset --hard main other',
+    'git reset --hard --recurse-submodules main',
+    'git reset --hard no-such-ref',
+    'git reset --hard main -- a.txt',
+    // A `-C` folder the shell expands may be another repo than the one the guard reads.
+    'git -C $OLDPWD reset --hard main',
+    'git -C "$PWD" reset --hard main',
+    'git -C re* reset --hard main',
+    'git -C ~ reset --hard main',
+    'git -C ~/x reset --hard main',
+    'git -C r? reset --hard main',
+    'git -C [r] reset --hard main',
+    'git -C {a,b} reset --hard main',
+    'git -C `pwd` reset --hard main',
+  ]) stop(command, /can't tell/);
+  // A decoy folder named `$OLDPWD`, clean, does not let a reset through elsewhere.
+  const decoyHome = makeTempDir('yokoten-decoy-');
+  const decoy = join(decoyHome, '$OLDPWD');
+  mkdirSync(decoy);
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: decoy });
+  execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'one'], { cwd: decoy });
+  assert.equal(check('git -C $OLDPWD reset --hard main', decoyHome)?.id, 'hard-reset');
+  const unborn = makeMainRepo();
+  assert.equal(check('git reset --hard', unborn)?.id, 'hard-reset');
+  assert.equal(check('git reset --hard', makeTempDir('yokoten-no-repo-'))?.id, 'hard-reset');
+  // The refusal names the safe way to move a branch.
+  git('switch', '-q', 'topic');
+  assert.match(check('git reset --hard main')?.fix ?? '', /git switch -C <branch> <ref>.*git branch -f <branch> <ref>/);
+});
+
+// #1379: a `-C` folder is plain only when the shell keeps it as written, on every system.
+test('guard: a plain -C folder, per system: a backslash is refused, the slash spelling passes (#1379)', () => {
+  const cases: { platform: NodeJS.Platform; folder: string; plain: boolean }[] = [
+    { platform: 'linux', folder: '/tmp/yokoten-reset-1/repo', plain: true },
+    { platform: 'linux', folder: 'repo/sub', plain: true },
+    { platform: 'darwin', folder: '/private/var/folders/x/T/repo', plain: true },
+    // Git Bash on Windows: `C:\Users\x` reaches git as `C:Usersx`, so the native path is not plain.
+    { platform: 'win32', folder: 'C:\\Users\\x\\AppData\\Local\\Temp\\repo', plain: false },
+    { platform: 'win32', folder: 'C:/Users/x/AppData/Local/Temp/repo', plain: true },
+    { platform: 'win32', folder: '/c/Users/x/AppData/Local/Temp/repo', plain: true },
+    { platform: 'win32', folder: 'C:/Users/RUNNER~1/Temp/repo', plain: false },
+  ];
+  for (const { platform, folder, plain } of cases) assert.equal(PLAIN_FOLDER.test(folder), plain, `${platform}: ${folder}`);
 });
 
 // #560: deleting the default branch throws away the line every branch builds on.
