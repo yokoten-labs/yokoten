@@ -7,7 +7,7 @@
 // input: it is read here as data, and never printed back in full.
 
 import type { Config } from './config.ts';
-import { matcher } from './config.ts';
+import { DEFAULTS, matcher } from './config.ts';
 import { type Finding, finding } from './text/message.ts';
 import { GIT_VALUE_OPTIONS } from './guards/bash/read/words.ts';
 
@@ -1629,4 +1629,25 @@ export function noMilestoneFinding(issues: number[]): Finding {
   const named = issues.map((issue) => `#${issue}`).join(', ');
   const which = issues.length === 1 ? `the linked issue ${named} has none` : `none of the linked issues ${named} has one`;
   return finding('pr-milestone', `milestone: none given, and ${which}`, 'add `--milestone <name>`, or set a milestone on the issue');
+}
+
+/**
+ * The problem when a pull request raises the size cap or removes it: the cap only goes down. `before`
+ * and `after` are yokoten.json's text at the base and the head, or null where there is none.
+ * A file that is not JSON is the config check's problem, not this one's.
+ */
+export function checkSizeRatchet(before: string | null, after: string | null): Finding | null {
+  const cap = (text: string | null): number | undefined => {
+    try {
+      const size = text === null ? undefined : (JSON.parse(text) as { size?: { maxLines?: unknown } | null }).size;
+      if (size === undefined || size === null) return Infinity;
+      return typeof size.maxLines === 'number' ? size.maxLines : DEFAULTS.size.maxLines;
+    } catch {
+      return undefined;
+    }
+  };
+  const [old, now] = [cap(before), cap(after)];
+  if (old === undefined || now === undefined || now <= old) return null;
+  const said = now === Infinity ? 'removes the size cap' : `raises the size cap from ${old} to ${now}`;
+  return finding('size', `this pull request ${said}: the cap only goes down`, 'cut code instead, and keep "size.maxLines" in yokoten.json where it was', { file: 'yokoten.json' });
 }

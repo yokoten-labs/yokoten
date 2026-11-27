@@ -8,11 +8,15 @@ import {
   checkBuildOutput,
   checkCodeOwners,
   checkLayout,
+  checkSize,
   codeOwnersPatternMatches,
   foldLayoutHits,
   isBuildOutput,
   isBuildSource,
+  sizeCountedFiles,
 } from '../../src/rules/layout.ts';
+import { isBorrowedFile } from '../../src/run/check.ts';
+import { isCodeFile } from '../../src/run/notes/names.ts';
 import { type Finding, formatFinding } from '../../src/rules/text/message.ts';
 
 test('layout: a folder over the cap is reported once, the root never', () => {
@@ -216,4 +220,86 @@ test('layout: the hits of a repo that has not chosen the cap fold into one note 
   assert.match(note?.fix ?? '', /add `"layout": { "maxEntries": 7 }` to yokoten\.json/);
   assert.equal(foldLayoutHits(hits.slice(0, 1), DEFAULTS)?.what, '1 folder holds more than 7 entries: a/');
   assert.equal(foldLayoutHits([], DEFAULTS), null);
+});
+
+// ---- The project size ----
+
+const sizeReads = { isCode: isCodeFile, isBorrowed: isBorrowedFile };
+const sizeConfig = (size: Partial<typeof DEFAULTS.size> = {}) => ({ size: { ...DEFAULTS.size, ...size } });
+
+test("size: the project's own code counts; tests, benches, vendored, fetched and borrowed code don't", () => {
+  const cases: [string, boolean][] = [
+    ['src/a.ts', true],
+    ['bin/main.ts', true],
+    ['web/app.tsx', true],
+    ['scripts/build.mjs', true],
+    ['src/a.md', false],
+    ['src/a.json', false],
+    ['test/a.ts', false],
+    ['tests/a.ts', false],
+    ['src/__tests__/a.ts', false],
+    ['benches/a.ts', false],
+    ['src/a.test.ts', false],
+    ['src/a.spec.ts', false],
+    ['src/a_test.ts', false],
+    ['vendor/lib/a.ts', false],
+    ['web/node_modules/x/a.js', false],
+    ['src/borrowed/a.ts', false],
+    ['.worktrees/issue-1/src/a.ts', false],
+    ['src/testing/a.ts', true],
+    ['src/latest.ts', true],
+  ];
+  for (const [path, isCounted] of cases) assert.equal(sizeCountedFiles([path], sizeConfig(), sizeReads).length === 1, isCounted, path);
+});
+
+test('size: size.exempt reads folders and globs as layout.exempt does', () => {
+  const files = ['src/a.ts', 'generated/b.ts', 'generated/deep/c.ts', 'crates/one/gen/d.ts', 'crates/one/two/gen/e.ts', 'docs.records/f.ts', 'docsxrecords/g.ts'];
+  const counted = (exempt: string[]) => sizeCountedFiles(files, sizeConfig({ exempt }), sizeReads);
+  assert.deepEqual(counted(['generated/']), ['src/a.ts', 'crates/one/gen/d.ts', 'crates/one/two/gen/e.ts', 'docs.records/f.ts', 'docsxrecords/g.ts']);
+  // `*` is one whole folder, `**` any number of folders; a dot is a dot.
+  assert.deepEqual(counted(['crates/*/gen']), ['src/a.ts', 'generated/b.ts', 'generated/deep/c.ts', 'crates/one/two/gen/e.ts', 'docs.records/f.ts', 'docsxrecords/g.ts']);
+  assert.deepEqual(counted(['crates/**/gen', 'docs.records']), ['src/a.ts', 'generated/b.ts', 'generated/deep/c.ts', 'docsxrecords/g.ts']);
+  // An exempt entry is anchored at the root.
+  assert.deepEqual(counted(['deep']), files);
+});
+
+test('size: no config, a fork, at the cap, near it and over it', () => {
+  const files = ['src/a.ts', 'src/b.ts', 'test/a.test.ts'];
+  const lines: Record<string, number> = { 'src/a.ts': 60, 'src/b.ts': 40, 'test/a.test.ts': 900 };
+  const run = (size: Partial<typeof DEFAULTS.size>, isChosen = true) => {
+    const notes: Finding[] = [];
+    const problems = checkSize(files, (path) => lines[path] ?? 0, sizeConfig(size), { ...sizeReads, isChosen }, notes);
+    return { problems: problems.map(formatFinding), notes: notes.map(formatFinding) };
+  };
+  // No "size" key: never a problem, one note with the count and the way to turn it on.
+  const none = run({ maxLines: 50 }, false);
+  assert.deepEqual(none.problems, []);
+  assert.equal(none.notes.length, 1);
+  assert.match(none.notes[0], /^100 lines of the project's own code; no cap is set/);
+  assert.match(none.notes[0], /add `"size": \{ "maxLines": 50 \}` to yokoten\.json/);
+  // A fork: the count is a note, whatever the cap.
+  const fork = run({ maxLines: 50, fork: true });
+  assert.deepEqual(fork.problems, []);
+  assert.match(fork.notes[0], /^100 lines .*; a fork/);
+  // Well under the cap: nothing. Within 10% of it, or right at it: a note.
+  assert.deepEqual(run({ maxLines: 200 }), { problems: [], notes: [] });
+  assert.deepEqual(run({ maxLines: 112 }), { problems: [], notes: [] });
+  assert.match(run({ maxLines: 110 }).notes[0] ?? '', /^100 lines .*, within 10% of the cap of 110/);
+  const at = run({ maxLines: 100 });
+  assert.deepEqual(at.problems, []);
+  assert.equal(at.notes.length, 1);
+  // Over the cap: one problem with the count, the cap and the biggest files; the fix names fork.
+  const over = run({ maxLines: 99 });
+  assert.deepEqual(over.notes, []);
+  assert.equal(over.problems.length, 1);
+  assert.match(over.problems[0], /^100 lines of the project's own code, over the cap of 99; the biggest: src\/a\.ts \(60\), src\/b\.ts \(40\)/);
+  assert.match(over.problems[0], /Cut code .*"fork": true/);
+  // A repo with no counted code gets nothing at all.
+  assert.deepEqual(checkSize(['README.md'], () => 10, sizeConfig(), { ...sizeReads, isChosen: false }, []), []);
+});
+
+test('size: an over-cap problem names the five biggest files, biggest first', () => {
+  const files = Array.from({ length: 7 }, (_, i) => `src/f${i}.ts`);
+  const [problem] = checkSize(files, (path) => 10 * (Number(/\d/.exec(path)?.[0]) + 1), sizeConfig({ maxLines: 10 }), { ...sizeReads, isChosen: true }, []);
+  assert.match(problem?.what ?? '', /the biggest: src\/f6\.ts \(70\), src\/f5\.ts \(60\), src\/f4\.ts \(50\), src\/f3\.ts \(40\), src\/f2\.ts \(30\)$/);
 });

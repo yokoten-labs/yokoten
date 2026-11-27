@@ -335,6 +335,12 @@ export const RULES = {
     check: 'the commit check and CI count the entries of each folder below the root; changes/ and the folders in yokoten.json "layout.exempt" (paths, or globs with `*` and `**`) may grow',
     docs: guide('the-core-rules'),
   },
+  size: {
+    rule: 'the project\'s own code stays at or under yokoten.json "size.maxLines" lines; tests, benches and vendored code don\'t count',
+    why: 'a project one person wrote stays small enough for one person to read; a cap held only in memory fades',
+    check: 'the commit check and CI count the physical lines of the code files in the index; `check --pr` fails a pull request that raises the cap',
+    docs: guide('the-project-size'),
+  },
   'structural-change': {
     rule: 'a change that moves, renames, splits or deletes files goes in alone (#910)',
     why: 'two changes that restructure the same files collide, and each merge makes the next conflict worse',

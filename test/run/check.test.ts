@@ -1837,3 +1837,40 @@ test('check: an outside repo passes with notes only; the real problems still fai
   assert.equal(capped.status, 1);
   assert.deepEqual(JSON.parse(capped.stdout).findings.map((f: { id: string; file?: string }) => `${f.id} ${f.file}`), ['layout basics/']);
 });
+
+// The project size: the lines are read from the index, so a commit is judged on what it holds.
+test('check: the size cap counts the index copy of each code file, staged and in the tree', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ size: { maxLines: 3 } }));
+  sandbox.write('src/a.ts', 'const a = 1;\nconst b = 2;\nexport { a, b };\nexport const c = 3;');
+  sandbox.write('test/a.test.ts', 'one\ntwo\nthree\nfour\n');
+  sandbox.git('add', '.');
+  const staged = JSON.parse((await sandbox.call(['check', '--staged', '--json'])).stdout);
+  assert.deepEqual(staged.findings.map((f: { id: string }) => f.id), ['size']);
+  assert.match(staged.findings[0].what, /^4 lines of the project's own code, over the cap of 3; the biggest: src\/a\.ts \(4\)$/);
+  // A work tree edit that is not staged does not change the count.
+  sandbox.write('src/a.ts', 'export const a = 1;\n');
+  const tree = await sandbox.call(['check', '--json']);
+  assert.equal(tree.status, 1);
+  assert.match(JSON.parse(tree.stdout).findings.find((f: { id: string }) => f.id === 'size')?.what ?? '', /^4 lines/);
+  sandbox.git('add', '.');
+  assert.equal((await sandbox.call(['check', '--staged'])).status, 0, 'one line is within the cap');
+});
+
+test('check --pr: a pull request that raises the size cap fails', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ size: { maxLines: 5000 } }));
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const base = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  sandbox.write('yokoten.json', JSON.stringify({ size: { maxLines: 5100 } }));
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'head');
+  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  const file = join(sandbox.home, 'event.json');
+  const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nNo changelog: a test\n';
+  writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
+  const result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file } });
+  assert.equal(result.status, 1);
+  assert.match(flat(result.stderr), /raises the size cap from 5000 to 5100: the cap only goes down/);
+});

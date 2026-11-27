@@ -35,6 +35,7 @@ import {
   checkBuildOutput,
   checkCodeOwners,
   checkLayout,
+  checkSize,
 } from '../../../src/rules/layout.ts';
 import {
   DOCS_URL,
@@ -62,6 +63,7 @@ import {
   checkIssueTitle,
   checkOwnedTier,
   checkPullRequest,
+  checkSizeRatchet,
   largeDiff,
   longSentenceNote,
 } from '../../../src/rules/pr.ts';
@@ -193,6 +195,8 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   add(scanText('see /home/alice/x', { file: 'post' })[0]);
   add(addedIgnores('a.ts', `// ${['yokoten', 'ignore'].join('-')} secret: a fixture`, new Set([1]), {})[0]);
   found.push(...checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS));
+  found.push(...checkSize(['src/a.ts'], () => 6, { size: { maxLines: 5, exempt: [], fork: false } }, { isCode: () => true, isBorrowed: () => false, isChosen: true }, []));
+  add(checkSizeRatchet('{ "size": { "maxLines": 5 } }', '{}'));
   found.push(...checkBuildOutput([{ path: 'dist/a.js', binary: false }, { path: 'a.bin', binary: true }], DEFAULTS));
   found.push(...checkCodeOwners(['src/app.ts'], 'src/gone.ts @lead\n'));
   found.push(...checkPullRequest({ title: `Bad title (#1) ${'x'.repeat(70)}.`, body: '## Why\n\n', files: ['src/a.ts', 'kit/x'], labels: [], milestone: null }, DEFAULTS));

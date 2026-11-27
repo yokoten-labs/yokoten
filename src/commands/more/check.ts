@@ -25,7 +25,7 @@ import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationTok
 import { type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding, formatFindingMarks, isWarningFinding } from '../../rules/text/message.ts';
 import { shownValue } from '../../rules/text/terminal.ts';
-import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
+import { addedLinesByFile, changedLines, checkIssueLabels, checkIssueTitle, checkOwnedTier, checkPullRequest, checkSizeRatchet, isChangeFile, largeDiff, longSentenceNote, longSentences, madeWithModelNote, parseMadeWith, parseProvenance, provenanceFindings, splitForDependabot } from '../../rules/pr.ts';
 import { BOARD_AGENT_FILE, parseBoardAgent, readBoardWorktrees } from '../kanban/agents.ts';
 import { parseChange } from '../../run/changelog.ts';
 import { borrowedFiles, type BorrowedChange, type BorrowedWatch, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, type SyncOutcome, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../../run/check.ts';
@@ -333,6 +333,13 @@ async function runMode(invocation: Invocation, mode: CheckMode, root: string, co
       for (const file of pr.files.filter(isChangeFile)) {
         const text = readAtHead(file);
         if (text !== null) problems.push(...parseChange(file, text).problems);
+      }
+      // The size cap only goes down: raising or removing it in yokoten.json fails.
+      if (pr.files.includes('yokoten.json')) {
+        const isAtBase = readGit(root, ['ls-tree', '--name-only', pr.base, '--', 'yokoten.json'], { env }).toString('utf8').trim() !== '';
+        const atBase = isAtBase ? readGit(root, ['show', `${pr.base}:yokoten.json`], { env }).toString('utf8') : null;
+        const raised = checkSizeRatchet(atBase, readAtHead('yokoten.json'));
+        if (raised) problems.push(raised);
       }
       // Owned paths set the lowest tier, from the base branch's CODEOWNERS.
       const owned = checkOwnedTier(pr, readCodeOwners(root, pr.base, env));

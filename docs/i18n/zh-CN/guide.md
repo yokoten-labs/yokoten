@@ -1063,6 +1063,7 @@ AGENTS.md 里，它就只是个愿望。把这些程序写进 `yokoten.json`，�
 | 设置 | 该怎么写 | 默认值 |
 |------|----------|--------|
 | `layout` | `{ "maxEntries": 7, "exempt": ["docs/records"] }`：一个大于 0 的整数，加一串文件夹或通配符 | 7，没有例外的文件夹 |
+| `size` | `{ "maxLines": 5000, "exempt": ["generated"], "fork": false }`：一个大于 0 的整数，一串文件夹或通配符，加 true 或 false | 没有上限，行数只是一条提醒 |
 | `tests` | 一串通配符 | `*.test.*`、`*.spec.*`、`*_test.go`、`test/**`、`tests/**` |
 | `leadOnly` | 一串通配符 | 规则、agent 配置、钩子和 CI |
 | `privacy` | `{ "allow": [], "skip": [], "utc": true, "output": "run" }`：两串文字，一个 true 或 false，再加 `"run"` 或 `"stop"` | 跳过锁文件，要求 UTC，照常跑 |
@@ -1381,6 +1382,9 @@ yokoten learn --upstream "the guard let git push --tags through" --area hook --f
 |----|--------|--------|
 | `layout.maxEntries` | `7` | 一个文件夹最多放几项（第 10 条核心规则） |
 | `layout.exempt` | 无 | 可以超过上限的文件夹，见[可以变多的文件夹](#可以变多的文件夹) |
+| `size.maxLines` | `5000` | 项目自己的代码最多几行，见[项目大小](#项目大小) |
+| `size.exempt` | 无 | 代码不算行数的文件夹，写法和 `layout.exempt` 一样 |
+| `size.fork` | `false` | 分叉的仓库写 `true`：行数只是提醒，不算问题 |
 | `tests` | `*.test.*`、`*.spec.*`、`*_test.go`、`test/**`、`tests/**` | 哪些算测试文件，修复任务不能改 |
 | `leadOnly` | 规则、agent 配置、`.githooks/**`、`.github/**`、项目里那份 yokoten 副本 `.yokoten/**`、`.yokotenignore` | worker 不能改的文件 |
 | `privacy.allow` | 无 | 隐私检查放行的原样字符串，比如公开的客服邮箱，或者私密词表里这个项目自己的名字 |
@@ -1412,6 +1416,10 @@ Rust 的 workspace 里，一条就能管到每个 crate：
 ```
 
 哪条通配符一个文件夹都没对上，`check` 和 `doctor` 会提醒一句，过时的条目就看得见了。
+
+#### 项目大小
+
+仓库在 yokoten.json 里写 `size`，就定下了行数上限。之后提交检查和 CI 会数索引里项目自己代码文件的物理行数。测试、基准、`vendor/`、下载来的文件夹、`src/borrowed/` 和 `size.exempt` 里的文件夹都不算。超过 `size.maxLines` 算问题，离上限不到 10% 是一条提醒。分叉的仓库写 `"fork": true`，行数只是提醒。没写这个键时，`check` 只用一条提醒报出行数。拉取请求要是调高或删掉上限，`check --pr` 会让它失败：上限只降不升。已经超过 5000 行的项目，先写下真实行数，再一步步往下调。
 
 环境变量：
 
