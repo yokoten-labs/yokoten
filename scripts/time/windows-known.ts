@@ -406,9 +406,7 @@ export const SLOW_RATIO = 0.75;
 export type SlowWaiver = { reason: string; issue: number; expires: string };
 
 /** Files over SLOW_RATIO that wait for a split. A waiver may only go: it fails once its file is under the limit, or after its expiry. */
-export const SLOW_WAIVERS: Record<string, SlowWaiver> = {
-  'test/setup/init.test.ts': { reason: 'recorded at the cap; it still has to be split by area, like test/setup/install/', issue: 1249, expires: '2026-11-15' },
-};
+export const SLOW_WAIVERS: Record<string, SlowWaiver> = {};
 
 /**
  * The problems with a times table: a file whose last time is over SLOW_RATIO of the cap, named
