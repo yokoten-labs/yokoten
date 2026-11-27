@@ -46,7 +46,7 @@ test('required checks: a name it cannot work out is a prefix, never a warning (#
   included:
     name: pack \${{ inputs.kind }}
 `;
-  assert.deepEqual(workflowCheckNames(unsure), { names: [], prefixes: ['call / ', 'dynamic (', 'pack '] });
+  assert.deepEqual(workflowCheckNames(unsure), { names: [], prefixes: ['call / ', 'call (', 'dynamic (', 'pack '] });
   assert.deepEqual(unreportedChecks(['call / tests', 'dynamic (a)', 'pack zip'], [unsure]), []);
 });
 
@@ -64,4 +64,34 @@ test('required checks: a pull request that renames a required job drops it (#137
   assert.deepEqual(droppedChecks(['ci', 'Lint: all'], [WORKFLOW], [WORKFLOW]), [], 'no change drops nothing');
   // A name no job reported before is doctor's to say, not the pull request's.
   assert.deepEqual(droppedChecks(['gone'], [WORKFLOW], [renamed]), []);
+});
+
+test('required checks: a quoted " #", a block scalar and a matrix caller give no false note (#1376)', () => {
+  const tricky = `jobs:
+  one:
+    name: "Build #1" # the comment goes, the quoted text stays
+  two:
+    name: 'it''s #2'
+  three:
+    name: >-
+      folded
+  call:
+    uses: ./.github/workflows/reuse.yml
+    strategy:
+      matrix:
+        v: [a]
+`;
+  assert.deepEqual(workflowCheckNames(tricky), { names: ['Build #1', "it's #2"], prefixes: ['', 'call / ', 'call ('] });
+  // Positive control: without the block scalar, an unknown name is still caught.
+  assert.deepEqual(unreportedChecks(['Build #1', 'call (a) / tests', 'gone'], [tricky.replace(/ {2}three:[\s\S]*?(?= {2}call:)/, '')]), ['gone']);
+});
+
+test('required checks: a long unclosed expression in a name reads in linear time (#1376)', () => {
+  const name = `\${{${' '.repeat(50_000)}x`;
+  const started = performance.now();
+  const checks = workflowCheckNames(`jobs:\n  slow:\n    name: ${name}\n    runs-on: ubuntu-latest\n`);
+  assert.ok(performance.now() - started < 1000, 'no catastrophic backtracking');
+  assert.deepEqual(checks, { names: [name], prefixes: [] });
+  const quotes = workflowCheckNames(`jobs:\n  q:\n    name: x${"'".repeat(50_000)}\n`);
+  assert.equal(quotes.names.length, 1);
 });

@@ -26,6 +26,22 @@ const unquote = (text: string): string => {
   return value;
 };
 
+/** A line without its YAML comment: a `#` after a space, outside a quoted value. */
+function uncommented(line: string): string {
+  let quote = '';
+  let before = ''; // the last non-space character outside quotes: a quote opens a value only after one of `:-[,{`
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (quote) {
+      if (char === "'" && quote === "'" && line[i + 1] === "'") i++; // `''` is a quote inside '...'
+      else if (char === quote) quote = '';
+    } else if ((char === '"' || char === "'") && ':-[,{'.includes(before)) quote = char;
+    else if (char === '#' && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+    if (!quote && !/\s/.test(char)) before = char;
+  }
+  return line;
+}
+
 /** The lines under `lines[start]` that sit deeper than it, up to the first that does not. */
 function blockUnder(lines: string[], start: number): string[] {
   const indent = indentOf(lines[start]);
@@ -76,26 +92,31 @@ function matrixRows(matrix: [string, string[]][]): Record<string, string>[] | nu
 
 /** The check names the jobs of one workflow report (#1376). */
 export function workflowCheckNames(workflow: string): WorkflowChecks {
-  const lines = workflow.split(/\r?\n/).map((line) => line.replace(/(^|\s)#.*$/, '').trimEnd());
+  const lines = workflow.split(/\r?\n/).map((line) => uncommented(line).trimEnd());
   const result: WorkflowChecks = { names: [], prefixes: [] };
   const top = lines.findIndex((line) => /^jobs:\s*$/.test(line));
   if (top === -1) return result;
   for (const job of keysOf(blockUnder(lines, top))) {
     const keys = new Map(keysOf(job.under).map((entry) => [entry.key, entry]));
     const name = keys.has('name') ? unquote(keys.get('name')?.value ?? '') : job.key;
+    if (/^[>|]/.test(name)) {
+      result.prefixes.push(''); // a block scalar name: unsure, so never a warning
+      continue;
+    }
     if (keys.has('uses')) {
-      result.prefixes.push(`${name} / `);
+      result.prefixes.push(`${name} / `, `${name} (`); // a matrix caller reports `caller (v) / called`
       continue;
     }
     const strategy = keys.get('strategy');
     const matrixKey = strategy ? keysOf(strategy.under).find((entry) => entry.key === 'matrix') : undefined;
     const matrix = matrixKey ? readMatrix(matrixKey.value, matrixKey.under) : [];
     const rows = matrix && matrix.length ? matrixRows(matrix) : matrix ? [] : null;
-    const expressions = [...name.matchAll(/\$\{\{\s*([^}]*?)\s*\}\}/g)];
+    // Not `\s*([^}]*?)\s*`: those overlap, and an unclosed `${{` and many spaces take cubic time.
+    const expressions = [...name.matchAll(/\$\{\{([^}]*)\}\}/g)].map((found) => found[1].trim());
     if (!expressions.length && rows && !rows.length) result.names.push(name);
     else if (!expressions.length && rows) result.names.push(...rows.map((row) => `${name} (${Object.values(row).join(', ')})`));
     else if (!expressions.length) result.prefixes.push(`${name} (`);
-    else if (rows?.length && expressions.every((found) => /^matrix\.[\w-]+$/.test(found[1]) && found[1].slice(7) in rows[0])) {
+    else if (rows?.length && expressions.every((found) => /^matrix\.[\w-]+$/.test(found) && found.slice(7) in rows[0])) {
       result.names.push(...rows.map((row) => name.replace(/\$\{\{\s*matrix\.([\w-]+)\s*\}\}/g, (_, key: string) => row[key] ?? '')));
     } else result.prefixes.push(name.slice(0, name.indexOf('${{')));
   }

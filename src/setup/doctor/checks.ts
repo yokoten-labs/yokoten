@@ -390,14 +390,14 @@ export function marksNamingHere(env: Env, config: Pick<Config, 'privacy'>, root:
     return []; // an unreadable file: the private-marks check says so
   }
   if (!lines.length) return [];
-  const allowed = new Set([...config.privacy.allow.map((mark) => mark.toLowerCase()), ...machineAllowed(env, root).allow]);
+  const allowed = new Set([...config.privacy.allow.map((mark) => mark.toLowerCase()), ...machineAllowed(env, root).allow.map((mark) => mark.toLowerCase())]);
   return marksNamingProject(lines.filter((entry) => !allowed.has(entry.mark)), projectNames(root, env));
 }
 
 /** The note for one mark that names the project (#1378): its line and the kinds of name it hit, never the mark. */
 export function markNameFinding(hit: Pick<MarkLine, 'file' | 'line'> & { kinds: ProjectName['kind'][] }): Finding {
   const kinds = hit.kinds.map((kind) => (kind === 'repo' ? 'the repo name' : kind === 'org' ? 'the org name' : `a ${kind} name`));
-  const what = `line ${hit.line} of ${hit.file === 'private-marks' ? 'your private-marks file' : 'the file YOKOTEN_PRIVATE_MARKS names'} is ${kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} and ${kinds.at(-1)}` : kinds[0]}, or starts it, so once the repo is public the checks refuse every file that names the project`;
+  const what = `line ${hit.line} of ${hit.file === 'private-marks' ? 'your private-marks file' : 'the file YOKOTEN_PRIVATE_MARKS names'} is ${kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} and ${kinds.at(-1)}` : kinds[0]}, or starts it, so once the repo is public the checks refuse files that name the project: in other folders, and here too unless it is this repo's own name`;
   return finding('mark-names-project', what, 'allow it in this repo with `yokoten marks allow <mark> --here`, or remove that line from the file');
 }
 
