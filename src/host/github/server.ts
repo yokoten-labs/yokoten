@@ -65,6 +65,19 @@ type Ruleset = { id?: number; target?: string; enforcement?: string; conditions?
 /** The id GitHub gives the built-in "Repository admin" role in a ruleset's bypass list (#537). */
 const REPOSITORY_ADMIN_ROLE_ID = 5;
 
+/** The check names that the `required_status_checks` rules ask for. */
+const checkNamesOf = (rules: Rule[]): string[] =>
+  rules.filter((r) => r.type === 'required_status_checks').flatMap((r) => ((r.parameters?.required_status_checks ?? []) as { context?: string }[]).map((c) => c.context ?? '')).filter(Boolean);
+
+/** The check names the rulesets on `branch` of `repo` require (#1376), or why gh can't read them. */
+export function readRequiredChecks(gh: Gh, repo: string, branch: string): string[] | Unread {
+  try {
+    return checkNamesOf(JSON.parse(gh(['api', `repos/${repo}/rules/branches/${encodeURIComponent(branch)}`]) || '[]') ?? []);
+  } catch (err) {
+    return unread(err);
+  }
+}
+
 /** The server settings of `repo` ("owner/name"), or why gh can't read the repo at all. */
 export function readServer(gh: Gh, repo: string): ServerSettings | Unread {
   const api = <T>(path: string): T => JSON.parse(gh(['api', path]) || 'null') as T;
@@ -107,7 +120,7 @@ export function readServer(gh: Gh, repo: string): ServerSettings | Unread {
       pullRequest: pr.length > 0,
       codeOwnerReview: pr.some((p) => p.require_code_owner_review === true),
       mergeMethods: [...new Set(pr.flatMap((p) => (Array.isArray(p.allowed_merge_methods) ? (p.allowed_merge_methods as string[]) : [])))],
-      requiredChecks: of('required_status_checks').flatMap((r) => ((r.parameters?.required_status_checks ?? []) as { context?: string }[]).map((c) => c.context ?? '')).filter(Boolean),
+      requiredChecks: checkNamesOf(rules),
       noForcePush: of('non_fast_forward').length > 0,
       noDeletion: of('deletion').length > 0,
       approvals: old === null ? (ruled >= 1 ? ruled : null) : Math.max(ruled, old),

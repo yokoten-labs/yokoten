@@ -13,7 +13,7 @@ import { DEFAULTS } from '../../../src/rules/config.ts';
 import { cleanOlderInstall, hookRunsYokoten, launcherDir, PROFILE_LINE, setUpLauncher } from '../../../src/setup/install.ts';
 import { sealManaged, writeManaged } from '../../../src/setup/files.ts';
 import { doctor, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks } from '../../../src/setup/doctor/index.ts';
-import { deskFenceCheck, FENCE_PROGRAMS, HOME_FOLDER_NOTE, mergeTimeZones, WORK_FOLDER_ENTRIES, WORK_FOLDER_NOTE, workFolderNote } from '../../../src/setup/doctor/checks.ts';
+import { deskFenceCheck, FENCE_PROGRAMS, markNameFinding, marksNamingHere, projectNames, HOME_FOLDER_NOTE, mergeTimeZones, WORK_FOLDER_ENTRIES, WORK_FOLDER_NOTE, workFolderNote } from '../../../src/setup/doctor/checks.ts';
 import { road, ROAD } from '../../../src/setup/road.ts';
 
 /** A screen with each wrapped row on one line again: the rows wrap at 80 columns under their text (#1115). */
@@ -745,4 +745,32 @@ test('deskFenceCheck in full doctor: a note with the install command, never a fa
   assert.equal(full.ok, fine.ok, 'a note never fails doctor');
   assert.ok(full.report.notes?.some((found) => found.id === 'desk-fence'));
   assert.ok(!fine.report.notes?.some((found) => found.id === 'desk-fence'));
+});
+
+// #1378: a mark that names the repo, its org or a crate is noted by line, never by value.
+test('doctor: a mark that names the repo, a crate or the org is noted by its line, never shown (#1378)', () => {
+  const sandbox = makeSandbox();
+  const project = ['quiet', 'vale'].join('');
+  const org = ['harbor', 'works'].join('');
+  const marks = join(sandbox.home, '.config', 'yokoten', 'private-marks');
+  mkdirSync(dirname(marks), { recursive: true });
+  const config = { privacy: { ...DEFAULTS.privacy } };
+  const notesOf = () => marksNamingHere(sandbox.env, config, sandbox.repo).map(markNameFinding);
+  // No remote, no manifest: no name to compare with, and nothing fails.
+  writeFileSync(marks, `# mine\n${project}\n`);
+  assert.deepEqual(projectNames(sandbox.repo, sandbox.env), []);
+  assert.deepEqual(notesOf(), []);
+  sandbox.git('remote', 'add', 'origin', `https://github.com/${org}-dev/${project}.git`);
+  sandbox.write('crates/engine/Cargo.toml', `[package]\nname = "${project}-engine"\nversion = "0.1.0"\n`);
+  sandbox.write('web/package.json', JSON.stringify({ name: `@${org}/site` }));
+  sandbox.write('broken/package.json', '{ not json');
+  sandbox.git('add', '.');
+  assert.deepEqual(projectNames(sandbox.repo, sandbox.env).map((one) => one.kind), ['repo', 'org', 'crate', 'package', 'package']);
+  writeFileSync(marks, `# mine\n${project}\n${org}\nunrelatedword\n`);
+  const notes = notesOf();
+  assert.deepEqual(notes.map((note) => note.what.split(',')[0]), ['line 2 of your private-marks file is the repo name and a crate name', 'line 3 of your private-marks file is the org name and a package name']);
+  assert.equal(notes[0].fix, 'allow it in this repo with `yokoten marks allow <mark> --here`, or remove that line from the file');
+  assert.ok(!JSON.stringify(notes).includes(project) && !JSON.stringify(notes).includes(org), 'the note never holds the mark');
+  // A mark allowed here has its way out already.
+  assert.equal(marksNamingHere(sandbox.env, { privacy: { ...DEFAULTS.privacy, allow: [project.toUpperCase()] } }, sandbox.repo).length, 1);
 });

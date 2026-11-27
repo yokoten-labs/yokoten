@@ -22,6 +22,7 @@ import { checkCommand } from '../../src/rules/guards/index.ts';
 import { formatFinding, isFailingFinding } from '../../src/rules/text/message.ts';
 import {
   describeMark,
+  marksNamingProject,
   foldLine,
   foldText,
   hasMark,
@@ -2961,4 +2962,20 @@ test('scanText: a users-folder path in text that leaves the machine is a hit; th
   // A reason in .yokotenignore keeps it listed and lets it pass.
   const ignored = scanText('C:\\Users\\alice\\x', { file: 'post', ignores: [{ rule: 'user-folder', reason: 'a made-up home in an example' }] }).find((hit) => hit.id === 'user-folder');
   assert.equal(ignored !== undefined && !isFailingFinding(ignored), true);
+});
+
+// #1378: a mark that is the project's name is refused in bulk once the repo is public; doctor notes it first.
+test('privacy: a mark equal to the repo, or a prefix at a separator of a crate or the org, names the project (#1378)', () => {
+  const project = ['quiet', 'vale'].join('');
+  const names = [
+    { kind: 'repo' as const, name: `${project}-app` },
+    { kind: 'org' as const, name: `${project}_Labs` },
+    { kind: 'crate' as const, name: `${project}-core` },
+    { kind: 'repo' as const, name: 'harbor' },
+  ];
+  const hits = marksNamingProject([{ mark: project }, { mark: 'Harbor' }, { mark: 'unrelated' }, { mark: 'quiet' }, { mark: `${project}-core-x` }], names);
+  assert.deepEqual(hits, [{ mark: project, kinds: ['repo', 'org', 'crate'] }, { mark: 'Harbor', kinds: ['repo'] }]);
+  // Never a part inside a name: `quiet` is not a word of `quietvale-app`.
+  assert.deepEqual(marksNamingProject([{ mark: 'vale' }, { mark: 'app' }], names), []);
+  assert.deepEqual(marksNamingProject([{ mark: project }], []), [], 'no names, no note');
 });

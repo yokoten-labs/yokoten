@@ -6,8 +6,9 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { type Config, type Env } from '../../rules/config.ts';
 import { type Finding, finding, type RuleId } from '../../rules/text/message.ts';
-import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, notUtc, ownMarks, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
-import { readGit } from '../../run/check.ts';
+import { hideHome, homeIn, homeOf, loadMarks, machineAllowed, marksNamingProject, notUtc, ownMarks, type ProjectName, repoKey, sameNameMarks, skipsOwnName } from '../../rules/privacy.ts';
+import { type MarkLine, placedMarks } from '../../rules/privacy/marks.ts';
+import { gitConfig, readGit } from '../../run/check.ts';
 import { findProgram } from '../../platform/process.ts';
 import * as antigravity from '../../agents/runtimes/small/antigravity.ts';
 import { enabledPluginChannel, hasPlugin, hasProjectHook, hasSessionDoctor, hasUserGuard, type PluginChannel, readInstalledPlugin, userDir, userGuardMisses, userSettingsFile, userSettingsProblem } from '../../agents/runtimes/claude-code.ts';
@@ -318,6 +319,86 @@ export function allowedMarkCount(env: Env, config: Pick<Config, 'privacy'>, root
   const machine = machineAllowed(env, root, key);
   const ownName = skipsOwnName(env, config.privacy) ? sameNameMarks(marks, key).length : 0;
   return { project: ownMarks(marks, config.privacy.allow).length, machine: ownMarks(marks, machine.allow).length, ownName, unsure: machine.unsure };
+}
+
+/** The manifests a project name is read from (#1378), with the kind of name each holds. */
+const MANIFESTS: [string, ProjectName['kind']][] = [['Cargo.toml', 'crate'], ['package.json', 'package'], ['pyproject.toml', 'package'], ['go.mod', 'module']];
+/** The most manifests read: enough for a workspace, and a bound on a huge repo. */
+const MOST_MANIFESTS = 200;
+
+/** The `name = "..."` of a TOML table, the first of `tables` the text has. */
+const tomlName = (text: string, tables: string[]): string[] => {
+  for (const table of tables) {
+    const body = text.split(new RegExp(`^\\[${table.replace('.', '\\.')}\\][ \\t]*$`, 'm'))[1]?.split(/^\[/m)[0];
+    const name = body && /^name[ \t]*=[ \t]*["']([^"'\n]+)["']/m.exec(body)?.[1];
+    if (name) return [name];
+  }
+  return [];
+};
+
+/** The names in one manifest. A scoped npm name gives its scope and its name. Text that can't be read gives none. */
+function manifestNames(file: string, text: string): string[] {
+  if (file.endsWith('Cargo.toml')) return tomlName(text, ['package']);
+  if (file.endsWith('pyproject.toml')) return tomlName(text, ['project', 'tool.poetry']);
+  if (file.endsWith('go.mod')) return [/^module[ \t]+(\S+)/m.exec(text)?.[1].replace(/\/v\d+$/, '').split('/').pop() ?? ''].filter(Boolean);
+  try {
+    const name = (JSON.parse(text) as { name?: unknown } | null)?.name;
+    return typeof name === 'string' ? name.replace(/^@/, '').split('/').filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The names this project goes by (#1378): the repo and its owner from the origin remote, and
+ * the crate, package and module names in the manifests git tracks. A source git can't read
+ * gives no name: nothing fails.
+ */
+export function projectNames(root: string, env: Env): ProjectName[] {
+  const names: ProjectName[] = [];
+  const remote = /^(?:[a-z][\w+.-]*:\/\/[^/]+\/|[^@/\s]+@[^:/\s]+:)(.+?)(?:\.git)?\/?$/i.exec(gitConfig(root, 'remote.origin.url', env).trim())?.[1].split('/') ?? [];
+  if (remote.length >= 2) names.push({ kind: 'repo', name: remote[remote.length - 1] }, { kind: 'org', name: remote[remote.length - 2] });
+  let files: string[] = [];
+  try {
+    files = readGit(root, ['ls-files', '-z', '--', ...MANIFESTS.map(([file]) => `:(glob)**/${file}`)], { env }).toString('utf8').split('\0').filter(Boolean).slice(0, MOST_MANIFESTS);
+  } catch {
+    return names; // git can't list the files: the remote's names are still worth a look
+  }
+  for (const file of files) {
+    const kind = MANIFESTS.find(([name]) => file === name || file.endsWith(`/${name}`))?.[1];
+    let text = '';
+    try {
+      text = readFileSync(join(root, file), 'utf8');
+    } catch {
+      continue; // a file deleted but not yet staged
+    }
+    if (kind) names.push(...manifestNames(file, text).map((name) => ({ kind, name })));
+  }
+  return names;
+}
+
+/**
+ * The private marks that name this project (#1378): equal to, or a prefix of, the repo, its
+ * org, or a crate or package name. A mark allowed here is left out. Each hit keeps its mark
+ * for the caller to match; a note made from it says the place and the kinds, never the mark.
+ */
+export function marksNamingHere(env: Env, config: Pick<Config, 'privacy'>, root: string): (MarkLine & { kinds: ProjectName['kind'][] })[] {
+  let lines: MarkLine[];
+  try {
+    lines = placedMarks(env);
+  } catch {
+    return []; // an unreadable file: the private-marks check says so
+  }
+  if (!lines.length) return [];
+  const allowed = new Set([...config.privacy.allow.map((mark) => mark.toLowerCase()), ...machineAllowed(env, root).allow]);
+  return marksNamingProject(lines.filter((entry) => !allowed.has(entry.mark)), projectNames(root, env));
+}
+
+/** The note for one mark that names the project (#1378): its line and the kinds of name it hit, never the mark. */
+export function markNameFinding(hit: Pick<MarkLine, 'file' | 'line'> & { kinds: ProjectName['kind'][] }): Finding {
+  const kinds = hit.kinds.map((kind) => (kind === 'repo' ? 'the repo name' : kind === 'org' ? 'the org name' : `a ${kind} name`));
+  const what = `line ${hit.line} of ${hit.file === 'private-marks' ? 'your private-marks file' : 'the file YOKOTEN_PRIVATE_MARKS names'} is ${kinds.length > 1 ? `${kinds.slice(0, -1).join(', ')} and ${kinds.at(-1)}` : kinds[0]}, or starts it, so once the repo is public the checks refuse every file that names the project`;
+  return finding('mark-names-project', what, 'allow it in this repo with `yokoten marks allow <mark> --here`, or remove that line from the file');
 }
 
 /** What doctor says when an agent can't filter command output, and how to opt in to the stop (#390). */

@@ -818,6 +818,46 @@ test('redact: a long line is cut only at a space or tab, never inside a value (#
   assert.ok(result.stdout === `${'y'.repeat((1 << 20) + 10)} <mark>`, `ends with: ${result.stdout.slice(-20)}`);
 });
 
+// #1376: a pull request that renames a required job can never merge; check --pr says so first.
+test('check --pr <number>: a renamed required job is a note, and a ruleset gh cannot read is not checked (#1376)', async () => {
+  const sandbox = makeSandbox();
+  const workflow = (job: string) => `on: pull_request\njobs:\n  ${job}:\n    runs-on: ubuntu-latest\n`;
+  sandbox.write('.github/workflows/ci.yml', workflow('ci'));
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const base = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  sandbox.write('.github/workflows/ci.yml', workflow('build'));
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'head');
+  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
+  const bin = join(sandbox.home, 'bin');
+  mkdirSync(bin);
+  const pr = { title: 'ci: rename the job', body: 'tier: B\nCloses #1\n', labels: [], milestone: null, author: { login: 'octo' }, baseRefName: 'main', baseRefOid: base, headRefOid: head, headRefName: 'b' };
+  const answer = (rules: unknown) =>
+    writeFileSync(
+      join(bin, 'gh'),
+      `#!/usr/bin/env node
+const words = process.argv.slice(2);
+if (words.slice(0, 3).join(' ') === 'pr view 12') { console.log(${JSON.stringify(JSON.stringify(pr))}); process.exit(0); }
+if (words[0] === 'api' && words[1] === 'repos/octo/app/rules/branches/main' && ${JSON.stringify(rules !== null)}) { console.log(${JSON.stringify(JSON.stringify(rules))}); process.exit(0); }
+console.error('gh: Not Found (HTTP 404)'); process.exit(1);
+`,
+      { mode: 0o755 },
+    );
+  const extra = { PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: '' };
+  const notesOf = async () => (JSON.parse((await sandbox.call(['check', '--pr', '--all', '12', '--json'], { extra })).stdout).notes as { id: string; what: string }[]).filter((note) => note.id === 'required-check-jobs');
+  // Positive control: the ruleset requires "ci", and the pull request renames that job.
+  answer([{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'ci' }] } }]);
+  assert.deepEqual((await notesOf()).map((note) => note.what), ['the ruleset requires the check "ci", and after this pull request no job reports it, so it can\'t merge']);
+  answer([{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'build' }] } }]);
+  assert.deepEqual(await notesOf(), [], 'a required name the head still reports');
+  answer(null);
+  const unread = await notesOf();
+  assert.equal(unread.length, 1);
+  assert.match(unread[0].what, /^this pull request changes a workflow, and its required check names were not checked: /);
+});
+
 // #377: a repo without CI checks a pull request by its number, read through gh.
 test('check --pr <number>: reads the pull request through gh and checks it with the commits here (#377)', async () => {
   const sandbox = makeSandbox();
@@ -953,6 +993,18 @@ test('marks add, marks and marks remove: one value from stdin, never in stdout o
   assert.equal(removed.stdout, 'yokoten marks · removed the mark from your private marks\n');
   assert.ok(!marks().includes(HAND_MARK));
   assert.match((await call(['marks', 'remove'], HAND_MARK)).stdout, /not in your private marks, so nothing changed/);
+  assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
+});
+
+test('marks add: in a repo, a mark that is the repo name gets a note by line, never the mark (#1378)', async () => {
+  const { sandbox, said, call } = marksSandbox();
+  sandbox.git('remote', 'add', 'origin', `https://github.com/octo/${HAND_MARK}.git`);
+  const added = await call(['marks', 'add'], `${HAND_MARK}\n`);
+  assert.equal(added.status, 0, added.stderr);
+  assert.match(flat(added.stdout), /note +line \d+ of your private-marks file is the repo name, or starts it/);
+  assert.match(flat(added.stdout), /yokoten marks allow <mark> --here/);
+  const other = await call(['marks', 'add'], `${OTHER}\n`);
+  assert.equal(other.stdout, 'yokoten marks · added the mark to your private marks (not shown)\n', 'an unrelated mark gets no note');
   assert.ok(!said.some((text) => VALUES.test(text)), 'no output holds a mark');
 });
 
