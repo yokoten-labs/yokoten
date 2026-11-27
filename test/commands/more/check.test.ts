@@ -831,21 +831,23 @@ test('check --pr <number>: a renamed required job is a note, and a ruleset gh ca
   sandbox.git('commit', '-qm', 'head');
   const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
   sandbox.git('remote', 'add', 'origin', 'https://github.com/octo/app.git');
-  const bin = join(sandbox.home, 'bin');
-  mkdirSync(bin);
   const pr = { title: 'ci: rename the job', body: 'tier: B\nCloses #1\n', labels: [], milestone: null, author: { login: 'octo' }, baseRefName: 'main', baseRefOid: base, headRefOid: head, headRefName: 'b' };
-  const answer = (rules: unknown) =>
-    writeFileSync(
-      join(bin, 'gh'),
-      `#!/usr/bin/env node
-const words = process.argv.slice(2);
-if (words.slice(0, 3).join(' ') === 'pr view 12') { console.log(${JSON.stringify(JSON.stringify(pr))}); process.exit(0); }
-if (words[0] === 'api' && words[1] === 'repos/octo/app/rules/branches/main' && ${JSON.stringify(rules !== null)}) { console.log(${JSON.stringify(JSON.stringify(rules))}); process.exit(0); }
-console.error('gh: Not Found (HTTP 404)'); process.exit(1);
-`,
-      { mode: 0o755 },
-    );
-  const extra = { PATH: `${bin}:${process.env.PATH}`, GITHUB_REPOSITORY: '' };
+  // A gh first on PATH, on each system (issue #1068): the pull request and the ruleset arrive as
+  // files, as data; with no ruleset file, the rules call fails as gh does for a ruleset it cannot read.
+  const prFile = join(sandbox.home, 'gh-pr.json');
+  const rulesFile = join(sandbox.home, 'gh-rules.json');
+  writeFileSync(prFile, JSON.stringify(pr));
+  const program = writeNodeProgram(
+    join(sandbox.home, 'bin'),
+    'gh',
+    `const { existsSync, readFileSync } = process.getBuiltinModule('node:fs');
+if (args.slice(0, 3).join(' ') === 'pr view 12') { process.stdout.write(readFileSync(process.env.YOKOTEN_TEST_GH_PR, 'utf8') + '\\n'); process.exit(0); }
+const rules = process.env.YOKOTEN_TEST_GH_RULES;
+if (args[0] === 'api' && args[1] === 'repos/octo/app/rules/branches/main' && existsSync(rules)) { process.stdout.write(readFileSync(rules, 'utf8') + '\\n'); process.exit(0); }
+process.stderr.write('gh: Not Found (HTTP 404)\\n'); process.exit(1);`,
+  );
+  const answer = (rules: unknown) => (rules === null ? rmSync(rulesFile, { force: true }) : writeFileSync(rulesFile, JSON.stringify(rules)));
+  const extra = { ...program, YOKOTEN_TEST_GH_PR: prFile, YOKOTEN_TEST_GH_RULES: rulesFile, GITHUB_REPOSITORY: '' };
   const notesOf = async () => (JSON.parse((await sandbox.call(['check', '--pr', '--all', '12', '--json'], { extra })).stdout).notes as { id: string; what: string }[]).filter((note) => note.id === 'required-check-jobs');
   // Positive control: the ruleset requires "ci", and the pull request renames that job.
   answer([{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'ci' }] } }]);
