@@ -669,6 +669,14 @@ test('approve: only an Approve on the head merges a tier A pull request (#612)',
   const none = checkApprovalFreshness(read({ approved: null }));
   assert.equal(none?.id, 'pr-approve');
   assert.equal(none?.what, 'no owner Approve on this pull request');
+  // Issue #1381: an older owner review that no longer approves is named with its commit
+  // and the head, so the owner knows to approve again; with no review the text stays short.
+  const dismissed = checkApprovalFreshness(read({ approved: null, ownerReview: { state: 'DISMISSED', commit: 'a'.repeat(40) } }));
+  assert.equal(dismissed?.id, 'pr-approve');
+  assert.equal(dismissed?.what, "the owner's review on aaaaaaa was dismissed, usually by a newer push; approve again on the head bbbbbbb");
+  assert.equal(dismissed?.fix, 'ask the owner to approve again on the head bbbbbbb, then merge');
+  const changes = checkApprovalFreshness(read({ approved: null, ownerReview: { state: 'CHANGES_REQUESTED', commit: 'a'.repeat(40) } }));
+  assert.equal(changes?.what, 'the owner requested changes on aaaaaaa; approve again on the head bbbbbbb');
 });
 
 // #756: the Made-with line is checked against the desks that worked on the branch.
