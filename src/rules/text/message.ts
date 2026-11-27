@@ -672,6 +672,12 @@ export const RULES = {
     check: '`doctor` reads ~/.config/yokoten/private-marks (and the file YOKOTEN_PRIVATE_MARKS names) and counts its lines',
     docs: guide('privacy'),
   },
+  'mark-names-project': {
+    rule: 'no private mark is the name of the repo, its org, or a crate or package in it (#1378)',
+    why: 'such a mark is in every file that names the project, so the checks refuse that work in bulk once the repo is public',
+    check: '`doctor`, and `yokoten marks add` in a repo, compare each mark with the origin remote and the names in Cargo.toml, package.json, pyproject.toml and go.mod; equal, or a prefix at a separator; a note by line number, never the mark',
+    docs: guide('privacy'),
+  },
   'disk-space': {
     rule: 'the disk that holds the repo has room left (record 0012)',
     why: 'on a full disk, every agent session stops, and the agent cannot tell you why',
@@ -792,6 +798,11 @@ export const RULES = {
     rule: 'secret scanning, push protection, private vulnerability reporting and Dependabot alerts are on',
     why: 'the host then stops a pushed secret, and people can report a hole in private',
     check: `${SERVER_CHECK}; some switches are visible only to a repo admin`,
+  },
+  'required-check-jobs': {
+    rule: 'every check name the default branch ruleset requires is reported by a job in `.github/workflows` (#1376)',
+    why: 'a required name that no job reports keeps a green pull request from merging, and only the owner can change the ruleset',
+    check: `${SERVER_CHECK}; doctor compares the names with the jobs on the default branch, and \`check --pr\` notes a pull request that drops one; a note only`,
   },
   'forgotten-branches': {
     rule: 'every branch on the server has an open pull request, or is deleted by its owner',

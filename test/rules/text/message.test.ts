@@ -121,7 +121,7 @@ import {
   upstreamNote,
   userAgentHooks,
 } from '../../../src/setup/doctor/index.ts';
-import { editedKitCheck, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
+import { editedKitCheck, markNameFinding, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
 import { KIT, sealManaged } from '../../../src/setup/files.ts';
 import { workflowNotes } from '../../../src/setup/init.ts';
 import {
@@ -330,6 +330,9 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   // Work only on this machine (#365): one case of each, as facts, so no git runs here.
   found.push(...unsavedNotes(UNSAVED_CONTROL, { home: undefined, now: 1 }));
   for (const c of [...serverChecks(server), ...serverChecks({ unread: 'gh is not installed', fix: 'get it' })]) add(c.finding);
+  // A required check no job reports (#1376), and a mark that names the project (#1378).
+  for (const c of serverChecks({ ...server, branch: { ...off, requiredChecks: ['ci'] } }, { workflows: ['jobs:\n  build:\n'] })) if (c.id === 'required-check-jobs') add(c.finding);
+  add(markNameFinding({ file: 'private-marks', line: 2, kinds: ['repo', 'crate'] }));
   // The MCP traps (#370): one known-bad input for each: a tool that breaks every schema,
   // name and annotation rule, a list at the small-client limit, a result with one form, a
   // stray stdout line, and a Windows launch entry beside an entry with no command.

@@ -21,7 +21,7 @@ import { findAnchor, workflowIdentity } from '../../host/sigstore/rekor.ts';
 import { readEventLog } from '../../host/sigstore/record.ts';
 import { cores, freeMemory, isLight, NICE_LEVEL, OFF_SWITCH, onPath, testCommand, testJobs } from '../../host/light.ts';
 import { readCurrentPullRequest, readsCurrentPullRequest } from '../../host/current-pr.ts';
-import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, repoOf } from '../../host/github/index.ts';
+import { asText, botConfig, botEnv, borrowedHost, type Gh, ghIn, installationToken, isObject, OPEN_PULL_LIMIT, readApproverLogin, readCodeOwners, readIssue, readNumberedPullRequest, readOpenPulls, readPullRequest, readRepoLabelNames, readRequiredChecks, originRepo, type PullRequestRead, repoOf } from '../../host/github/index.ts';
 import { type Env, loadConfig } from '../../rules/config.ts';
 import { finding, type Finding, formatFindingMarks, isWarningFinding } from '../../rules/text/message.ts';
 import { shownValue } from '../../rules/text/terminal.ts';
@@ -34,6 +34,9 @@ import { isCodeFile, nameNotes } from '../../run/notes/names.ts';
 import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
+import { markNameFinding, marksNamingHere } from '../../setup/doctor/checks.ts';
+import { readWorkflowsAt } from '../../setup/road.ts';
+import { droppedChecks } from '../../run/notes/required-checks.ts';
 import { count, fail, failure, field, type Invocation, isTerminal, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, type RowMark, say, screen, show, showOnPullRequest, spaced, summaryLine, title, underRow, usage, wrap } from '../shared.ts';
 import { asSentence, MARK_COLUMN, nextSentence, ROW_INDENT, section, table, type TableRow, utcText } from '../../rules/text/screen.ts';
 
@@ -321,6 +324,7 @@ async function runMode(invocation: Invocation, mode: CheckMode, root: string, co
       const worker = pr.branch ? branchWorker(root, env, pr.branch) : null;
       const modelNote = worker ? madeWithModelNote(pr.body, worker.model, pr.branch) : null;
       if (modelNote) notes.push(modelNote);
+      notes.push(...droppedCheckNotes(root, env, pr));
       problems = checkPullRequest(pr, config);
       // Provenance (#756): the line names each desk that worked on the branch, and a
       // reviewer is another model (record 0045). Only status files here can say what ran.
@@ -345,6 +349,27 @@ async function runMode(invocation: Invocation, mode: CheckMode, root: string, co
     if (zones) notes.push(timeZoneNote(zones));
   }
   return problems;
+}
+
+/**
+ * A note for each required check name that the pull request's workflow changes stop
+ * reporting (#1376): a renamed or removed job keeps a green pull request from merging. Only
+ * when it changes a workflow. A ruleset or a workflow that can't be read is "not checked".
+ */
+function droppedCheckNotes(root: string, env: Invocation['env'], pr: PullRequestRead): Finding[] {
+  // GitHub's event and `gh pr view` both name the base branch; an event made by hand may not.
+  if (!pr.baseBranch || !pr.files.some((file) => /^\.github\/workflows\/[^/]+\.ya?ml$/i.test(file))) return [];
+  const repo = env.GITHUB_REPOSITORY || originRepo(root, env);
+  const required = repo ? readRequiredChecks(ghIn(root, env, GH_TIMEOUT_MS), repo, pr.baseBranch) : { unread: "yokoten can't tell which GitHub repo this is", fix: 'run it in a clone whose origin is on GitHub' };
+  const notChecked = (why: string, fix: string) => [finding('required-check-jobs', `this pull request changes a workflow, and its required check names were not checked: ${why}`, fix)];
+  if ('unread' in required) return notChecked(required.unread, required.fix);
+  if (!required.length) return [];
+  const before = readWorkflowsAt(root, env, pr.base);
+  const after = readWorkflowsAt(root, env, pr.head);
+  if (!before || !after) return notChecked("git can't read the workflows of both commits", 'fetch both commits, then run it again');
+  return droppedChecks(required, before, after).map((name) =>
+    finding('required-check-jobs', `the ruleset requires the check "${name}", and after this pull request no job reports it, so it can't merge`, 'keep the job\'s name, or have the owner update the required checks in the ruleset first'),
+  );
 }
 
 /** One commit's message, as `git log` gives it: the id and the whole body (#756). */
@@ -728,8 +753,8 @@ export interface MarkCounts {
 export type MarksResult =
   /** `yokoten marks`: the counts, read only. */
   | ({ action: 'list' } & MarkCounts)
-  /** `marks add`: added, or already there. */
-  | { action: 'add'; isAdded: boolean }
+  /** `marks add`: added, or already there, and in a repo the notes for a mark that names it (#1378). */
+  | { action: 'add'; isAdded: boolean; named?: Finding[] }
   /** `marks remove`: removed or not there; `from` is the kind install found it as, when it did. */
   | { action: 'remove'; isRemoved: boolean; from?: string; isSwitched: boolean }
   /** `marks off <kind>`: how many marks of the kind install had added were taken out. */
@@ -763,8 +788,10 @@ export function marksScreen(result: MarksResult): string[] {
         wrap('Add one: ', '`yokoten marks add`'),
       );
     }
-    case 'add':
-      return title('marks', result.isAdded ? 'added the mark to your private marks (not shown)' : 'that mark is already in your private marks, so nothing changed');
+    case 'add': {
+      const head = title('marks', result.isAdded ? 'added the mark to your private marks (not shown)' : 'that mark is already in your private marks, so nothing changed');
+      return result.named?.length ? screen(head, spaced(result.named.map((note) => [...row('note', note.what), ...underRow(asSentence(note.fix), false)]))) : head;
+    }
     case 'remove': {
       if (!result.isRemoved) return title('marks', 'that mark is not in your private marks, so nothing changed');
       const { from } = result;
@@ -869,7 +896,7 @@ function changeOne(invocation: Invocation, action: 'add' | 'remove', value: stri
     } catch {
       return fail(invocation, "your private-marks file can't be written, so nothing changed", DOCTOR_NEXT);
     }
-    show(invocation, marksScreen({ action: 'add', isAdded }));
+    show(invocation, marksScreen({ action: 'add', isAdded, named: namedHere(invocation, mark) }));
     return 0;
   }
   let removed: Mark[];
@@ -887,6 +914,16 @@ function changeOne(invocation: Invocation, action: 'add' | 'remove', value: stri
   const isSwitched = from !== undefined && (Object.values(SWITCHED_KINDS) as string[]).includes(from);
   show(invocation, marksScreen({ action: 'remove', isRemoved: true, isSwitched, ...(from === undefined ? {} : { from }) }));
   return 0;
+}
+
+/** In a repo, the notes for `mark` when it names the repo, its org, or a crate or package there (#1378). None outside a repo. */
+function namedHere(invocation: Invocation, mark: string): Finding[] {
+  try {
+    const root = readGit(invocation.cwd, ['rev-parse', '--show-toplevel'], { env: invocation.env }).toString('utf8').trim();
+    return marksNamingHere(invocation.env, loadConfig(root), root).filter((hit) => hit.mark === mark.toLowerCase()).map(markNameFinding);
+  } catch {
+    return []; // not in a repo, or its yokoten.json is broken: `yokoten doctor` says so
+  }
 }
 
 /** `marks off <kind>`: kept in machine.json, and the marks install added of that kind taken out. */

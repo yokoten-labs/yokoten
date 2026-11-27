@@ -15,9 +15,9 @@ import { VERSION } from '../files.ts';
 import { hookCliPath, isSelf, withGitReads, workflowNotes } from '../init.ts';
 import { gitConfig } from '../../run/check.ts';
 import { fillMarks, marksState, UNREADABLE_MARKS, UNREADABLE_MARKS_FIX, filledLines, trySafely, machineMarks, paths } from '../install.ts';
-import { type DefaultBranchFiles, type Mark, missingPaths, filesSteps, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, type StepSource, stepSource, stepText, uncheckedText, walk } from '../road.ts';
+import { type DefaultBranchFiles, defaultBranchWorkflows, type Mark, missingPaths, filesSteps, readDefaultBranchFiles, road, ROAD, ROAD_SERVER_IDS, type ServerCheck, serverChecks, type ServerRead, STAGES, stepFinding, type StepSource, stepSource, stepText, uncheckedText, walk } from '../road.ts';
 import { hasUserSettings } from '../../agents/runtimes/claude-code.ts';
-import { agentHooks, allowedMarkCount, commandWording, conflictNote, coreRulesCheck, deskFenceCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
+import { agentHooks, allowedMarkCount, markNameFinding, marksNamingHere, commandWording, conflictNote, coreRulesCheck, deskFenceCheck, doubleInstallCheck, editedKitCheck, launcherCheck, machineChecks, mergeTimeZones, museClaudeRules, pluginAgeCheck, privacyNotes, releaseChannel, userAgentHooks, type Practice } from './checks.ts';
 import { findStateFile, type LessonCheck, lessonChecks, lessonRows, readState, saveState, seenAfter, sessionLessonNote, stageFileFor, STATE_FILE } from './lessons.ts';
 import { agentTempDirCheck, diskSpaceChecks, leftoverTempCheck, nodeSecurityCheck, type MachineProbe, REAL_MACHINE } from './machine.ts';
 import { pluginSourceNote } from '../advice/marketplace.ts';
@@ -937,6 +937,11 @@ function doctorRun(
   if (allowed.machine) project.push({ mark: 'ok', name: 'own-marks', what: `${allowed.machine} of your private marks allowed here by this machine (\`yokoten marks allow\`)` });
   if (allowed.ownName) project.push({ mark: 'ok', name: 'own-marks', what: `${allowed.ownName} of your private marks skipped here because they name this repo ("privacy": { "skipOwnName": false } turns this off)` });
   if (allowed.unsure) project.push({ mark: 'note', name: 'own-marks', what: `this machine allows no private mark here, because ${allowed.unsure}` });
+  for (const hit of marksNamingHere(env, config, root)) {
+    const note = markNameFinding(hit);
+    project.push({ mark: 'note', name: 'own-marks', what: note.what, fix: note.fix });
+    notes.push(note);
+  }
   project.push(problems.length ? { mark: 'MISSING', name: 'tree', what: count(problems.length, 'problem'), fix: '`yokoten check` lists them' } : { mark: 'ok', name: 'tree', what: 'layout and privacy clean' });
   // check's own notes (#228), such as an unknown yokoten.json key or a translation behind: worded as check words them, and never a failure.
   for (const n of checkNotes) project.push({ mark: 'note', name: '', what: `${place(n)}${n.what}${formatFindingMarks(n)}. ${sentence(n.why)}. ${sentence(n.fix)}.` });
@@ -988,7 +993,8 @@ function doctorRun(
     notes.push(waiting);
   }
   // The road's stage 5 shows the settings it groups (#7); here are the rest, which never fail doctor.
-  const settings = serverChecks(server ?? { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' }, { isCiOff: Object.hasOwn(config.notNow, 'ci') });
+  const defaultWorkflows = server && !('unread' in server) && !('unread' in server.branch) && server.branch.requiredChecks.length ? defaultBranchWorkflows(root, env, server.defaultBranch) : undefined;
+  const settings = serverChecks(server ?? { unread: 'no way to reach the code host was given', fix: 'run `yokoten doctor`' }, { isCiOff: Object.hasOwn(config.notNow, 'ci'), workflows: defaultWorkflows });
   const serverRows: CheckRow[] = [];
   for (const c of settings.filter((c) => !ROAD_SERVER_IDS.includes(c.id) && !(noRemote && c.id === 'server-settings'))) {
     serverRows.push(c.mark === 'ok' ? { mark: 'ok', name: c.id } : { mark: c.mark, name: c.id, what: c.finding.what, fix: c.finding.fix });

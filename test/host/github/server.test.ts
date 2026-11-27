@@ -4,7 +4,8 @@ import '../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { type Gh } from '../../../src/host/github/planning.ts';
-import { readIncident } from '../../../src/host/github/server.ts';
+import { readIncident, readRequiredChecks } from '../../../src/host/github/server.ts';
+import { GOOD, REPO, said, serverGh } from '../../repo/helpers.ts';
 import { draftLesson, type Incident } from '../../../src/run/learn.ts';
 
 // `yokoten learn` (#77) reads an incident through gh. A fake gh stands in; GitHub is never reached.
@@ -57,4 +58,12 @@ test('incident: an odd title is a reason; an odd body or url is empty, and the d
   // Only entries with a string name are kept.
   const mixed = [{ name: 'incident' }, null, 7, 'bug', { name: 5 }, { name: null }, {}, { name: '' }, [{ name: 'x' }], { name: 'bug' }];
   assert.deepEqual((readIncident(ghWith({ labels: mixed }), '3') as Incident).labels, ['incident', 'bug']);
+});
+
+// `check --pr` reads the required check names of the base branch (#1376); a gh that can't answer is a reason.
+test('required checks: the names the base branch rulesets require, or why gh could not read them (#1376)', () => {
+  assert.deepEqual(readRequiredChecks(serverGh(GOOD).gh, REPO, 'main'), ['ci']);
+  assert.deepEqual(readRequiredChecks(serverGh({ ...GOOD, [`repos/${REPO}/rules/branches/main`]: [] }).gh, REPO, 'main'), []);
+  const refused = readRequiredChecks(serverGh({ [`repos/${REPO}/rules/branches/main`]: Object.assign(said(401), { stderr: 'gh auth login' }) }).gh, REPO, 'main');
+  assert.ok(!Array.isArray(refused) && refused.unread === 'gh is not signed in');
 });

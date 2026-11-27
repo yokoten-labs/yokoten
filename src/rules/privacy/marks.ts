@@ -112,6 +112,24 @@ function readMarksText(env: Env): string {
     .join('');
 }
 
+/** One mark with its place (#1378): `file` is `private-marks` or `YOKOTEN_PRIVATE_MARKS`, never a path. */
+export interface MarkLine {
+  file: string;
+  line: number;
+  mark: string;
+}
+
+/** Every mark in this machine's marks files, lowercased, with its line. A missing file is empty; any other error throws. */
+export function placedMarks(env: Env): MarkLine[] {
+  const own = homeOf(env) ? resolve(join(homeIn(env), '.config', 'yokoten', 'private-marks')) : null;
+  return marksFiles(env).flatMap((file) =>
+    readMarksFile(env, file).split(/\r?\n/).flatMap((text, i) => {
+      const mark = text.trim();
+      return mark && !mark.startsWith('#') ? [{ file: resolve(file) === own ? 'private-marks' : 'YOKOTEN_PRIVATE_MARKS', line: i + 1, mark: mark.toLowerCase() }] : [];
+    }),
+  );
+}
+
 /** The owner's marks from every marks file, lowercased, each once. An empty list when no file is there. */
 export function loadMarks(env: Env): string[] {
   const marks = readMarksText(env)

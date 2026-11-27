@@ -341,6 +341,26 @@ export function sameNameMarks(marks: string[], repo: ReturnType<typeof repoKey> 
   return name ? marks.filter((mark) => plainName(mark) === name) : [];
 }
 
+/** A name the project goes by (#1378), and where it comes from. */
+export interface ProjectName {
+  kind: 'repo' | 'org' | 'crate' | 'package' | 'module';
+  name: string;
+}
+
+/**
+ * The kinds of project name each mark equals, or starts at a separator (#1378): `quiet` hits
+ * the crate `quiet-core`, not `quietly`. No part inside a name: that would be noise. Each hit
+ * keeps the mark, for the caller to match; what it prints holds only the place and the kinds.
+ */
+export function marksNamingProject<T extends { mark: string }>(marks: T[], names: ProjectName[]): (T & { kinds: ProjectName['kind'][] })[] {
+  const plain = names.map((one) => ({ kind: one.kind, name: plainName(one.name) })).filter((one) => one.name);
+  return marks.flatMap((entry) => {
+    const mark = plainName(entry.mark);
+    const kinds = [...new Set(plain.filter((one) => mark && (one.name === mark || one.name.startsWith(`${mark} `))).map((one) => one.kind))];
+    return kinds.length ? [{ ...entry, kinds }] : [];
+  });
+}
+
 /**
  * Whether a mark that names the repo is skipped there (#447, record 0014): on by default.
  * `"privacy": { "skipOwnName": false }` in yokoten.json turns it off for one repo, and
