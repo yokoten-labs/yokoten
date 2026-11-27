@@ -2,7 +2,7 @@
 // Only src/host/ names a host's API (record 0004). The guard calls the functions below
 // in host-neutral words. This file registers them when it loads.
 
-import { type Finding, finding } from '../rules/text/message.ts';
+import { type Finding, finding, REPO_SETTINGS_FIX } from '../rules/text/message.ts';
 import { findProgramPlaces, plainArgs, useHostCommands, withoutShellRedirects } from '../rules/guards/index.ts';
 import { ghIndex, type HostApiCall, optionValue, useHostApi } from '../rules/privacy.ts';
 
@@ -85,9 +85,9 @@ export function hostRunRemoval(words: string[]): Finding | undefined {
 // Protection 3 of record 0034: an agent does not make a repo public or change the server's
 // lock. `gh repo edit` is the other way to make that change; the same change through `gh api`
 // was not refused, so this reads the route. A read passes. A comment, a label or a review
-// stays allowed.
+// stays allowed. The fix hands the owner a ready line, after the payload file is written on
+// its own (#1374).
 
-const SETTINGS_FIX = 'ask the owner, who changes repository and organization settings in the browser';
 const ORG = 'orgs/[^/]+';
 // `gh api graphql` sends one document, and a mutation reaches settings the REST routes below
 // do not name. A document can hold fragments and a read before its mutation, so the keyword
@@ -257,11 +257,11 @@ export function hostSettingsWrite(words: string[]): Finding | undefined {
   const method = call.method || (call.hasFields ? 'POST' : 'GET');
   if (method === 'GET') return undefined;
   if (GRAPHQL_ROUTE.test(call.path)) {
-    if (isGraphqlSettingsWrite(args)) return finding('repo-settings', 'this `gh api graphql` call sends a mutation, which can change repository or organization settings', SETTINGS_FIX);
+    if (isGraphqlSettingsWrite(args)) return finding('repo-settings', 'this `gh api graphql` call sends a mutation, which can change repository or organization settings', REPO_SETTINGS_FIX);
     return undefined;
   }
   if (!SETTINGS_ROUTES.some((route) => route.test(call.path))) return undefined;
-  return finding('repo-settings', 'this `gh api` call changes repository or organization settings', SETTINGS_FIX);
+  return finding('repo-settings', 'this `gh api` call changes repository or organization settings', REPO_SETTINGS_FIX);
 }
 
 const GH_ALIAS_FIX = 'ask the owner to add the alias by hand';

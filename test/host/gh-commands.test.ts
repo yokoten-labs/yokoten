@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { hostGuardMisses, hostRunRemoval, isPublishingApiCall } from '../../src/host/gh-commands.ts';
 import { checkCommand, commandWords } from '../../src/rules/guards/index.ts';
+import { formatRefusal } from '../../src/rules/text/message.ts';
 
 // The words of the `gh` command. A command substitution puts the substitution's own words
 // first, so find the host command rather than take the first (#865).
@@ -103,7 +104,7 @@ test('repo settings: a gh api write is refused, a read passes (#825)', () => {
   const lead = {};
   const worker = { YOKOTEN_ROLE: 'worker' };
   const what = 'this `gh api` call changes repository or organization settings';
-  const fix = 'ask the owner, who changes repository and organization settings in the browser';
+  const fix = 'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder';
   const refused = [
     // Visibility and the default branch are settings on the repo itself.
     'gh api -X PATCH repos/o/r -f visibility=public',
@@ -317,4 +318,20 @@ test('publishing routes: a query string is part of the endpoint, not a body fiel
   for (const command of ['gh api repos/o/r/releases?per_page=5', 'gh api -X GET repos/o/r/releases?per_page=5', 'gh api -X POST repos/o/r/issues -f labels=bug', 'gh api repos%2Fo%2Fr%2Freleases?per_page=5']) {
     assert.equal(publishes(command), false, command);
   }
+});
+
+// #1374: a refused settings write says how to hand the change to the owner: the payload file
+// first, in its own command, then one ready line with its absolute path.
+test('repo settings: the refusal hands the owner a ready line, after the payload file (#1374)', () => {
+  const found = checkCommand('gh api -X PUT repos/o/r/rulesets/7 --input ruleset.json', { cwd: process.cwd(), env: {} });
+  assert.equal(found?.id, 'repo-settings');
+  const text = formatRefusal(found!).replace(/\s+/g, ' ');
+  assert.match(text, /Instead Write any payload file in a command of its own first: a file write is not a settings write\./);
+  assert.match(text, /Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder\./);
+  // The GraphQL form gives the same steps.
+  assert.equal(checkCommand("gh api graphql -f query='mutation { updateRepository(input: {}) { clientMutationId } }'", { cwd: process.cwd(), env: {} })?.fix, found?.fix);
+  // Positive control: another owner-only rule keeps its own text.
+  const tag = checkCommand('git push origin v1.0.0', { cwd: process.cwd(), env: {} });
+  assert.equal(tag?.id, 'release');
+  assert.doesNotMatch(tag?.fix ?? '', /payload file/);
 });

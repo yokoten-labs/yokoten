@@ -1900,6 +1900,11 @@ The full table, with the reasons, is in [`kit/project/AGENTS.md`](../kit/project
 11. Nothing in the repo, or in what yokoten prints, points at a person or holds a secret.
 12. Decisions are written down once and kept. Facts are replaced. Times are UTC.
 
+Only the owner changes repository and organization settings, such as rulesets and branch
+protection. When the guard stops an agent's settings write, its Instead row says:
+
+> Write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder.
+
 ### How to release
 
 Only the owner releases (rule 3). An agent that is stopped from releasing tells the owner,

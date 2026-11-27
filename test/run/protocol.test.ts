@@ -141,3 +141,17 @@ test('protocol: the project must be an absolute folder on the caller\'s system (
   }
   assert.equal(typeof readGuardInput({ ...call(), project: 3 }, 'win32'), 'string');
 });
+
+// #1375: the protocol's message says first that nothing in a multi-part command ran.
+test('protocol: a refused multi-part command says nothing in it ran (#1375)', async () => {
+  const sandbox = makeSandbox();
+  const send = async (command: string) => {
+    const input = { ...call(), action: { tool: 'shell', command }, project: sandbox.repo };
+    return JSON.parse((await sandbox.call(['hook', '--protocol'], { input: JSON.stringify(input), cwd: sandbox.repo })).stdout) as GuardOutput;
+  };
+  const answer = await send('echo a > f && git push --force origin main');
+  assert.equal(answer.decision, 'refuse');
+  assert.match(answer.reason?.message ?? '', /^Nothing in this command ran\. The refused part is `git push --force origin main`\.\nSend the other parts again, on their own or after the fix\.\n\nyokoten stopped this: /);
+  // Positive control: one part keeps its text.
+  assert.match((await send('git push --force origin main')).reason?.message ?? '', /^yokoten stopped this: /);
+});

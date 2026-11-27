@@ -1,5 +1,5 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { finding, type Finding } from '../../text/message.ts';
+import { finding, nothingRanNote, type Finding } from '../../text/message.ts';
 import { checkCommandTitle } from '../../pr.ts';
 import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
 import { mayPost, unreadPost } from '../../privacy/posts.ts';
@@ -21,7 +21,7 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
-import { hostPathPlace, type PathPlace } from '../../../platform/paths.ts';
+import { hostPathPlace, lastPathPart, pathForm, type PathPlace } from '../../../platform/paths.ts';
 
 // `place` is where the command's paths are read (#1015): the entry point passes this machine's;
 // a test passes another system's, so Linux CI tests the Windows reading.
@@ -37,7 +37,11 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
     // The file rules are looked up once per call: a worker's lead-only files, the lead's guard settings (#1212).
     const files = fileRules(options.repos ?? []);
-    return withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files }));
+    const seen: SeenParts = { count: 0 };
+    const found = withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files, seen }));
+    // The guard reads the line as one unit: a refusal stops every part (#1375). A question is not a refusal.
+    if (found === null || found.ask || seen.count < 2) return found;
+    return { ...found, nothingRan: nothingRanNote(seen.part && !PRIVATE_FINDINGS.has(found.id) ? shownPart(seen.part, options.env) : undefined) };
   } catch {
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
@@ -52,10 +56,49 @@ type GuardConfig = Pick<Config, 'commands'> & Partial<Pick<Config, 'privacy' | '
 /** A repo whose file rules apply, by its root, with its yokoten.json "leadOnly". */
 export type RuledRepo = { root: string; leadOnly: string[] };
 
-type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules; askRules?: FileRules; workerByType?: boolean };
+/** How many parts the command has, and the words of the part a refusal belongs to (#1375). */
+type SeenParts = { count: number; part?: string[] };
 
-function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules, workerByType = false }: EachOptions): Finding | null {
+type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules; askRules?: FileRules; workerByType?: boolean; seen?: SeenParts };
+
+// A refusal for one of these names private text: the refused part is not shown, so the note does not print it again.
+const PRIVATE_FINDINGS = new Set(['email', 'ip', 'private-mark', 'secret', 'user-folder', 'gh-token']);
+// The refused part stays short enough that its line keeps the 80-column limit (record 0049).
+const PART_WIDTH = 70;
+
+/**
+ * A word of the refused part as the note shows it. The home folder is `~`. Another full path
+ * shows only its last part, after `<folder>/`: a machine path means nothing to the reader and
+ * may show private names (record 0049). A value after `=` or `@`, and each piece of a word
+ * with spaces, is read the same way.
+ */
+function shownWord(word: string, homes: string[]): string {
+  // A quoted word or a substitution holds spaces: each piece is read on its own.
+  if (word.includes(' ')) return word.split(' ').map((piece) => shownWord(piece, homes)).join(' ');
+  const at = Math.max(word.lastIndexOf('='), word.lastIndexOf('@'));
+  const value = word.slice(at + 1);
+  const home = homes.find((folder) => value === folder || value.startsWith(`${folder}/`) || value.startsWith(`${folder}\\`));
+  const form = pathForm(value);
+  const shown = home !== undefined ? `~${value.slice(home.length)}` : form === null || form === 'relative' || form === 'home' ? value : `<folder>/${lastPathPart(value) ?? ''}`;
+  return `${word.slice(0, at + 1)}${shown}`.replaceAll('`', "'");
+}
+
+/** The refused part as the note names it: its shown words, cut at a word to PART_WIDTH. */
+function shownPart(words: string[], env: Env): string {
+  const homes = [env.HOME, env.USERPROFILE].filter((home): home is string => home !== undefined && home.length > 1);
+  let shown = '';
+  for (const word of words) {
+    const plain = shownWord(word, homes);
+    const next = shown === '' ? plain : `${shown} ${plain}`;
+    if (next.length > PART_WIDTH) return shown === '' ? `${plain.slice(0, PART_WIDTH)} ...` : `${shown} ...`;
+    shown = next;
+  }
+  return shown;
+}
+
+function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules, workerByType = false, seen = { count: 0 } }: EachOptions): Finding | null {
   const commands = commandWords(command);
+  seen.count = commands.length;
   // checkCommand set the place just before this call.
   const placeNow = commandPlace.current ?? hostPathPlace();
   // Where a gh command reads a relative body file: the folder, followed through each cd.
@@ -88,6 +131,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
   // Rules that refuse any form of a setting or a write (#361, #664). They answer after the
   // rest, which name the case more exactly; the first one found is kept.
   let later: Finding | null = null;
+  let laterPart: string[] | undefined;
   // A question for the owner, kept until the whole line is read: any refusal wins (#1212).
   let asked: Finding | null = null;
   for (const words of commands) {
@@ -125,6 +169,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
       // history (#824). Only a commit pays for it.
       checkCommitPrivacy(words, { env, privacy: config?.privacy, folder: postCwd });
+    seen.part = words;
     if (reason) return reason;
     // The lead's write to a guard setting asks the owner, once nothing else refuses the line;
     // a worker's is refused: lead-only covers the repo's copies, this the home ones (#1212).
@@ -132,6 +177,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     const settings = settingsRules ? guardSettingsWrite(words, { rules: settingsRules, folder: postCwd, env, platform: placeNow.platform }) : null;
     if (settings && rules) return workerSettingsRefusal(settings);
     asked ??= settings;
+    const laterBefore: Finding | null = later;
     later ??=
       checkGitConfigEnvironment(words) ??
       // The likely folder, read as written: a write there is refused, never let through.
@@ -148,11 +194,13 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).
       checkGitLoseWork(words, postCwd, env);
+    if (later !== laterBefore) laterPart = words;
     postCwd = folderAfter(words, postCwd, { env, isTildeQuoted });
     nearCwd = folderAfter(words, nearCwd, { env, isTildeQuoted, isCdPathSkipped: true });
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
   const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : null;
+  seen.part = worker ? undefined : laterPart;
   return worker ?? later ?? asked;
 }
 
