@@ -46,10 +46,13 @@ import {
   formatRefusal,
   measureWork,
   noteWork,
+  nothingRanNote,
   notRepoFinding,
   parseRefusal,
+  REPO_SETTINGS_FIX,
   type Rule,
   RULES,
+  sentence,
 } from '../../../src/rules/text/message.ts';
 import { LABEL_COLUMN } from '../../../src/rules/text/screen.ts';
 import {
@@ -118,7 +121,7 @@ import {
   upstreamNote,
   userAgentHooks,
 } from '../../../src/setup/doctor/index.ts';
-import { editedKitCheck, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
+import { editedKitCheck, markNameFinding, openCodePluginNote } from '../../../src/setup/doctor/checks.ts';
 import { KIT, sealManaged } from '../../../src/setup/files.ts';
 import { workflowNotes } from '../../../src/setup/init.ts';
 import {
@@ -329,6 +332,9 @@ test('messages: every check and guard says what, why and the fix, in text and JS
   // Work only on this machine (#365): one case of each, as facts, so no git runs here.
   found.push(...unsavedNotes(UNSAVED_CONTROL, { home: undefined, now: 1 }));
   for (const c of [...serverChecks(server), ...serverChecks({ unread: 'gh is not installed', fix: 'get it' })]) add(c.finding);
+  // A required check no job reports (#1376), and a mark that names the project (#1378).
+  for (const c of serverChecks({ ...server, branch: { ...off, requiredChecks: ['ci'] } }, { workflows: ['jobs:\n  build:\n'] })) if (c.id === 'required-check-jobs') add(c.finding);
+  add(markNameFinding({ file: 'private-marks', line: 2, kinds: ['repo', 'crate'] }));
   // The MCP traps (#370): one known-bad input for each: a tool that breaks every schema,
   // name and annotation rule, a list at the small-client limit, a result with one form, a
   // stray stdout line, and a Windows launch entry beside an entry with no command.
@@ -373,7 +379,7 @@ test('messages: every check and guard says what, why and the fix, in text and JS
     }
     assert.ok(known.has(f.id), `${f.id}: yokoten explain does not know this id`);
     const json = JSON.parse(JSON.stringify(f));
-    assert.deepEqual(Object.keys(json).filter((k) => !['id', 'what', 'why', 'fix', 'docs', 'file', 'line', 'grade', 'ignored'].includes(k)), [], `${f.id}: only the stable fields`);
+    assert.deepEqual(Object.keys(json).filter((k) => !['id', 'what', 'why', 'fix', 'docs', 'file', 'line', 'grade', 'ignored', 'nothingRan'].includes(k)), [], `${f.id}: only the stable fields`);
     assert.ok(json.id && json.what && json.why && json.fix, `${f.id}: JSON has id, what, why and fix`);
   }
   // Every rule and every step was reached, so none is left without the shape. The self-test
@@ -518,4 +524,30 @@ test('findingRow: the label in its field, the text from LABEL_COLUMN, and parseR
   assert.ok(long.length > 1 && long.slice(1).every((line) => line.startsWith(' '.repeat(LABEL_COLUMN)) && line[LABEL_COLUMN] !== ' '), 'a long text wraps under itself');
   const refusal = finding('lead-only', 'this commit changes a lead-only file', 'unstage it');
   assert.equal(parseRefusal(formatRefusal(refusal))?.fix, 'Unstage it.');
+});
+
+// #1374: the settings hand-off is one text: the guard's fix, and the guide's core rules.
+test('docs: the guide\'s core rules show the repo settings hand-off from its one source (#1374)', () => {
+  const guideText = readFileSync(new URL('../../../docs/guide.md', import.meta.url), 'utf8');
+  const section = guideText.slice(guideText.indexOf('## The core rules'), guideText.indexOf('### How to release'));
+  const plain = section.replace(/\s*\n>?\s*/g, ' ');
+  assert.ok(plain.includes(` ${sentence(REPO_SETTINGS_FIX)}.`), 'the guide quotes the repo-settings fix as the guard says it');
+  // Positive control: a changed fix is not in the guide.
+  assert.ok(!plain.includes(` ${sentence(REPO_SETTINGS_FIX.replace('absolute', 'relative'))}.`));
+});
+
+// #1375: a refusal of a command with more than one part starts with the note, inside 80 columns.
+test('refusal: the nothing-ran note comes first and keeps 80 columns (#1375)', () => {
+  const base = { id: 'force-push', what: 'this push overwrites the remote branch', why: 'it loses work', fix: 'push without --force' };
+  const note = nothingRanNote('git push --force origin main');
+  const text = formatRefusal({ ...base, nothingRan: note });
+  assert.ok(text.startsWith('Nothing in this command ran. The refused part is `git push --force origin main`.'), text);
+  assert.match(text, /Send the other parts again, on their own or after the fix\.\n\nyokoten stopped this: /);
+  for (const line of text.split('\n').filter((line) => !line.includes('https://'))) assert.ok(line.length <= 80, line);
+  // Without a part, the note still says nothing ran.
+  assert.equal(nothingRanNote(), 'Nothing in this command ran. Send the other parts again, on their own or after the fix');
+  // The board still reads the four parts.
+  assert.equal(parseRefusal(text)?.id, 'force-push');
+  // Positive control: a finding with no note keeps its text.
+  assert.ok(formatRefusal(base).startsWith('yokoten stopped this: '));
 });

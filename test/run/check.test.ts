@@ -1209,6 +1209,15 @@ test('marks allow --here: a repo with no origin gets no machine allow; a held lo
   assert.match(none.stderr, /because this repo has no origin remote\n\nNext: put the mark in `privacy\.allow` in yokoten\.json/);
   assert.equal(existsSync(allowFile), false);
   sandbox.git('remote', 'add', 'origin', 'https://example.com/octo/app');
+  // A second remote, here a path to a local backup: the refusal names the fix by its shape (#1377).
+  const backup = join(sandbox.home, 'backup.bundle');
+  sandbox.git('remote', 'add', 'backup', backup);
+  const extra = await sandbox.call(['marks', 'allow', 'quietvale', '--here']);
+  assert.equal(extra.status, 1);
+  assert.match(flat(extra.stderr), /because this repo has a remote other than origin Next: remove the other remote with `git remote remove <name>`, then run `yokoten marks allow <mark> --here` again/);
+  assert.doesNotMatch(extra.stderr, /backup/, 'the remote is named by shape, never by value');
+  assert.equal(existsSync(allowFile), false);
+  sandbox.git('remote', 'remove', 'backup');
   // A lock another run holds: refused, and the file is not made.
   writeFileSync(`${allowFile}.lock`, '');
   const busy = await sandbox.call(['marks', 'allow', 'quietvale', '--here']);

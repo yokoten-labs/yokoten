@@ -185,7 +185,8 @@ test('hook: the five safeguards hold in a repo with no yokoten.json (#816)', asy
   for (const [command, id] of refused) {
     const result = await bash(command ?? '');
     assert.equal(result.status, 2, command ?? '');
-    assert.match(result.stderr, /^yokoten stopped this: (?:[^\n]|\n(?= {22}))+ \[[a-z-]+\]\n\n  Why       [\s\S]+?\n\n  Instead   [^\n]+(?:\n {12}[^\n]+)*\n\n  More      \S+\n$/, command ?? '');
+    // A pipe has two parts, so its refusal starts with the note that nothing ran (#1375).
+    assert.match(result.stderr, /^(?:Nothing in this command ran\.[^]+?\n\n)?yokoten stopped this: (?:[^\n]|\n(?= {22}))+ \[[a-z-]+\]\n\n  Why       [\s\S]+?\n\n  Instead   [^\n]+(?:\n {12}[^\n]+)*\n\n  More      \S+\n$/, command ?? '');
     assert.match(result.stderr, new RegExp(`\\[${id}\\]`), command ?? '');
   }
   // Taking the safeguard apart is refused even with no yokoten.json.

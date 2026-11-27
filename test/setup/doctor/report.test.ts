@@ -14,7 +14,7 @@ import { DEFAULTS, type Env, loadConfig } from '../../../src/rules/config.ts';
 import { type BranchRules, type Gh, ghIn, readPlanning, readServer, type ServerSettings, type Unread } from '../../../src/host/github/index.ts';
 import { blocksToSay, type DoctorReport, doctor, fullLines, noteLines, listBoardSteps, readAtOnce, reportJson, SESSION_BLOCKS_MOST, sessionBlocks, shortLines, saveHostCache, SERVER_TIMEOUT_MS, SESSION_UNSAVED_BUDGET, sessionsDir, sessionUnsaved, STOPPED_EARLY, UNSAVED_OFFER, noCiNote, oneStepEach, privacyNotes, upstreamNote } from '../../../src/setup/doctor/index.ts';
 import { LABELS } from '../../../src/setup/plan.ts';
-import { missingPaths, readDefaultBranchFiles, road, ROAD, serverChecks, stepFinding, stepText } from '../../../src/setup/road.ts';
+import { defaultBranchWorkflows, missingPaths, readDefaultBranchFiles, road, ROAD, serverChecks, stepFinding, stepText } from '../../../src/setup/road.ts';
 import { museClaudeRules } from '../../../src/setup/doctor/checks.ts';
 import { fakeMachine, GB, NOW } from '../../repo/helpers.ts';
 import { type Finding } from '../../../src/rules/text/message.ts';
@@ -1002,6 +1002,39 @@ test('doctor: the no-ci note says what is not checked, and from stage 5 or on a 
   const off: ServerSettings = { ...server, branch: { ...(server.branch as BranchRules), requiredChecks: [] } };
   assert.equal(marks(off)['required-checks'], 'MISSING');
   assert.ok(!serverChecks(off, { isCiOff: true }).some((c) => c.id === 'required-checks'));
+});
+
+// #1376: a required check that no job reports blocks a green pull request; doctor says so first.
+test('server: a required check no job reports is a note; a matching one, CI off or an unread workflow is not (#1376)', () => {
+  const server = readServer(serverGh(GOOD).gh, REPO);
+  assert.ok(!('unread' in server));
+  const job = (name: string) => `on: pull_request\njobs:\n  ${name}:\n    runs-on: ubuntu-latest\n`;
+  const jobsNote = (workflows: string[] | Unread, isCiOff = false) => serverChecks(server, { workflows, isCiOff }).find((c) => c.id === 'required-check-jobs');
+  // Positive control: the ruleset requires "ci", and the job was renamed to "build".
+  const renamed = jobsNote([job('build')]);
+  assert.equal(renamed?.mark, 'note');
+  assert.match(renamed?.finding.what ?? '', /^the ruleset requires the check "ci", but no job in \.github\/workflows on main reports it, so a green pull request can't merge$/);
+  assert.match(renamed?.finding.fix ?? '', /^rename the job back, or have the owner update the required checks: in Settings, Rules, Rulesets/);
+  assert.equal(jobsNote([job('ci')]), undefined, 'a job named ci reports it');
+  assert.equal(jobsNote([job('build')], true), undefined, 'with CI off nothing is required');
+  const unread = jobsNote({ unread: 'git can\'t read the workflows of origin/main here, so the required check names were not checked', fix: 'run `git fetch origin`, then run doctor again' });
+  assert.equal(unread?.mark, "can't check");
+  assert.match(unread?.finding.what ?? '', /not checked/);
+  // An unread ruleset is the required-checks step's to say: no second line here.
+  assert.equal(serverChecks({ ...server, branch: { unread: 'gh is not signed in', fix: 'run `gh auth login`' } }, { workflows: [job('build')] }).find((c) => c.id === 'required-check-jobs'), undefined);
+});
+
+test('doctor: the default branch workflows are read from origin, and an unknown branch is not checked (#1376)', () => {
+  const sandbox = makeSandbox();
+  sandbox.write('.github/workflows/ci.yml', 'on: pull_request\njobs:\n  ci:\n    runs-on: ubuntu-latest\n');
+  sandbox.write('.github/workflows/notes.txt', 'not a workflow');
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'chore: start');
+  const missing = defaultBranchWorkflows(sandbox.repo, sandbox.env, 'main');
+  assert.ok('unread' in missing && /origin\/main/.test(missing.unread) && /not checked/.test(missing.unread));
+  sandbox.git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  const read = defaultBranchWorkflows(sandbox.repo, sandbox.env, 'main');
+  assert.ok(Array.isArray(read) && read.length === 1 && read[0].includes('  ci:'));
 });
 
 test('doctor: a file on the default branch, missing on this one, is no "run init" (#405)', async () => {

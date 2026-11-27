@@ -654,6 +654,8 @@ export interface ApprovalRead {
   after: number;
   /** Whether the pull request's own diff is the same as at the Approve. */
   sameDiff: boolean;
+  /** The owner's newest deciding review when it is not an Approve (issue #1381): its state and commit. */
+  ownerReview?: { state: string; commit: string };
 }
 
 /** An area lead's approval, written on the last line of its review body (#699). */
@@ -805,7 +807,7 @@ export function checkMergeApproval(read: MergeApprovalRead): Finding | null {
  */
 export function checkApprovalFreshness(read: ApprovalRead): Finding | null {
   if (read.tier !== 'A') return null;
-  if (read.approved === null) return finding('pr-approve', 'no owner Approve on this pull request', 'ask the owner to approve it, then merge');
+  if (read.approved === null) return missingApproval(read);
   if (read.approved.toLowerCase() === read.head.toLowerCase()) return null;
   const short = read.approved.slice(0, 7);
   const fix = 'ask the owner to approve the head commit, then merge';
@@ -816,6 +818,20 @@ export function checkApprovalFreshness(read: ApprovalRead): Finding | null {
     return finding('pr-approve', `the Approve is on ${short}; the pull request's own diff is not the same as at the Approve; ask the owner to approve again`, fix);
   }
   return null;
+}
+
+/**
+ * The finding for a tier A pull request with no owner Approve. An older dismissed or
+ * changes-requested review is named with its commit, so "no Approve" never reads as
+ * "you never approved" (issue #1381). With no owner review at all, the text stays short.
+ */
+function missingApproval(read: ApprovalRead): Finding {
+  const review = read.ownerReview;
+  if (!review) return finding('pr-approve', 'no owner Approve on this pull request', 'ask the owner to approve it, then merge');
+  const head = read.head.slice(0, 7);
+  const on = review.commit.slice(0, 7);
+  const said = review.state === 'DISMISSED' ? `the owner's review on ${on} was dismissed, usually by a newer push` : `the owner requested changes on ${on}`;
+  return finding('pr-approve', `${said}; approve again on the head ${head}`, `ask the owner to approve again on the head ${head}, then merge`);
 }
 
 // ---- The title a gh command sets (#117, #391) ----

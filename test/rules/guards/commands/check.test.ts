@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
-import { blocked, allowed, makeSandbox, makeTempDir } from '../../../../test/repo/helpers.ts';
+import { blocked, allowed, makeSandbox, makeTempDir, shellPlaces } from '../../../../test/repo/helpers.ts';
 
 test('the bot is not a way around the guard', () => {
   assert.ok(checkCommand('node .yokoten/bin/yokoten.ts bot -- git push --tags', { cwd: process.cwd(), env: {} }));
@@ -34,6 +34,49 @@ test('release: a tag push from a repo named by a Git Bash path is refused on Win
   sandbox.git('config', 'push.followTags', 'true');
   for (const form of named) assert.equal(run(form)?.id, 'release', `${form}, with push.followTags`);
   assert.equal(run('git -C /tmp/repo push --dry-run'), null, 'a dry run changes nothing');
+});
+
+// #1377: `env -C <repo>` names the repo a push runs in, as it names the repo a post goes to.
+// The session sits in the folder above the repo, which is no repo itself. Each place writes
+// the repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so Windows writes Git Bash's `/c/x`.
+test('release: env -C names the repo a bot push reads its tags in; a folder it cannot place is refused (#1377)', () => {
+  const sandbox = makeSandbox();
+  sandbox.git('commit', '-q', '--allow-empty', '-m', 'start');
+  sandbox.git('tag', 'rel-1');
+  const parent = dirname(sandbox.repo);
+  sandbox.write('body.md', 'plain text\n');
+  for (const { name, place, at } of shellPlaces(parent)) {
+    const repo = at(sandbox.repo);
+    const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: parent, place });
+    const forms = [`env -C ${repo} yokoten bot -- git push`, `env --chdir=${repo} git push`, 'env -C repo yokoten bot -- git push', `env -u X -C ${repo} git push`];
+    for (const form of forms) {
+      assert.equal(run(`${form} origin feature`), null, `${name}: ${form} origin feature`);
+      assert.equal(run(`${form} origin rel-1`)?.id, 'release', `${name}: ${form} origin rel-1`);
+    }
+    // The gh twin of the same form is read from the same folder: a body file there is found.
+    assert.equal(run(`env -C ${repo} yokoten bot -- gh issue create --title x --body-file body.md`), null, `${name}: gh reads the same folder`);
+    assert.equal(run(`env -C ${at(parent)} yokoten bot -- gh issue create --title x --body-file body.md`)?.id, 'unreadable-command', `${name}: gh in the parent finds no body`);
+    // A folder git can't open, or one the guard can't place: its tags can't be read.
+    for (const command of [
+      `env -C ${at(join(parent, 'nowhere'))} yokoten bot -- git push origin feature`,
+      `env -C ${at(parent)} yokoten bot -- git push origin feature`,
+      'env -C "$REPO" yokoten bot -- git push origin feature',
+      `env -iC ${repo} git push origin feature`,
+      `env -C ${repo} sudo -D ${at(parent)} git push origin feature`,
+    ]) {
+      assert.equal(run(command)?.id, 'release', `${name}: ${command}`);
+    }
+  }
+  // bash expands ~ at the start of a word, but none after `--chdir=`: env goes to ./~/repo.
+  // HOME is this system's own path, so only this system's place reads it.
+  const home = (command: string) => checkCommand(command, { env: { ...sandbox.env, HOME: parent }, cwd: parent });
+  assert.equal(home('env -C ~/repo git push origin feature'), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) assert.equal(home(`${launch} git push origin feature`)?.id, 'release', launch);
+  sandbox.git('config', 'push.followTags', 'true');
+  for (const { name, place, at } of shellPlaces(parent)) {
+    const pushed = checkCommand(`env -C ${at(sandbox.repo)} yokoten bot -- git push origin feature`, { env: sandbox.env, cwd: parent, place });
+    assert.equal(pushed?.id, 'release', `${name}: push.followTags is read in the env -C repo`);
+  }
 });
 
 // .yokoten/ is the copy of yokoten the hooks and CI run: a worker that changes it can turn the checks off (#297).
@@ -496,4 +539,73 @@ test('release: creating a local tag is the owner\'s too, not only pushing it (#8
   allowed('git tag --column');
   allowed('git tag -l --format=%(refname)');
   allowed('git tag v1.2.3', { YOKOTEN_RELEASE_APPROVAL: '1' });
+});
+
+// #1375: the guard reads a line as one unit, so a refusal stops every part. The refusal says
+// so first and names the refused part, so an agent does not report the other parts as done.
+test('a refused command with more than one part says nothing in it ran (#1375)', () => {
+  const env = { HOME: '/tmp/fakehome' };
+  const refuse = (command: string) => checkCommand(command, { cwd: process.cwd(), env });
+  const note = 'Nothing in this command ran. The refused part is `git push --force origin main`. Send the other parts again, on their own or after the fix';
+  for (const join of [' && ', '; ', ' | ', '\n']) {
+    const found = refuse(`echo a > f${join}git push --force origin main`);
+    assert.equal(found?.id, 'force-push', join);
+    assert.equal(found?.nothingRan, note, join);
+  }
+  // The heredoc case from the issue's comment: a body file written, then posted.
+  const heredoc = refuse("python3 - <<'EOF'\nopen('body.md', 'w').write('x')\nEOF\ngh issue create --title x --body-file body.md");
+  assert.equal(heredoc?.id, 'unreadable-command');
+  assert.match(heredoc?.nothingRan ?? '', /^Nothing in this command ran\. The refused part is `gh issue create --title x --body-file body\.md`\./);
+  // The settings write after its payload file (#1374): both parts are named for what they are.
+  const settings = refuse('echo {} > /tmp/fakehome/p.json && gh api -X PUT repos/o/r/rulesets/7 --input /tmp/fakehome/p.json');
+  assert.equal(settings?.id, 'repo-settings');
+  assert.match(settings?.nothingRan ?? '', /The refused part is `gh api -X PUT repos\/o\/r\/rulesets\/7 --input ~\/p\.json`\./);
+  // A path outside the home folder shows only its last part (record 0049).
+  const outside = refuse('echo a > f && gh api graphql -f query=@/var/tmp/m.graphql');
+  assert.match(outside?.nothingRan ?? '', /`gh api graphql -f query=@<folder>\/m\.graphql`/);
+  const substituted = refuse('gh api graphql -f query=$(cat /var/tmp/m.graphql)');
+  assert.match(substituted?.nothingRan ?? '', /`gh api graphql -f query=\$\(cat <folder>\/m\.graphql\)`/);
+  // A long part is cut at a word, so its line keeps 80 columns.
+  const long = refuse('echo a > f; git push --force origin main --verbose --progress --no-thin --atomic --signed=if-asked --porcelain');
+  assert.match(long?.nothingRan ?? '', /`git push --force origin main --verbose --progress --no-thin --atomic \.\.\.`/);
+  // A refusal that names private text does not print the part again.
+  const token = refuse('echo a > f && gh auth token');
+  assert.equal(token?.id, 'gh-token');
+  assert.equal(token?.nothingRan, 'Nothing in this command ran. Send the other parts again, on their own or after the fix');
+  // Positive controls: one part keeps its text, and an allowed line has no note.
+  assert.equal(refuse('git push --force origin main')?.nothingRan, undefined);
+  assert.equal(refuse('echo a > f && git status'), null);
+});
+
+// Rule 11: the note names the refused part only when it holds nothing private, whatever the
+// refusal is for. Each value is built from pieces, so the repo's own privacy check passes.
+test('the nothing-ran note names no part that holds private text (#1375)', () => {
+  const home = ['', 'home', 'someone'].join('/');
+  const marks = join(makeTempDir(), 'marks');
+  const mark = ['acme', 'corp', 'merger'].join('-');
+  writeFileSync(marks, `${mark}\n`);
+  const env = { HOME: home, YOKOTEN_PRIVATE_MARKS: marks };
+  const unnamed = 'Nothing in this command ran. Send the other parts again, on their own or after the fix';
+  const at = (user: string, host: string) => `${user}@${host}`;
+  const cases: [string, string][] = [
+    [`git push --force https://x:${'s3cr3t'}pw${at('', 'example.com')}/o main`, 'force-push'],
+    [`git -c user.email=${at('someone', 'example.com')} push --force origin main`, 'force-push'],
+    [`git push --force ${at('someone', ['192', '0', '2', '7'].join('.'))}:o/r main`, 'force-push'],
+    [`gh api -X PUT repos/o/r/rulesets/1 -f name=${at('someone', 'example.com')}`, 'repo-settings'],
+    [`git -C${home}/repo reset --hard`, 'hard-reset'],
+    [`git reset --hard >${home}/out.txt`, 'hard-reset'],
+    [`git -C file://${home}/r reset --hard`, 'hard-reset'],
+    [`git push --force origin ${mark}`, 'force-push'],
+  ];
+  for (const [part, id] of cases) {
+    const found = checkCommand(`echo a > f && ${part}`, { cwd: process.cwd(), env });
+    assert.ok(found, part);
+    assert.equal(found.nothingRan, unnamed, `${id}: ${part}`);
+  }
+  // Positive controls: a part with nothing private is named, with the same env and marks.
+  assert.equal(checkCommand('echo a > f && git push --force origin main', { cwd: process.cwd(), env })?.nothingRan, 'Nothing in this command ran. The refused part is `git push --force origin main`. Send the other parts again, on their own or after the fix');
+  assert.match(checkCommand(`echo a > f && git reset --hard ${home}/x`, { cwd: process.cwd(), env })?.nothingRan ?? '', /The refused part is `git reset --hard ~\/x`/);
+  // A newline inside a word is a space, and the root folder stays `/`.
+  assert.match(checkCommand("echo a > f && git push --force origin main -o 'a\nb'", { cwd: process.cwd(), env })?.nothingRan ?? '', /`git push --force origin main -o a b`/);
+  assert.match(checkCommand('echo a > f && rm -rf /', { cwd: process.cwd(), env })?.nothingRan ?? '', /The refused part is `rm -rf \/`\./);
 });

@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeTempDir, said, serverGh } from '../../repo/helpers.ts';
 import { type Gh } from '../../../src/host/github/planning.ts';
-import { APPROVAL_GIT_TIMEOUT_MS, readApprovalState } from '../../../src/host/github/approval.ts';
+import { APPROVAL_GIT_TIMEOUT_MS, NO_CODEOWNERS_FIX, readApprovalState } from '../../../src/host/github/approval.ts';
 import { checkMergeApproval, parseLeadApproval, REVIEWER_LOGIN } from '../../../src/rules/pr.ts';
 import { answerOf, apiErrorOf, askReviewModel, MODEL_URL, USER_AGENT, bodyKind, type ModelCall, RETRY_WAIT_MS, approvalLine, buildMessages, canReadIncrement, completedReviews, decideReview, earlierFindings, filesOf, isRepeat, REVIEWER_APP_LOGIN, MAX_ANSWER_TOKENS, MAX_BODY_CHARS, MAX_DIFF_CHARS, MAX_FINDINGS, MAX_MERGED_FINDINGS, MAX_PARTS, MAX_TEXT_CHARS, mergeVerdicts, MODEL_TIMEOUT_MS, parseVerdict, requestBody, CutOff, reviewFor, splitDiff } from '../../../.github/review/review.ts';
 
@@ -64,7 +64,7 @@ test('approval: the tier, the head, and what came after the code owner Approve (
     'repos/me/repo/pulls/19/reviews': [friendAt(approved, '2026-10-22T10:00:00Z'), review('friend', 'COLLABORATOR', 'CHANGES_REQUESTED', head, '2026-10-22T11:00:00Z')].join('\n'),
     'repos/me/repo/pulls/20': view('tier: A\n', ['tier A'], { sha: head }, base),
     'repos/me/repo/pulls/20/files': files,
-    'repos/me/repo/pulls/20/reviews': [friendAt(approved, '2026-10-22T10:00:00Z'), review('friend', 'COLLABORATOR', 'DISMISSED', head, '2026-10-22T11:00:00Z')].join('\n'),
+    'repos/me/repo/pulls/20/reviews': [friendAt(approved, '2026-10-22T10:00:00Z'), review('friend', 'COLLABORATOR', 'DISMISSED', approved, '2026-10-22T11:00:00Z')].join('\n'),
     'repos/me/repo/pulls/21': view('tier: A\n', ['tier A'], { sha: head }, base),
     'repos/me/repo/pulls/21/files': files,
     'repos/me/repo/pulls/21/reviews': [friendAt(approved, '2026-10-22T10:00:00Z'), review('friend', 'COLLABORATOR', 'COMMENTED', head, '2026-10-22T11:00:00Z')].join('\n'),
@@ -87,8 +87,9 @@ test('approval: the tier, the head, and what came after the code owner Approve (
   assert.deepEqual(readApprovalState(gh, dir, env, 17, 'me/repo'), { unsure: 'gh could not read pull request 17' });
   // A newer changes-requested or dismissed review from a code owner refuses, even with
   // an older Approve; a comment is neutral and leaves the Approve standing.
-  assert.deepEqual(readApprovalState(gh, dir, env, 19, 'me/repo'), { tier: 'A', head, approved: null, after: 0, sameDiff: true });
-  assert.deepEqual(readApprovalState(gh, dir, env, 20, 'me/repo'), { tier: 'A', head, approved: null, after: 0, sameDiff: true });
+  // The newer review is named with its state and commit, so the refusal can say so (issue #1381).
+  assert.deepEqual(readApprovalState(gh, dir, env, 19, 'me/repo'), { tier: 'A', head, approved: null, after: 0, sameDiff: true, ownerReview: { state: 'CHANGES_REQUESTED', commit: head } });
+  assert.deepEqual(readApprovalState(gh, dir, env, 20, 'me/repo'), { tier: 'A', head, approved: null, after: 0, sameDiff: true, ownerReview: { state: 'DISMISSED', commit: approved } });
   assert.deepEqual(readApprovalState(gh, dir, env, 21, 'me/repo'), { tier: 'A', head, approved, after: 1, sameDiff: false });
   // A clean merge of main after the Approve: a branch with nothing new of its own merges
   // main in, so no commit with changes came after it, and the own diff is the same.
@@ -466,6 +467,7 @@ test('approval: a base commit that stays missing names the short sha (#670)', ()
   const { gh: noneGh, calls: noneCalls } = serverGh(makePulls(47, none));
   assert.deepEqual(readApprovalState(noneGh, bare, bareEnv, 47, 'me/repo'), {
     unsure: 'no CODEOWNERS file covers pull request 47, so no code owner can approve it',
+    fix: NO_CODEOWNERS_FIX,
   });
   assert.ok(!noneCalls.some((args) => args.some((arg) => arg.includes('/contents/'))));
 });

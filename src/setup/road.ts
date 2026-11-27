@@ -31,6 +31,7 @@ import { KIT, runtimeVersion, VERSION } from './files.ts';
 import { claudeReadsRules, cliPath, COMMIT_HOOKS, deadHookNotes, findRulesGap, handOffBlocks, hasHandOff, hookFile, isCommitHook, isExecutable, isSelf, type OldHook, OWNER_PLACEHOLDER, readHookSetup, readOldHooks } from './init.ts';
 import { gitConfig, remembered } from '../run/check.ts';
 import { indexFiles } from '../run/check.ts';
+import { unreportedChecks } from '../run/notes/required-checks.ts';
 import { FIRST_MILESTONE, lackingLabels, pickNewMilestone } from './plan.ts';
 import { nodeTestsFix } from './advice/tests-job.ts';
 import { commands, FALLBACK_RUNNERS, orList, runLines, runsTests, scriptedRuns, testLanguages } from './advice/test-commands.ts';
@@ -466,7 +467,7 @@ const RELEASE_TAG_RULE_FIX = 'in Settings, Environments, release, under "Deploym
  * With `isCiOff` (yokoten.json "notNow" names `ci`, #377), no CI check can be required, so
  * required-checks is left out.
  */
-export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff = false }: { isCiOff?: boolean } = {}): ServerCheck[] {
+export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff = false, workflows }: { isCiOff?: boolean; workflows?: string[] | Unread } = {}): ServerCheck[] {
   const cant = (id: RuleId, u: Unread): ServerCheck => ({ id, mark: "can't check", finding: finding(id, u.unread, u.fix) });
   if ('unread' in settings) return [cant('server-settings', settings)];
   const judge = (id: RuleId, found: boolean | Unread | null, what: string, fix: string): ServerCheck => {
@@ -511,6 +512,16 @@ export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff
     judge('release-tag-rule', tagRuleOk, tagRuleWhat, RELEASE_TAG_RULE_FIX),
     judge('security-switches', off.length ? false : unknown ? null : true, `${off.join(', ')} ${off.length > 1 ? 'are' : 'is'} off`, 'in Settings, Advanced Security, turn them on'),
   ];
+  // A required name no job reports (#1376): a note, and "can't check" when the workflows can't be read.
+  if (!isOff && rules?.requiredChecks.length && workflows) {
+    if ('unread' in workflows) checks.push(cant('required-check-jobs', workflows));
+    else {
+      const unreported = unreportedChecks(rules.requiredChecks, workflows);
+      const names = unreported.map((name) => `"${name}"`).join(', ');
+      const what = `the ruleset requires ${unreported.length === 1 ? 'the check' : 'the checks'} ${names}, but no job in .github/workflows on ${settings.defaultBranch} reports ${unreported.length === 1 ? 'it' : 'them'}, so a green pull request can't merge`;
+      if (unreported.length) checks.push({ id: 'required-check-jobs', mark: 'note', finding: finding('required-check-jobs', what, `rename the job back, or have the owner update the required checks: ${RULESET}`) });
+    }
+  }
   const { forgotten } = settings;
   if ('unread' in forgotten) checks.push(cant('forgotten-branches', forgotten));
   else if (forgotten.length) {
@@ -518,6 +529,22 @@ export function serverChecks(settings: ServerSettings | Unread, { isCiOff: isOff
     checks.push({ id: 'forgotten-branches', mark: 'note', finding: finding('forgotten-branches', `${forgotten.length} branch(es) with no open pull request (${named})`, 'open a pull request for each, or delete the ones you no longer need; doctor never deletes a branch') });
   }
   return checks;
+}
+
+/** The workflow files in `.github/workflows` at `ref` (#1376), or null when git can't read them. Never the network. */
+export function readWorkflowsAt(root: string, env: Env, ref: string): string[] | null {
+  const git = (args: string[]) => execFileSync('git', ['--no-optional-locks', ...args], { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 1 << 26 });
+  try {
+    const paths = git(['ls-tree', '-z', '--name-only', ref, '--', '.github/workflows/']).split('\0').filter((path) => /\.ya?ml$/i.test(path));
+    return paths.map((path) => git(['show', `${ref}:${path}`]));
+  } catch {
+    return null;
+  }
+}
+
+/** The workflow files on the default branch, as origin/<branch> has them here (#1376): an old fetch gives old files. */
+export function defaultBranchWorkflows(root: string, env: Env, branch: string): string[] | Unread {
+  return readWorkflowsAt(root, env, `refs/remotes/origin/${branch}`) ?? { unread: `git can't read the workflows of origin/${branch} here, so the required check names were not checked`, fix: 'run `git fetch origin`, then run doctor again' };
 }
 
 /** The server checks behind each road step. `server-settings` and `forgotten-branches` stay outside the road. */

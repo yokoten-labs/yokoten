@@ -13,15 +13,17 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
-import { at, makeRepoTemplate, makeTempDir } from '../repo/helpers.ts';
+import { at, gitBashForm, makeRepoTemplate, makeTempDir, shellPath, shellPlaces } from '../repo/helpers.ts';
+import { fromGitBash } from '../../src/platform/paths.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
 import { formatFinding, isFailingFinding } from '../../src/rules/text/message.ts';
 import {
   describeMark,
+  marksNamingProject,
   foldLine,
   foldText,
   hasMark,
@@ -2161,7 +2163,7 @@ test('machineAllowed: origin must be the only remote, with no gh default and no 
   git('remote', 'remove', 'origin');
   assert.deepEqual(machineAllowed(env, repo), { allow: [], unsure: null }, 'no origin: no machine allow, and nothing unsure');
   git('remote', 'add', 'other', 'https://example.com/octo/app');
-  unsure('this repo has a remote other than origin', 'only a remote with another name');
+  unsure('this repo has no origin remote, only a remote with another name', 'only a remote with another name');
 });
 
 test('checkPost: the allow applies only to a post to the repo the command runs in (#447)', () => {
@@ -2188,14 +2190,14 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     [`gh issue create ${body}`, { GH_REPO: 'octo/public' }],
     [`gh issue comment https://example.com/octo/public/issues/1 ${body}`],
     ['gh api repos/octo/app/issues -f body="QuietVale ships"'],
-    [`cd ${own.repo} && gh issue comment 1 -R octo/public ${body}`],
+    [`cd ${shellPath(own.repo)} && gh issue comment 1 -R octo/public ${body}`],
     // Anything else on the line could change where gh posts before it runs (record 0014).
     [`gh repo set-default octo/public && gh issue create ${body}`],
     [`git remote set-url origin https://example.com/octo/public && gh issue create ${body}`],
     [`git remote add upstream https://example.com/octo/public; gh issue create ${body}`],
     [`git push upstream main && gh pr create ${body}`],
     [`git push -u origin main && gh pr create ${body}`],
-    [`env -C ${other.repo} gh issue create ${body}`],
+    [`env -C ${shellPath(other.repo)} gh issue create ${body}`],
     [`GIT_COMMON_DIR=${other.repo}/.git gh issue create ${body}`],
     [`printf '[remote "origin"]\\n\\turl = https://example.com/octo/public\\n' >> .git/config && gh issue create ${body}`],
     [`sed -i s/app/public/ .git/config && gh issue create ${body}`],
@@ -2209,7 +2211,7 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     [`gh issue create --title "x $(git remote remove origin)" --body "QuietVale ships"`],
     [`gh issue create --title x --body-file - <<EOF\nQuietVale ships $(git remote remove origin)\nEOF`],
     [`gh issue create --title x --body-file - <<'EOF'\nQuietVale ships\nEOF\ngit remote remove origin`],
-    [`cd ${other.repo} && gh issue create ${body}`],
+    [`cd ${shellPath(other.repo)} && gh issue create ${body}`],
   ];
   for (const [command, extra] of targets) {
     assert.equal(post(command, own.repo, { extra })?.id, 'private-mark', `machine: ${command}`);
@@ -2226,7 +2228,82 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     assert.equal(post(command, own.repo), null, `machine: ${command}`);
     assert.equal(post(command, other.repo, { config: allowing }), null, `privacy.allow: ${command}`);
   }
-  assert.equal(post(`cd ${own.repo} && gh issue create ${body}`, other.repo)?.id, 'private-mark', 'a cd into another repo gets no allow');
+  // A cd into another repo gets that repo's machine allow, never the session's (#1377). The
+  // repo is written as the shell reads it: bash takes `C:\x` unquoted as `C:x`.
+  assert.equal(post(`cd ${shellPath(own.repo)} && gh issue create ${body}`, other.repo), null, 'a cd into the allowed repo gets its allow');
+  assert.equal(post(`cd ${shellPath(other.repo)} && gh issue create ${body}`, own.repo, { config: allowing })?.id, 'private-mark', "the session's privacy.allow stays home");
+});
+
+test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s allow, and an unknown folder none (#1377)', () => {
+  const own = allowRepo('https://example.com/octo/app');
+  own.allow([{ remote: 'example.com/octo/app', allow: ['quietvale'] }]);
+  const other = allowRepo('https://example.com/octo/public');
+  // The session sits in a folder above the repo, which is no repo itself.
+  const parent = own.base;
+  for (const repo of [own.repo, other.repo]) writeFileSync(join(repo, 'body.md'), 'QuietVale ships\n');
+  const allowing = { ...DEFAULTS, privacy: { ...DEFAULTS.privacy, allow: ['QuietVale'] } };
+  const create = 'gh pr create --title "fix(check): a bug" --body-file body.md';
+  const inline = 'gh issue create --title x --body "QuietVale ships"';
+  // Each place writes a repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so
+  // Windows writes the Git Bash `/c/x`, or `/tmp/x`, which Linux CI runs through `place`.
+  for (const { name, place, at: shell } of shellPlaces(dirname(parent))) {
+    const post = (command: string, cwd = parent, config?: typeof DEFAULTS) => checkCommand(command, { env: own.env, config, cwd, place });
+    for (const launch of ['env -C', 'env --chdir', 'env --chdir=']) {
+      const to = (repo: string) => `${launch}${launch.endsWith('=') ? '' : ' '}${shell(repo)}`;
+      assert.equal(post(`${to(own.repo)} yokoten bot -- ${create}`), null, `${name}, ${launch}: the repo with the allow`);
+      assert.equal(post(`${to(own.repo)} ${create}`), null, `${name}, ${launch}: plain gh`);
+      const stopped = post(`${to(other.repo)} yokoten bot -- ${create}`);
+      assert.equal(stopped?.id, 'private-mark', `${name}, ${launch}: a repo without the allow`);
+      assert.doesNotMatch(formatFinding(stopped), /quietvale/i, 'the mark is never printed');
+    }
+    // A relative env -C is read from the session folder: env searches no CDPATH.
+    assert.equal(post(`env -C repo yokoten bot -- ${create}`), null, `${name}: a relative folder`);
+    assert.equal(post(`cd ${shell(own.repo)} && yokoten bot -- ${create}`), null, `${name}: a cd from the parent folder`);
+    // The session's own yokoten.json is another repo's: its allow does not follow the post.
+    assert.equal(post(`env -C ${shell(other.repo)} ${inline}`, own.repo, allowing)?.id, 'private-mark', `${name}: the session's privacy.allow`);
+    assert.equal(post(`env -C ${shell(own.repo)} ${inline}`, own.repo, allowing), null, `${name}: the same repo keeps both`);
+    // A folder the guard can't place or git can't read: no allow, and a body file there is unread.
+    for (const command of [
+      `env -C ${shell(join(parent, 'nowhere'))} yokoten bot -- ${inline}`,
+      `env -C ${shell(parent)} yokoten bot -- ${inline}`,
+      `env -C "$REPO" yokoten bot -- ${inline}`,
+      `env -C ${shell(own.repo)} -C ${shell(other.repo)} yokoten bot -- ${inline}`,
+      `env -C ${shell(own.repo)} sudo -D ${shell(other.repo)} ${inline}`,
+      `env -C ${shell(own.repo)} ${inline} -R octo/public`,
+    ]) {
+      assert.equal(post(command)?.id, 'private-mark', `${name}: ${command}`);
+    }
+    for (const command of [`env -C ${shell(join(parent, 'nowhere'))} yokoten bot -- ${create}`, `env -C ${shell(parent)} -u X yokoten bot -- ${create}`]) {
+      assert.equal(post(command)?.id, 'unreadable-command', `${name}: ${command}`);
+    }
+  }
+  // bash expands ~ at the start of a word, so `env -C ~/repo` is HOME/repo. After `--chdir=` it
+  // expands none: env goes to ./~/repo, so the guard can't say which repo gets the post. HOME
+  // is this system's own path, so only this system's place reads it.
+  const home = (command: string) => checkCommand(command, { env: own.env, cwd: other.repo });
+  assert.equal(home(`env -C ~/repo ${inline}`), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) {
+    for (const command of [`${launch} ${inline}`, `${launch} yokoten bot -- ${inline}`]) {
+      assert.equal(home(command)?.id, 'private-mark', command);
+    }
+  }
+});
+
+// #1377: on Windows a test writes a repo in Git Bash's drive form, the only form a cd is placed
+// from. The native folder a test makes is `C:\...`; the guard must read the written form back
+// as that same folder. Pure, so Linux CI checks it on the win32 path.
+const GIT_BASH_FORMS: [string, string][] = [
+  ['C:\\Users\\runneradmin\\AppData\\Local\\Temp\\yokoten-test-a\\repo', '/c/Users/runneradmin/AppData/Local/Temp/yokoten-test-a/repo'],
+  ['D:\\a\\_temp\\repo', '/d/a/_temp/repo'],
+  ['c:/x', '/c/x'],
+  ['C:\\', '/c/'],
+];
+test('shellPath: Git Bash drive form reads back as the Windows folder (#1377)', () => {
+  for (const [native, written] of GIT_BASH_FORMS) {
+    assert.equal(gitBashForm(native), written, native);
+    assert.equal(fromGitBash(written, 'win32', 'C:\\Temp')?.toLowerCase(), native.replaceAll('/', '\\').toLowerCase(), written);
+  }
+  assert.equal(gitBashForm('/home/x/repo'), '/home/x/repo', 'a path with no drive stays');
 });
 
 test('lonePost: linear on long input (#447)', () => {
@@ -2844,6 +2921,9 @@ const USERS_FOLDER_ROWS: [text: string, grade: 'sure' | 'unknown'][] = [
   ['cd ../../../Users/alice', 'sure'],
   // A short name is a name too.
   ['C:\\Users\\Al\\x', 'sure'],
+  // Prose after a real name, and a name with a space inside it, stay names (#1382).
+  ['see `C:\\Users\\Jane Doe\\x` here', 'sure'],
+  ['/Users/alice/`x` here', 'sure'],
   ['/home/jo/x', 'unknown'],
 ];
 const USERS_FOLDER_NAMES = /alice|bob|carol|dave|jane|mary|ann\b|brien|smith|john|doe|work|\bal\b|\bjo\b/i;
@@ -2923,6 +3003,9 @@ const USERS_FOLDER_KEPT = [
   '/home/runner/work/x', 'C:\\Users\\Public\\x', 'C:\\Users\\Default\\x', 'C:\\Users\\Guest', '/Users/Shared/x', '/home/<name>/x', 'C:\\Users\\~\\x', '/Users/.../x',
   'src/home/bob/x', 'src\\/home\\/bob', 'C:\\Users\\%USERNAME%\\x', '/home/$USER/x', '/homework/bob', 'https://example.com/home/bob', 'https://x/home/alice',
   'GET /users/123', 'GET /home/settings', 'route /home/index.html', 'import x from "/home/utils"', '/a/users/me', '/b/Users/me', '/HOME/alice',
+  // The users folder in prose, with no name after it (#1382): a backtick, a `<`, a space or the line end.
+  'C:\\Users\\`word` and more text', 'C:\\Users\\ word', '/Users/`word`', 'C:\\Users', 'C:\\Users\\', 'C:\\Users\\<user>', '/Users/ plain words',
+  'C:/Users/`word`', '/home/`word`', 'C:\\Users\\\n/Users/',
 ];
 
 test('hideHome: a shared account, a placeholder, a route and a path that only looks like one stay (#1237)', () => {
@@ -2961,4 +3044,20 @@ test('scanText: a users-folder path in text that leaves the machine is a hit; th
   // A reason in .yokotenignore keeps it listed and lets it pass.
   const ignored = scanText('C:\\Users\\alice\\x', { file: 'post', ignores: [{ rule: 'user-folder', reason: 'a made-up home in an example' }] }).find((hit) => hit.id === 'user-folder');
   assert.equal(ignored !== undefined && !isFailingFinding(ignored), true);
+});
+
+// #1378: a mark that is the project's name is refused in bulk once the repo is public; doctor notes it first.
+test('privacy: a mark equal to the repo, or a prefix at a separator of a crate or the org, names the project (#1378)', () => {
+  const project = ['quiet', 'vale'].join('');
+  const names = [
+    { kind: 'repo' as const, name: `${project}-app` },
+    { kind: 'org' as const, name: `${project}_Labs` },
+    { kind: 'crate' as const, name: `${project}-core` },
+    { kind: 'repo' as const, name: 'harbor' },
+  ];
+  const hits = marksNamingProject([{ mark: project }, { mark: 'Harbor' }, { mark: 'unrelated' }, { mark: 'quiet' }, { mark: `${project}-core-x` }], names);
+  assert.deepEqual(hits, [{ mark: project, kinds: ['repo', 'org', 'crate'] }, { mark: 'Harbor', kinds: ['repo'] }]);
+  // Never a part inside a name: `quiet` is not a word of `quietvale-app`.
+  assert.deepEqual(marksNamingProject([{ mark: 'vale' }, { mark: 'app' }], names), []);
+  assert.deepEqual(marksNamingProject([{ mark: project }], []), [], 'no names, no note');
 });

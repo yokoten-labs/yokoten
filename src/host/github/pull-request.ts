@@ -90,7 +90,7 @@ function commitsProblem(root: string, base: string, head: string, env: Env, fix:
   return null;
 }
 
-export type PullRequestRead = PullRequest & { base: string; head: string; numstat: string; /** The head branch, '' when the host does not say. */ branch: string };
+export type PullRequestRead = PullRequest & { base: string; head: string; numstat: string; /** The head branch, '' when the host does not say. */ branch: string; /** The base branch's name, '' when the host does not say (#1376). */ baseBranch?: string };
 
 /** The pull request of this run, null when the run is not for one, or why it can't be read. */
 export function readPullRequest(root: string, env: Env): PullRequestRead | Unreadable | null {
@@ -103,7 +103,7 @@ export function readPullRequest(root: string, env: Env): PullRequestRead | Unrea
   const branch = isObject(pr.head) ? asText(pr.head.ref) : '';
   const problem = shasProblem(base, head) ?? commitsProblem(root, base, head, env);
   if (problem) return { problem };
-  return withDiff(root, { title: asText(pr.title), body: asText(pr.body), labels: labelNames(pr.labels), milestone: milestoneTitle(pr.milestone), author: isObject(pr.user) ? asText(pr.user.login) : '' }, base, head, env, branch);
+  return { ...withDiff(root, { title: asText(pr.title), body: asText(pr.body), labels: labelNames(pr.labels), milestone: milestoneTitle(pr.milestone), author: isObject(pr.user) ? asText(pr.user.login) : '' }, base, head, env, branch), baseBranch: isObject(pr.base) ? asText(pr.base.ref) : '' };
 }
 
 export const milestoneTitle = (milestone: unknown): string | null => (isObject(milestone) && typeof milestone.title === 'string' ? milestone.title : null);
@@ -132,7 +132,7 @@ export function readNumberedPullRequest(root: string, gh: Gh, number: string, en
   if (!/^[1-9]\d*$/.test(number)) return { problem: finding('pr-read', `"${number}" is not a pull request number`, 'give the number alone, such as `yokoten check --pr 12`') };
   let pr: unknown;
   try {
-    pr = JSON.parse(gh(['pr', 'view', number, '--json', 'title,body,labels,milestone,author,baseRefOid,headRefOid,headRefName']));
+    pr = JSON.parse(gh(['pr', 'view', number, '--json', 'title,body,labels,milestone,author,baseRefName,baseRefOid,headRefOid,headRefName']));
   } catch (err) {
     // gh says this when the repo has no such pull request: a wrong number, not a network problem.
     if (/Could not resolve to a PullRequest/i.test(String((err as { stderr?: string }).stderr || (err as Error).message))) {
@@ -148,7 +148,7 @@ export function readNumberedPullRequest(root: string, gh: Gh, number: string, en
   const fetch = `run \`git fetch origin\` and \`git fetch origin pull/${number}/head\`, then run it again`;
   const problem = shasProblem(base, head) ?? commitsProblem(root, base, head, env, fetch);
   if (problem) return { problem };
-  return withDiff(root, { title: asText(pr.title), body: asText(pr.body), labels: labelNames(pr.labels), milestone: milestoneTitle(pr.milestone), author: ghAuthor(pr.author) }, base, head, env, asText(pr.headRefName));
+  return { ...withDiff(root, { title: asText(pr.title), body: asText(pr.body), labels: labelNames(pr.labels), milestone: milestoneTitle(pr.milestone), author: ghAuthor(pr.author) }, base, head, env, asText(pr.headRefName)), baseBranch: asText(pr.baseRefName) };
 }
 
 /** One open pull request the sync may update: its number, its branch, and the base branch. */
@@ -215,7 +215,7 @@ function ghAuthor(author: unknown): string {
 }
 
 /** "owner/name" of the origin remote, or null. */
-function originRepo(root: string, env: Env): string | null {
+export function originRepo(root: string, env: Env): string | null {
   try {
     return repoOf(execFileSync('git', ['config', '--get', 'remote.origin.url'], { cwd: root, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
   } catch {

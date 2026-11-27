@@ -847,13 +847,24 @@ function refuseApiMerge(invocation: Invocation, gh: Gh, cwd: string, env: Env, o
 interface MergeStop {
   kind: 'unchecked' | 'needsApprove';
   text: string;
+  /** A next step of its own, such as adding a CODEOWNERS line (issue #1381). */
+  fix?: string;
 }
 
-/** The refusal of a merge the Approve check stops: what stopped it, and the fix its kind has. */
+/** Why a merge in the browser is not the way around a refusal (issue #1381, core rule 12). */
+const NO_BROWSER_MERGE = 'Do not click Merge in the browser: its squash commit gets local time, not UTC.';
+
+/** The exact steps of an Approve on GitHub (issue #1381). */
+const APPROVE_STEPS = 'The owner opens Files changed, clicks Review changes, picks Approve and clicks Submit review. Then merge again through the bot.';
+
+/**
+ * The refusal of a merge the Approve check stops: what stopped it, and the fix its kind
+ * has. A refusal the owner must act on also says not to merge in the browser.
+ */
 export const mergeRefusal = (stop: MergeStop): BotRefusal => ({
   rule: 'merge',
   what: `nothing was merged: ${stop.text}`,
-  fix: stop.kind === 'needsApprove' ? 'Merge again once the owner has approved the head on GitHub.' : 'Fix what stopped the check, then merge again.',
+  fix: stop.kind === 'needsApprove' ? `${APPROVE_STEPS} ${NO_BROWSER_MERGE}` : stop.fix ? `${stop.fix} ${NO_BROWSER_MERGE}` : 'Fix what stopped the check, then merge again.',
 });
 
 /**
@@ -865,7 +876,7 @@ export const mergeRefusal = (stop: MergeStop): BotRefusal => ({
  */
 function approvalRefusal(gh: Gh, root: string, env: Env, number: number, repo: string): MergeStop | null {
   const state = readApprovalState(gh, root, env, number, repo);
-  if ('unsure' in state) return { kind: 'unchecked', text: `could not check the owner's Approve (${state.unsure})` };
+  if ('unsure' in state) return { kind: 'unchecked', text: `could not check the owner's Approve (${state.unsure})`, ...(state.fix ? { fix: state.fix } : {}) };
   if (state.tier !== 'A') return null;
   const problem = checkMergeApproval(state);
   return problem ? { kind: 'needsApprove', text: problem.what } : null;

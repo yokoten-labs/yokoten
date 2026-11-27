@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
-import { finding, type Finding } from '../../text/message.ts';
+import { finding, nothingRanNote, type Finding } from '../../text/message.ts';
 import { checkCommandTitle } from '../../pr.ts';
-import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
+import { checkPost, ghIndex, loadMarks, makeRedactor, scanText, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
 import { mayPost, unreadPost } from '../../privacy/posts.ts';
 import { type Config, type Env } from '../../config.ts';
 import { markFinding, checkWorkerWrites, checkUnmarkedWork } from '../worker/mark.ts';
@@ -21,7 +21,7 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
-import { hostPathPlace, type PathPlace } from '../../../platform/paths.ts';
+import { holdsUsersFolder, hostPathPlace, lastPathPart, pathForm, type PathPlace } from '../../../platform/paths.ts';
 
 // `place` is where the command's paths are read (#1015): the entry point passes this machine's;
 // a test passes another system's, so Linux CI tests the Windows reading.
@@ -37,7 +37,11 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     const isWorker = options.env.YOKOTEN_ROLE === 'worker';
     // The file rules are looked up once per call: a worker's lead-only files, the lead's guard settings (#1212).
     const files = fileRules(options.repos ?? []);
-    return withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files }));
+    const seen: SeenParts = { count: 0 };
+    const found = withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files, seen }));
+    // The guard reads the line as one unit: a refusal stops every part (#1375). A question is not a refusal.
+    if (found === null || found.ask || seen.count < 2) return found;
+    return { ...found, nothingRan: nothingRanNote(seen.part && !PRIVATE_FINDINGS.has(found.id) ? namedPart(seen.part, options.env) : undefined) };
   } catch {
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
@@ -52,10 +56,73 @@ type GuardConfig = Pick<Config, 'commands'> & Partial<Pick<Config, 'privacy' | '
 /** A repo whose file rules apply, by its root, with its yokoten.json "leadOnly". */
 export type RuledRepo = { root: string; leadOnly: string[] };
 
-type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules; askRules?: FileRules; workerByType?: boolean };
+/** How many parts the command has, and the words of the part a refusal belongs to (#1375). */
+type SeenParts = { count: number; part?: string[] };
 
-function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules, workerByType = false }: EachOptions): Finding | null {
+type EachOptions = { env: Env; config?: GuardConfig; cwd: string | null; titles?: boolean; rules?: FileRules; askRules?: FileRules; workerByType?: boolean; seen?: SeenParts };
+
+// A refusal for one of these names private text: the refused part is not shown, so the note does not print it again.
+const PRIVATE_FINDINGS = new Set(['email', 'ip', 'private-mark', 'secret', 'user-folder', 'gh-token']);
+// The refused part stays short enough that its line keeps the 80-column limit (record 0049).
+const PART_WIDTH = 70;
+
+/**
+ * A word of the refused part as the note shows it. The home folder is `~`. Another full path
+ * shows only its last part, after `<folder>/`: a machine path means nothing to the reader and
+ * may show private names (record 0049). A value after `=` or `@`, and each piece of a word
+ * with spaces, is read the same way.
+ */
+function shownWord(word: string, homes: string[]): string {
+  // A quoted word or a substitution holds spaces: each piece is read on its own.
+  // A newline or a tab is a space here, so the note keeps one line per row.
+  if (/\s/.test(word)) return word.split(/\s+/).map((piece) => shownWord(piece, homes)).join(' ');
+  const at = Math.max(word.lastIndexOf('='), word.lastIndexOf('@'));
+  const value = word.slice(at + 1);
+  const home = homes.find((folder) => value === folder || value.startsWith(`${folder}/`) || value.startsWith(`${folder}\\`));
+  const form = pathForm(value);
+  const shown = home !== undefined ? `~${value.slice(home.length)}` : form === null || form === 'relative' || form === 'home' || value === '/' ? value : `<folder>/${lastPathPart(value) ?? ''}`;
+  return `${word.slice(0, at + 1)}${shown}`.replaceAll('`', "'");
+}
+
+/** The refused part as the note names it: its shown words, cut at a word to PART_WIDTH. */
+function shownPart(words: string[], env: Env): string {
+  const homes = [env.HOME, env.USERPROFILE].filter((home): home is string => home !== undefined && home.length > 1);
+  let shown = '';
+  for (const word of words) {
+    const plain = shownWord(word, homes);
+    const next = shown === '' ? plain : `${shown} ${plain}`;
+    if (next.length > PART_WIDTH) return shown === '' ? `${plain.slice(0, PART_WIDTH)} ...` : `${shown} ...`;
+    shown = next;
+  }
+  return shown;
+}
+
+// What a shown part may not hold, even with its paths cut (rule 11): a name before `@` (an
+// address, a URL's login, an SSH user) or an IP address. A users folder is read by holdsUsersFolder.
+const UNSHOWN = /[^\s=@'"(]@|(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/;
+
+/**
+ * The refused part as the note may name it, or undefined for no name (rule 11). The shown
+ * words must hold nothing UNSHOWN, nothing the stop log's redactor would hide (secrets,
+ * addresses, the home folder, the owner's marks), and nothing the privacy scan finds. A part
+ * that fails any of these is left unnamed: the note still says nothing ran.
+ */
+function namedPart(words: string[], env: Env): string | undefined {
+  try {
+    const shown = shownPart(words, env);
+    if (UNSHOWN.test(shown) || holdsUsersFolder(shown) || [env.HOME, env.USERPROFILE].some((home) => home !== undefined && home.length > 1 && shown.includes(home))) return undefined;
+    const marks = loadMarks(env);
+    if (makeRedactor({ marks }, env)(shown) !== shown) return undefined;
+    return scanText(shown, { file: 'command', marks, env, inlineIgnores: false, hasContactPlaces: false }).length ? undefined : shown;
+  } catch {
+    // An unreadable marks file names no part; the refusal itself stands.
+    return undefined;
+  }
+}
+
+function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules, workerByType = false, seen = { count: 0 } }: EachOptions): Finding | null {
   const commands = commandWords(command);
+  seen.count = commands.length;
   // checkCommand set the place just before this call.
   const placeNow = commandPlace.current ?? hostPathPlace();
   // Where a gh command reads a relative body file: the folder, followed through each cd.
@@ -88,14 +155,17 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
   // Rules that refuse any form of a setting or a write (#361, #664). They answer after the
   // rest, which name the case more exactly; the first one found is kept.
   let later: Finding | null = null;
+  let laterPart: string[] | undefined;
   // A question for the owner, kept until the whole line is read: any refusal wins (#1212).
   let asked: Finding | null = null;
   for (const words of commands) {
     const mayWrite = heredoc !== undefined || fills || writesFile(words) || isUnsure(words) || writers.some((other) => other !== words);
     // The name is built only on a refusal (#498).
     const saw = (isMarked: (word: string) => boolean) => writeRisk(words, { heredoc, plainText, plainAt, fills, writers, isMarked });
+    // Where this command's program runs: a push and a post read it the same way (#1377).
+    const launched = launchFolder(words, postCwd, { env, isTildeQuoted });
     const reason =
-      checkGit(words, { env, config, cwd, folder: postCwd, rules, isAlone: commands.length === 1 }) ??
+      checkGit(words, { env, config, cwd, folder: launched.folder, isLaunched: launched.isLaunched, rules, isAlone: commands.length === 1 }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
       hostSettingsWrite(words) ??
@@ -115,7 +185,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       checkBlocked(words, config?.commands.block ?? {}) ??
       // The text a post carries comes before the publish rule: a publish that would leak a
       // private mark names the mark, which is the part the agent must fix (#391, #829).
-      checkPosted(words, { env, config, cwd: postCwd, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder, place: commandPlace.current ?? undefined } }) ??
+      checkPosted(words, { env, config, cwd: launched.folder, from, command, titles, files: { heredoc, mayWrite, saw, movesFolder: movesFolder || launched.isLaunched, place: commandPlace.current ?? undefined } }) ??
       checkPublish(words, env) ??
       (rules ? checkLeadOnlyWrites(words, { env, rules, folder: postCwd, platform: placeNow.platform }) : null) ??
       // A worker by agent type, in a checkout where the commit check can't see a worker (#1225).
@@ -125,6 +195,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // yokoten.json has no pre-commit hook, so this is the only check before a key lands in the
       // history (#824). Only a commit pays for it.
       checkCommitPrivacy(words, { env, privacy: config?.privacy, folder: postCwd });
+    seen.part = words;
     if (reason) return reason;
     // The lead's write to a guard setting asks the owner, once nothing else refuses the line;
     // a worker's is refused: lead-only covers the repo's copies, this the home ones (#1212).
@@ -132,6 +203,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     const settings = settingsRules ? guardSettingsWrite(words, { rules: settingsRules, folder: postCwd, env, platform: placeNow.platform }) : null;
     if (settings && rules) return workerSettingsRefusal(settings);
     asked ??= settings;
+    const laterBefore: Finding | null = later;
     later ??=
       checkGitConfigEnvironment(words) ??
       // The likely folder, read as written: a write there is refused, never let through.
@@ -148,11 +220,13 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
       // (#828). It answers last among the late rules, so a command that also points at the
       // config folder or sets the folder git works in keeps its own rule (#591).
       checkGitLoseWork(words, postCwd, env);
+    if (later !== laterBefore) laterPart = words;
     postCwd = folderAfter(words, postCwd, { env, isTildeQuoted });
     nearCwd = folderAfter(words, nearCwd, { env, isTildeQuoted, isCdPathSkipped: true });
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
   const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : null;
+  seen.part = worker ? undefined : laterPart;
   return worker ?? later ?? asked;
 }
 
@@ -242,6 +316,44 @@ function changesFolder(name: 'env' | 'sudo', words: string[], index: number): tr
   return index;
 }
 
+// The env options that take no value and leave the folder alone.
+const ENV_PLAIN_OPTIONS = /^(?:-[i0v]+|--(?:ignore-environment|null|debug)|--unset=.*)$/s;
+
+/**
+ * Where a command's program runs (#1377): `folder`, moved by a leading `env -C <dir>`,
+ * `env --chdir <dir>` or `env --chdir=<dir>`. The folder is read as a cd reads it, without
+ * CDPATH, which env never searches. Null when a launcher moves it in a way the guard can't
+ * read: joined options (`-iC`), a split string, a second move, `sudo -D`, or `--chdir=~…`. `isLaunched`:
+ * a launcher names the folder. A git push and a gh post both read it from here.
+ */
+export function launchFolder(words: string[], folder: string | null, { env, isTildeQuoted }: { env: Env; isTildeQuoted: boolean }): { folder: string | null; isLaunched: boolean } {
+  const unknown = { folder: null, isLaunched: true };
+  let index = 0;
+  while (index < words.length && /^[A-Za-z_]\w*=/.test(words[index])) index++;
+  let named: string | undefined;
+  if (programName(words[index] ?? '') === 'env') {
+    for (index++; index < words.length && words[index].startsWith('-'); index++) {
+      const word = words[index];
+      if (word === '--') {
+        index++;
+        break;
+      }
+      const value = word === '-C' || word === '--chdir' ? words[++index] : word.startsWith('--chdir=') ? word.slice('--chdir='.length) : undefined;
+      if (value !== undefined) {
+        // bash expands no ~ after `--chdir=`, which is no assignment: env goes to a folder named ~.
+        if (named !== undefined || value === '' || value.startsWith('-') || (word.startsWith('--chdir=') && value.startsWith('~'))) return unknown;
+        named = value;
+      } else if (word === '-u' || word === '--unset') index++;
+      else if (!ENV_PLAIN_OPTIONS.test(word)) return unknown;
+    }
+  }
+  // Any launcher after it that moves the folder again: the guard does not follow it.
+  const rest = words.slice(index);
+  const movesAgain = rest.some((word, at) => (programName(word) === 'env' || programName(word) === 'sudo') && changesFolder(programName(word) as 'env' | 'sudo', rest, at + 1) === true);
+  if (movesAgain) return unknown;
+  if (named === undefined) return { folder, isLaunched: false };
+  return { folder: folderAfter(['cd', named], folder, { env, isTildeQuoted, isCdPathSkipped: true }), isLaunched: true };
+}
 
 /**
  * The folder whose git reads the same tags and settings as `--git-dir <path>` (#865). A
@@ -366,8 +478,9 @@ function gitDirectoryOf(words: string[], start: number, from: string | null): { 
 
 // `folder`: where the command runs after its `cd`s. `cwd` is null after a cd, for the hooks
 // setting; a push still reads its tags from the folder the cd went to (#1015).
+// `isLaunched`: an `env -C` named `folder`, so a push reads its tags there, or is unknown (#1377).
 // `isAlone`: this git call is the whole command, so no other part changes the repo first (#1379).
-function checkGit(words: string[], { env, config, cwd, folder = cwd, rules, isAlone = false }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules; isAlone?: boolean }): Finding | null {
+function checkGit(words: string[], { env, config, cwd, folder = cwd, isLaunched = false, rules, isAlone = false }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; isLaunched?: boolean; rules?: FileRules; isAlone?: boolean }): Finding | null {
   const start = words.findIndex(isGit);
   if (start === -1) return null;
   const settings: string[] = [];
@@ -376,7 +489,7 @@ function checkGit(words: string[], { env, config, cwd, folder = cwd, rules, isAl
   const { directory } = here;
   // Where a push reads its tags: after a cd, the folder it went to. A folder the command
   // names (or moves to) that git can't read leaves the push unknown, so it is refused.
-  const moved = cwd === null && folder !== null;
+  const moved = isLaunched || (cwd === null && folder !== null);
   const pushFrom = moved ? gitDirectoryOf(words, start, folder) : here;
   const pushDirectory = pushFrom.directory;
   const isPushUnknown = () => (pushFrom.isNamed || moved) && (pushDirectory === null || readGit(pushDirectory, ['rev-parse', '--git-dir'], env) === null);

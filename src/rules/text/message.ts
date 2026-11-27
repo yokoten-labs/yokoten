@@ -35,6 +35,11 @@ export interface Finding {
    * hook asks where its runtime can ask, and says the finding anywhere else.
    */
   ask?: boolean;
+  /**
+   * A refused command with more than one part (#1375): the note that nothing in it ran,
+   * which the refusal shows first. Left out for a command with one part.
+   */
+  nothingRan?: string;
 }
 
 /** A rule as `explain` tells it: the rule, its reason, and the check that holds it. */
@@ -75,6 +80,21 @@ export const layoutFoldNote = (folders: number, maxEntries: number, named: strin
   fix: `to hold this repo to the cap, add \`"layout": { "maxEntries": ${maxEntries} }\` to yokoten.json; \`yokoten init\` adds it`,
   why: 'the folder cap is a house rule a repo chooses; this one has no "layout" key in yokoten.json, so its hits are one note',
 });
+
+/**
+ * The next step on a refused settings write (#1374). The guard's Instead row and the guide's
+ * core rules show this text; a test holds the two the same.
+ */
+export const REPO_SETTINGS_FIX =
+  'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder. Say what the payload changes, so the owner reads it before they run it';
+
+/**
+ * The note that starts a refusal of a command with more than one part (#1375). The guard
+ * reads the line as one unit, so the parts it allowed never ran either. `part` is the refused
+ * part's words, when the refusal belongs to one part.
+ */
+export const nothingRanNote = (part?: string): string =>
+  `Nothing in this command ran. ${part === undefined ? '' : `The refused part is \`${part}\`. `}Send the other parts again, on their own or after the fix`;
 
 const RELEASE_WHY = 'only the owner decides when to release';
 const PR_CHECK = '`yokoten check --pr` in CI reads the pull request';
@@ -652,6 +672,12 @@ export const RULES = {
     check: '`doctor` reads ~/.config/yokoten/private-marks (and the file YOKOTEN_PRIVATE_MARKS names) and counts its lines',
     docs: guide('privacy'),
   },
+  'mark-names-project': {
+    rule: 'no private mark is the name of the repo, its org, or a crate or package in it (#1378)',
+    why: 'such a mark is in every file that names the project, so the checks refuse that work in bulk once the repo is public',
+    check: '`doctor`, and `yokoten marks add` in a repo, compare each mark with the origin remote and the names in Cargo.toml, package.json, pyproject.toml and go.mod; equal, or a prefix at a separator; a note by line number, never the mark',
+    docs: guide('privacy'),
+  },
   'disk-space': {
     rule: 'the disk that holds the repo has room left (record 0012)',
     why: 'on a full disk, every agent session stops, and the agent cannot tell you why',
@@ -772,6 +798,11 @@ export const RULES = {
     rule: 'secret scanning, push protection, private vulnerability reporting and Dependabot alerts are on',
     why: 'the host then stops a pushed secret, and people can report a hole in private',
     check: `${SERVER_CHECK}; some switches are visible only to a repo admin`,
+  },
+  'required-check-jobs': {
+    rule: 'every check name the default branch ruleset requires is reported by a job in `.github/workflows` (#1376)',
+    why: 'a required name that no job reports keeps a green pull request from merging, and only the owner can change the ruleset',
+    check: `${SERVER_CHECK}; doctor compares the names with the jobs on the default branch, and \`check --pr\` notes a pull request that drops one; a note only`,
   },
   'forgotten-branches': {
     rule: 'every branch on the server has an open pull request, or is deleted by its owner',
@@ -985,12 +1016,14 @@ const REFUSAL_HEAD = 'yokoten stopped this: ';
 /**
  * The text form of a refusal (issues #1027, #1099): a title, then aligned `Why`, `Instead`
  * and `More` rows, so a person and an agent read the same four parts, a blank line between
- * rows when one wraps (issue #1115). It keeps the screen
+ * rows when one wraps (issue #1115). A command with more than one part starts with the
+ * note that nothing in it ran (issue #1375). It keeps the screen
  * limits of record 0049: every line but the link fits 80 columns.
  */
 export const formatRefusal = (f: Finding): string => {
   const parts = refusalParts(f);
-  return [...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...spaced([findingRow('Why', parts.why), findingRow('Instead', parts.fix), findingRow('More', parts.docs)])].join('\n');
+  const note = f.nothingRan === undefined ? [] : [...wrap('', `${f.nothingRan}.`), ''];
+  return [...note, ...wrap(REFUSAL_HEAD, parts.title.slice(REFUSAL_HEAD.length)), '', ...spaced([findingRow('Why', parts.why), findingRow('Instead', parts.fix), findingRow('More', parts.docs)])].join('\n');
 };
 
 /** A fix that starts with the command to type: the command, and what to do after it ('' for nothing). */
