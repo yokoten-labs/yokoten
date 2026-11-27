@@ -1874,3 +1874,23 @@ test('check --pr: a pull request that raises the size cap fails', async () => {
   assert.equal(result.status, 1);
   assert.match(flat(result.stderr), /raises the size cap from 5000 to 5100: the cap only goes down/);
 });
+
+// git finds renames by default, so the diff lists a moved yokoten.json under its new name
+// only. The ratchet reads both ends anyway, so the cap can't be moved away.
+test('check --pr: a pull request that moves yokoten.json away fails', async () => {
+  const sandbox = makeSandbox();
+  sandbox.write('yokoten.json', JSON.stringify({ size: { maxLines: 5000 } }));
+  sandbox.git('add', '.');
+  sandbox.git('commit', '-qm', 'base');
+  const base = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  sandbox.git('mv', 'yokoten.json', 'old.json');
+  sandbox.git('commit', '-qm', 'head');
+  const head = sandbox.git('rev-parse', 'HEAD').stdout.trim();
+  assert.equal(sandbox.git('diff', '--name-only', `${base}...${head}`).stdout.trim(), 'old.json', 'the diff names only the new path');
+  const file = join(sandbox.home, 'event.json');
+  const body = 'tier: B\nCloses #1\n## Why\nx\n## What changed\nx\n## How tested\nx\nNo changelog: a test\n';
+  writeFileSync(file, JSON.stringify({ pull_request: { title: 'feat: a', body, labels: [{ name: 'feat' }, { name: 'tier B' }], milestone: { title: 'M0' }, base: { sha: base }, head: { sha: head } } }));
+  const result = await sandbox.call(['check', '--pr'], { extra: { GITHUB_EVENT_PATH: file } });
+  assert.equal(result.status, 1);
+  assert.match(flat(result.stderr), /removes the size cap: the cap only goes down/);
+});

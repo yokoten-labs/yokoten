@@ -155,7 +155,9 @@ export function checkSize(files: string[], countLines: (path: string) => number,
   const named = biggest.map((file) => `${file.path} (${file.lines})`).join(', ');
   const what = `${total} lines of the project's own code`;
   if (!reads.isChosen) {
-    notes.push(finding('size', `${what}; no cap is set`, `to hold this repo to a cap, add \`"size": { "maxLines": ${size.maxLines} }\` to yokoten.json`, { why: 'the size cap is a rule a repo chooses; this one has no "size" key in yokoten.json, so its count is a note' }));
+    // A repo already over the default starts at its own count, rounded up, so the key passes.
+    const start = Math.max(size.maxLines, Math.ceil(total / 100) * 100);
+    notes.push(finding('size', `${what}; no cap is set`, `to hold this repo to a cap, add \`"size": { "maxLines": ${start} }\` to yokoten.json`, { why: 'the size cap is a rule a repo chooses; this one has no "size" key in yokoten.json, so its count is a note' }));
   } else if (size.fork) {
     notes.push(finding('size', `${what}; a fork, so the cap of ${size.maxLines} is not held`, 'nothing to do while this repo is a fork', { why: 'a fork carries code its upstream wrote' }));
   } else if (total > size.maxLines) {

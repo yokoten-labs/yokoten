@@ -276,7 +276,10 @@ test('size: no config, a fork, at the cap, near it and over it', () => {
   assert.deepEqual(none.problems, []);
   assert.equal(none.notes.length, 1);
   assert.match(none.notes[0], /^100 lines of the project's own code; no cap is set/);
-  assert.match(none.notes[0], /add `"size": \{ "maxLines": 50 \}` to yokoten\.json/);
+  // The cap it offers is the count rounded up when that is over the default, so it passes.
+  assert.match(none.notes[0], /add `"size": \{ "maxLines": 100 \}` to yokoten\.json/);
+  assert.match(run({ maxLines: 5000 }, false).notes[0], /"maxLines": 5000 \}/, 'under the default, the default');
+  assert.match(run({ maxLines: 99 }, false).notes[0], /"maxLines": 100 \}/, 'an exact hundred stays');
   // A fork: the count is a note, whatever the cap.
   const fork = run({ maxLines: 50, fork: true });
   assert.deepEqual(fork.problems, []);
