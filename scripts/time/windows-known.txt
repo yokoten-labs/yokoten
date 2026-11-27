@@ -155,21 +155,20 @@ test/setup/doctor/report.test.ts :: doctor: full doctor in an empty repo starts 
 # init on native Windows: 18 tests fail on main too, hidden until 2026-10-26 behind one time-out line.
 # Issue #1109 fixes them after the P4 design review; each line goes when its test passes. Remove all by v0.1.3.
 # On a slow GitHub runner the whole file can still pass its cap; then none of the 18 ran, so it may time out instead.
-? test/setup/init.test.ts :: (timed out)
-test/setup/init.test.ts :: init: a merge commit runs the commit check too (#239)
-test/setup/init.test.ts :: init: a private repo can keep CI off with --no-ci, finish the road, and take CI up again (#377)
-test/setup/init.test.ts :: init: a second run with nothing to do is one line, and --list keeps every file (#1027)
-test/setup/init.test.ts :: init: adds the practices, keeps what is there, and doctor asks for the remote next
-test/setup/init.test.ts :: init: an organization is no CODEOWNERS owner, so init writes the placeholder and says why; full doctor flags an org-only file (#313)
-test/setup/init.test.ts :: init: another core.hooksPath is kept, and its pre-commit is made with the check (#206)
-test/setup/init.test.ts :: init: husky keeps its hooks folder; .husky/pre-commit gets the check and keeps its own lines (#206)
-test/setup/init.test.ts :: init: reads GitHub and says what it would do; --github --yes does it, and a second run changes nothing (#10)
-test/setup/init.test.ts :: trust (#661): Grok CLI gets one folder entry; undo leaves another folder alone
-test/setup/init.test.ts :: trust (#661): a foreign hook is never trusted, even when it ends with yokoten's flags
-test/setup/init.test.ts :: trust (#661): a hook edited after trust stays off until init puts it back
-test/setup/init.test.ts :: trust (#661): init without a terminal writes nothing and names the command; trust writes only yokoten entries
-test/setup/init.test.ts :: trust (#984): a yokoten hook the user turned off in Codex stays off
-test/setup/init.test.ts :: trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code
+test/setup/init/ci.test.ts :: init: a private repo can keep CI off with --no-ci, finish the road, and take CI up again (#377)
+test/setup/init/hooks.test.ts :: init: a merge commit runs the commit check too (#239)
+test/setup/init/hooks.test.ts :: init: another core.hooksPath is kept, and its pre-commit is made with the check (#206)
+test/setup/init/hooks.test.ts :: init: husky keeps its hooks folder; .husky/pre-commit gets the check and keeps its own lines (#206)
+test/setup/init/project.test.ts :: init: an organization is no CODEOWNERS owner, so init writes the placeholder and says why; full doctor flags an org-only file (#313)
+test/setup/init/settings.test.ts :: init: adds the practices, keeps what is there, and doctor asks for the remote next
+test/setup/init/trust.test.ts :: trust (#661): Grok CLI gets one folder entry; undo leaves another folder alone
+test/setup/init/trust.test.ts :: trust (#661): a foreign hook is never trusted, even when it ends with yokoten's flags
+test/setup/init/trust.test.ts :: trust (#661): a hook edited after trust stays off until init puts it back
+test/setup/init/trust.test.ts :: trust (#661): init without a terminal writes nothing and names the command; trust writes only yokoten entries
+test/setup/init/trust.test.ts :: trust (#984): a yokoten hook the user turned off in Codex stays off
+test/setup/init/trust.test.ts :: trust (#984): an explicit untrusted folder stays untrusted in Codex, Grok CLI and Muse Code
+test/setup/init/update.test.ts :: init: a second run with nothing to do is one line, and --list keeps every file (#1027)
+test/setup/init/update.test.ts :: init: reads GitHub and says what it would do; --github --yes does it, and a second run changes nothing (#10)
 test/setup/install/hooks.test.ts :: install: the session doctor and the command guard for Codex and Gemini CLI, safe twice (#211)
 test/setup/install/hooks.test.ts :: install: the user-level command guard for Antigravity CLI and Copilot CLI, safe twice (#342)
 test/setup/install/marks.test.ts :: fillMarks: rewrites an old block in a fake home, by the gh login on file, and keeps mode 600 (#410)
