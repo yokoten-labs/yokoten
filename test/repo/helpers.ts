@@ -55,6 +55,7 @@ import {
   ROAD,
 } from '../../src/setup/road.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
+import { realPath } from '../../src/platform/paths.ts';
 import type { MachineProbe } from '../../src/setup/doctor/machine.ts';
 import { lineHash } from '../../src/host/sigstore/record.ts';
 import { REAL_MACHINE } from '../../src/setup/doctor/machine.ts';
@@ -144,6 +145,27 @@ export function makeTempDir(prefix = 'yokoten-'): string {
   const path = mkdtempSync(join(tempParent, prefix));
   testFolders.at(-1)?.push(path);
   return path;
+}
+
+/**
+ * `path` as a test writes it in a command line for `platform`'s shell (#1377). bash reads a
+ * backslash as an escape, so on Windows the path goes with forward slashes (`C:/x`), by its
+ * long names (`RUNNER~1` is `runneradmin`), the way Git Bash users write it.
+ */
+export function shellPath(path: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? realPath(path).replaceAll('\\', '/') : path;
+}
+
+/**
+ * The places a guard test runs its command lines in, with how each writes a folder under
+ * `tmp` (#1377): this system with its own paths, and Windows with Git Bash `/tmp/…` paths,
+ * read through `place`. Linux CI runs the win32 row, so a native-Windows break shows there too.
+ */
+export function shellPlaces(tmp: string): { name: string; place?: { platform: NodeJS.Platform; tmp: string }; at: (path: string) => string }[] {
+  return [
+    { name: process.platform, at: (path) => shellPath(path) },
+    { name: 'win32, Git Bash', place: { platform: 'win32', tmp }, at: (path) => `/tmp${path.slice(tmp.length).replaceAll('\\', '/')}` },
+  ];
 }
 
 /**

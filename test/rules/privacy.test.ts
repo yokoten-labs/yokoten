@@ -13,10 +13,10 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
-import { at, makeRepoTemplate, makeTempDir } from '../repo/helpers.ts';
+import { at, makeRepoTemplate, makeTempDir, shellPath, shellPlaces } from '../repo/helpers.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
 import { formatFinding, isFailingFinding } from '../../src/rules/text/message.ts';
@@ -2188,14 +2188,14 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     [`gh issue create ${body}`, { GH_REPO: 'octo/public' }],
     [`gh issue comment https://example.com/octo/public/issues/1 ${body}`],
     ['gh api repos/octo/app/issues -f body="QuietVale ships"'],
-    [`cd ${own.repo} && gh issue comment 1 -R octo/public ${body}`],
+    [`cd ${shellPath(own.repo)} && gh issue comment 1 -R octo/public ${body}`],
     // Anything else on the line could change where gh posts before it runs (record 0014).
     [`gh repo set-default octo/public && gh issue create ${body}`],
     [`git remote set-url origin https://example.com/octo/public && gh issue create ${body}`],
     [`git remote add upstream https://example.com/octo/public; gh issue create ${body}`],
     [`git push upstream main && gh pr create ${body}`],
     [`git push -u origin main && gh pr create ${body}`],
-    [`env -C ${other.repo} gh issue create ${body}`],
+    [`env -C ${shellPath(other.repo)} gh issue create ${body}`],
     [`GIT_COMMON_DIR=${other.repo}/.git gh issue create ${body}`],
     [`printf '[remote "origin"]\\n\\turl = https://example.com/octo/public\\n' >> .git/config && gh issue create ${body}`],
     [`sed -i s/app/public/ .git/config && gh issue create ${body}`],
@@ -2209,7 +2209,7 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     [`gh issue create --title "x $(git remote remove origin)" --body "QuietVale ships"`],
     [`gh issue create --title x --body-file - <<EOF\nQuietVale ships $(git remote remove origin)\nEOF`],
     [`gh issue create --title x --body-file - <<'EOF'\nQuietVale ships\nEOF\ngit remote remove origin`],
-    [`cd ${other.repo} && gh issue create ${body}`],
+    [`cd ${shellPath(other.repo)} && gh issue create ${body}`],
   ];
   for (const [command, extra] of targets) {
     assert.equal(post(command, own.repo, { extra })?.id, 'private-mark', `machine: ${command}`);
@@ -2226,9 +2226,10 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     assert.equal(post(command, own.repo), null, `machine: ${command}`);
     assert.equal(post(command, other.repo, { config: allowing }), null, `privacy.allow: ${command}`);
   }
-  // A cd into another repo gets that repo's machine allow, never the session's (#1377).
-  assert.equal(post(`cd ${own.repo} && gh issue create ${body}`, other.repo), null, 'a cd into the allowed repo gets its allow');
-  assert.equal(post(`cd ${other.repo} && gh issue create ${body}`, own.repo, { config: allowing })?.id, 'private-mark', "the session's privacy.allow stays home");
+  // A cd into another repo gets that repo's machine allow, never the session's (#1377). The
+  // repo is written as the shell reads it: bash takes `C:\x` unquoted as `C:x`.
+  assert.equal(post(`cd ${shellPath(own.repo)} && gh issue create ${body}`, other.repo), null, 'a cd into the allowed repo gets its allow');
+  assert.equal(post(`cd ${shellPath(other.repo)} && gh issue create ${body}`, own.repo, { config: allowing })?.id, 'private-mark', "the session's privacy.allow stays home");
 });
 
 test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s allow, and an unknown folder none (#1377)', () => {
@@ -2239,45 +2240,50 @@ test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s
   const parent = own.base;
   for (const repo of [own.repo, other.repo]) writeFileSync(join(repo, 'body.md'), 'QuietVale ships\n');
   const allowing = { ...DEFAULTS, privacy: { ...DEFAULTS.privacy, allow: ['QuietVale'] } };
-  const post = (command: string, cwd = parent, config?: typeof DEFAULTS) => checkCommand(command, { env: own.env, config, cwd });
   const create = 'gh pr create --title "fix(check): a bug" --body-file body.md';
-  for (const launch of ['env -C', 'env --chdir', 'env --chdir=']) {
-    const at = (repo: string) => `${launch}${launch.endsWith('=') ? '' : ' '}${repo}`;
-    assert.equal(post(`${at(own.repo)} yokoten bot -- ${create}`), null, `${launch}: the repo with the allow`);
-    assert.equal(post(`${at(own.repo)} ${create}`), null, `${launch}: plain gh`);
-    const stopped = post(`${at(other.repo)} yokoten bot -- ${create}`);
-    assert.equal(stopped?.id, 'private-mark', `${launch}: a repo without the allow`);
-    assert.doesNotMatch(formatFinding(stopped), /quietvale/i, 'the mark is never printed');
-  }
-  // A relative env -C is read from the session folder: env searches no CDPATH.
-  assert.equal(post(`env -C repo yokoten bot -- ${create}`, parent), null, 'a relative folder');
-  // bash expands ~ at the start of a word, so `env -C ~/repo` is HOME/repo. After `--chdir=` it
-  // expands none: env goes to ./~/repo, so the guard can't say which repo gets the post.
-  const home = (command: string) => checkCommand(command, { env: own.env, cwd: other.repo });
-  assert.equal(home('env -C ~/repo gh issue create --title x --body "QuietVale ships"'), null, 'env -C ~/repo is HOME/repo');
-  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) {
-    for (const command of [`${launch} gh issue create --title x --body "QuietVale ships"`, `${launch} yokoten bot -- gh issue create --title x --body "QuietVale ships"`]) {
-      assert.equal(home(command)?.id, 'private-mark', command);
+  const inline = 'gh issue create --title x --body "QuietVale ships"';
+  // Each place writes a repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so
+  // Windows writes `C:/x`, or a Git Bash `/tmp/x`, which Linux CI runs through `place`.
+  for (const { name, place, at: shell } of shellPlaces(dirname(parent))) {
+    const post = (command: string, cwd = parent, config?: typeof DEFAULTS) => checkCommand(command, { env: own.env, config, cwd, place });
+    for (const launch of ['env -C', 'env --chdir', 'env --chdir=']) {
+      const to = (repo: string) => `${launch}${launch.endsWith('=') ? '' : ' '}${shell(repo)}`;
+      assert.equal(post(`${to(own.repo)} yokoten bot -- ${create}`), null, `${name}, ${launch}: the repo with the allow`);
+      assert.equal(post(`${to(own.repo)} ${create}`), null, `${name}, ${launch}: plain gh`);
+      const stopped = post(`${to(other.repo)} yokoten bot -- ${create}`);
+      assert.equal(stopped?.id, 'private-mark', `${name}, ${launch}: a repo without the allow`);
+      assert.doesNotMatch(formatFinding(stopped), /quietvale/i, 'the mark is never printed');
+    }
+    // A relative env -C is read from the session folder: env searches no CDPATH.
+    assert.equal(post(`env -C repo yokoten bot -- ${create}`), null, `${name}: a relative folder`);
+    assert.equal(post(`cd ${shell(own.repo)} && yokoten bot -- ${create}`), null, `${name}: a cd from the parent folder`);
+    // The session's own yokoten.json is another repo's: its allow does not follow the post.
+    assert.equal(post(`env -C ${shell(other.repo)} ${inline}`, own.repo, allowing)?.id, 'private-mark', `${name}: the session's privacy.allow`);
+    assert.equal(post(`env -C ${shell(own.repo)} ${inline}`, own.repo, allowing), null, `${name}: the same repo keeps both`);
+    // A folder the guard can't place or git can't read: no allow, and a body file there is unread.
+    for (const command of [
+      `env -C ${shell(join(parent, 'nowhere'))} yokoten bot -- ${inline}`,
+      `env -C ${shell(parent)} yokoten bot -- ${inline}`,
+      `env -C "$REPO" yokoten bot -- ${inline}`,
+      `env -C ${shell(own.repo)} -C ${shell(other.repo)} yokoten bot -- ${inline}`,
+      `env -C ${shell(own.repo)} sudo -D ${shell(other.repo)} ${inline}`,
+      `env -C ${shell(own.repo)} ${inline} -R octo/public`,
+    ]) {
+      assert.equal(post(command)?.id, 'private-mark', `${name}: ${command}`);
+    }
+    for (const command of [`env -C ${shell(join(parent, 'nowhere'))} yokoten bot -- ${create}`, `env -C ${shell(parent)} -u X yokoten bot -- ${create}`]) {
+      assert.equal(post(command)?.id, 'unreadable-command', `${name}: ${command}`);
     }
   }
-  assert.equal(post(`cd ${own.repo} && yokoten bot -- ${create}`), null, 'a cd from the parent folder');
-  // The session's own yokoten.json is another repo's: its allow does not follow the post.
-  assert.equal(post(`env -C ${other.repo} gh issue create --title x --body "QuietVale ships"`, own.repo, allowing)?.id, 'private-mark', "the session's privacy.allow");
-  assert.equal(post(`env -C ${own.repo} gh issue create --title x --body "QuietVale ships"`, own.repo, allowing), null, 'the same repo keeps both');
-  // A folder the guard can't place or git can't read: no allow, and a body file there is unread.
-  const inline = 'gh issue create --title x --body "QuietVale ships"';
-  for (const command of [
-    `env -C ${join(parent, 'nowhere')} yokoten bot -- ${inline}`,
-    `env -C ${parent} yokoten bot -- ${inline}`,
-    `env -C "$REPO" yokoten bot -- ${inline}`,
-    `env -C ${own.repo} -C ${other.repo} yokoten bot -- ${inline}`,
-    `env -C ${own.repo} sudo -D ${other.repo} gh ${inline.slice(3)}`,
-    `env -C ${own.repo} gh ${inline.slice(3)} -R octo/public`,
-  ]) {
-    assert.equal(post(command)?.id, 'private-mark', command);
-  }
-  for (const command of [`env -C ${join(parent, 'nowhere')} yokoten bot -- ${create}`, `env -C ${parent} -u X yokoten bot -- ${create}`]) {
-    assert.equal(post(command)?.id, 'unreadable-command', command);
+  // bash expands ~ at the start of a word, so `env -C ~/repo` is HOME/repo. After `--chdir=` it
+  // expands none: env goes to ./~/repo, so the guard can't say which repo gets the post. HOME
+  // is this system's own path, so only this system's place reads it.
+  const home = (command: string) => checkCommand(command, { env: own.env, cwd: other.repo });
+  assert.equal(home(`env -C ~/repo ${inline}`), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) {
+    for (const command of [`${launch} ${inline}`, `${launch} yokoten bot -- ${inline}`]) {
+      assert.equal(home(command)?.id, 'private-mark', command);
+    }
   }
 });
 
