@@ -9,7 +9,7 @@ import { checkWorkerBox } from '../worker/box.ts';
 import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark, checkWorkerRoleClear } from '../worker/sends.ts';
 import { base, isGit, GIT_VALUE_OPTIONS, commandPlace, placedPath, resolvedFrom, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
-import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner } from './lose-work.ts';
+import { aliasFinding, checkShellAlias, checkRemoveGit, deleteBranchFinding, findDeletedBranches, findPushedDeletes, findDeletedRef, tagToUpdate, isDefaultBranch, checkPipeToShell, checkGitLoseWork, isGitLongOption, checkDownloadRunner, findHardResetLoss, HARD_RESET_FIX, HARD_RESET_UNSURE } from './lose-work.ts';
 import { checkHooksSettings, checkHooksEnvironment, checkGitConfigEnvironment, checkGitSetupWrites, checkHomeSetting, checkWorkerRealHome } from '../hooks/settings.ts';
 import { CONFIG_READS, checkConfig, gitAnswers, readGit, setsFollowTags } from '../hooks/read.ts';
 import { heredocPost, plainBreak, writeRisk, withoutStdin, tildesPlain, isUnsure, writesNoFile, writesFile, QUOTED_TILDE, folderAfter } from '../bash/body.ts';
@@ -95,7 +95,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     // The name is built only on a refusal (#498).
     const saw = (isMarked: (word: string) => boolean) => writeRisk(words, { heredoc, plainText, plainAt, fills, writers, isMarked });
     const reason =
-      checkGit(words, { env, config, cwd, folder: postCwd, rules }) ??
+      checkGit(words, { env, config, cwd, folder: postCwd, rules, isAlone: commands.length === 1 }) ??
       // Before the worker's own send rule: the fix is to ask the owner, and the lead cannot do it either (#650).
       hostRunRemoval(words) ??
       hostSettingsWrite(words) ??
@@ -366,7 +366,8 @@ function gitDirectoryOf(words: string[], start: number, from: string | null): { 
 
 // `folder`: where the command runs after its `cd`s. `cwd` is null after a cd, for the hooks
 // setting; a push still reads its tags from the folder the cd went to (#1015).
-function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules }): Finding | null {
+// `isAlone`: this git call is the whole command, so no other part changes the repo first (#1379).
+function checkGit(words: string[], { env, config, cwd, folder = cwd, rules, isAlone = false }: { env: Env; config?: Pick<Config, 'commands'>; cwd: string | null; folder?: string | null; rules?: FileRules; isAlone?: boolean }): Finding | null {
   const start = words.findIndex(isGit);
   if (start === -1) return null;
   const settings: string[] = [];
@@ -451,7 +452,11 @@ function checkGit(words: string[], { env, config, cwd, folder = cwd, rules }: { 
     }
   }
   if (sub === 'reset' && args.some((arg) => isGitLongOption(arg, '--hard'))) {
-    return finding('hard-reset', 'git reset --hard throws away uncommitted work', 'commit or stash the work first; to undo a commit, use `git revert`');
+    // A clean checkout loses nothing: read it only for a plain `git [-C <folder>] reset` that is the whole command (#1379).
+    const options = words.slice(start + 1, index);
+    const isPlain = isAlone && start === 0 && options.every((word, at) => (at % 2 === 0 ? word === '-C' : true)) && options.length % 2 === 0;
+    const loss = isPlain ? findHardResetLoss(withoutShellRedirects(words, argsAt), directory, env) : HARD_RESET_UNSURE;
+    if (loss !== null) return finding('hard-reset', loss, HARD_RESET_FIX);
   }
   if (sub === 'branch') {
     const names = findDeletedBranches(withoutShellRedirects(words, argsAt));

@@ -101,7 +101,7 @@ export const RULES = {
   'hard-reset': {
     rule: 'no hard reset: it throws away work (record 0034)',
     why: 'a hard reset drops every change you have not committed, and git cannot bring it back',
-    check: 'the tool-call guard stops `git reset --hard`, and reads a shortened option as git does (`--har` means `--hard`); `git reset` without `--hard` and `git revert` pass',
+    check: 'the tool-call guard stops `git reset --hard`, and reads a shortened option as git does (`--har` means `--hard`). It lets one through only when it is the whole command, with one plain ref, and loses nothing: no uncommitted change or untracked file, no ignored file in the way, and every commit it drops is on another branch, tag or remote branch. `git reset` without `--hard`, `git revert`, `git switch -C <branch> <ref>` and `git branch -f <branch> <ref>` pass',
     docs: guide('the-safeguard'),
   },
   'skip-check': {
@@ -124,7 +124,7 @@ export const RULES = {
   'remove-git': {
     rule: 'no removing the .git folder',
     why: 'the .git folder holds the repo history, so removing it throws away every commit',
-    check: 'the tool-call guard stops `rm`, `rmdir`, `unlink` and `shred` on a path that can be .git, and a `find` that deletes when nothing keeps it out of .git (no test, or only tests that can match it, or a name or path whose characters name git storage such as objects, refs or a pack index and match no sample); a prune of .git, `-not -path \'*/.git/*\'`, or a start folder that cannot hold .git still passes; delete only the files you mean, or clone the repo again to start over',
+    check: 'the tool-call guard stops `rm`, `rmdir`, `unlink` and `shred` on a path that can be .git, and a `find` that deletes when nothing keeps it out of .git (no test, or only tests that can match it, or a name or path whose characters name git storage such as objects, refs or a pack index and match no sample); a prune of .git, `-not -path \'*/.git/*\'`, or a start folder that cannot hold .git still passes. `rm` (without `-r`) or `unlink` of one plain file right under .git named `*.md` or `*.txt`, such as a PR body, passes too: git keeps no such file there. Delete only the files you mean, or clone the repo again to start over',
   },
   'delete-default-branch': {
     rule: 'no deleting the default branch',
