@@ -104,7 +104,7 @@ test('repo settings: a gh api write is refused, a read passes (#825)', () => {
   const lead = {};
   const worker = { YOKOTEN_ROLE: 'worker' };
   const what = 'this `gh api` call changes repository or organization settings';
-  const fix = 'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder';
+  const fix = 'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder. Say what the payload changes, so the owner reads it before they run it';
   const refused = [
     // Visibility and the default branch are settings on the repo itself.
     'gh api -X PATCH repos/o/r -f visibility=public',
@@ -327,7 +327,7 @@ test('repo settings: the refusal hands the owner a ready line, after the payload
   assert.equal(found?.id, 'repo-settings');
   const text = formatRefusal(found!).replace(/\s+/g, ' ');
   assert.match(text, /Instead Write any payload file in a command of its own first: a file write is not a settings write\./);
-  assert.match(text, /Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder\./);
+  assert.match(text, /Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder\. Say what the payload changes, so the owner reads it before they run it\./);
   // The GraphQL form gives the same steps.
   assert.equal(checkCommand("gh api graphql -f query='mutation { updateRepository(input: {}) { clientMutationId } }'", { cwd: process.cwd(), env: {} })?.fix, found?.fix);
   // Positive control: another owner-only rule keeps its own text.

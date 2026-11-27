@@ -1,7 +1,7 @@
 import { dirname, isAbsolute, resolve } from 'node:path';
 import { finding, nothingRanNote, type Finding } from '../../text/message.ts';
 import { checkCommandTitle } from '../../pr.ts';
-import { checkPost, ghIndex, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
+import { checkPost, ghIndex, loadMarks, makeRedactor, scanText, withoutReadPipe, type CommandFiles, type GhCommand } from '../../privacy.ts';
 import { mayPost, unreadPost } from '../../privacy/posts.ts';
 import { type Config, type Env } from '../../config.ts';
 import { markFinding, checkWorkerWrites, checkUnmarkedWork } from '../worker/mark.ts';
@@ -21,7 +21,7 @@ import { commandWords } from '../bash/read/read.ts';
 import { checkTokenUse } from './token.ts';
 import { checkCommitPrivacy } from './commit-privacy.ts';
 import { checkDamage } from './no-wipe.ts';
-import { hostPathPlace, lastPathPart, pathForm, type PathPlace } from '../../../platform/paths.ts';
+import { holdsUsersFolder, hostPathPlace, lastPathPart, pathForm, type PathPlace } from '../../../platform/paths.ts';
 
 // `place` is where the command's paths are read (#1015): the entry point passes this machine's;
 // a test passes another system's, so Linux CI tests the Windows reading.
@@ -41,7 +41,7 @@ export function checkCommand(command: string, options: { env: Env; config?: Guar
     const found = withBudget(command.length, () => checkEachCommand(command, { ...options, rules: isWorker ? files : undefined, askRules: isWorker ? undefined : files, seen }));
     // The guard reads the line as one unit: a refusal stops every part (#1375). A question is not a refusal.
     if (found === null || found.ask || seen.count < 2) return found;
-    return { ...found, nothingRan: nothingRanNote(seen.part && !PRIVATE_FINDINGS.has(found.id) ? shownPart(seen.part, options.env) : undefined) };
+    return { ...found, nothingRan: nothingRanNote(seen.part && !PRIVATE_FINDINGS.has(found.id) ? namedPart(seen.part, options.env) : undefined) };
   } catch {
     return finding('unreadable-command', 'yokoten could not read this command', 'split it into simpler commands, one per call');
   } finally {
@@ -74,12 +74,13 @@ const PART_WIDTH = 70;
  */
 function shownWord(word: string, homes: string[]): string {
   // A quoted word or a substitution holds spaces: each piece is read on its own.
-  if (word.includes(' ')) return word.split(' ').map((piece) => shownWord(piece, homes)).join(' ');
+  // A newline or a tab is a space here, so the note keeps one line per row.
+  if (/\s/.test(word)) return word.split(/\s+/).map((piece) => shownWord(piece, homes)).join(' ');
   const at = Math.max(word.lastIndexOf('='), word.lastIndexOf('@'));
   const value = word.slice(at + 1);
   const home = homes.find((folder) => value === folder || value.startsWith(`${folder}/`) || value.startsWith(`${folder}\\`));
   const form = pathForm(value);
-  const shown = home !== undefined ? `~${value.slice(home.length)}` : form === null || form === 'relative' || form === 'home' ? value : `<folder>/${lastPathPart(value) ?? ''}`;
+  const shown = home !== undefined ? `~${value.slice(home.length)}` : form === null || form === 'relative' || form === 'home' || value === '/' ? value : `<folder>/${lastPathPart(value) ?? ''}`;
   return `${word.slice(0, at + 1)}${shown}`.replaceAll('`', "'");
 }
 
@@ -94,6 +95,29 @@ function shownPart(words: string[], env: Env): string {
     shown = next;
   }
   return shown;
+}
+
+// What a shown part may not hold, even with its paths cut (rule 11): a name before `@` (an
+// address, a URL's login, an SSH user) or an IP address. A users folder is read by holdsUsersFolder.
+const UNSHOWN = /[^\s=@'"(]@|(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])/;
+
+/**
+ * The refused part as the note may name it, or undefined for no name (rule 11). The shown
+ * words must hold nothing UNSHOWN, nothing the stop log's redactor would hide (secrets,
+ * addresses, the home folder, the owner's marks), and nothing the privacy scan finds. A part
+ * that fails any of these is left unnamed: the note still says nothing ran.
+ */
+function namedPart(words: string[], env: Env): string | undefined {
+  try {
+    const shown = shownPart(words, env);
+    if (UNSHOWN.test(shown) || holdsUsersFolder(shown) || [env.HOME, env.USERPROFILE].some((home) => home !== undefined && home.length > 1 && shown.includes(home))) return undefined;
+    const marks = loadMarks(env);
+    if (makeRedactor({ marks }, env)(shown) !== shown) return undefined;
+    return scanText(shown, { file: 'command', marks, env, inlineIgnores: false, hasContactPlaces: false }).length ? undefined : shown;
+  } catch {
+    // An unreadable marks file names no part; the refusal itself stands.
+    return undefined;
+  }
 }
 
 function checkEachCommand(command: string, { env, config, cwd, titles = false, rules, askRules, workerByType = false, seen = { count: 0 } }: EachOptions): Finding | null {

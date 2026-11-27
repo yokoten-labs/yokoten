@@ -86,7 +86,7 @@ export const layoutFoldNote = (folders: number, maxEntries: number, named: strin
  * core rules show this text; a test holds the two the same.
  */
 export const REPO_SETTINGS_FIX =
-  'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder';
+  'write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder. Say what the payload changes, so the owner reads it before they run it';
 
 /**
  * The note that starts a refusal of a command with more than one part (#1375). The guard

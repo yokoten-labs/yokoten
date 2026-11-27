@@ -1,6 +1,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -525,4 +526,37 @@ test('a refused command with more than one part says nothing in it ran (#1375)',
   // Positive controls: one part keeps its text, and an allowed line has no note.
   assert.equal(refuse('git push --force origin main')?.nothingRan, undefined);
   assert.equal(refuse('echo a > f && git status'), null);
+});
+
+// Rule 11: the note names the refused part only when it holds nothing private, whatever the
+// refusal is for. Each value is built from pieces, so the repo's own privacy check passes.
+test('the nothing-ran note names no part that holds private text (#1375)', () => {
+  const home = ['', 'home', 'someone'].join('/');
+  const marks = join(makeTempDir(), 'marks');
+  const mark = ['acme', 'corp', 'merger'].join('-');
+  writeFileSync(marks, `${mark}\n`);
+  const env = { HOME: home, YOKOTEN_PRIVATE_MARKS: marks };
+  const unnamed = 'Nothing in this command ran. Send the other parts again, on their own or after the fix';
+  const at = (user: string, host: string) => `${user}@${host}`;
+  const cases: [string, string][] = [
+    [`git push --force https://x:${'s3cr3t'}pw${at('', 'example.com')}/o main`, 'force-push'],
+    [`git -c user.email=${at('someone', 'example.com')} push --force origin main`, 'force-push'],
+    [`git push --force ${at('someone', ['192', '0', '2', '7'].join('.'))}:o/r main`, 'force-push'],
+    [`gh api -X PUT repos/o/r/rulesets/1 -f name=${at('someone', 'example.com')}`, 'repo-settings'],
+    [`git -C${home}/repo reset --hard`, 'hard-reset'],
+    [`git reset --hard >${home}/out.txt`, 'hard-reset'],
+    [`git -C file://${home}/r reset --hard`, 'hard-reset'],
+    [`git push --force origin ${mark}`, 'force-push'],
+  ];
+  for (const [part, id] of cases) {
+    const found = checkCommand(`echo a > f && ${part}`, { cwd: process.cwd(), env });
+    assert.ok(found, part);
+    assert.equal(found.nothingRan, unnamed, `${id}: ${part}`);
+  }
+  // Positive controls: a part with nothing private is named, with the same env and marks.
+  assert.equal(checkCommand('echo a > f && git push --force origin main', { cwd: process.cwd(), env })?.nothingRan, 'Nothing in this command ran. The refused part is `git push --force origin main`. Send the other parts again, on their own or after the fix');
+  assert.match(checkCommand(`echo a > f && git reset --hard ${home}/x`, { cwd: process.cwd(), env })?.nothingRan ?? '', /The refused part is `git reset --hard ~\/x`/);
+  // A newline inside a word is a space, and the root folder stays `/`.
+  assert.match(checkCommand("echo a > f && git push --force origin main -o 'a\nb'", { cwd: process.cwd(), env })?.nothingRan ?? '', /`git push --force origin main -o a b`/);
+  assert.match(checkCommand('echo a > f && rm -rf /', { cwd: process.cwd(), env })?.nothingRan ?? '', /The refused part is `rm -rf \/`\./);
 });

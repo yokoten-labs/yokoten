@@ -1903,7 +1903,7 @@ The full table, with the reasons, is in [`kit/project/AGENTS.md`](../kit/project
 Only the owner changes repository and organization settings, such as rulesets and branch
 protection. When the guard stops an agent's settings write, its Instead row says:
 
-> Write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder.
+> Write any payload file in a command of its own first: a file write is not a settings write. Then hand the owner one ready line to run in their own terminal: the same command, with the absolute path of the payload file, so it runs from any folder. Say what the payload changes, so the owner reads it before they run it.
 
 ### How to release
 

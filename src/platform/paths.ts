@@ -232,6 +232,9 @@ export function readPath(word: string, place: PathReading): string | null {
 /** A folder that holds the users' homes: its child is a user name. */
 export const USERS_FOLDER = /^(?:\/home|\/Users|\/mnt\/[a-z]\/Users|\/[a-z]\/Users|[A-Za-z]:[\\/]+Users)$/i;
 
+/** Whether `text` holds a users folder anywhere, even glued to other text (`-C/home/x`, `>C:\Users\x`): a refusal's note then names no part (#1375). */
+export const holdsUsersFolder = (text: string): boolean => /[\\/](?:home|Users)[\\/]/i.test(text);
+
 /** The user name in a home path such as `/home/<name>` or `C:\Users\<name>`, or null for any other path. */
 export function usersFolderUser(home: string | undefined): string | null {
   const path = (home ?? '').replace(/[\\/]+$/, '');
