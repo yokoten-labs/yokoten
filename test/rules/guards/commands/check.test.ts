@@ -62,6 +62,10 @@ test('release: env -C names the repo a bot push reads its tags in; a folder it c
   ]) {
     assert.equal(run(command)?.id, 'release', command);
   }
+  // bash expands ~ at the start of a word, but none after `--chdir=`: env goes to ./~/repo.
+  const home = (command: string) => checkCommand(command, { env: { ...sandbox.env, HOME: parent }, cwd: parent });
+  assert.equal(home('env -C ~/repo git push origin feature'), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) assert.equal(home(`${launch} git push origin feature`)?.id, 'release', launch);
   sandbox.git('config', 'push.followTags', 'true');
   assert.equal(run(`env -C ${sandbox.repo} yokoten bot -- git push origin feature`)?.id, 'release', 'push.followTags is read in the env -C repo');
 });

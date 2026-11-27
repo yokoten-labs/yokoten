@@ -2251,6 +2251,15 @@ test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s
   }
   // A relative env -C is read from the session folder: env searches no CDPATH.
   assert.equal(post(`env -C repo yokoten bot -- ${create}`, parent), null, 'a relative folder');
+  // bash expands ~ at the start of a word, so `env -C ~/repo` is HOME/repo. After `--chdir=` it
+  // expands none: env goes to ./~/repo, so the guard can't say which repo gets the post.
+  const home = (command: string) => checkCommand(command, { env: own.env, cwd: other.repo });
+  assert.equal(home('env -C ~/repo gh issue create --title x --body "QuietVale ships"'), null, 'env -C ~/repo is HOME/repo');
+  for (const launch of ['env --chdir=~/repo', 'env --chdir=~']) {
+    for (const command of [`${launch} gh issue create --title x --body "QuietVale ships"`, `${launch} yokoten bot -- gh issue create --title x --body "QuietVale ships"`]) {
+      assert.equal(home(command)?.id, 'private-mark', command);
+    }
+  }
   assert.equal(post(`cd ${own.repo} && yokoten bot -- ${create}`), null, 'a cd from the parent folder');
   // The session's own yokoten.json is another repo's: its allow does not follow the post.
   assert.equal(post(`env -C ${other.repo} gh issue create --title x --body "QuietVale ships"`, own.repo, allowing)?.id, 'private-mark', "the session's privacy.allow");

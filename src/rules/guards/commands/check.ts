@@ -251,7 +251,7 @@ const ENV_PLAIN_OPTIONS = /^(?:-[i0v]+|--(?:ignore-environment|null|debug)|--uns
  * Where a command's program runs (#1377): `folder`, moved by a leading `env -C <dir>`,
  * `env --chdir <dir>` or `env --chdir=<dir>`. The folder is read as a cd reads it, without
  * CDPATH, which env never searches. Null when a launcher moves it in a way the guard can't
- * read: joined options (`-iC`), a split string, a second move, or `sudo -D`. `isLaunched`:
+ * read: joined options (`-iC`), a split string, a second move, `sudo -D`, or `--chdir=~…`. `isLaunched`:
  * a launcher names the folder. A git push and a gh post both read it from here.
  */
 export function launchFolder(words: string[], folder: string | null, { env, isTildeQuoted }: { env: Env; isTildeQuoted: boolean }): { folder: string | null; isLaunched: boolean } {
@@ -268,7 +268,8 @@ export function launchFolder(words: string[], folder: string | null, { env, isTi
       }
       const value = word === '-C' || word === '--chdir' ? words[++index] : word.startsWith('--chdir=') ? word.slice('--chdir='.length) : undefined;
       if (value !== undefined) {
-        if (named !== undefined || value === '' || value.startsWith('-')) return unknown;
+        // bash expands no ~ after `--chdir=`, which is no assignment: env goes to a folder named ~.
+        if (named !== undefined || value === '' || value.startsWith('-') || (word.startsWith('--chdir=') && value.startsWith('~'))) return unknown;
         named = value;
       } else if (word === '-u' || word === '--unset') index++;
       else if (!ENV_PLAIN_OPTIONS.test(word)) return unknown;

@@ -1832,7 +1832,8 @@ export function isBotProgram(word: string): boolean {
 const PLAIN_FOLDER = String.raw`'[^'\n]*'|"[^"$\x60\\\n]*"|~?[\w./+@%:,=-]+|~`;
 const LONE_CD = new RegExp(String.raw`^cd[ \t]+(${PLAIN_FOLDER})[ \t]*&&[ \t]*`);
 // `env -C <folder>` or `env --chdir=<folder>` before a lone post (#1377): env runs gh there.
-const LONE_CHDIR = new RegExp(String.raw`^env[ \t]+(?:-C[ \t]+|--chdir(?:=|[ \t]+))(${PLAIN_FOLDER})[ \t]+`);
+// bash expands no ~ after `--chdir=`, so that form may not start with one.
+const LONE_CHDIR = new RegExp(String.raw`^env[ \t]+(?:-C[ \t]+|--chdir[ \t]+|--chdir=(?!~))(${PLAIN_FOLDER})[ \t]+`);
 // The start of a lone post: the allowed variables, then `gh` or the bot's `yokoten bot -- gh`.
 const LONE_POST_START = new RegExp(String.raw`^(?:(?:(?:NODE_USE_ENV_PROXY|GH_REPO|GH_HOST)=[\w./:@-]*|TZ=UTC)[ \t]+)*(?:(?:node[ \t]+)?${BOT_PROGRAM}[ \t]+bot[ \t]+--[ \t]+)?gh[ \t]`);
 
