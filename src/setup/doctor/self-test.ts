@@ -74,7 +74,7 @@ export function selfTestRun(makeTemp: MakeTemp = makeTempDir): { failed: string[
   if (scanText(SECRET_CONTROL, { file: 'control' }).length < 2) failed.push('secret check');
   if (!notUtc('A <a@example.com> 1760745600 +0700') || notUtc('A <a@example.com> 1760745600 +0000')) failed.push('time zone check');
   if (checkLayout(Array.from({ length: 8 }, (_, i) => `d/${i}`), DEFAULTS).length !== 1) failed.push('layout check');
-  const sizeReads = { isCode: () => true, isBorrowed: () => false, isChosen: true };
+  const sizeReads = { isBorrowed: () => false, isChosen: true };
   if (checkSize(['src/a.ts'], () => 6, { size: { maxLines: 5, exempt: [], fork: false } }, sizeReads, []).length !== 1) failed.push('size check');
   if (!checkSizeRatchet('{ "size": { "maxLines": 5 } }', '{ "size": { "maxLines": 6 } }')) failed.push('size cap ratchet');
   if (checkCodeOwners(['src/a.ts'], 'src/gone.ts @lead\n').length !== 1) failed.push('CODEOWNERS check');

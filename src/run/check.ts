@@ -14,7 +14,6 @@ import { type Finding, finding, isFailingFinding } from '../rules/text/message.t
 import { isChangeFile, longSentenceNote, longSentences } from '../rules/pr.ts';
 import { autoLogins, loadIgnores, mapMarkKinds, notUtc, repoMarkKinds, scanText, timeZoneCommandFix } from '../rules/privacy.ts';
 import { parseChange, readChanges } from './changelog.ts';
-import { isCodeFile } from './notes/names.ts';
 import { isShallowNote, translationNotes } from './notes/translations.ts';
 
 // ---- Git answers kept for a run (#408, #453) ----
@@ -613,7 +612,7 @@ export function check(root: string, { config, env, staged = false, notes = [] }:
   // when the cap holds; the tree check also gives the count of a fork or a repo with no cap.
   const isSizeChosen = hasChosenSize(root);
   if (!staged || (isSizeChosen && !config.size.fork)) {
-    const sizeReads = { isCode: isCodeFile, isBorrowed: isBorrowedFile, isChosen: isSizeChosen };
+    const sizeReads = { isBorrowed: isBorrowedFile, isChosen: isSizeChosen };
     const lines = indexLineCounts(root, sizeCountedFiles(indexed(), config, sizeReads), env);
     problems.push(...checkSize(indexed(), (path) => lines.get(path) ?? 0, config, sizeReads, notes));
   }

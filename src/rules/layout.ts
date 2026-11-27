@@ -101,8 +101,29 @@ export function checkLayout(files: string[], { layout }: Pick<Config, 'layout'>,
 
 /** Folders, at any depth, whose code is not the project's own source. */
 const SIZE_SKIPPED_DIRS = ['test', 'tests', '__tests__', 'benches', 'vendor'];
-/** Test files by their name, in any folder. */
-const SIZE_TEST_NAME = /\.(?:test|spec)\.[^/]+$|_test\.[^/]+$/;
+/** Test files by their name, in any folder: `a.test.ts`, `a.spec.ts`, `a_test.go`, `test_a.py`. */
+const SIZE_TEST_NAME = /\.(?:test|spec)\.[^/]+$|_test\.[^/]+$|(?:^|\/)test_[^/]*\.py$/;
+/**
+ * The extensions of source code the size rule counts, in every language a project may be
+ * written in. Docs, config, data, lock files and images are not code; neither is minified
+ * output (`a.min.js`). This list is the size rule's own: the naming notes keep JS/TS only.
+ */
+const SIZE_CODE_EXTENSIONS = new Set([
+  'js', 'mjs', 'cjs', 'jsx', 'ts', 'mts', 'cts', 'tsx',
+  'rs', 'go', 'py', 'rb', 'java', 'kt', 'kts', 'scala', 'swift', 'm', 'mm',
+  'c', 'h', 'cc', 'cpp', 'cxx', 'hpp', 'hh', 'cs', 'fs', 'php', 'lua', 'dart',
+  'ex', 'exs', 'erl', 'hs', 'ml', 'clj', 'zig', 'nim',
+  'sh', 'bash', 'zsh', 'ps1', 'psm1', 'sql',
+  'vue', 'svelte', 'astro', 'css', 'scss', 'html',
+]);
+
+/** Whether a path is source code by its extension, as the size rule counts it. */
+export function isSizeCodeFile(path: string): boolean {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0 || /\.min\.[^.]+$/.test(name)) return false;
+  return SIZE_CODE_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
 /** How many of the biggest files a size finding names. */
 const SIZE_LISTED = 5;
 
@@ -126,18 +147,17 @@ function compileExemptTest(entries: string[]): (path: string) => boolean {
   };
 }
 
-/** What the size rule asks of the run: which paths hold code, and which are borrowed. */
+/** What the size rule asks of the run: which paths are borrowed. */
 export interface SizeReads {
-  isCode: (path: string) => boolean;
   isBorrowed: (path: string) => boolean;
 }
 
 /** The paths among `files` whose lines count toward the cap. */
-export function sizeCountedFiles(files: string[], { size }: Pick<Config, 'size'>, { isCode, isBorrowed }: SizeReads): string[] {
+export function sizeCountedFiles(files: string[], { size }: Pick<Config, 'size'>, { isBorrowed }: SizeReads): string[] {
   const isExempt = compileExemptTest(size.exempt);
   return files.filter((path) => {
     const dirs = path.split('/').slice(0, -1);
-    if (!isCode(path) || isBorrowed(path) || SIZE_TEST_NAME.test(path) || dirs[0] === WORKTREES_DIR) return false;
+    if (!isSizeCodeFile(path) || isBorrowed(path) || SIZE_TEST_NAME.test(path) || dirs[0] === WORKTREES_DIR) return false;
     return !dirs.some((dir) => SIZE_SKIPPED_DIRS.includes(dir) || FETCHED_DIRS.includes(dir)) && !isExempt(path);
   });
 }

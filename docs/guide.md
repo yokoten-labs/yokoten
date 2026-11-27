@@ -1762,7 +1762,7 @@ character is special. One glob covers every crate of a Rust workspace:
 
 #### The project size
 
-A repo chooses a size cap with a `size` key in yokoten.json. The commit check and CI then count the physical lines of the project's own code files in the index. Tests, benches, `vendor/`, fetched folders, `src/borrowed/` and the `size.exempt` folders do not count. Over `size.maxLines` is a problem, and within 10% of it is a note. A fork sets `"fork": true` and gets the count as a note. Without the key, `check` gives the count as one note. `check --pr` fails a pull request that raises the cap, removes it, adds a `size.exempt` entry or turns `fork` on: the cap only goes down. A project over 5000 lines sets its real count, then lowers it step by step.
+A repo chooses a size cap with a `size` key in yokoten.json. The commit check and CI then count the physical lines of the project's own code files in the index, in any language: Rust, Go, Python, C, shell, JS/TS, CSS, HTML and more. Docs, config, data, lock files and minified files are not code. Tests, benches, `vendor/`, fetched folders, `src/borrowed/` and the `size.exempt` folders do not count. Over `size.maxLines` is a problem, and within 10% of it is a note. A fork sets `"fork": true` and gets the count as a note. Without the key, `check` gives the count as one note. `check --pr` fails a pull request that raises the cap, removes it, adds a `size.exempt` entry or turns `fork` on: the cap only goes down. A project over 5000 lines sets its real count, then lowers it step by step.
 
 Environment variables:
 

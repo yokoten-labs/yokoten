@@ -16,7 +16,6 @@ import {
   sizeCountedFiles,
 } from '../../src/rules/layout.ts';
 import { isBorrowedFile } from '../../src/run/check.ts';
-import { isCodeFile } from '../../src/run/notes/names.ts';
 import { type Finding, formatFinding } from '../../src/rules/text/message.ts';
 
 test('layout: a folder over the cap is reported once, the root never', () => {
@@ -224,7 +223,7 @@ test('layout: the hits of a repo that has not chosen the cap fold into one note 
 
 // ---- The project size ----
 
-const sizeReads = { isCode: isCodeFile, isBorrowed: isBorrowedFile };
+const sizeReads = { isBorrowed: isBorrowedFile };
 const sizeConfig = (size: Partial<typeof DEFAULTS.size> = {}) => ({ size: { ...DEFAULTS.size, ...size } });
 
 test("size: the project's own code counts; tests, benches, vendored, fetched and borrowed code don't", () => {
@@ -248,6 +247,36 @@ test("size: the project's own code counts; tests, benches, vendored, fetched and
     ['.worktrees/issue-1/src/a.ts', false],
     ['src/testing/a.ts', true],
     ['src/latest.ts', true],
+    // Every language counts, not JS/TS only; docs, config, data and minified output don't.
+    ['src/main.rs', true],
+    ['src/lib/mod.rs', true],
+    ['examples/demo.rs', true],
+    ['tests/it.rs', false],
+    ['crates/x/tests/it.rs', false],
+    ['crates/x/src/lib.rs', true],
+    ['benches/speed.rs', false],
+    ['vendor/dep/src/lib.rs', false],
+    ['cmd/main.go', true],
+    ['cmd/main_test.go', false],
+    ['app/models.py', true],
+    ['app/test_models.py', false],
+    ['test_app.py', false],
+    ['app/latest_test.py', false],
+    ['bin/run.sh', true],
+    ['lib/a.c', true],
+    ['lib/a.H', true],
+    ['site/page.astro', true],
+    ['site/app.css', true],
+    ['site/index.html', true],
+    ['Cargo.toml', false],
+    ['Cargo.lock', false],
+    ['config.yaml', false],
+    ['data.csv', false],
+    ['logo.png', false],
+    ['web/app.min.js', false],
+    ['web/app.js.map', false],
+    ['Makefile', false],
+    ['.bashrc', false],
   ];
   for (const [path, isCounted] of cases) assert.equal(sizeCountedFiles([path], sizeConfig(), sizeReads).length === 1, isCounted, path);
 });

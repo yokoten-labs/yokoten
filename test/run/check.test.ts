@@ -1817,7 +1817,9 @@ test('check: an outside repo passes with notes only; the real problems still fai
   assert.equal(clean.status, 0, clean.stdout);
   assert.deepEqual(report.findings, []);
   const notes = report.notes.map((note: { id: string; file?: string }) => `${note.id} ${note.file ?? ''}`.trim());
-  assert.deepEqual(notes.filter((note: string) => !note.startsWith('translation')).sort(), ['email SECURITY.md', 'email package.json', 'email package.json', 'layout']);
+  assert.deepEqual(notes.filter((note: string) => !note.startsWith('translation')).sort(), ['email SECURITY.md', 'email package.json', 'email package.json', 'layout', 'size']);
+  // Its Rust code counts: the size note is the count with no cap set.
+  assert.match(report.notes.find((note: { id: string }) => note.id === 'size')?.what ?? '', /^2 lines of the project's own code; no cap is set/);
   const folded = report.notes.find((note: { id: string }) => note.id === 'layout');
   assert.match(folded.what, /^1 folder holds more than 7 entries: basics\/$/);
   assert.ok(!clean.stdout.includes(`jane${at}`), 'the address itself is never printed');
