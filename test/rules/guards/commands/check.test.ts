@@ -37,7 +37,7 @@ test('release: a tag push from a repo named by a Git Bash path is refused on Win
 
 // #1377: `env -C <repo>` names the repo a push runs in, as it names the repo a post goes to.
 // The session sits in the folder above the repo, which is no repo itself. Each place writes
-// the repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so Windows writes `C:/x`.
+// the repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so Windows writes Git Bash's `/c/x`.
 test('release: env -C names the repo a bot push reads its tags in; a folder it cannot place is refused (#1377)', () => {
   const sandbox = makeSandbox();
   sandbox.git('commit', '-q', '--allow-empty', '-m', 'start');

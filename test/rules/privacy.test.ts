@@ -16,7 +16,8 @@ import {
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 import { assertLinear, assertLinearEach } from '../../scripts/linear.ts';
-import { at, makeRepoTemplate, makeTempDir, shellPath, shellPlaces } from '../repo/helpers.ts';
+import { at, gitBashForm, makeRepoTemplate, makeTempDir, shellPath, shellPlaces } from '../repo/helpers.ts';
+import { fromGitBash } from '../../src/platform/paths.ts';
 import { DEFAULTS, type Env } from '../../src/rules/config.ts';
 import { checkCommand } from '../../src/rules/guards/index.ts';
 import { formatFinding, isFailingFinding } from '../../src/rules/text/message.ts';
@@ -2243,7 +2244,7 @@ test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s
   const create = 'gh pr create --title "fix(check): a bug" --body-file body.md';
   const inline = 'gh issue create --title x --body "QuietVale ships"';
   // Each place writes a repo as its shell reads it: bash takes `C:\x` unquoted as `C:x`, so
-  // Windows writes `C:/x`, or a Git Bash `/tmp/x`, which Linux CI runs through `place`.
+  // Windows writes the Git Bash `/c/x`, or `/tmp/x`, which Linux CI runs through `place`.
   for (const { name, place, at: shell } of shellPlaces(dirname(parent))) {
     const post = (command: string, cwd = parent, config?: typeof DEFAULTS) => checkCommand(command, { env: own.env, config, cwd, place });
     for (const launch of ['env -C', 'env --chdir', 'env --chdir=']) {
@@ -2285,6 +2286,23 @@ test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s
       assert.equal(home(command)?.id, 'private-mark', command);
     }
   }
+});
+
+// #1377: on Windows a test writes a repo in Git Bash's drive form, the only form a cd is placed
+// from. The native folder a test makes is `C:\...`; the guard must read the written form back
+// as that same folder. Pure, so Linux CI checks it on the win32 path.
+const GIT_BASH_FORMS: [string, string][] = [
+  ['C:\\Users\\runneradmin\\AppData\\Local\\Temp\\yokoten-test-a\\repo', '/c/Users/runneradmin/AppData/Local/Temp/yokoten-test-a/repo'],
+  ['D:\\a\\_temp\\repo', '/d/a/_temp/repo'],
+  ['c:/x', '/c/x'],
+  ['C:\\', '/c/'],
+];
+test('shellPath: Git Bash drive form reads back as the Windows folder (#1377)', () => {
+  for (const [native, written] of GIT_BASH_FORMS) {
+    assert.equal(gitBashForm(native), written, native);
+    assert.equal(fromGitBash(written, 'win32', 'C:\\Temp')?.toLowerCase(), native.replaceAll('/', '\\').toLowerCase(), written);
+  }
+  assert.equal(gitBashForm('/home/x/repo'), '/home/x/repo', 'a path with no drive stays');
 });
 
 test('lonePost: linear on long input (#447)', () => {
