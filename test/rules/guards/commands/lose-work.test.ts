@@ -1,7 +1,7 @@
 import '../../../repo/home.ts';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { checkCommand } from '../../../../src/rules/guards/index.ts';
@@ -143,7 +143,8 @@ test('guard: a hard reset passes only when it loses nothing (#1379)', () => {
   // A clean branch with no commits of its own moves to another ref.
   for (const command of [...spellings('main'), 'git reset --hard', 'git reset -q --hard main', 'git reset --hard main >/dev/null']) pass(command);
   // The folder as a shell word: Git Bash reads a backslash as an escape, so a Windows path is written with `/`.
-  pass(`git -C ${root.replaceAll('\\', '/')} reset --hard main`, process.cwd());
+  // The long real path: a Windows runner's temp folder has 8.3 short names (RUNNER~1), and `~` is no plain folder (#1237).
+  pass(`git -C ${realpathSync.native(root).replaceAll('\\', '/')} reset --hard main`, process.cwd());
   // An uncommitted edit, a staged one, and an untracked file have no other copy.
   writeFileSync(join(root, 'a.txt'), 'two\n');
   for (const command of spellings('main')) stop(command, /uncommitted work/);
