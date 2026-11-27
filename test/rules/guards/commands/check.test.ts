@@ -35,6 +35,37 @@ test('release: a tag push from a repo named by a Git Bash path is refused on Win
   assert.equal(run('git -C /tmp/repo push --dry-run'), null, 'a dry run changes nothing');
 });
 
+// #1377: `env -C <repo>` names the repo a push runs in, as it names the repo a post goes to.
+// The session sits in the folder above the repo, which is no repo itself.
+test('release: env -C names the repo a bot push reads its tags in; a folder it cannot place is refused (#1377)', () => {
+  const sandbox = makeSandbox();
+  sandbox.git('commit', '-q', '--allow-empty', '-m', 'start');
+  sandbox.git('tag', 'rel-1');
+  const parent = dirname(sandbox.repo);
+  const run = (command: string) => checkCommand(command, { env: sandbox.env, cwd: parent });
+  const forms = [`env -C ${sandbox.repo} yokoten bot -- git push`, `env --chdir=${sandbox.repo} git push`, 'env -C repo yokoten bot -- git push', `env -u X -C ${sandbox.repo} git push`];
+  for (const form of forms) {
+    assert.equal(run(`${form} origin feature`), null, `${form} origin feature`);
+    assert.equal(run(`${form} origin rel-1`)?.id, 'release', `${form} origin rel-1`);
+  }
+  // The gh twin of the same form is read from the same folder: a body file there is found.
+  sandbox.write('body.md', 'plain text\n');
+  assert.equal(run(`env -C ${sandbox.repo} yokoten bot -- gh issue create --title x --body-file body.md`), null, 'gh reads the same folder');
+  assert.equal(run(`env -C ${parent} yokoten bot -- gh issue create --title x --body-file body.md`)?.id, 'unreadable-command', 'gh in the parent finds no body');
+  // A folder git can't open, or one the guard can't place: its tags can't be read.
+  for (const command of [
+    `env -C ${join(parent, 'nowhere')} yokoten bot -- git push origin feature`,
+    `env -C ${parent} yokoten bot -- git push origin feature`,
+    'env -C "$REPO" yokoten bot -- git push origin feature',
+    `env -iC ${sandbox.repo} git push origin feature`,
+    `env -C ${sandbox.repo} sudo -D ${parent} git push origin feature`,
+  ]) {
+    assert.equal(run(command)?.id, 'release', command);
+  }
+  sandbox.git('config', 'push.followTags', 'true');
+  assert.equal(run(`env -C ${sandbox.repo} yokoten bot -- git push origin feature`)?.id, 'release', 'push.followTags is read in the env -C repo');
+});
+
 // .yokoten/ is the copy of yokoten the hooks and CI run: a worker that changes it can turn the checks off (#297).
 
 test('release: tag pushes, release commands and publishing are the owner\'s', () => {

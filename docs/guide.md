@@ -2476,8 +2476,10 @@ it may go to another repo: `-R` or `--repo`, an issue or pull request URL, `GH_R
 line. Outside quotes, only letters, digits, spaces and `_ . / : , = + @ % -` count as plain;
 any other character, such as `$`, `{`, `*`, `\`, `;` or `>`, gets no allow. Inside double quotes,
 `$`, `` ` `` and `\` get no allow; single quotes may hold anything. One heredoc is fine when its
-end word is a name in single quotes, such as `<<'EOF'`; its body may then hold anything. One `cd` within
-the same repo before it is fine. Anything else on the line could change where gh posts, so the post is
+end word is a name in single quotes, such as `<<'EOF'`; its body may then hold anything. One `cd`
+before it is fine, and so is one `env -C <folder>`. When either goes into another repo, only that
+repo's `marks allow --here` applies, never the session repo's `privacy.allow`. A folder yokoten
+can't place gets no allow. Anything else on the line could change where gh posts, so the post is
 checked against every mark. `doctor` says
 where an allow comes from: this machine or `privacy.allow`. Only a mark in the marks file can
 be allowed. To take it back, run `yokoten marks allow --remove <mark> --here`.

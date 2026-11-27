@@ -2161,7 +2161,7 @@ test('machineAllowed: origin must be the only remote, with no gh default and no 
   git('remote', 'remove', 'origin');
   assert.deepEqual(machineAllowed(env, repo), { allow: [], unsure: null }, 'no origin: no machine allow, and nothing unsure');
   git('remote', 'add', 'other', 'https://example.com/octo/app');
-  unsure('this repo has a remote other than origin', 'only a remote with another name');
+  unsure('this repo has no origin remote, only a remote with another name', 'only a remote with another name');
 });
 
 test('checkPost: the allow applies only to a post to the repo the command runs in (#447)', () => {
@@ -2226,7 +2226,50 @@ test('checkPost: the allow applies only to a post to the repo the command runs i
     assert.equal(post(command, own.repo), null, `machine: ${command}`);
     assert.equal(post(command, other.repo, { config: allowing }), null, `privacy.allow: ${command}`);
   }
-  assert.equal(post(`cd ${own.repo} && gh issue create ${body}`, other.repo)?.id, 'private-mark', 'a cd into another repo gets no allow');
+  // A cd into another repo gets that repo's machine allow, never the session's (#1377).
+  assert.equal(post(`cd ${own.repo} && gh issue create ${body}`, other.repo), null, 'a cd into the allowed repo gets its allow');
+  assert.equal(post(`cd ${other.repo} && gh issue create ${body}`, own.repo, { config: allowing })?.id, 'private-mark', "the session's privacy.allow stays home");
+});
+
+test('checkPost: a post that env -C or cd runs in another repo gets that repo\'s allow, and an unknown folder none (#1377)', () => {
+  const own = allowRepo('https://example.com/octo/app');
+  own.allow([{ remote: 'example.com/octo/app', allow: ['quietvale'] }]);
+  const other = allowRepo('https://example.com/octo/public');
+  // The session sits in a folder above the repo, which is no repo itself.
+  const parent = own.base;
+  for (const repo of [own.repo, other.repo]) writeFileSync(join(repo, 'body.md'), 'QuietVale ships\n');
+  const allowing = { ...DEFAULTS, privacy: { ...DEFAULTS.privacy, allow: ['QuietVale'] } };
+  const post = (command: string, cwd = parent, config?: typeof DEFAULTS) => checkCommand(command, { env: own.env, config, cwd });
+  const create = 'gh pr create --title "fix(check): a bug" --body-file body.md';
+  for (const launch of ['env -C', 'env --chdir', 'env --chdir=']) {
+    const at = (repo: string) => `${launch}${launch.endsWith('=') ? '' : ' '}${repo}`;
+    assert.equal(post(`${at(own.repo)} yokoten bot -- ${create}`), null, `${launch}: the repo with the allow`);
+    assert.equal(post(`${at(own.repo)} ${create}`), null, `${launch}: plain gh`);
+    const stopped = post(`${at(other.repo)} yokoten bot -- ${create}`);
+    assert.equal(stopped?.id, 'private-mark', `${launch}: a repo without the allow`);
+    assert.doesNotMatch(formatFinding(stopped), /quietvale/i, 'the mark is never printed');
+  }
+  // A relative env -C is read from the session folder: env searches no CDPATH.
+  assert.equal(post(`env -C repo yokoten bot -- ${create}`, parent), null, 'a relative folder');
+  assert.equal(post(`cd ${own.repo} && yokoten bot -- ${create}`), null, 'a cd from the parent folder');
+  // The session's own yokoten.json is another repo's: its allow does not follow the post.
+  assert.equal(post(`env -C ${other.repo} gh issue create --title x --body "QuietVale ships"`, own.repo, allowing)?.id, 'private-mark', "the session's privacy.allow");
+  assert.equal(post(`env -C ${own.repo} gh issue create --title x --body "QuietVale ships"`, own.repo, allowing), null, 'the same repo keeps both');
+  // A folder the guard can't place or git can't read: no allow, and a body file there is unread.
+  const inline = 'gh issue create --title x --body "QuietVale ships"';
+  for (const command of [
+    `env -C ${join(parent, 'nowhere')} yokoten bot -- ${inline}`,
+    `env -C ${parent} yokoten bot -- ${inline}`,
+    `env -C "$REPO" yokoten bot -- ${inline}`,
+    `env -C ${own.repo} -C ${other.repo} yokoten bot -- ${inline}`,
+    `env -C ${own.repo} sudo -D ${other.repo} gh ${inline.slice(3)}`,
+    `env -C ${own.repo} gh ${inline.slice(3)} -R octo/public`,
+  ]) {
+    assert.equal(post(command)?.id, 'private-mark', command);
+  }
+  for (const command of [`env -C ${join(parent, 'nowhere')} yokoten bot -- ${create}`, `env -C ${parent} -u X yokoten bot -- ${create}`]) {
+    assert.equal(post(command)?.id, 'unreadable-command', command);
+  }
 });
 
 test('lonePost: linear on long input (#447)', () => {
@@ -2844,6 +2887,9 @@ const USERS_FOLDER_ROWS: [text: string, grade: 'sure' | 'unknown'][] = [
   ['cd ../../../Users/alice', 'sure'],
   // A short name is a name too.
   ['C:\\Users\\Al\\x', 'sure'],
+  // Prose after a real name, and a name with a space inside it, stay names (#1382).
+  ['see `C:\\Users\\Jane Doe\\x` here', 'sure'],
+  ['/Users/alice/`x` here', 'sure'],
   ['/home/jo/x', 'unknown'],
 ];
 const USERS_FOLDER_NAMES = /alice|bob|carol|dave|jane|mary|ann\b|brien|smith|john|doe|work|\bal\b|\bjo\b/i;
@@ -2923,6 +2969,9 @@ const USERS_FOLDER_KEPT = [
   '/home/runner/work/x', 'C:\\Users\\Public\\x', 'C:\\Users\\Default\\x', 'C:\\Users\\Guest', '/Users/Shared/x', '/home/<name>/x', 'C:\\Users\\~\\x', '/Users/.../x',
   'src/home/bob/x', 'src\\/home\\/bob', 'C:\\Users\\%USERNAME%\\x', '/home/$USER/x', '/homework/bob', 'https://example.com/home/bob', 'https://x/home/alice',
   'GET /users/123', 'GET /home/settings', 'route /home/index.html', 'import x from "/home/utils"', '/a/users/me', '/b/Users/me', '/HOME/alice',
+  // The users folder in prose, with no name after it (#1382): a backtick, a `<`, a space or the line end.
+  'C:\\Users\\`word` and more text', 'C:\\Users\\ word', '/Users/`word`', 'C:\\Users', 'C:\\Users\\', 'C:\\Users\\<user>', '/Users/ plain words',
+  'C:/Users/`word`', '/home/`word`', 'C:\\Users\\\n/Users/',
 ];
 
 test('hideHome: a shared account, a placeholder, a route and a path that only looks like one stay (#1237)', () => {

@@ -308,13 +308,19 @@ function cutAtSureEnd(run: string): string {
   return drive ? cut.slice(0, drive.index) : cut;
 }
 
+// What starts no user name: a dot, a home or variable sign, and in prose a backtick, a `<`
+// or a space (#1382). `C:\Users\ and` or ``/Users/`x` `` describes the folder, not a home.
+const NO_NAME_START = /^[.~%$\x60<\s]/u;
+const isNoName = (name: string): boolean => name === '' || NO_NAME_START.test(name);
+
 type FolderHit = { folder: string; slash: string; written: string; start: number; next: string };
 
 /**
  * `text` with each user name in a users-folder path given to `replace`, with the form it was
  * written in and the text after the name; `replace` returns what to write in its place, or
  * null to keep it. Trailing prose punctuation stays out of a name, and a name of only dots
- * (`...`) or one already hidden or a variable (`~`, `%USERNAME%`, `$USER`) is kept. The scan
+ * (`...`) or one already hidden or a variable (`~`, `%USERNAME%`, `$USER`) is kept, as is
+ * text after the folder that starts with a backtick, a `<` or a space: prose, not a name. The scan
  * goes on right after each name, so a second path in the prose after it is read too.
  */
 export function replaceUsersFolderNames(text: string, replace: (name: string, form: UsersFolderForm, after: string) => string | null): string {
@@ -328,7 +334,7 @@ export function replaceUsersFolderNames(text: string, replace: (name: string, fo
       const start = found.index + folder.length + slash.length;
       const name = nameOf({ folder, slash, written, start, next: input[found.index + whole.length] ?? '' });
       const end = start + name.length;
-      const shown = name === '' || /^[.~%$]|^\.+$/.test(name) ? null : replace(name, formOf(folder), input.slice(end));
+      const shown = isNoName(name) ? null : replace(name, formOf(folder), input.slice(end));
       if (shown !== null) {
         out += input.slice(last, start) + shown;
         last = end;

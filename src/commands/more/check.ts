@@ -31,7 +31,7 @@ import { parseChange } from '../../run/changelog.ts';
 import { borrowedFiles, type BorrowedChange, type BorrowedWatch, check, checkHistory, GitReadError, gitReadFinding, type GitRun, historyTimeZones, indexFiles, readGit, syncPull, type SyncOutcome, timeZoneNote, unstageHint, verifyMerge, watchBorrowed } from '../../run/check.ts';
 import { readBranchDesks } from '../../run/hook.ts';
 import { isCodeFile, nameNotes } from '../../run/notes/names.ts';
-import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, readMachineAllow, repoKey } from '../../rules/privacy.ts';
+import { addedIgnores, type AllowEntry, hideHome, isLink, loadMarks, type Mark, marksFile, marksFiles, machineAllowed, machineAllowFile, makeRedactor, matchingEntries, NO_HOME, OTHER_REMOTE, readMachineAllow, repoKey } from '../../rules/privacy.ts';
 import { addOwnMark, countMarkKinds, fillMarks, kindsTurnedOff, machineMarks, machineUserNames, paths, removeMarks, setKindOff, SWITCHED_KINDS } from '../../setup/install.ts';
 import { readOriginUrl } from '../../setup/plan.ts';
 import { count, fail, failure, field, type Invocation, isTerminal, moreLine, parse, problemRows, print, printJson, readInput, requireRoot, row, type RowMark, say, screen, show, showOnPullRequest, spaced, summaryLine, title, underRow, usage, wrap } from '../shared.ts';
@@ -963,7 +963,8 @@ function allowHere(invocation: Invocation, mark: string, { isRemoving }: { isRem
   if (!isRemoving && !marks.includes(mark)) return fail(invocation, 'that is not a line of your private-marks file, so there is nothing to allow', 'check the spelling, or add it first with `yokoten marks add`');
   const key = repoKey(root, env);
   if ('none' in key) return fail(invocation, `nothing was changed, because ${key.none}`, 'put the mark in `privacy.allow` in yokoten.json instead');
-  if ('unsure' in key) return fail(invocation, `nothing was changed, because ${key.unsure}`, ALLOW_AGAIN);
+  // A second remote, such as a path to a local backup, is the one fix the agent can make here (#1377).
+  if ('unsure' in key) return fail(invocation, `nothing was changed, because ${key.unsure}`, key.unsure === OTHER_REMOTE ? `remove the other remote with \`git remote remove <name>\`, then ${ALLOW_AGAIN}` : ALLOW_AGAIN);
   // A link to the file is kept: the file it points to is the one changed. A link to nothing is refused.
   let target = file;
   if (isLink(file)) {
