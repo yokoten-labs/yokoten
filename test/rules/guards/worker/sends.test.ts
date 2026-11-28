@@ -494,5 +494,17 @@ test('guard: joined flags, shell variables and hidden gh commands are refused (#
   }
 });
 
+test('guard: a worker command through wsl.exe meets the same rule as without it (#1392)', () => {
+  const worker = { cwd: process.cwd(), env: { YOKOTEN_ROLE: 'worker' } };
+  const wrappers = ['wsl.exe -d Ubuntu -e', 'wsl -e', 'wsl.exe --exec', 'wsl.exe --cd /x --', 'wsl.exe --distribution Ubuntu -u root --exec', 'wsl'];
+  for (const inner of ['/usr/bin/node /x/yokoten worker unmark /x/wt', 'yokoten worker mark /x/main', 'git push origin HEAD', 'yokoten bot -- git push', 'gh pr create --fill', 'gh pr merge 1']) {
+    const bare = checkCommand(inner, worker)?.id;
+    assert.ok(bare, `control: ${inner} is refused`);
+    for (const wrapper of wrappers) assert.equal(checkCommand(`${wrapper} ${inner}`, worker)?.id, bare, `${wrapper} ${inner}`);
+  }
+  // Negative control: wsl.exe on its own runs nothing of the worker's.
+  for (const command of ['wsl.exe -l -v', 'wsl.exe --status']) assert.equal(checkCommand(command, worker), null, command);
+});
+
 // #555: the mark is found with no git process, and it fails closed: a .git link the guard
 // can't read makes the session a worker. A FIFO named .git never blocks it.

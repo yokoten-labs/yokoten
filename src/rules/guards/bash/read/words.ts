@@ -199,6 +199,8 @@ export const LAUNCHERS: Record<string, { options: string[]; operands?: number }>
   torsocks: { options: ['-u', '-p', '-a', '-P'] },
   'xvfb-run': { options: ['-n', '--server-num', '-e', '--error-file', '-f', '--auth-file', '-p', '--xauth-protocol', '-s', '--server-args', '-w', '--wait'] },
   caffeinate: { options: ['-t', '-w'] },
+  // wsl.exe runs a program in a WSL distro: `-e`, `--exec` and `--` take no value (#1392).
+  wsl: { options: ['-d', '--distribution', '--distribution-id', '--cd', '-u', '--user', '--shell-type'] },
 };
 // find runs the program after each of these.
 export const FIND_ACTIONS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
