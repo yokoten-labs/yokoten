@@ -52,8 +52,12 @@ through, or name the one command the owner runs to unlock it.
 - A worker reads the unlock line too. It says the line is for a lead that came in by a
   `cd`; a worker that asks the owner to run it is asking, not escaping.
 - Point 1 guards against a mistake, not an attack. These are not read, and pass: `eval`,
-  `bash -c`, a target that is not plain text (`"$X"`, `$(…)`, a glob, `cd -`, `~-`), a
-  CDPATH search, and a `(` after a `#` comment. The lead's mistake is a plain `cd <path>`;
-  reading more would refuse good lines for little gain.
-- Each worker rule reads the program after `wsl.exe` (`-d`, `--cd`, `-e`, `--exec`, `--`),
-  as after `env` or `sudo`. So a worker can't run the unlock command itself.
+  `bash -c`, a `cd` inside `case … esac`, a target that is not plain text (`"$X"`,
+  `$(…)`, a glob, `cd -`, `~-`), a CDPATH search, and a `(` after a `#` comment. The
+  lead's mistake is a plain `cd <path>`; reading more would refuse good lines for little
+  gain.
+- Each worker rule reads the program after `wsl.exe` (`-d`, `--cd`, `-u`, `-e`, `--exec`,
+  `--`, and a lone `~`), as after `env` or `sudo`. So a worker can't run the unlock command
+  through it.
+- The worker rules do not yet read through `powershell` or `pwsh` with `-c` or `-Command`.
+  A worker could run the unlock command that way. Yokoten issue #1393 tracks it.

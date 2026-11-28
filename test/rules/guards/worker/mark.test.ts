@@ -339,7 +339,7 @@ test('lead cd: a plain cd into a marked worktree is refused; a subshell, git -C 
     `cd ${tree} && git status`, `cd ${tree}/src`, `git status; cd ${tree}`, `{ cd ${tree}; }`, 'cd wt', `cd ${main} && cd ${tree}`, `cd ${tree} 2>&1 && ls`,
     // The ways past a first reading: a launcher, a keyword, `--`, pushd, a quoted or escaped paren, a quoted target.
     `builtin cd ${tree}`, `command cd ${tree}`, `if true; then cd ${tree}; fi`, `for i in 1; do cd ${tree}; done`, `if false; then :; else cd ${tree}; fi`,
-    `cd -- ${tree}`, `pushd ${tree}`, `echo "(" ; cd ${tree}`, `echo \\( ; cd ${tree}`, `cd "${tree}"`, `true || cd ${tree}`,
+    `time cd ${tree}`, `time -p cd ${tree}`, `! cd ${tree}`, `x=1 cd ${tree}`, `cd -- ${tree}`, `pushd ${tree}`, `echo "(" ; cd ${tree}`, `echo \\( ; cd ${tree}`, `cd "${tree}"`, `true || cd ${tree}`,
   ];
   for (const command of refused) {
     const found = checkCommand(command, { ...lead, cwd: command === 'cd wt' ? base : main });

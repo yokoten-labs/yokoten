@@ -144,7 +144,7 @@ const withoutQuoted = (command: string) => command.replace(/'[^']*'|"(?:[^"\\]|\
 export function checkLeadWorktreeCd(command: string, cwd: string | null, env: Env): Finding | null {
   const masked = command.replace(/\\.|'[^']*'|"(?:[^"\\]|\\.)*"/gs, (part) => '_'.repeat(part.length));
   let folder = cwd;
-  for (const match of masked.matchAll(/(^|\|\||&&|\||[;\n({]|\b(?:then|do|else)\b)\s*(?:(?:builtin|command)\s+)*(cd|pushd)(?=\s|$)/g)) {
+  for (const match of masked.matchAll(/(^|\|\||&&|\||[;\n({]|\b(?:then|do|else)\b)\s*(?:(?:builtin|command|time(?:\s+-p)?|!|[A-Za-z_]\w*=\S*)\s+)*(cd|pushd)(?=\s|$)/g)) {
     const at = match.index + match[0].length - match[2].length;
     const end = masked.slice(at).search(/[;|\n()]|(?<!>)&/);
     const stop = end === -1 ? masked.length : at + end;
