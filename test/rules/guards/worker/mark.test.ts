@@ -321,6 +321,61 @@ test('git link: a desk that lost HEAD or objects is broken, not its parent check
   }
 });
 
+test('lead cd: a plain cd into a marked worktree is refused; a subshell, git -C and the main checkout pass; a worker still may not unmark or push (#1392)', () => {
+  const base = makeTempDir('yokoten-lead-cd-');
+  const store = join(base, 'store');
+  mkdirSync(store);
+  const tree = join(base, 'wt');
+  mkdirSync(join(tree, 'src'), { recursive: true });
+  writeFileSync(join(tree, '.git'), `gitdir: ${store}\n`);
+  const main = join(base, 'main');
+  makeGitFolder(main);
+  const lead = { cwd: main, env: {} };
+  // Unquoted, bash takes a \ as an escape (`cd C:\x` goes to `C:x`), so the plain lines use the
+  // path as Git Bash takes it, with `/`; a quoted line keeps the system's own path.
+  const bashTree = tree.replaceAll('\\', '/');
+  const bashMain = main.replaceAll('\\', '/');
+  // Negative control: an unmarked worktree is the lead's to cd into.
+  assert.equal(checkCommand(`cd ${bashTree} && git status`, lead), null);
+  writeFileSync(join(store, 'yokoten-worker'), 'x');
+  // Positive control: a plain cd, alone, joined, or into a folder of the worktree.
+  const refused = [
+    `cd ${bashTree} && git status`, `cd ${bashTree}/src`, `git status; cd ${bashTree}`, `{ cd ${bashTree}; }`, 'cd wt', `cd ${bashMain} && cd ${bashTree}`, `cd ${bashTree} 2>&1 && ls`,
+    // The ways past a first reading: a launcher, a keyword, `--`, pushd, a quoted or escaped paren, a quoted target.
+    `builtin cd ${bashTree}`, `command cd ${bashTree}`, `if true; then cd ${bashTree}; fi`, `for i in 1; do cd ${bashTree}; done`, `if false; then :; else cd ${bashTree}; fi`,
+    `time cd ${bashTree}`, `time -p cd ${bashTree}`, `! cd ${bashTree}`, `x=1 cd ${bashTree}`, `cd -- ${bashTree}`, `pushd ${bashTree}`, `echo "(" ; cd ${bashTree}`, `echo \\( ; cd ${bashTree}`, `cd "${bashTree}"`, `true || cd ${bashTree}`,
+    // The system's own path, quoted: on Windows it holds \, and bash keeps it.
+    `cd '${tree}'`, `cd "${tree}" && git status`,
+  ];
+  for (const command of refused) {
+    const found = checkCommand(command, { ...lead, cwd: command === 'cd wt' ? base : main });
+    assert.equal(found?.id, 'worker-mark', command);
+    assert.match(found?.fix ?? '', /git -C .*env -C .*\( cd /, command);
+    assert.match(found?.what ?? '', /[\\/]wt, a marked worktree/, `${command}: names the worktree, not the subfolder`);
+  }
+  // Nothing leaves the session there: a subshell, a substitution, a pipe, the background, git -C,
+  // env -C, a cd back before the line ends. Not read, by choice (record 0063): eval and a variable.
+  const passes = [
+    `( cd ${bashTree} && git status )`, `echo "$(cd ${bashTree} && pwd)"`, `git -C ${bashTree} status`, `env -C ${bashTree} ls`, `cd ${bashMain}`, `( cd ${bashTree} ); cd ${bashMain}`,
+    `cd ${bashTree} && git status && cd ${bashMain}`, `echo hi | cd ${bashTree}`, `cd ${bashTree} | cat`, `cd ${bashTree} &`, `echo ")" ; ( cd ${bashTree} )`, `eval cd ${bashTree}`, `X=${bashTree}; cd "$X"`,
+    // Unquoted \ is an escape: bash drops it, the cd goes to another folder, and the guard reads it so.
+    `cd ${bashTree.replaceAll('/', '\\')} && git status`,
+  ];
+  for (const command of passes) {
+    assert.equal(checkCommand(command, lead)?.id === 'worker-mark' ? command : null, null, command);
+  }
+  assert.equal(checkCommand(`cd ${bashTree}/src`, { ...lead, cwd: tree }), null, 'already in the worktree: nothing new moves');
+  // A worker's own rules stay: no unmark, no push, and its own cd inside the box passes.
+  const worker = { cwd: tree, env: { YOKOTEN_ROLE: 'worker' } };
+  assert.equal(checkCommand(`yokoten worker unmark ${bashTree}`, worker)?.id, 'worker-mark');
+  assert.equal(checkCommand('git push origin HEAD', worker)?.id, 'worker-push');
+  assert.equal(checkCommand(`cd ${bashMain}`, worker)?.id, 'worker-mark', 'no way out of the box by cd');
+  assert.equal(checkCommand(`cd ${bashTree}/src`, worker), null);
+  // The note names the owner's one command to unlock a lead that came in by a cd.
+  assert.ok(markNote([join(tree, 'src')], {}, 'node /x/yokoten').endsWith(`asks the owner to run \`node /x/yokoten worker unmark ${tree}\``));
+  assert.ok(!markNote([tree]).includes('unmark'), 'no command, no unlock line');
+});
+
 test('unmarked work: any command or edit in a checkout with no mark is caught; a marked one, a plain cd and no checkout pass (#1225)', () => {
   const base = makeTempDir('yokoten-unmarked-');
   const store = join(base, 'store');

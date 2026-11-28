@@ -4,7 +4,9 @@ import { finding, type Finding } from '../../text/message.ts';
 import { homeOf } from '../../privacy.ts';
 import { loadConfig, type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';
-import { gitLinkAbove, FIND_WRITES } from './mark.ts';
+import { gitLinkAbove, hasWorkerMark, FIND_WRITES } from './mark.ts';
+import { folderAfter } from '../bash/body.ts';
+import { commandWords } from '../bash/read/read.ts';
 import { onlyReads, symlinkTargetReach, configReach } from './config-command.ts';
 import { isGit, isAssignment, withoutShellRedirects, realPath, commandPlace, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';
@@ -134,6 +136,30 @@ const projectWorkerSettings = (root: string): string[] => loadConfig(root, { onP
 const withoutQuoted = (command: string) => command.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '');
 
 /**
+ * The lead's plain `cd` into a marked worktree (#1392, record 0063): the runtime keeps the folder
+ * a line ends in, so the session would be a worker's from then on. Only where the line ends counts.
+ * A cd in `( … )`, a pipe or the background moves nothing; a session already in a marked worktree
+ * is a worker's, and the box judges it. `eval` and a target that is not plain text are not read.
+ */
+export function checkLeadWorktreeCd(command: string, cwd: string | null, env: Env): Finding | null {
+  const masked = command.replace(/\\.|'[^']*'|"(?:[^"\\]|\\.)*"/gs, (part) => '_'.repeat(part.length));
+  let folder = cwd;
+  for (const match of masked.matchAll(/(^|\|\||&&|\||[;\n({]|\b(?:then|do|else)\b)\s*(?:(?:builtin|command|time(?:\s+-p)?|!|[A-Za-z_]\w*=\S*)\s+)*(cd|pushd)(?=\s|$)/g)) {
+    const at = match.index + match[0].length - match[2].length;
+    const end = masked.slice(at).search(/[;|\n()]|(?<!>)&/);
+    const stop = end === -1 ? masked.length : at + end;
+    const before = masked.slice(0, at);
+    const isAside = match[1] === '|' || (masked[stop] === '|' && masked[stop + 1] !== '|') || (masked[stop] === '&' && masked[stop + 1] !== '&');
+    if (isAside || before.split('(').length !== before.split(')').length) continue;
+    const args = (commandWords(command.slice(at, stop))[0] ?? []).slice(1).filter((word) => word !== '--');
+    folder = folderAfter([match[2], ...args], folder, { env, isTildeQuoted: false, isCdPathSkipped: true });
+  }
+  if (folder === null || !hasWorkerMark(folder, env) || (cwd !== null && hasWorkerMark(cwd, env))) return null;
+  const target = gitLinkAbove(folder)?.top ?? folder;
+  return finding('worker-mark', `this line would leave the lead's session in ${target}, a marked worktree, where it counts as a worker's`, `run it without moving: \`git -C ${target} …\`, \`env -C ${target} …\`, or a subshell \`( cd ${target} && … )\``);
+}
+
+/**
  * For a worker: why the command leaves the box, or null. `cwd` is the folder the command
  * starts in; the worktree is the checkout at or above it.
  */
@@ -141,32 +167,22 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
   if (/\$'/.test(command)) return boxFinding("a worker can't use $'...' strings, which can spell any path; write the path plainly");
   if (/\$\{[^}]*@/.test(command)) return boxFinding("a worker can't use ${...@...} expansions, which can run or rename text; write the value plainly");
   if (/\$\{?OLDPWD\b/.test(command)) return boxFinding("a worker can't use $OLDPWD, which may be any folder; write the path plainly");
-  if (commands.some((words) => words.some((word) => /^~([+-]?\d|-($|[\\/]))/.test(word)))) {
-    return boxFinding("a worker can't use ~N, ~+N, ~-N or ~- (the directory stack); write the path plainly");
-  }
+  if (commands.some((words) => words.some((word) => /^~([+-]?\d|-($|[\\/]))/.test(word)))) return boxFinding("a worker can't use ~N, ~+N, ~-N or ~- (the directory stack); write the path plainly");
   // Reads may name these; a command that does more than read may not.
   const pathWords = commands.filter((words) => !onlyReads(words)).flatMap((words) => words.map((word) => REDIRECT.exec(word)?.[1] ?? word));
-  if (pathWords.some((word) => /^~[A-Za-z_]/.test(word.replace(/^[^=]*=/, '')))) {
-    return boxFinding("a worker can't use ~name (another account's home); write the path plainly");
-  }
+  if (pathWords.some((word) => /^~[A-Za-z_]/.test(word.replace(/^[^=]*=/, '')))) return boxFinding("a worker can't use ~name (another account's home); write the path plainly");
   // These lead to a process's own folders, and the guard's process is not the shell's.
-  if (pathWords.some((word) => /(^|[=/])(proc\/[^/]+\/(cwd|root|fd)|proc\/self|dev\/fd)(\/|$)/.test(word))) {
-    return boxFinding("a worker can't use /proc/<id>/cwd, /proc/<id>/root, /proc/self or /dev/fd paths, which lead to another folder; write the path plainly");
-  }
+  if (pathWords.some((word) => /(^|[=/])(proc\/[^/]+\/(cwd|root|fd)|proc\/self|dev\/fd)(\/|$)/.test(word))) return boxFinding("a worker can't use /proc/<id>/cwd, /proc/<id>/root, /proc/self or /dev/fd paths, which lead to another folder; write the path plainly");
   const home = homeOf(env);
   const config = configFolder(env);
   // The box starts where the shell is: a shell already in or above the config folder has none.
-  if (cwd !== null && config !== null && touchesConfig(resolve(cwd), configForms(config))) {
-    return boxFinding("this shell is in or above yokoten's config folder (~/.config/yokoten); a worker works inside its worktree, so ask the lead to start you there");
-  }
+  if (cwd !== null && config !== null && touchesConfig(resolve(cwd), configForms(config))) return boxFinding("this shell is in or above yokoten's config folder (~/.config/yokoten); a worker works inside its worktree, so ask the lead to start you there");
   const link = cwd === null ? null : gitLinkAbove(cwd);
   const box = cwd === null ? null : realPath(link ? link.top : cwd);
   let folder = cwd;
   const movesFolder = commands.some((words) => findPrograms(words).some((program) => FOLDER_MOVERS.has(programName(program))));
   // A cd in a subshell, a pipe or the background leaves the guard unsure where the next one starts.
-  if (movesFolder && /[(){}`]|(^|[^|])\|(?!\|)|(^|[^&>])&(?![&>])/.test(withoutQuoted(command))) {
-    return boxFinding("a worker's cd may not run in a subshell, a pipe or the background; run it on its own, joined with && or ;");
-  }
+  if (movesFolder && /[(){}`]|(^|[^|])\|(?!\|)|(^|[^&>])&(?![&>])/.test(withoutQuoted(command))) return boxFinding("a worker's cd may not run in a subshell, a pipe or the background; run it on its own, joined with && or ;");
   const forms = config === null ? [] : configForms(config);
   // A reader that follows symlinks, piped into xargs, could hand a config-folder path to a
   // writer the guard never sees spelled out.
@@ -177,9 +193,7 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
     if (['grep', 'egrep', 'fgrep', 'rg'].some(has) && words.some((word) => hasShortOption(word, 'R') || isLongOption(word, 'dereference-recursive'))) return true;
     return has('ls') && words.some((word) => hasShortOption(word, 'L'));
   };
-  if (hasXargs && commands.some(followsLinks)) {
-    return configFinding("a worker can't pipe a symlink-following read (find -L, grep -R, ls -L) into xargs: it could hand a writer a path inside yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept");
-  }
+  if (hasXargs && commands.some(followsLinks)) return configFinding("a worker can't pipe a symlink-following read (find -L, grep -R, ls -L) into xargs: it could hand a writer a path inside yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept");
   // The project's own settings come from the yokoten.json of the repo the shell is in, read
   // only when a name is not on the short list, and checked against the never-list again here.
   let declared: Set<string> | null = null;
@@ -212,17 +226,13 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         if (args.some((arg) => /^-[LP]*P[LP]*$/.test(arg))) return boxFinding("a worker's cd may not use -P, which follows a link before a later ..; run cd without it");
         const paths = args.filter((arg) => !/^-L+$/.test(arg));
         const target = paths[0];
-        if (paths.length !== 1 || target === '-' || target.startsWith('-') || !isPlainPath(target) || target === '') {
-          return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / -, and a leading ~ or drive such as C:/), not ${paths.join(' ') || 'no path'}`);
-        }
+        if (paths.length !== 1 || target === '-' || target.startsWith('-') || !isPlainPath(target) || target === '') return boxFinding(`a worker's ${name} takes one plain path inside its worktree (letters, digits, . _ / -, and a leading ~ or drive such as C:/), not ${paths.join(' ') || 'no path'}`);
         // The one path reader (#1237): Git Bash's `cd /c/x` goes to `C:\x` on Windows (#1015), a
         // short name is spelled out, and a folder it can't place, or a part Windows reads two
         // ways (`...`), is outside.
         const full = readPath(target, { ...(commandPlace.current ?? hostPathPlace()), home, folder });
         const real = full === null ? null : realPath(full);
-        if (real === null || box === null || !isPathInside(real, box)) {
-          return boxFinding(`a worker's ${name} stays inside its worktree; ${target} is outside it, or yokoten can't tell where it goes`);
-        }
+        if (real === null || box === null || !isPathInside(real, box)) return boxFinding(`a worker's ${name} stays inside its worktree; ${target} is outside it, or yokoten can't tell where it goes`);
         folder = full;
         continue;
       }
@@ -240,28 +250,16 @@ export function checkWorkerBox(command: string, commands: string[][], { cwd, env
         if (sub === 'config' && !isConfigRead) return boxFinding('a worker\'s git config only reads (--get, --get-all, --list); the lead changes settings');
       }
       // Programs that set a variable named by a word, not by `NAME=`: the settings list can't see them.
-      if (VARIABLE_SETTERS.has(name) || (name === 'printf' && args.some((arg) => hasShortOption(arg, 'v')))) {
-        return boxFinding(`a worker can't run ${name}${name === 'printf' ? ' -v' : ''}, which can set any variable, git's and the shell's too; write values plainly`);
-      }
-      if (name === 'less' && args.some((arg) => arg.startsWith('+') || hasShortOption(arg, 'oO') || isLongOption(arg, 'log-file'))) {
-        return boxFinding("a worker's less may not write a log file or run start-up commands (-o, -O, --log-file, +)");
-      }
+      if (VARIABLE_SETTERS.has(name) || (name === 'printf' && args.some((arg) => hasShortOption(arg, 'v')))) return boxFinding(`a worker can't run ${name}${name === 'printf' ? ' -v' : ''}, which can set any variable, git's and the shell's too; write values plainly`);
+      if (name === 'less' && args.some((arg) => arg.startsWith('+') || hasShortOption(arg, 'oO') || isLongOption(arg, 'log-file'))) return boxFinding("a worker's less may not write a log file or run start-up commands (-o, -O, --log-file, +)");
       if (name === 'file' && args.some((arg) => hasShortOption(arg, 'C') || isLongOption(arg, 'compile'))) return boxFinding("a worker's file may not compile a magic file (-C)");
       if (name === 'alias' && args.some((arg) => arg.includes('='))) return boxFinding("a worker can't define an alias, which can run any program under another name; run the program by its own name");
-      if (folder !== null && forms.length && symlinkTargetReach(name, args, folder, home, forms)) {
-        return configFinding(`a worker's ${name} may not make a link that leads into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`);
-      }
-      if (name === 'set' && args.some((arg, index) => /^[-+][A-Za-z]*P/.test(arg) || (args[index - 1] === '-o' && arg === 'physical'))) {
-        return boxFinding("a worker can't turn on the shell's physical mode (set -P, set -o physical), where cd follows a link before a later ..");
-      }
+      if (folder !== null && forms.length && symlinkTargetReach(name, args, folder, home, forms)) return configFinding(`a worker's ${name} may not make a link that leads into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`);
+      if (name === 'set' && args.some((arg, index) => /^[-+][A-Za-z]*P/.test(arg) || (args[index - 1] === '-o' && arg === 'physical'))) return boxFinding("a worker can't turn on the shell's physical mode (set -P, set -o physical), where cd follows a link before a later ..");
       if (name === 'hash' && args.some((arg) => hasShortOption(arg, 'p'))) return boxFinding("a worker can't run hash -p, which points a name at another program; run the program by its own path");
       if (name === 'enable' && args.some((arg) => arg.startsWith('-'))) return boxFinding('a worker can\'t turn a builtin on or off (enable with an option); run the program by its own name');
-      if (['chmod', 'chown', 'chgrp'].includes(name) && args.some((arg) => hasShortOption(arg, 'LH') || isLongOption(arg, 'dereference'))) {
-        return configFinding(`a worker's ${name} may not follow symlinks (-L, -H): a link can lead into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`);
-      }
-      if (name === 'find' && args.some((arg) => /^-(L|follow)$/.test(arg)) && args.some((arg) => FIND_WRITES.test(arg) || FIND_ACTIONS.has(arg))) {
-        return configFinding("a worker's find that changes files or runs a program may not follow symlinks (-L, -follow): a link can lead into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept");
-      }
+      if (['chmod', 'chown', 'chgrp'].includes(name) && args.some((arg) => hasShortOption(arg, 'LH') || isLongOption(arg, 'dereference'))) return configFinding(`a worker's ${name} may not follow symlinks (-L, -H): a link can lead into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept`);
+      if (name === 'find' && args.some((arg) => /^-(L|follow)$/.test(arg)) && args.some((arg) => FIND_WRITES.test(arg) || FIND_ACTIONS.has(arg))) return configFinding("a worker's find that changes files or runs a program may not follow symlinks (-L, -follow): a link can lead into yokoten's config folder (~/.config/yokoten), where the worker list and the bot's keys are kept");
     }
   }
   return null;

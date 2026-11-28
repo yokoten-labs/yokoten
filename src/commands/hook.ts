@@ -561,7 +561,7 @@ async function runProtocol(invocation: Invocation, guard: Guard | undefined, com
   let found = judged?.ask ? null : judged;
   if (settled && 'refuse' in settled) found = settled.refuse;
   // A worker by the mark hears why, and where the lead works (#555).
-  if (found && marked === 'mark' && WORKER_RULES.has(found.id)) found = { ...found, fix: `${found.fix}. ${capital(markNote(folders, callEnv))}` };
+  if (found && marked === 'mark' && WORKER_RULES.has(found.id)) found = { ...found, fix: `${found.fix}. ${capital(markNote(folders, callEnv, ownerCli(invocation)))}` };
   if (found) {
     // One line per stop, on this computer only (#621). The protocol names no runtime.
     logStop(env, {
@@ -672,7 +672,7 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
       return finish(0);
     }
     // A worker by the mark hears why, and where the lead works (#555).
-    const markReason = found != null && role === 'mark' && WORKER_RULES.has(found.id) ? capital(markNote(folders, invocation.env)) : undefined;
+    const markReason = found != null && role === 'mark' && WORKER_RULES.has(found.id) ? capital(markNote(folders, invocation.env, ownerCli(invocation))) : undefined;
     if (found != null && markReason !== undefined) found = { ...found, fix: `${found.fix}. ${markReason}` };
     // The third same refusal becomes a stop message; any success starts the count again (#711).
     if (found) {
@@ -725,6 +725,8 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
 // The rules that apply to a worker only: a refusal by one of them names the mark, when the role came from it.
 const WORKER_RULES = new Set(['lead-only', 'worker-push', 'worker-mark']);
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+// How the owner runs yokoten with no PATH (#1392, record 0063): node and the script by full path, never `~` (PowerShell's is the Windows home); on WSL through wsl.exe, `-d` when the distro is known.
+export const ownerCli = ({ env, script }: Pick<Invocation, 'env' | 'script'>) => [...(env.WSL_DISTRO_NAME || env.WSL_INTEROP ? ['wsl.exe', ...(env.WSL_DISTRO_NAME ? ['-d', env.WSL_DISTRO_NAME] : []), '-e'] : []), process.execPath, script].join(' ');
 
 /** What `yokoten stops` shows: whether the log is written, where it is, and how to turn it the other way. */
 export function stopsScreen(state: { isOff: boolean; count: number; file: string }): string[] {

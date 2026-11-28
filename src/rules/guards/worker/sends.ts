@@ -28,9 +28,7 @@ export function checkWorkerSends(words: string[]): Finding | null {
     from = at + 1;
     const name = programName(place.word);
     const cli = YOKOTEN_CLI.test(name) ? at : SCRIPT_RUNNERS.has(name) ? words.findIndex((word, index) => index > at && YOKOTEN_CLI.test(programName(word))) : -1;
-    if (cli !== -1 && words.slice(cli + 1).find((word) => !word.startsWith('-')) === 'bot') {
-      return sends('`yokoten bot` runs a command as the bot, which pushes and posts for the lead');
-    }
+    if (cli !== -1 && words.slice(cli + 1).find((word) => !word.startsWith('-')) === 'bot') return sends('`yokoten bot` runs a command as the bot, which pushes and posts for the lead');
   }
   const at = ghIndex(words, places);
   if (at === -1) return null;
@@ -56,13 +54,9 @@ export function checkWorkerUnmark(words: string[]): Finding | null {
     const cli = YOKOTEN_CLI.test(name) ? at : SCRIPT_RUNNERS.has(name) ? words.findIndex((word, index) => index > at && YOKOTEN_CLI.test(programName(word))) : -1;
     if (cli === -1) continue;
     const plain = plainArgs(withoutShellRedirects(words, cli + 1));
-    if (plain[0] === 'worker' && plain[1] === 'unmark') {
-      return finding('worker-mark', '`yokoten worker unmark` clears a worker mark, and only the lead unmarks a worktree', 'commit in your worktree and report; the lead unmarks after review, from its own checkout');
-    }
+    if (plain[0] === 'worker' && plain[1] === 'unmark') return finding('worker-mark', '`yokoten worker unmark` clears a worker mark, and only the lead unmarks a worktree', 'commit in your worktree and report; the lead unmarks after review, from its own checkout');
     // A worker that marks the lead's checkout makes the lead a worker too (#672).
-    if (plain[0] === 'worker' && plain[1] === 'mark') {
-      return finding('worker-mark', '`yokoten worker mark` sets a worker mark, and only the lead marks a worktree or a clone', 'commit in your worktree and report; the lead marks checkouts, from its own');
-    }
+    if (plain[0] === 'worker' && plain[1] === 'mark') return finding('worker-mark', '`yokoten worker mark` sets a worker mark, and only the lead marks a worktree or a clone', 'commit in your worktree and report; the lead marks checkouts, from its own');
   }
   return null;
 }
@@ -81,9 +75,7 @@ export function checkWorkerRoleClear(words: string[]): Finding | null {
     const name = programName(place.word);
     const args = withoutShellRedirects(words, place.index + 1);
     // `exec -c` runs the next program with an empty environment.
-    if (name === 'exec' && args.some((arg) => /^-[a-zA-Z]*c/.test(arg))) {
-      return finding('worker-mark', '`exec -c` starts a program with an empty environment, so the commit check would no longer see a worker', ROLE_FIX);
-    }
+    if (name === 'exec' && args.some((arg) => /^-[a-zA-Z]*c/.test(arg))) return finding('worker-mark', '`exec -c` starts a program with an empty environment, so the commit check would no longer see a worker', ROLE_FIX);
     if (!ROLE_CLEARERS.has(name)) continue;
     // Allowed characters, not grammar: a name the guard can't read as written (`$(...)`,
     // braces, globs, quotes) may spell YOKOTEN_ROLE, so it is refused whatever it names.
