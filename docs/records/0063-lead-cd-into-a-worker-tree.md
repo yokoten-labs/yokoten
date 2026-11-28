@@ -20,9 +20,12 @@ through, or name the one command the owner runs to unlock it.
 
 ## Decision
 
-1. **The guard refuses a lead's plain `cd` into a marked worktree.** A `cd` at the top
-   level of the line, not inside `( … )` or `$( … )`, whose target is in a marked worktree,
-   is refused. The message names `git -C`, `env -C` and a subshell instead.
+1. **The guard refuses a lead's line that ends in a marked worktree.** The guard follows
+   each `cd` and `pushd` at the top level of the line, also after `builtin`, `command`,
+   `then`, `do` and `else`. A `cd` inside `( … )` or `$( … )`, or with a `|` or a
+   background `&` next to it, moves nothing. If the line ends in a marked worktree, it is
+   refused, so `cd <wt> && git status && cd <main>` passes. The message names `git -C`,
+   `env -C` and a subshell instead.
 2. **No `cd` out for a session in a marked worktree.** The guard can't tell a lead that came
    in by mistake from a worker. Some runtimes pass a worker no YOKOTEN_ROLE (Muse Code passes
    none). For such a worker the mark is the only sign of its role. A `cd` out to the main
@@ -48,5 +51,9 @@ through, or name the one command the owner runs to unlock it.
   session restart.
 - A worker reads the unlock line too. It says the line is for a lead that came in by a
   `cd`; a worker that asks the owner to run it is asking, not escaping.
-- A `cd` in a pipe or the background (`… | cd x`, `cd x &`) runs in a subshell in bash but
-  is refused here. The guard reads only parentheses; the fix the message gives still works.
+- Point 1 guards against a mistake, not an attack. These are not read, and pass: `eval`,
+  `bash -c`, a target that is not plain text (`"$X"`, `$(…)`, a glob, `cd -`, `~-`), a
+  CDPATH search, and a `(` after a `#` comment. The lead's mistake is a plain `cd <path>`;
+  reading more would refuse good lines for little gain.
+- Each worker rule reads the program after `wsl.exe` (`-d`, `--cd`, `-e`, `--exec`, `--`),
+  as after `env` or `sudo`. So a worker can't run the unlock command itself.

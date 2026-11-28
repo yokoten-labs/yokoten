@@ -225,7 +225,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     nearCwd = folderAfter(words, nearCwd, { env, isTildeQuoted, isCdPathSkipped: true });
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
-  const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : checkLeadWorktreeCd(command, commands, from, env);
+  const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : checkLeadWorktreeCd(command, from, env);
   seen.part = worker ? undefined : laterPart;
   return worker ?? later ?? asked;
 }

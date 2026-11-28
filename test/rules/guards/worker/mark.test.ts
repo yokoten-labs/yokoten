@@ -335,14 +335,25 @@ test('lead cd: a plain cd into a marked worktree is refused; a subshell, git -C 
   assert.equal(checkCommand(`cd ${tree} && git status`, lead), null);
   writeFileSync(join(store, 'yokoten-worker'), 'x');
   // Positive control: a plain cd, alone, joined, or into a folder of the worktree.
-  for (const command of [`cd ${tree} && git status`, `cd ${tree}/src`, `git status; cd ${tree}`, `{ cd ${tree}; }`, `cd wt`]) {
+  const refused = [
+    `cd ${tree} && git status`, `cd ${tree}/src`, `git status; cd ${tree}`, `{ cd ${tree}; }`, 'cd wt', `cd ${main} && cd ${tree}`, `cd ${tree} 2>&1 && ls`,
+    // The ways past a first reading: a launcher, a keyword, `--`, pushd, a quoted or escaped paren, a quoted target.
+    `builtin cd ${tree}`, `command cd ${tree}`, `if true; then cd ${tree}; fi`, `for i in 1; do cd ${tree}; done`, `if false; then :; else cd ${tree}; fi`,
+    `cd -- ${tree}`, `pushd ${tree}`, `echo "(" ; cd ${tree}`, `echo \\( ; cd ${tree}`, `cd "${tree}"`, `true || cd ${tree}`,
+  ];
+  for (const command of refused) {
     const found = checkCommand(command, { ...lead, cwd: command === 'cd wt' ? base : main });
     assert.equal(found?.id, 'worker-mark', command);
     assert.match(found?.fix ?? '', /git -C .*env -C .*\( cd /, command);
     assert.ok(found?.what.includes(`${tree},`), `${command}: names the worktree, not the subfolder`);
   }
-  // Nothing moves the session: a subshell, a substitution, git -C, env -C; a cd elsewhere.
-  for (const command of [`( cd ${tree} && git status )`, `echo "$(cd ${tree} && pwd)"`, `git -C ${tree} status`, `env -C ${tree} ls`, `cd ${main}`, `( cd ${tree} ); cd ${main}`]) {
+  // Nothing leaves the session there: a subshell, a substitution, a pipe, the background, git -C,
+  // env -C, a cd back before the line ends. Not read, by choice (record 0063): eval and a variable.
+  const passes = [
+    `( cd ${tree} && git status )`, `echo "$(cd ${tree} && pwd)"`, `git -C ${tree} status`, `env -C ${tree} ls`, `cd ${main}`, `( cd ${tree} ); cd ${main}`,
+    `cd ${tree} && git status && cd ${main}`, `echo hi | cd ${tree}`, `cd ${tree} | cat`, `cd ${tree} &`, `echo ")" ; ( cd ${tree} )`, `eval cd ${tree}`, `X=${tree}; cd "$X"`,
+  ];
+  for (const command of passes) {
     assert.equal(checkCommand(command, lead)?.id === 'worker-mark' ? command : null, null, command);
   }
   assert.equal(checkCommand(`cd ${tree}/src`, { ...lead, cwd: tree }), null, 'already in the worktree: nothing new moves');

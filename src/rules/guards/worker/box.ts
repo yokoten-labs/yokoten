@@ -6,6 +6,7 @@ import { loadConfig, type Env } from '../../config.ts';
 import { configFolder, configFinding, configForms, touchesConfig } from './config.ts';
 import { gitLinkAbove, hasWorkerMark, FIND_WRITES } from './mark.ts';
 import { folderAfter } from '../bash/body.ts';
+import { commandWords } from '../bash/read/read.ts';
 import { onlyReads, symlinkTargetReach, configReach } from './config-command.ts';
 import { isGit, isAssignment, withoutShellRedirects, realPath, commandPlace, KEYWORDS, HEADS, LAUNCHERS, FIND_ACTIONS, REDIRECT, redirectLength, programName, findPrograms } from '../bash/read/words.ts';
 import { plainArgs } from '../lead-only/targets.ts';
@@ -136,19 +137,26 @@ const withoutQuoted = (command: string) => command.replace(/'[^']*'|"(?:[^"\\]|\
 
 /**
  * The lead's plain `cd` into a marked worktree (#1392, record 0063): the runtime keeps the folder
- * a line ends in, so the session would be a worker's from then on. A cd inside `( … )` moves nothing;
- * a session already in a marked worktree is a worker's, and the box judges its cd.
+ * a line ends in, so the session would be a worker's from then on. Only where the line ends counts.
+ * A cd in `( … )`, a pipe or the background moves nothing; a session already in a marked worktree
+ * is a worker's, and the box judges it. `eval` and a target that is not plain text are not read.
  */
-export function checkLeadWorktreeCd(command: string, commands: string[][], cwd: string | null, env: Env): Finding | null {
-  const text = withoutQuoted(command);
-  const depths = [...text.matchAll(/(?:^|[;&|({\n])\s*cd\b/g)].map((match) => text.slice(0, match.index + match[0].length).split('(').length - text.slice(0, match.index).split(')').length);
+export function checkLeadWorktreeCd(command: string, cwd: string | null, env: Env): Finding | null {
+  const masked = command.replace(/\\.|'[^']*'|"(?:[^"\\]|\\.)*"/gs, (part) => '_'.repeat(part.length));
   let folder = cwd;
-  for (const words of commands.filter((words) => programName(words[0] ?? '') === 'cd')) {
-    folder = folderAfter(words, folder, { env, isTildeQuoted: false, isCdPathSkipped: true });
-    const target = depths.shift() === 0 && folder !== null && hasWorkerMark(folder, env) && !(cwd !== null && hasWorkerMark(cwd, env)) ? (gitLinkAbove(folder)?.top ?? folder) : null;
-    if (target !== null) return finding('worker-mark', `this cd would move the lead's session into ${target}, a marked worktree, where it counts as a worker's`, `run it without moving: \`git -C ${target} …\`, \`env -C ${target} …\`, or a subshell \`( cd ${target} && … )\``);
+  for (const match of masked.matchAll(/(^|\|\||&&|\||[;\n({]|\b(?:then|do|else)\b)\s*(?:(?:builtin|command)\s+)*(cd|pushd)(?=\s|$)/g)) {
+    const at = match.index + match[0].length - match[2].length;
+    const end = masked.slice(at).search(/[;|\n()]|(?<!>)&/);
+    const stop = end === -1 ? masked.length : at + end;
+    const before = masked.slice(0, at);
+    const isAside = match[1] === '|' || (masked[stop] === '|' && masked[stop + 1] !== '|') || (masked[stop] === '&' && masked[stop + 1] !== '&');
+    if (isAside || before.split('(').length !== before.split(')').length) continue;
+    const args = (commandWords(command.slice(at, stop))[0] ?? []).slice(1).filter((word) => word !== '--');
+    folder = folderAfter([match[2], ...args], folder, { env, isTildeQuoted: false, isCdPathSkipped: true });
   }
-  return null;
+  if (folder === null || !hasWorkerMark(folder, env) || (cwd !== null && hasWorkerMark(cwd, env))) return null;
+  const target = gitLinkAbove(folder)?.top ?? folder;
+  return finding('worker-mark', `this line would leave the lead's session in ${target}, a marked worktree, where it counts as a worker's`, `run it without moving: \`git -C ${target} …\`, \`env -C ${target} …\`, or a subshell \`( cd ${target} && … )\``);
 }
 
 /**
