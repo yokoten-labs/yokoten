@@ -5,7 +5,7 @@ import { checkPost, ghIndex, loadMarks, makeRedactor, scanText, withoutReadPipe,
 import { mayPost, unreadPost } from '../../privacy/posts.ts';
 import { type Config, type Env } from '../../config.ts';
 import { markFinding, checkWorkerWrites, checkUnmarkedWork } from '../worker/mark.ts';
-import { checkWorkerBox } from '../worker/box.ts';
+import { checkWorkerBox, checkLeadWorktreeCd } from '../worker/box.ts';
 import { checkWorkerPointers, hostRunRemoval, hostSettingsWrite, hostAlias, hostHiddenCommand, hostWorkflowOff, hostApiPublishes } from '../worker/config-command.ts';
 import { sends, checkWorkerSends, checkWorkerUnmark, checkWorkerRoleClear } from '../worker/sends.ts';
 import { base, isGit, GIT_VALUE_OPTIONS, commandPlace, placedPath, resolvedFrom, unquotedRedirects, withoutShellRedirects, LAUNCHERS, programName, splitString, MAX_PROGRAMS, findPrograms, findProgramPlaces } from '../bash/read/words.ts';
@@ -225,7 +225,7 @@ function checkEachCommand(command: string, { env, config, cwd, titles = false, r
     nearCwd = folderAfter(words, nearCwd, { env, isTildeQuoted, isCdPathSkipped: true });
   }
   // A worker's changed home, before the box: the box would answer first and hide this fix (#739).
-  const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : null;
+  const worker = env.YOKOTEN_ROLE === 'worker' ? (checkWorkerRealHome(commands) ?? checkWorkerBox(command, commands, { cwd: from, env }) ?? checkWorkerPointers(command, commands, env)) : checkLeadWorktreeCd(command, commands, from, env);
   seen.part = worker ? undefined : laterPart;
   return worker ?? later ?? asked;
 }

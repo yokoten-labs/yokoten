@@ -181,21 +181,21 @@ export function withWorkerMark(env: Env, folders: string[]): Env {
 
 /**
  * What a refusal adds when the worker role came from the mark (#555): why this session is a
- * worker, and where the lead works. `folders` are the ones `workerRole` read.
+ * worker, and where the lead works. `folders` are the ones `workerRole` read. `cli` runs
+ * yokoten from the owner's shell: a lead moved in by a cd has no way out but the owner's unmark (#1392).
  */
-export function markNote(folders: string[], env: Env = {}): string {
+export function markNote(folders: string[], env: Env = {}, cli?: string): string {
   for (const folder of new Set(folders)) {
     const why = workerMarkAt(folder, env);
     if (why === null) continue;
     const link = gitLinkAbove(folder);
     const main = link?.kind === 'file' ? mainCheckout(link.gitDir) : null;
     const lead = main ? `the lead works in the main checkout, ${main}` : 'the lead works in the main checkout';
-    if (why === 'broken') return `yokoten treats this session as a worker because the .git link in ${link?.top ?? folder} can't be read; ${lead}`;
-    if (link?.kind === 'folder' && existsSync(join(link.gitDir, WORKER_MARK))) {
-      return `this clone (${link.top}) carries the worker mark, so every agent in it is a worker whatever YOKOTEN_ROLE says; the lead works outside it`;
-    }
-    if (link?.kind === 'file') return `this worktree (${link?.top ?? folder}) carries the worker mark, so every agent in it is a worker whatever YOKOTEN_ROLE says; ${lead}`;
-    return `this folder (${folder}) is on the worker list, so every agent in it is a worker whatever YOKOTEN_ROLE says; ${lead}`;
+    const top = link?.top ?? folder;
+    const unlock = cli ? `. A lead that came in by a cd stops and asks the owner to run \`${cli} worker unmark ${top}\`` : '';
+    if (why === 'broken') return `yokoten treats this session as a worker because the .git link in ${top} can't be read; ${lead}`;
+    if (link?.kind === 'folder' && existsSync(join(link.gitDir, WORKER_MARK))) return `this clone (${top}) carries the worker mark, so every agent in it is a worker whatever YOKOTEN_ROLE says; the lead works outside it${unlock}`;
+    return `${link?.kind === 'file' ? `this worktree (${top}) carries the worker mark` : `this folder (${folder}) is on the worker list`}, so every agent in it is a worker whatever YOKOTEN_ROLE says; ${lead}${unlock}`;
   }
   return '';
 }

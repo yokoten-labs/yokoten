@@ -321,6 +321,42 @@ test('git link: a desk that lost HEAD or objects is broken, not its parent check
   }
 });
 
+test('lead cd: a plain cd into a marked worktree is refused; a subshell, git -C and the main checkout pass; a worker still may not unmark or push (#1392)', () => {
+  const base = makeTempDir('yokoten-lead-cd-');
+  const store = join(base, 'store');
+  mkdirSync(store);
+  const tree = join(base, 'wt');
+  mkdirSync(join(tree, 'src'), { recursive: true });
+  writeFileSync(join(tree, '.git'), `gitdir: ${store}\n`);
+  const main = join(base, 'main');
+  makeGitFolder(main);
+  const lead = { cwd: main, env: {} };
+  // Negative control: an unmarked worktree is the lead's to cd into.
+  assert.equal(checkCommand(`cd ${tree} && git status`, lead), null);
+  writeFileSync(join(store, 'yokoten-worker'), 'x');
+  // Positive control: a plain cd, alone, joined, or into a folder of the worktree.
+  for (const command of [`cd ${tree} && git status`, `cd ${tree}/src`, `git status; cd ${tree}`, `{ cd ${tree}; }`, `cd wt`]) {
+    const found = checkCommand(command, { ...lead, cwd: command === 'cd wt' ? base : main });
+    assert.equal(found?.id, 'worker-mark', command);
+    assert.match(found?.fix ?? '', /git -C .*env -C .*\( cd /, command);
+    assert.ok(found?.what.includes(`${tree},`), `${command}: names the worktree, not the subfolder`);
+  }
+  // Nothing moves the session: a subshell, a substitution, git -C, env -C; a cd elsewhere.
+  for (const command of [`( cd ${tree} && git status )`, `echo "$(cd ${tree} && pwd)"`, `git -C ${tree} status`, `env -C ${tree} ls`, `cd ${main}`, `( cd ${tree} ); cd ${main}`]) {
+    assert.equal(checkCommand(command, lead)?.id === 'worker-mark' ? command : null, null, command);
+  }
+  assert.equal(checkCommand(`cd ${tree}/src`, { ...lead, cwd: tree }), null, 'already in the worktree: nothing new moves');
+  // A worker's own rules stay: no unmark, no push, and its own cd inside the box passes.
+  const worker = { cwd: tree, env: { YOKOTEN_ROLE: 'worker' } };
+  assert.equal(checkCommand(`yokoten worker unmark ${tree}`, worker)?.id, 'worker-mark');
+  assert.equal(checkCommand('git push origin HEAD', worker)?.id, 'worker-push');
+  assert.equal(checkCommand(`cd ${main}`, worker)?.id, 'worker-mark', 'no way out of the box by cd');
+  assert.equal(checkCommand(`cd ${tree}/src`, worker), null);
+  // The note names the owner's one command to unlock a lead that came in by a cd.
+  assert.ok(markNote([join(tree, 'src')], {}, 'node /x/yokoten').endsWith(`asks the owner to run \`node /x/yokoten worker unmark ${tree}\``));
+  assert.ok(!markNote([tree]).includes('unmark'), 'no command, no unlock line');
+});
+
 test('unmarked work: any command or edit in a checkout with no mark is caught; a marked one, a plain cd and no checkout pass (#1225)', () => {
   const base = makeTempDir('yokoten-unmarked-');
   const store = join(base, 'store');

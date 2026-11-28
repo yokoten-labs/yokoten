@@ -32,7 +32,7 @@ import {
   runChild,
 } from '../repo/helpers.ts';
 import { invoke } from '../repo/invoke.ts';
-import { chooseDenial, redactCommand, shownFolder } from '../../src/commands/hook.ts';
+import { chooseDenial, ownerCli, redactCommand, shownFolder } from '../../src/commands/hook.ts';
 import { inThreadGuard, startGuardEarly, takeGuard } from '../../src/run/hook.ts';
 import { parseRefusal } from '../../src/rules/text/message.ts';
 
@@ -1600,4 +1600,9 @@ test('hook: a guard setting or a call outside the sandbox asks for the lead, and
   assert.deepEqual([result.status, JSON.parse(result.stdout).decision, JSON.parse(result.stdout).reason?.id], [0, 'ask', 'guard-settings']);
   result = await protocol(cloud);
   assert.deepEqual([result.status, JSON.parse(result.stdout).decision], [2, 'refuse']);
+});
+
+test('ownerCli: node and the script by full path; through wsl.exe on WSL, so PowerShell runs it (#1392)', () => {
+  assert.equal(ownerCli({ env: {}, script: '/x/yokoten' }), `${process.execPath} /x/yokoten`);
+  assert.equal(ownerCli({ env: { WSL_DISTRO_NAME: 'Ubuntu' }, script: '/x/yokoten' }), `wsl.exe -d Ubuntu -e ${process.execPath} /x/yokoten`);
 });
