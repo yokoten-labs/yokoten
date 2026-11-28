@@ -1605,4 +1605,8 @@ test('hook: a guard setting or a call outside the sandbox asks for the lead, and
 test('ownerCli: node and the script by full path; through wsl.exe on WSL, so PowerShell runs it (#1392)', () => {
   assert.equal(ownerCli({ env: {}, script: '/x/yokoten' }), `${process.execPath} /x/yokoten`);
   assert.equal(ownerCli({ env: { WSL_DISTRO_NAME: 'Ubuntu' }, script: '/x/yokoten' }), `wsl.exe -d Ubuntu -e ${process.execPath} /x/yokoten`);
+  // WSL with no distro name: the default distro, so no -d. Never a `~`, which PowerShell reads as the Windows home.
+  const bare = ownerCli({ env: { WSL_INTEROP: '/run/WSL/1_interop' }, script: '/x/yokoten' });
+  assert.equal(bare, `wsl.exe -e ${process.execPath} /x/yokoten`);
+  assert.ok(!bare.includes('~'));
 });

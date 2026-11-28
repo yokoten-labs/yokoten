@@ -725,8 +725,8 @@ export function runHook(invocation: Invocation, guard?: Guard): number | Promise
 // The rules that apply to a worker only: a refusal by one of them names the mark, when the role came from it.
 const WORKER_RULES = new Set(['lead-only', 'worker-push', 'worker-mark']);
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
-// How the owner runs yokoten with no PATH (#1392, record 0063): node and the script by full path; on WSL, through wsl.exe, so PowerShell runs it.
-export const ownerCli = ({ env, script }: Pick<Invocation, 'env' | 'script'>) => [...(env.WSL_DISTRO_NAME ? ['wsl.exe', '-d', env.WSL_DISTRO_NAME, '-e'] : []), process.execPath, script].join(' ');
+// How the owner runs yokoten with no PATH (#1392, record 0063): node and the script by full path, never `~` (PowerShell's is the Windows home); on WSL through wsl.exe, `-d` when the distro is known.
+export const ownerCli = ({ env, script }: Pick<Invocation, 'env' | 'script'>) => [...(env.WSL_DISTRO_NAME || env.WSL_INTEROP ? ['wsl.exe', ...(env.WSL_DISTRO_NAME ? ['-d', env.WSL_DISTRO_NAME] : []), '-e'] : []), process.execPath, script].join(' ');
 
 /** What `yokoten stops` shows: whether the log is written, where it is, and how to turn it the other way. */
 export function stopsScreen(state: { isOff: boolean; count: number; file: string }): string[] {
